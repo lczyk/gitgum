@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# spell-checker: words gitgum worktree worktrees Marcin Konowalczyk lczyk
-# spell-checker: words Marcin Konowalczyk lczyk
+# spellchecker: words gitgum worktree worktrees Marcin Konowalczyk lczyk
+# spellchecker: words Marcin Konowalczyk lczyk
 
 # A bunch of git commands with 'gum'
 # Written by Marcin Konowalczyk
@@ -47,7 +47,16 @@ Options:
 This command allows you to commit changes in the current branch.
 """
 
+HELP_SWITCH="""
+Usage: gitgum switch [branch]
+Switch to a branch interactively.
+If the branch does not exist, it will ask whether to create it.
+If the branch exists, it will switch to it.
+If the branch is a remote branch, it will ask whether to create a local branch tracking the remote branch.
+"""
+
 # TODO: gg amend-message
+# TODO: gg completion ...
 
 _maybe_dry_run() {
     if [[ $dry_run -eq 1 ]]; then
@@ -60,6 +69,11 @@ _maybe_dry_run() {
 
 _echo_if_not_dry_run() {
     [[ $dry_run -eq 0 ]] && echo "$1"
+}
+
+_not_implemented_error() {
+    echo "Error: This feature is not implemented yet."
+    return 1
 }
 
 function gitgum() {
@@ -99,6 +113,8 @@ function gitgum() {
         _gitgum_status "$@"
     elif [[ "$command" == "commit" ]]; then
         _gitgum_commit "$@"
+    elif [[ "$command" == "switch" ]]; then
+        _gitgum_switch "$@"
     else
         echo "Unknown command: $command"
         return 1
@@ -110,7 +126,7 @@ function _gitgum_parse_flags() {
         case "$1" in
         -h | --help)
             echo "$_parse_flags_help"
-            return 0
+            return 10
             ;;
         -n | --dry-run)
             dry_run=1
@@ -132,7 +148,9 @@ function _gitgum_push() {
     # parse flags
     local _parse_flags_help=$HELP_PUSH
     local dry_run=0
-    _gitgum_parse_flags "$@" || return 1
+    _gitgum_parse_flags "$@"
+    case $? in 10) return 0 ;; 1) return 1 ;; esac
+
     local remotes=$(git remote -v | awk '{print $1}' | sort -u)
     local this_branch=$(git rev-parse --abbrev-ref HEAD)
     local remote=$(gum choose --header "Push '$this_branch' to" $remotes)
@@ -177,7 +195,8 @@ function _gitgum_push() {
 function _gitgum_tree() {
     local _parse_flags_help=$HELP_TREE
     local dry_run=0
-    _gitgum_parse_flags "$@" || return 1
+    _gitgum_parse_flags "$@"
+    case $? in 10) return 0 ;; 1) return 1 ;; esac
     #   local branch=$(git rev-parse --abbrev-ref HEAD)
     #   gum style --foreground 212 "Current branch: $branch"
     #   gum style --foreground 212 "Git tree structure:"
@@ -187,7 +206,8 @@ function _gitgum_tree() {
 function _gitgum_delete() {
     local _parse_flags_help=$HELP_DELETE
     local dry_run=0
-    _gitgum_parse_flags "$@" || return 1
+    _gitgum_parse_flags "$@"
+    case $? in 10) return 0 ;; 1) return 1 ;; esac
 
     # find all local branches
     # TODO: see what happens if we try to delete a branch from another worktree
@@ -291,7 +311,8 @@ function _gitgum_delete() {
 function _gitgum_status() {
     local _parse_flags_help=$HELP_STATUS
     local dry_run=0
-    _gitgum_parse_flags "$@" || return 1
+    _gitgum_parse_flags "$@"
+    case $? in 10) return 0 ;; 1) return 1 ;; esac
     # dry run does nothing here
 
     local delim="----------------------------------------"
@@ -323,7 +344,8 @@ function _gitgum_status() {
 function _gitgum_commit() {
     local _parse_flags_help=$HELP_COMMIT
     local dry_run=0
-    _gitgum_parse_flags "$@" || return 1
+    _gitgum_parse_flags "$@"
+    case $? in 10) return 0 ;; 1) return 1 ;; esac
 
     # Check if there are any changes to commit
     staged_changes=$(git diff --cached --name-only)
@@ -393,6 +415,57 @@ function _gitgum_commit() {
     _maybe_dry_run "git commit -m \"$commit_message\""
     _echo_if_not_dry_run "Committed changes with message: '$commit_message'"
 }
+
+function _gitgum_switch() {
+    local _parse_flags_help=$HELP_SWITCH
+    local dry_run=0
+    _gitgum_parse_flags "$@"
+    case $? in 10) return 0 ;; 1) return 1 ;; esac
+
+    # we have a couple of options here:
+    # 1. switch to an existing local branch
+    # 2. switch to an existing remote branch and create a local tracking branch
+    # 3. create a new branch (local)
+
+    local _mode_local="Switch to an existing local branch"
+    local _mode_remote="Switch to an existing remote branch and create a local tracking branch"
+    local _mode_new="Create a new branch (local)"
+    local _mode_abort="Abort switch"
+
+    local answer=$(gum choose --header "What do you want to do?" "$_mode_local" "$_mode_remote" "$_mode_new" "$_mode_abort")
+
+    if [[ -z "$answer" ]] || [[ "$answer" == "$_mode_abort" ]]; then
+        echo "No action selected. Aborting switch."
+        return 1
+    fi
+
+    if [[ "$answer" == "$_mode_local" ]]; then
+        # Switch to an existing local branch
+        _gitgum_switch_local
+    elif [[ "$answer" == "$_mode_remote" ]]; then
+        # Switch to an existing remote branch and create a local tracking branch
+        _gitgum_switch_remote
+    elif [[ "$answer" == "$_mode_new" ]]; then
+        # Create a new branch (local)
+        _gitgum_switch_new
+    else
+        echo "Unknown option: $answer"
+        return 1
+    fi
+}
+
+function _gitgum_switch_local() {
+    _not_implemented_error
+}
+
+function _gitgum_switch_remote() {
+    _not_implemented_error
+}
+
+function _gitgum_switch_new() {
+    _not_implemented_error
+}
+
 # Main entry point
 gitgum "$@"
 
