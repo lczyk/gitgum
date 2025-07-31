@@ -4,12 +4,19 @@ A bunch of git commands with [gum](https://github.com/charmbracelet/gum) interfa
 
 ## Install
 
-```
+```bash
 git clone https://github.com/lczyk/gitgum
 ln -s "$PWD/gitgum/src/gitgum" ~/.local/bin/gg
 ```
 
 or something along these lines.
+
+## Test
+
+```bash
+curl -s https://raw.githubusercontent.com/bash-unit/bash_unit/master/install.sh | bash
+./bash_unit ./tests/test_*
+```
 
 ## Other git tools
 

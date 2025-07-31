@@ -68,7 +68,7 @@ function gitgum() {
 
     if [[ -z "$command" ]] || [[ "$command" == "help" ]] || [[ "$command" == "--help" ]] || [[ "$command" == "-h" ]]; then
         echo "$HELP"
-        return 1
+        return 0
     fi
 
     # Check if gum is installed
