@@ -57,6 +57,7 @@ If the branch is a remote branch, it will ask whether to create a local branch t
 
 # TODO: gg amend-message
 # TODO: gg completion ...
+# TODO: gg add-fork ?? (git remote add <username> http://my.git.repo/<username>/<repo>.git)
 
 _maybe_dry_run() {
     if [[ $dry_run -eq 1 ]]; then
@@ -459,7 +460,116 @@ function _gitgum_switch_local() {
 }
 
 function _gitgum_switch_remote() {
-    _not_implemented_error
+    # first we need to find all remote branches
+    # then we need to filter out the branches that are already tracked locally
+
+    local remotes=$(git remote -v | awk '{print $1}' | sort -u)
+    if [[ -z "$remotes" ]]; then
+        echo "No remotes found. Aborting switch."
+        return 1
+    fi
+
+    # select a remote
+    local remote=$(gum choose --header "Select a remote" $remotes)
+    if [[ -z "$remote" ]]; then
+        echo "No remote selected. Aborting switch."
+        return 1
+    fi
+
+    # get the remote branches from the selected remote
+    # sed 's/^[ *]*//' |  # filter the marker ' *' of the current branch. TODO: necessary?
+    # sed 's/^[ +]*//' |  # filter the marker ' +' of the branches checked out in other worktrees
+    local remote_branches=$(
+        git branch -r |
+            grep "$remote/" |
+            grep -v "HEAD ->" |   # filter out the HEAD reference
+            sed "s|$remote/||g" | # remove the remote prefix
+            sort -u
+    )
+    if [[ -z "$remote_branches" ]]; then
+        echo "No remote branches found for remote '$remote'. Aborting switch."
+        return 1
+    fi
+
+    # TODO: filter out the branches that are already tracked locally
+
+    # choose a remote branch to switch to
+    local remote_branch=$(gum choose --header "Select a remote branch to switch to" $remote_branches)
+    if [[ -z "$remote_branch" ]]; then
+        echo "No remote branch selected. Aborting switch."
+        return 1
+    fi
+
+    # check if the branch is already tracked locally
+    local local_branch=$(
+        git branch --list "$remote_branch" |
+            sed 's/^[ *]*//' | # filter the marker ' *' of the current branch
+            sed 's/^[ +]*//'   # filter the marker ' +' of the branches checked out in other worktrees
+    )
+    if [[ -n "$local_branch" ]]; then
+        # the branch is already tracked locally
+        echo "Branch '$remote_branch' is already tracked locally as '$local_branch'."
+        # check if the local branch has the same tracking reference as the remote branch
+        # echo "Local branch '$local_branch' is tracking remote branch '$remote/$remote_branch'."
+        local tracking_ref=$(git config branch."$local_branch".remote)
+        echo "Tracking reference for local branch '$local_branch': '$tracking_ref'"
+        if [[ "$tracking_ref" != "$remote" ]]; then
+            echo "Local branch '$local_branch' is not tracking remote branch '$remote/$remote_branch'."
+            if gum confirm "Do you want to set '$remote/$remote_branch' as the tracking reference for local branch '$local_branch'?" --default="no"; then
+                _maybe_dry_run "git branch --set-upstream-to=\"$remote/$remote_branch\" \"$local_branch\""
+                _echo_if_not_dry_run "Set tracking reference for local branch '$local_branch' to remote branch '$remote/$remote_branch'."
+            else
+                echo "Not setting tracking reference. Aborting switch."
+                return 1
+            fi
+            # switch to the local branch
+            _maybe_dry_run "git checkout --quiet \"$local_branch\""
+            _echo_if_not_dry_run "Switched to branch '$local_branch'."
+
+        else
+            # the local branch is already tracking the remote branch. just switch to it
+            _maybe_dry_run "git checkout --quiet \"$local_branch\""
+            _echo_if_not_dry_run "Switched to branch '$local_branch' tracking remote branch '$remote/$remote_branch'."
+        fi
+
+        # check if the local branch is up to date with the remote branch
+        local local_commit=$(git rev-parse "$local_branch")
+        local remote_commit
+        if ! remote_commit=$(git rev-parse "$remote/$remote_branch" 2>/dev/null); then
+            echo "Error: Could not find remote branch '$remote/$remote_branch'."
+            return 1
+        fi
+        if [[ "$local_commit" == "$remote_commit" ]]; then
+            echo "Local branch '$local_branch' is up to date with remote branch '$remote/$remote_branch'."
+            return 0
+        else
+            if gum confirm "Local branch '$local_branch' is not up to date with remote branch '$remote/$remote_branch'. Do you want to reset the local branch to the remote branch?" --default="no"; then
+                # reset the local branch to the remote branch
+                _maybe_dry_run "git reset --hard \"$remote/$remote_branch\""
+                _echo_if_not_dry_run "Reset local branch '$local_branch' to remote branch '$remote/$remote_branch'."
+            else
+                echo "Not resetting local branch. Aborting switch."
+                return 1
+            fi
+        fi
+
+        # TODO: check if we want to switch to it
+        # _maybe_dry_run "git checkout \"$local_branch\""
+        # _echo_if_not_dry_run "Switched to branch '$local_branch'."
+        return 0
+    fi
+
+    # the branch is not tracked locally, ask whether to create a local tracking branch
+    if gum confirm "Branch '$remote_branch' is not tracked locally. Do you want to create a local tracking branch?" --default="yes"; then
+        # create a local tracking branch
+        _maybe_dry_run "git checkout -b \"$remote_branch\" \"$remote/$remote_branch\""
+        _echo_if_not_dry_run "Created and switched to local branch '$remote_branch' tracking remote branch '$remote/$remote_branch'."
+    else
+        echo "Not creating a local tracking branch. Aborting switch."
+        return 1
+    fi
+    return 0
+
 }
 
 function _gitgum_switch_new() {
