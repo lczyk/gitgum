@@ -6,11 +6,21 @@
 # Written by Marcin Konowalczyk
 # @lczyk
 
+BLUE="\033[0;34m"
+BLACK="\033[0;30m"
+NC="\033[0m" # No Color
+
+function _blue() { echo -e "${BLACK}$1${NC}"; }
+
 HELP="""
 Usage: gitgum <command> [args]
 Commands:
     tree          Show the git tree structure
     push          Push the current branch to a remote repository interactively
+    delete        Delete a branch or a remote branch interactively
+    status        Show the status of the current git repository
+    commit        Commit changes in the current branch interactively
+    switch        Switch to a branch interactively
     help          Show this help message
 For more information, run 'gitgum <command> --help'.
 """
@@ -151,6 +161,20 @@ function _gitgum_push() {
     local dry_run=0
     _gitgum_parse_flags "$@"
     case $? in 10) return 0 ;; 1) return 1 ;; esac
+
+    # Check if this branch already has a remote tracking branch
+    local remote_branch=$(git rev-parse --abbrev-ref --symbolic-full-name @{u})
+    if [[ -n "$remote_branch" ]]; then
+        # The current branch already has a remote tracking branch
+        echo "Current branch already has a remote tracking branch: $remote_branch"
+        if gum confirm "Do you want to push to the remote tracking branch?" --default="yes"; then
+            _maybe_dry_run "git push"
+            _echo_if_not_dry_run "Pushed to remote tracking branch '$remote_branch'."
+            return 0
+        else
+            echo "Not pushing to remote tracking branch"
+        fi
+    fi
 
     local remotes=$(git remote -v | awk '{print $1}' | sort -u)
     local this_branch=$(git rev-parse --abbrev-ref HEAD)
@@ -316,23 +340,32 @@ function _gitgum_status() {
     case $? in 10) return 0 ;; 1) return 1 ;; esac
     # dry run does nothing here
 
-    local delim="----------------------------------------"
-
     # Show the remote branches and their status
     # TODO: -vva also shows remote branches, but it can be massive. maybe add a flag to status?
-    # echo $delim
+    _blue "--- BRANCHES ---------------------------"
     git branch -vv
 
     remotes=$(git remote -v | awk '{print($1,$2)}' | sort -u)
-    echo $delim
     if [[ -z "$remotes" ]]; then
-        echo "No remotes."
+        # echo "--- No remotes found ---"
+        :
     else
+        _blue "--- REMOTES ----------------------------"
         echo "$remotes"
     fi
 
+    # Check whether there are any changes in the working directory
+    local changes=$(git status --short)
+    if [[ -z "$changes" ]]; then
+        # echo "--- No changes in the working directory ---"
+        :
+    else
+        _blue "--- CHANGES ----------------------------"
+        echo "$changes"
+    fi
+
     # Show the status of the repository at the very end
-    echo $delim
+    _blue "--- STATUS -----------------------------"
     if command -v unbuffer &>/dev/null; then
         # use unbuffer to preserve the color output
         unbuffer git status --short --branch | head -n1
@@ -413,8 +446,31 @@ function _gitgum_commit() {
     fi
 
     # Commit the changes
-    _maybe_dry_run "git commit -m \"$commit_message\""
+    _maybe_dry_run "git commit -m \"$commit_message\"" || \
+        _fatal "Could not commit changes. Please check the output above for details."
+
     _echo_if_not_dry_run "Committed changes with message: '$commit_message'"
+
+    # Check if there is a remote branch to push to
+    local current_branch=$(git rev-parse --abbrev-ref HEAD)
+    local remote_branch=$(git branch -r | grep "$current_branch" | sed 's/^[ *]*//')
+    if [[ -z "$remote_branch" ]]; then
+        echo "No remote branch found for current branch '$current_branch'."
+        if gum confirm "Do you want to create a remote branch for '$current_branch'?" --default="yes"; then
+            _maybe_dry_run "git push -u origin \"$current_branch\""
+            _echo_if_not_dry_run "Created remote branch '$current_branch' and set it as the tracking reference."
+        else
+            echo "Not creating a remote branch. You can push the changes later using 'git push'."
+            return 0
+        fi
+    else
+        echo "Remote branch '$remote_branch' found for current branch '$current_branch'."
+        # Ask whether to push the changes
+        if gum confirm "Do you want to push the changes?" --default="yes"; then
+            _maybe_dry_run "git push"
+            _echo_if_not_dry_run "Pushed changes to the remote repository."
+        fi
+    fi
 }
 
 function _gitgum_switch() {
@@ -456,7 +512,38 @@ function _gitgum_switch() {
 }
 
 function _gitgum_switch_local() {
-    _not_implemented_error
+    # find all local branches
+    local branches=$(
+        git branch |
+            sed 's/^[ *]*//' | # filter the marker ' *' of the current branch
+            sed 's/^[ +]*//'   # filter the marker ' +' of the branches checked out in other worktrees
+    )
+    if [[ -z "$branches" ]]; then
+        echo "No local branches found. Aborting switch."
+        return 1
+    fi
+
+    # choose a branch to switch to
+    local branch=$(gum choose --header "Select a branch to switch to" $branches)
+    if [[ -z "$branch" ]]; then
+        echo "No branch selected. Aborting switch."
+        return 1
+    fi
+    
+    # check if the branch is already checked out in another worktree
+    local worktree_grep=$(git worktree list | grep "$branch" | awk '{print $1}')
+    if [[ -n "$worktree_grep" ]]; then
+        echo "Branch '$branch' is already checked out in another worktree: $worktree_grep"
+        return 1
+    fi
+
+    # switch to the branch
+    if ! _maybe_dry_run "git checkout --quiet \"$branch\""; then
+        echo "Error: Could not switch to branch '$branch'."
+        return 1
+    fi
+    _echo_if_not_dry_run "Switched to branch '$branch'."
+    
 }
 
 function _gitgum_switch_remote() {
@@ -524,11 +611,19 @@ function _gitgum_switch_remote() {
             fi
             # switch to the local branch
             _maybe_dry_run "git checkout --quiet \"$local_branch\""
+            if [[ $? -ne 0 ]]; then
+                echo "Error: Could not switch to local branch '$local_branch'."
+                return 1
+            fi
             _echo_if_not_dry_run "Switched to branch '$local_branch'."
 
         else
             # the local branch is already tracking the remote branch. just switch to it
             _maybe_dry_run "git checkout --quiet \"$local_branch\""
+            if [[ $? -ne 0 ]]; then
+                echo "Error: Could not switch to local branch '$local_branch'."
+                return 1
+            fi
             _echo_if_not_dry_run "Switched to branch '$local_branch' tracking remote branch '$remote/$remote_branch'."
         fi
 

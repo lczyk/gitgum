@@ -22,3 +22,11 @@ curl -s https://raw.githubusercontent.com/bash-unit/bash_unit/master/install.sh 
 
 - [lazygit](https://github.com/jesseduffield/lazygit) - i found myself using it less and less since i wrote gitgum, but its still good.
 - [tig](https://github.com/jonas/tig) - still getting used to the navigation
+
+
+## TODOs
+
+- [ ] refactor some common functionality (like getting local branches, getting remote branches, etc)
+    - [ ] test
+- [ ] local testing repo
+- [ ] ?? setup gitgum-testing remote repo
