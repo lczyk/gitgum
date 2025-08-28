@@ -343,7 +343,7 @@ function _gitgum_status() {
     # Show the remote branches and their status
     # TODO: -vva also shows remote branches, but it can be massive. maybe add a flag to status?
     _blue "--- BRANCHES ---------------------------"
-    git branch -vv
+    git --no-pager branch -vv
 
     remotes=$(git remote -v | awk '{print($1,$2)}' | sort -u)
     if [[ -z "$remotes" ]]; then
