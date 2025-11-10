@@ -16,11 +16,7 @@ function gitgum_cmd_delete() {
     case $? in 10) return 0 ;; 1) return 1 ;; esac
 
     # find all local branches
-    local branches=$(
-        git branch |
-            sed 's/^[ *]*//' | # filter the marker ' *' of the current branch
-            sed 's/^[ +]*//'   # filter the marker ' +' of the branches checked out in other worktrees
-    )
+    local branches=$(gitgum_local_branches)
     if [[ -z "$branches" ]]; then
         echo "No local branches found."
         return 1

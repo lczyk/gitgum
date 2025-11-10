@@ -14,7 +14,6 @@ This command allows you to commit changes in the current branch.
 
 function gitgum_cmd_commit() {
     local _parse_flags_help=$HELP_COMMIT
-    dry_run=0
     _gitgum_parse_flags "$@"
     case $? in 10) return 0 ;; 1) return 1 ;; esac
 

@@ -69,5 +69,14 @@ function _gitgum_parse_flags() {
     fi
 }
 
+# Get list of all local branches, excluding current branch and worktree checkouts
+# Removes markers: '*' (current branch) and '+' (checked out in other worktrees)
+# Returns newline-separated branch names
+function gitgum_local_branches() {
+    git branch |
+        sed 's/^[ *]*//' | # filter the marker ' *' of the current branch
+        sed 's/^[ +]*//'   # filter the marker ' +' of the branches checked out in other worktrees
+}
+
 export __GITGUM_HELPERS__=1
 fi

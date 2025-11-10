@@ -9,6 +9,8 @@ test_help() {
     assert "gitgum status --help"
     assert "gitgum commit --help"
     assert "gitgum switch --help"
+    assert "gitgum merge-into --help"
+    assert "gitgum completion --help"
 }
 
 test_invalid_flag() {
@@ -19,4 +21,12 @@ test_invalid_flag() {
     assert_fails "gitgum status --invalid-flag"
     assert_fails "gitgum commit --invalid-flag"
     assert_fails "gitgum switch --invalid-flag"
+    assert_fails "gitgum merge-into --invalid-flag"
+    assert_fails "gitgum completion --invalid-flag"
+    assert_fails "gitgum completion --dry-run fish"
+}
+
+test_completion_invalid_kind() {
+    assert_fails "gitgum completion invalid"
+    assert_fails "gitgum completion"
 }

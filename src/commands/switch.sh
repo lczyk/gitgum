@@ -14,7 +14,6 @@ If the branch is a remote branch, it will ask whether to create a local branch t
 
 function gitgum_cmd_switch() {
     local _parse_flags_help=$HELP_SWITCH
-    dry_run=0
     _gitgum_parse_flags "$@"
     case $? in 10) return 0 ;; 1) return 1 ;; esac
 
@@ -51,11 +50,7 @@ function gitgum_cmd_switch() {
 
 function _gitgum_switch_local() {
     # find all local branches
-    local branches=$(
-        git branch |
-            sed 's/^[ *]*//' | # filter the marker ' *' of the current branch
-            sed 's/^[ +]*//'   # filter the marker ' +' of the branches checked out in other worktrees
-    )
+    local branches=$(gitgum_local_branches)
     if [[ -z "$branches" ]]; then
         echo "No local branches found. Aborting switch."
         return 1
@@ -122,9 +117,7 @@ function _gitgum_switch_remote() {
 
     # check if the branch is already tracked locally
     local local_branch=$(
-        git branch --list "$remote_branch" |
-            sed 's/^[ *]*//' | # filter the marker ' *' of the current branch
-            sed 's/^[ +]*//'   # filter the marker ' +' of the branches checked out in other worktrees
+        git branch --list "$remote_branch" | gitgum_local_branches
     )
     if [[ -n "$local_branch" ]]; then
         # the branch is already tracked locally

@@ -21,6 +21,8 @@ source "$SCRIPT_DIR/commands/delete.sh"
 source "$SCRIPT_DIR/commands/status.sh"
 source "$SCRIPT_DIR/commands/commit.sh"
 source "$SCRIPT_DIR/commands/switch.sh"
+source "$SCRIPT_DIR/commands/merge_into.sh"
+source "$SCRIPT_DIR/commands/completion.sh"
 
 # Main help text
 HELP="""
@@ -32,6 +34,8 @@ Commands:
     status        Show the status of the current git repository
     commit        Commit changes in the current branch interactively
     switch        Switch to a branch interactively
+    merge-into    Merge current branch into another branch
+    completion    Output shell completion script
     help          Show this help message
 For more information, run 'gitgum <command> --help'.
 """
@@ -83,6 +87,12 @@ function gitgum() {
             ;;
         switch)
             gitgum_cmd_switch "$@"
+            ;;
+        merge-into)
+            gitgum_cmd_merge_into "$@"
+            ;;
+        completion)
+            gitgum_cmd_completion "$@"
             ;;
         *)
             echo "Unknown command: $command"
