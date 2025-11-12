@@ -116,9 +116,7 @@ function _gitgum_switch_remote() {
     fi
 
     # check if the branch is already tracked locally
-    local local_branch=$(
-        git branch --list "$remote_branch" | gitgum_local_branches
-    )
+    local local_branch=$(git branch --list "$remote_branch" --format="%(refname:short)")
     if [[ -n "$local_branch" ]]; then
         # the branch is already tracked locally
         echo "Branch '$remote_branch' is already tracked locally as '$local_branch'."
