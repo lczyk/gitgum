@@ -10,7 +10,7 @@ This directory contains the Go rewrite of gitgum. The implementation currently s
 
 ## Build
 
-From the `go` directory:
+From the repository root:
 
 ```bash
 make
@@ -70,8 +70,13 @@ eval "$(gitgum completion zsh)"
 Run the test suite:
 
 ```bash
-cd src/cmd/gitgum
-go test -v
+go test ./...
+```
+
+Run tests for a specific package:
+
+```bash
+go test ./src/commands -v
 ```
 
 ## Architecture
@@ -83,18 +88,19 @@ The Go implementation mirrors the bash version but uses:
 
 ### File Structure
 
-- `main.go` - CLI dispatcher and command registration
-- `switch.go` - Branch switching logic
-- `completion.go` - Shell completion generation
-- `utils.go` - Shared helpers for git/fzf interaction
-- `main_test.go` - Basic test suite
+- `src/cmd/gitgum/main.go` - CLI dispatcher and command registration
+- `src/commands/switch.go` - Branch switching logic
+- `src/commands/completion.go` - Shell completion generation
+- `src/completions/assets/` - Embedded completion templates (bash, fish, zsh)
+- `cmd/generate-completions/` - Generator for embedding completion assets
+- `src/commands/*_test.go` - Test suites
 
 ## Differences from Bash Version
 
 1. Uses `fzf` instead of `gum` for interactive prompts
 2. No dry-run flag (`-n`, `--dry-run`) support
 3. Only `switch` and `completion` commands implemented initially
-4. Completion templates still use bash version's files from `bash/src/completions/`
+4. **Completion templates are now embedded in the binary** (no external files needed at runtime)
 
 ## Future Work
 

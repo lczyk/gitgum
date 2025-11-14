@@ -6,13 +6,16 @@ build: ./bin/gitgum
 
 SRCS := $(shell find . -name '*.go')
 
-./bin/gitgum: $(SRCS) Makefile go.mod go.sum
+./bin/gitgum: $(SRCS) ./cmd/gitgum/main.go Makefile go.mod go.sum ./src/completions/generated.go
 	mkdir -p ./bin
-	go build -o ./bin/gitgum ./src/cmd/gitgum
+	go build -o ./bin/gitgum ./cmd/gitgum
 	# If we have upx installed, compress the binary
 	if command -v upx >/dev/null 2>&1; then \
 		upx ./bin/gitgum; \
 	fi
+
+./src/completions/generated.go: ./src/completions/generate.go $(SRCS) Makefile go.mod go.sum
+	go generate ./src/completions
 
 .PHONY: du
 du: ./bin/gitgum
@@ -21,3 +24,4 @@ du: ./bin/gitgum
 .PHONY: clean
 clean:
 	rm -rf ./bin/gitgum
+	rm -rf ./src/completions/generated.go

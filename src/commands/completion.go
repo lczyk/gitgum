@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/lczyk/gitgum/src/completions"
 )
 
 // CompletionCommand handles shell completion generation
@@ -31,62 +33,17 @@ func (c *CompletionCommand) Execute(args []string) error {
 	// Get the actual command name (handles symlinks)
 	cmdName := filepath.Base(os.Args[0])
 
-	// Find the completion template file
-	// The templates are in src/completions
-	completionFile, err := findCompletionFile(shell)
-	if err != nil {
-		return fmt.Errorf("completion file not found: %v", err)
-	}
-
-	// Read the template
-	content, err := os.ReadFile(completionFile)
-	if err != nil {
-		return fmt.Errorf("error reading completion file: %v", err)
+	// Get the embedded template
+	content, ok := completions.CompletionTemplates[shell]
+	if !ok {
+		return fmt.Errorf("completion template not found for shell: %s", shell)
 	}
 
 	// Substitute the command name placeholder
-	output := strings.ReplaceAll(string(content), "__GITGUM_CMD__", cmdName)
+	output := strings.ReplaceAll(content, "__GITGUM_CMD__", cmdName)
 
 	// Output to stdout
 	fmt.Print(output)
 
 	return nil
-}
-
-// findCompletionFile locates the completion template file
-func findCompletionFile(shell string) (string, error) {
-	filename := fmt.Sprintf("gitgum.%s", shell)
-
-	// Try relative to executable (for development)
-	exePath, err := os.Executable()
-	if err == nil {
-		// From go/bin/gitgum -> go/src/completions
-		candidatePaths := []string{
-			filepath.Join(filepath.Dir(exePath), "..", "src", "completions", filename),
-		}
-
-		for _, path := range candidatePaths {
-			if _, err := os.Stat(path); err == nil {
-				return path, nil
-			}
-		}
-	}
-
-	// Try relative to working directory
-	cwd, err := os.Getwd()
-	if err == nil {
-		candidatePaths := []string{
-			filepath.Join(cwd, "src", "completions", filename),
-			filepath.Join(cwd, "..", "src", "completions", filename),
-			filepath.Join(cwd, "go", "src", "completions", filename),
-		}
-
-		for _, path := range candidatePaths {
-			if _, err := os.Stat(path); err == nil {
-				return path, nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("completion file not found for shell: %s", shell)
 }
