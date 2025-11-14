@@ -32,8 +32,7 @@ func (c *CompletionCommand) Execute(args []string) error {
 	cmdName := filepath.Base(os.Args[0])
 
 	// Find the completion template file
-	// The templates are in bash/src/completions relative to the project root
-	// We'll look relative to the executable or use a fallback
+	// The templates are in src/completions
 	completionFile, err := findCompletionFile(shell)
 	if err != nil {
 		return fmt.Errorf("completion file not found: %v", err)
@@ -61,10 +60,9 @@ func findCompletionFile(shell string) (string, error) {
 	// Try relative to executable (for development)
 	exePath, err := os.Executable()
 	if err == nil {
-		// From go/bin/gitgum -> bash/src/completions
+		// From go/bin/gitgum -> go/src/completions
 		candidatePaths := []string{
-			filepath.Join(filepath.Dir(exePath), "..", "..", "bash", "src", "completions", filename),
-			filepath.Join(filepath.Dir(exePath), "..", "bash", "src", "completions", filename),
+			filepath.Join(filepath.Dir(exePath), "..", "src", "completions", filename),
 		}
 
 		for _, path := range candidatePaths {
@@ -78,9 +76,9 @@ func findCompletionFile(shell string) (string, error) {
 	cwd, err := os.Getwd()
 	if err == nil {
 		candidatePaths := []string{
-			filepath.Join(cwd, "bash", "src", "completions", filename),
-			filepath.Join(cwd, "..", "bash", "src", "completions", filename),
-			filepath.Join(cwd, "..", "..", "bash", "src", "completions", filename),
+			filepath.Join(cwd, "src", "completions", filename),
+			filepath.Join(cwd, "..", "src", "completions", filename),
+			filepath.Join(cwd, "go", "src", "completions", filename),
 		}
 
 		for _, path := range candidatePaths {
