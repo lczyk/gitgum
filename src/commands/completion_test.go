@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lczyk/assert"
 	"github.com/lczyk/gitgum/src/completions"
 )
 
@@ -14,18 +15,9 @@ func TestCompletionCommand_AllShellsAvailable(t *testing.T) {
 	for _, shell := range shells {
 		t.Run(shell, func(t *testing.T) {
 			template, ok := completions.CompletionTemplates[shell]
-			if !ok {
-				t.Errorf("completion template for %s not found in embedded assets", shell)
-			}
-
-			if template == "" {
-				t.Errorf("completion template for %s is empty", shell)
-			}
-
-			// Verify the placeholder exists
-			if !strings.Contains(template, "__GITGUM_CMD__") {
-				t.Errorf("completion template for %s does not contain __GITGUM_CMD__ placeholder", shell)
-			}
+			assert.That(t, ok, "completion template for %s not found in embedded assets", shell)
+			assert.That(t, template != "", "completion template for %s is empty", shell)
+			assert.ContainsString(t, template, "__GITGUM_CMD__")
 		})
 	}
 }
@@ -47,9 +39,7 @@ func TestCompletionCommand_Execute(t *testing.T) {
 
 			// Capture stdout by executing and checking for errors
 			err := cmd.Execute(nil)
-			if err != nil {
-				t.Errorf("Execute() failed for %s: %v", shell, err)
-			}
+			assert.NoError(t, err, "Execute() failed for %s: %v", shell, err)
 		})
 	}
 }
@@ -59,14 +49,10 @@ func TestCompletionCommand_InvalidShell(t *testing.T) {
 	cmd.Args.Shell = "invalid"
 
 	err := cmd.Execute(nil)
-	if err == nil {
-		t.Error("Execute() should have failed with invalid shell")
-	}
+	assert.Error(t, err, "invalid shell type 'invalid'")
 
 	expectedMsg := "invalid shell type 'invalid'"
-	if !strings.Contains(err.Error(), expectedMsg) {
-		t.Errorf("Expected error message to contain %q, got: %v", expectedMsg, err)
-	}
+	assert.ContainsString(t, err.Error(), expectedMsg)
 }
 
 func TestCompletionCommand_PlaceholderReplacement(t *testing.T) {
@@ -90,27 +76,21 @@ func TestCompletionCommand_PlaceholderReplacement(t *testing.T) {
 
 			// Get the template directly
 			template, ok := completions.CompletionTemplates[tc.shell]
-			if !ok {
-				t.Fatalf("template for %s not found", tc.shell)
-			}
+			assert.That(t, ok, "template for %s not found", tc.shell)
 
 			// Verify original has placeholder
-			if !strings.Contains(template, "__GITGUM_CMD__") {
-				t.Errorf("original template should contain __GITGUM_CMD__")
-			}
+			assert.ContainsString(t, template, "__GITGUM_CMD__")
 
 			// Simulate what Execute does
 			result := strings.ReplaceAll(template, "__GITGUM_CMD__", tc.cmdName)
 
 			// Verify placeholder was replaced
-			if strings.Contains(result, "__GITGUM_CMD__") {
-				t.Errorf("result should not contain __GITGUM_CMD__ after replacement")
-			}
+			// Note: no NotContainsString in assert package yet
+			assert.That(t, !strings.Contains(result, "__GITGUM_CMD__"), "result should not contain __GITGUM_CMD__ after replacement")
+
 
 			// Verify the command name appears in the output
-			if !strings.Contains(result, tc.cmdName) {
-				t.Errorf("result should contain command name %q", tc.cmdName)
-			}
+			assert.ContainsString(t, result, tc.cmdName)
 		})
 	}
 }
