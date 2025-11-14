@@ -6,14 +6,14 @@ set -euo pipefail
 echo "=== Bash Completion Test ==="
 
 # Ensure gitgum binary exists
-if [[ ! -x /workspace/bin/gitgum ]]; then
-    echo "ERROR: gitgum binary not found at /workspace/bin/gitgum"
+if [[ ! -x /work/bin/gitgum ]]; then
+    echo "ERROR: gitgum binary not found at /work/bin/gitgum"
     exit 1
 fi
 
 # Generate completion script
 echo "Generating bash completion..."
-/workspace/bin/gitgum completion bash > /tmp/gitgum.bash
+/work/bin/gitgum completion bash > /tmp/gitgum.bash
 
 # Verify completion file exists and has content
 if [[ ! -s /tmp/gitgum.bash ]]; then
@@ -41,6 +41,8 @@ fi
 
 # Source the completion script
 echo "Sourcing completion script..."
+# Load bash-completion framework first
+source /usr/share/bash-completion/bash_completion 2>/dev/null || true
 source /tmp/gitgum.bash
 
 # Verify the completion function exists

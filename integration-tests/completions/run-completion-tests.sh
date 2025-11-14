@@ -104,12 +104,12 @@ run_test() {
     # Make test script executable
     chmod +x "$TESTS_DIR/$test_script"
     
-    # Run container with mounted workspace
+    # Run container with mounted work
     if "$CONTAINER_BACKEND" run --rm \
-        -v "$COMPLETIONS_DIR:/workspace" \
-        -w /workspace \
+        -v "$COMPLETIONS_DIR:/work" \
+        -w /work \
         "$image_name" \
-        "/workspace/tests/$test_script"; then
+        "/work/tests/$test_script"; then
         print_msg "$GREEN" "✓ $shell test PASSED"
         TEST_RESULTS[$shell]="PASS"
         return 0

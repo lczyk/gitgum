@@ -4,14 +4,14 @@
 echo "=== Fish Completion Test ==="
 
 # Ensure gitgum binary exists
-if not test -x /workspace/bin/gitgum
-    echo "ERROR: gitgum binary not found at /workspace/bin/gitgum"
+if not test -x /work/bin/gitgum
+    echo "ERROR: gitgum binary not found at /work/bin/gitgum"
     exit 1
 end
 
 # Generate completion script
 echo "Generating fish completion..."
-/workspace/bin/gitgum completion fish > /tmp/gitgum.fish
+/work/bin/gitgum completion fish > /tmp/gitgum.fish
 
 # Verify completion file exists and has content
 if not test -s /tmp/gitgum.fish

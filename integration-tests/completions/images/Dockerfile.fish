@@ -5,10 +5,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Install fish, git, fzf, and basic utilities
 RUN apt-get update && apt-get install -y \
-    software-properties-common \
-    && add-apt-repository ppa:fish-shell/release-3 \
-    && apt-get update \
-    && apt-get install -y \
     fish \
     git \
     fzf \
@@ -17,7 +13,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up working directory
-WORKDIR /workspace
+WORKDIR /work
 
 # Default command
 CMD ["/usr/bin/fish"]

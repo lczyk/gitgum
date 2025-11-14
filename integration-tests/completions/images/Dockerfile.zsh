@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up working directory
-WORKDIR /workspace
+WORKDIR /work
 
 # Default command
 CMD ["/usr/bin/zsh"]
