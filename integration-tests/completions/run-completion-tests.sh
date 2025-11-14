@@ -1,4 +1,6 @@
 #!/bin/bash
+#spellchecker: ignore gitgum
+
 # Integration test runner for gitgum shell completions
 # Tests completions in containerized bash, fish, and zsh environments
 
@@ -23,49 +25,39 @@ SHELLS=("bash" "fish" "zsh")
 
 # Colors for output
 RED='\033[0;31m'
-GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+GREEN='\033[0;32m'
 NC='\033[0m' # No Color
+
+error() { echo -e "${RED}ERROR${NC} $*"; }
+warn() { echo -e "${YELLOW}WARNING${NC} $*"; }
+info() { echo -e "${GREEN}INFO${NC} $*"; }
 
 # Track test results
 declare -A TEST_RESULTS
 
-# Helper function: print colored message
-print_msg() {
-    local color=$1
-    shift
-    echo -e "${color}$*${NC}"
-}
 
 # Helper function: check if container backend is available
 check_backend() {
     if ! command -v "$CONTAINER_BACKEND" &>/dev/null; then
-        print_msg "$RED" "ERROR: Container backend '$CONTAINER_BACKEND' not found"
-        print_msg "$YELLOW" "Install $CONTAINER_BACKEND or set COMPLETIONS_BACKEND to 'docker' or 'podman'"
+        error "Container backend '$CONTAINER_BACKEND' not found"
+        warn "Install $CONTAINER_BACKEND or set COMPLETIONS_BACKEND to 'docker' or 'podman'"
         exit 1
     fi
-    print_msg "$GREEN" "Using container backend: $CONTAINER_BACKEND"
+    info "Using container backend: $CONTAINER_BACKEND"
 }
 
 # Helper function: build gitgum binary
 build_gitgum() {
-    print_msg "$YELLOW" "Building gitgum binary..."
-    cd "$PROJECT_ROOT"
-    
-    if [[ -f Makefile ]]; then
-        make build
-    else
-        print_msg "$YELLOW" "No Makefile found, building with go build..."
-        mkdir -p bin
-        go build -o bin/gitgum ./cmd/gitgum
-    fi
+    warn "Building gitgum binary..."
+    make -C "$PROJECT_ROOT" build
     
     # Copy to integration test bin directory
     mkdir -p "$BIN_DIR"
     cp "$PROJECT_ROOT/bin/gitgum" "$BIN_DIR/gitgum"
     chmod +x "$BIN_DIR/gitgum"
     
-    print_msg "$GREEN" "✓ Binary built and copied to $BIN_DIR/gitgum"
+    info "✓ Binary built and copied to $BIN_DIR/gitgum"
 }
 
 # Helper function: build container image for a shell
@@ -75,21 +67,21 @@ build_image() {
     local dockerfile="$IMAGES_DIR/Dockerfile.${shell}"
     
     if [[ ! -f "$dockerfile" ]]; then
-        print_msg "$RED" "ERROR: Dockerfile not found: $dockerfile"
+        error "Dockerfile not found: $dockerfile"
         return 1
     fi
     
-    print_msg "$YELLOW" "Building image for $shell..."
+    warn "Building image for $shell..."
     
     if ! "$CONTAINER_BACKEND" build \
         -t "$image_name" \
         -f "$dockerfile" \
         "$IMAGES_DIR"; then
-        print_msg "$RED" "ERROR: Failed to build image for $shell"
+        error "Failed to build image for $shell"
         return 1
     fi
     
-    print_msg "$GREEN" "✓ Built image: $image_name"
+    info "✓ Built image: $image_name"
     return 0
 }
 
@@ -99,7 +91,7 @@ run_test() {
     local image_name="${IMAGE_PREFIX}-${shell}"
     local test_script="test-${shell}.sh"
     
-    print_msg "$YELLOW" "\n=== Testing $shell completions ==="
+    warn "\n=== Testing $shell completions ==="
     
     # Make test script executable
     chmod +x "$TESTS_DIR/$test_script"
@@ -110,11 +102,11 @@ run_test() {
         -w /work \
         "$image_name" \
         "/work/tests/$test_script"; then
-        print_msg "$GREEN" "✓ $shell test PASSED"
+        info "✓ $shell test PASSED"
         TEST_RESULTS[$shell]="PASS"
         return 0
     else
-        print_msg "$RED" "✗ $shell test FAILED"
+        error "l test FAILED"
         TEST_RESULTS[$shell]="FAIL"
         return 1
     fi
@@ -122,7 +114,7 @@ run_test() {
 
 # Main execution
 main() {
-    print_msg "$GREEN" "=== Gitgum Completion Integration Tests ==="
+    info "=== Gitgum Completion Integration Tests ==="
     echo
     
     # Check prerequisites
@@ -141,7 +133,7 @@ main() {
                 ((failed++))
             fi
         else
-            print_msg "$RED" "Skipping $shell test due to image build failure"
+            error "g $shell test due to image build failure"
             TEST_RESULTS[$shell]="SKIP"
             ((failed++))
         fi
@@ -149,28 +141,28 @@ main() {
     done
     
     # Print summary
-    print_msg "$YELLOW" "=== Test Summary ==="
+    warn "=== Test Summary ==="
     for shell in "${SHELLS[@]}"; do
         local result="${TEST_RESULTS[$shell]:-UNKNOWN}"
         case "$result" in
             PASS)
-                print_msg "$GREEN" "  $shell: ✓ PASSED"
+                info "  $shell: ✓ PASSED"
                 ;;
             FAIL)
-                print_msg "$RED" "  $shell: ✗ FAILED"
+                error "l: ✗ FAILED"
                 ;;
             SKIP)
-                print_msg "$YELLOW" "  $shell: ⊘ SKIPPED"
+                warn "  $shell: ⊘ SKIPPED"
                 ;;
         esac
     done
     echo
     
     if [[ $failed -eq 0 ]]; then
-        print_msg "$GREEN" "All tests passed!"
+        info "All tests passed!"
         exit 0
     else
-        print_msg "$RED" "$failed test(s) failed"
+        error " test(s) failed"
         exit 1
     fi
 }

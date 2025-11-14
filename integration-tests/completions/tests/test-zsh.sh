@@ -1,4 +1,5 @@
 #!/bin/zsh
+#spellchecker: ignore gitgum
 # Zsh completion integration test for gitgum
 
 set -e

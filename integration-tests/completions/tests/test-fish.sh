@@ -1,4 +1,6 @@
 #!/usr/bin/fish
+#spellchecker: ignore gitgum
+
 # Fish completion integration test for gitgum
 
 echo "=== Fish Completion Test ==="

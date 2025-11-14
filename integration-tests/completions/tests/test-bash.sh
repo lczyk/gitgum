@@ -1,4 +1,6 @@
 #!/bin/bash
+#spellchecker: ignore gitgum
+
 # Bash completion integration test for gitgum
 
 set -euo pipefail
