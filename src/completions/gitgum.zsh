@@ -52,5 +52,3 @@ _gitgum() {
     esac
 }
 
-_gitgum "$@"
-
