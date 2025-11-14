@@ -24,6 +24,14 @@ func RunCommandQuiet(name string, args ...string) error {
 	return cmd.Run()
 }
 
+// RunCommandWithOutput executes a command and prints output directly to stdout/stderr
+func RunCommandWithOutput(name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
 // runCommandWithInput executes a command with stdin input
 func runCommandWithInput(input string, name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
@@ -180,4 +188,13 @@ func GetCommitHash(ref string) (string, error) {
 func BranchExists(branch string) bool {
 	stdout, _, err := RunCommand("git", "branch", "--list", branch, "--format=%(refname:short)")
 	return err == nil && stdout != ""
+}
+
+// PrintBlue prints a message in black color (mimicking the bash _blue function)
+// Note: The bash version actually uses BLACK color despite the function name
+func PrintBlue(message string) {
+	// ANSI color codes: Black text
+	black := "\033[0;30m"
+	reset := "\033[0m"
+	fmt.Printf("%s%s%s\n", black, message, reset)
 }
