@@ -8,7 +8,7 @@ SRCS := $(shell find . -name '*.go')
 
 ./bin/gitgum: $(SRCS) Makefile go.mod go.sum
 	mkdir -p ./bin
-	go build -o ./bin/gitgum ./src/cmd/gitgum/main.go
+	go build -o ./bin/gitgum ./src/cmd/gitgum
 	# If we have upx installed, compress the binary
 	if command -v upx >/dev/null 2>&1; then \
 		upx ./bin/gitgum; \
