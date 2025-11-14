@@ -1,0 +1,72 @@
+#!/bin/bash
+# Bash completion integration test for gitgum
+
+set -euo pipefail
+
+echo "=== Bash Completion Test ==="
+
+# Ensure gitgum binary exists
+if [[ ! -x /workspace/bin/gitgum ]]; then
+    echo "ERROR: gitgum binary not found at /workspace/bin/gitgum"
+    exit 1
+fi
+
+# Generate completion script
+echo "Generating bash completion..."
+/workspace/bin/gitgum completion bash > /tmp/gitgum.bash
+
+# Verify completion file exists and has content
+if [[ ! -s /tmp/gitgum.bash ]]; then
+    echo "ERROR: Generated completion file is empty"
+    exit 1
+fi
+
+# Check for key completion markers
+echo "Checking for completion markers..."
+if ! grep -q "_gitgum_completion" /tmp/gitgum.bash; then
+    echo "ERROR: Missing _gitgum_completion function"
+    exit 1
+fi
+
+if ! grep -q "complete.*gitgum" /tmp/gitgum.bash; then
+    echo "ERROR: Missing complete command registration"
+    exit 1
+fi
+
+# Verify placeholder replacement (should NOT contain __GITGUM_CMD__)
+if grep -q "__GITGUM_CMD__" /tmp/gitgum.bash; then
+    echo "ERROR: Placeholder __GITGUM_CMD__ not replaced"
+    exit 1
+fi
+
+# Source the completion script
+echo "Sourcing completion script..."
+source /tmp/gitgum.bash
+
+# Verify the completion function exists
+if ! declare -F _gitgum_completion >/dev/null; then
+    echo "ERROR: Completion function _gitgum_completion not defined after sourcing"
+    exit 1
+fi
+
+# Test completion hook invocation
+echo "Testing completion hook..."
+# Set up bash completion variables as they would be during tab completion
+COMP_WORDS=(gitgum switch)
+COMP_CWORD=1
+COMP_LINE="gitgum switch"
+COMP_POINT=${#COMP_LINE}
+
+# Call the completion function
+if ! _gitgum_completion; then
+    echo "ERROR: Completion function failed to execute"
+    exit 1
+fi
+
+# Check that COMPREPLY was populated (it should contain at least something)
+if [[ ${#COMPREPLY[@]} -eq 0 ]]; then
+    echo "WARNING: COMPREPLY is empty (may be expected if no matches)"
+fi
+
+echo "✓ Bash completion test passed"
+exit 0

@@ -1,0 +1,6 @@
+# Binary artifacts
+bin/
+
+# Container build artifacts
+*.tar
+*.tar.gz
