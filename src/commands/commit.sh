@@ -2,7 +2,7 @@
 # gitgum commit command
 # Written by Marcin Konowalczyk @lczyk
 
-if [[ -z "${__GITGUM_CMD_COMMIT__:-}" ]]; then
+if [[ -z "${__gitgum_cmd_commit__:-}" ]]; then
 
 HELP_COMMIT="""
 Usage: gitgum commit [options]
@@ -12,7 +12,8 @@ Options:
 This command allows you to commit changes in the current branch.
 """
 
-function gitgum_cmd_commit() {
+function gitgum::cmd::commit() {
+    gitgum::check_in_git_repo || return 1
     local _parse_flags_help=$HELP_COMMIT
     _gitgum_parse_flags "$@"
     case $? in 10) return 0 ;; 1) return 1 ;; esac
@@ -104,5 +105,5 @@ function gitgum_cmd_commit() {
     fi
 }
 
-export __GITGUM_CMD_COMMIT__=1
+export __gitgum_cmd_commit__=1
 fi

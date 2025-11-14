@@ -17,7 +17,7 @@ Example usage in fish:
   gitgum completion fish | source
 """
 
-function gitgum_cmd_completion() {
+function gitgum::cmd::completion() {
     local _parse_flags_help=$HELP_COMPLETION
     
     # Parse arguments (only support --help, no dry-run)

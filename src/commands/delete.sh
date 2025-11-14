@@ -10,13 +10,14 @@ Delete a branch or a remote branch.
 If deleting a local branch, it will also ask whether to delete the remote branch if it exists.
 """
 
-function gitgum_cmd_delete() {
+function gitgum::cmd::delete() {
+    gitgum::check_in_git_repo || return 1
     local _parse_flags_help=$HELP_DELETE
     _gitgum_parse_flags "$@"
     case $? in 10) return 0 ;; 1) return 1 ;; esac
 
     # find all local branches
-    local branches=$(gitgum_local_branches)
+    local branches=$(gitgum::local_branches)
     if [[ -z "$branches" ]]; then
         echo "No local branches found."
         return 1

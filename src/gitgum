@@ -62,37 +62,33 @@ function gitgum() {
         return 1
     fi
 
-    # Check if we are in a git repository
-    if ! git rev-parse --is-inside-work-tree &>/dev/null; then
-        echo "Not inside a git repository. Please run this command inside a git repository."
-        return 1
-    fi
+
 
     # Dispatch to command handlers
     case "$command" in
         tree)
-            gitgum_cmd_tree "$@"
+            gitgum::cmd::tree "$@"
             ;;
         push)
-            gitgum_cmd_push "$@"
+            gitgum::cmd::push "$@"
             ;;
         delete)
-            gitgum_cmd_delete "$@"
+            gitgum::cmd::delete "$@"
             ;;
         status)
-            gitgum_cmd_status "$@"
+            gitgum::cmd::status "$@"
             ;;
         commit)
-            gitgum_cmd_commit "$@"
+            gitgum::cmd::commit "$@"
             ;;
         switch)
-            gitgum_cmd_switch "$@"
+            gitgum::cmd::switch "$@"
             ;;
         merge-into)
-            gitgum_cmd_merge_into "$@"
+            gitgum::cmd::merge_into "$@"
             ;;
         completion)
-            gitgum_cmd_completion "$@"
+            gitgum::cmd::completion "$@"
             ;;
         *)
             echo "Unknown command: $command"

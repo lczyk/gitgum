@@ -12,7 +12,8 @@ Options:
 This command allows you to push the current branch to a remote repository.
 """
 
-function gitgum_cmd_push() {
+function gitgum::cmd::push() {
+    gitgum::check_in_git_repo || return 1
     local _parse_flags_help=$HELP_PUSH
     _gitgum_parse_flags "$@"
     case $? in 10) return 0 ;; 1) return 1 ;; esac

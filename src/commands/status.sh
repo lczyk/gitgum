@@ -9,7 +9,8 @@ Usage: gitgum status
 This command shows the status of the current git repository as well as the current branch and the state of the remote branches.
 """
 
-function gitgum_cmd_status() {
+function gitgum::cmd::status() {
+    gitgum::check_in_git_repo || return 1
     local _parse_flags_help=$HELP_STATUS
     _gitgum_parse_flags "$@"
     case $? in 10) return 0 ;; 1) return 1 ;; esac

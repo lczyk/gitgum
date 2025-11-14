@@ -14,7 +14,8 @@ then returns to the original branch. Equivalent to checking out the target,
 merging, and checking out the original branch again.
 """
 
-function gitgum_cmd_merge_into() {
+function gitgum::cmd::merge_into() {
+    gitgum::check_in_git_repo || return 1
     local _parse_flags_help=$HELP_MERGE_INTO
     _gitgum_parse_flags "$@"
     case $? in 10) return 0 ;; 1) return 1 ;; esac
@@ -27,7 +28,7 @@ function gitgum_cmd_merge_into() {
     fi
 
     # Get all local branches excluding the current one
-    local all_branches=$(gitgum_local_branches)
+    local all_branches=$(gitgum::local_branches)
     if [[ -z "$all_branches" ]]; then
         echo "No other branches found to merge into."
         return 1

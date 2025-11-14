@@ -72,7 +72,7 @@ function _gitgum_parse_flags() {
 # Get list of all local branches, excluding current branch and worktree checkouts
 # Removes markers: '*' (current branch) and '+' (checked out in other worktrees)
 # Returns newline-separated branch names
-function gitgum_local_branches() {
+function gitgum::local_branches() {
     git branch |
         sed 's/^[ *]*//' | # filter the marker ' *' of the current branch
         sed 's/^[ +]*//'   # filter the marker ' +' of the branches checked out in other worktrees
@@ -80,3 +80,12 @@ function gitgum_local_branches() {
 
 export __GITGUM_HELPERS__=1
 fi
+
+function gitgum::check_in_git_repo() {
+     # Check if we are in a git repository
+    if ! git rev-parse --is-inside-work-tree &>/dev/null; then
+        echo "Not inside a git repository. Please run this command inside a git repository."
+        return 1
+    fi
+    return 0
+}
