@@ -13,6 +13,7 @@ end
 # Main commands
 complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a switch -d "Switch to a branch interactively"
 complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a completion -d "Output shell completion script"
+complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a status -d "Show the status of the current git repository"
 
 # Global options
 complete -f -c __GITGUM_CMD__ -s h -l help -d "Show help message"
@@ -20,3 +21,6 @@ complete -f -c __GITGUM_CMD__ -s h -l help -d "Show help message"
 # Completion command - suggest shell types
 complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command completion' -a "fish bash zsh" -d "Shell type"
 complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command completion' -s h -l help -d "Show help for completion"
+
+# Status command - help option
+complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command status' -s h -l help -d "Show help for status"

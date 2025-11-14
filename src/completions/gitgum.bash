@@ -4,7 +4,7 @@ _gitgum_completion() {
     local cur prev words cword
     _init_completion || return
 
-    local commands="switch completion"
+    local commands="switch completion status"
     local global_opts="-h --help"
 
     # Complete first argument (command)
@@ -23,6 +23,9 @@ _gitgum_completion() {
 
     case "$cmd" in
         completion)
+            COMPREPLY=($(compgen -W "-h --help" -- "$cur"))
+            ;;
+        status)
             COMPREPLY=($(compgen -W "-h --help" -- "$cur"))
             ;;
         *)
