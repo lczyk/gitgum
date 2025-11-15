@@ -71,6 +71,3 @@ fi
 if [[ ${#COMPREPLY[@]} -eq 0 ]]; then
     echo "WARNING: COMPREPLY is empty (may be expected if no matches)"
 fi
-
-echo "✓ Bash completion test passed"
-exit 0

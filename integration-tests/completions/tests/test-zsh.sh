@@ -79,6 +79,3 @@ echo "Testing completion registration..."
 # The completion should be registered for gitgum command
 # We can't easily test the actual completion without a full interactive shell,
 # but we can verify the file is properly formatted and loadable
-
-echo "✓ Zsh completion test passed"
-exit 0

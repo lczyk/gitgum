@@ -63,6 +63,3 @@ set -l switch_completions (complete -C "gitgum sw" | string collect)
 if not string match -q "*switch*" -- $switch_completions
     echo "WARNING: 'switch' not found in completions for 'gitgum sw'"
 end
-
-echo "✓ Fish completion test passed"
-exit 0
