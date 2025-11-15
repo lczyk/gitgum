@@ -1,0 +1,19 @@
+Generate shell autocompletions
+
+Description:
+  Generate shell autocompletions.
+  Valid arguments are bash, zsh, fish, and powershell.
+  Please refer to the man page to see how you can load these completions.
+
+Usage:
+  podman completion [options] {bash|zsh|fish|powershell}
+
+Examples:
+  podman completion bash
+  podman completion zsh -f _podman
+  podman completion fish --no-desc
+
+Options:
+  -f, --file string   Output the completion to file rather than stdout.
+      --no-desc       Don't include descriptions in the completion output.
+
