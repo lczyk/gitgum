@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	flags "github.com/jessevdk/go-flags"
 	"github.com/lczyk/gitgum/src/commands"
+	"github.com/lczyk/gitgum/src/version"
 )
 
 // Options defines the global command structure
@@ -16,6 +18,14 @@ type Options struct {
 }
 
 func main() {
+	// Check for version flag before parsing to avoid command requirement
+	for _, arg := range os.Args[1:] {
+		if arg == "--version" || arg == "-v" {
+			fmt.Println(version.GetFullVersion())
+			os.Exit(0)
+		}
+	}
+
 	var opts Options
 	parser := flags.NewParser(&opts, flags.Default)
 	parser.Name = "gitgum"

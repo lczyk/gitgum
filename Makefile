@@ -6,7 +6,7 @@ build: ./bin/gitgum
 
 SRCS := $(shell find . -name '*.go')
 
-./bin/gitgum: $(SRCS) ./cmd/gitgum/main.go Makefile go.mod go.sum ./src/completions/generated.go
+./bin/gitgum: $(SRCS) ./cmd/gitgum/main.go Makefile go.mod go.sum ./src/completions/generated.go ./src/version/version.go
 	mkdir -p ./bin
 	go build -o ./bin/gitgum ./cmd/gitgum
 	# If we have upx installed, compress the binary
@@ -17,6 +17,9 @@ SRCS := $(shell find . -name '*.go')
 ./src/completions/generated.go: ./src/completions/generate.go $(SRCS) Makefile go.mod go.sum
 	go generate ./src/completions
 
+./src/version/version.go: ./src/version/generate.go VERSION Makefile
+	go generate ./src/version
+
 .PHONY: du
 du: ./bin/gitgum
 	du -h ./bin/gitgum
@@ -25,3 +28,4 @@ du: ./bin/gitgum
 clean:
 	rm -rf ./bin/gitgum
 	rm -rf ./src/completions/generated.go
+	rm -rf ./src/version/version.go
