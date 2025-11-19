@@ -56,9 +56,9 @@ func FzfSelect(prompt string, options []string) (string, error) {
 	input := strings.Join(options, "\n")
 	args := []string{
 		"--prompt", prompt + ": ",
-		"--height", "40%",
-		"--reverse",
-		"--border",
+		"--height=40%",
+		"--layout=reverse",
+		"--border=top",
 	}
 
 	selected, err := runCommandWithInput(input, "fzf", args...)
