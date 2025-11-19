@@ -2,11 +2,15 @@ package internal
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 )
+
+// ErrFzfCancelled is returned when the user cancels an fzf operation (Ctrl+C or ESC)
+var ErrFzfCancelled = errors.New("fzf operation cancelled")
 
 // RunCommand executes a command and returns stdout, stderr, and error
 func RunCommand(name string, args ...string) (string, string, error) {
@@ -60,14 +64,14 @@ func FzfSelect(prompt string, options []string) (string, error) {
 	selected, err := runCommandWithInput(input, "fzf", args...)
 	if err != nil {
 		// User cancelled or fzf not available
-		return "", err
+		return "", ErrFzfCancelled
 	}
 
 	return selected, nil
 }
 
 // FzfConfirm asks a yes/no question via fzf
-func FzfConfirm(prompt string, defaultYes bool) bool {
+func FzfConfirm(prompt string, defaultYes bool) (bool, error) {
 	options := []string{"yes", "no"}
 	if !defaultYes {
 		options = []string{"no", "yes"}
@@ -75,10 +79,10 @@ func FzfConfirm(prompt string, defaultYes bool) bool {
 
 	selected, err := FzfSelect(prompt, options)
 	if err != nil {
-		return false
+		return false, err
 	}
 
-	return selected == "yes"
+	return selected == "yes", nil
 }
 
 // CheckInGitRepo verifies we're inside a git repository

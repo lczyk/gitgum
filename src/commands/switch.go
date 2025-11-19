@@ -126,7 +126,11 @@ func switchRemote() error {
 	}
 
 	// Branch doesn't exist locally, ask to create tracking branch
-	if !internal.FzfConfirm(fmt.Sprintf("Branch '%s' is not tracked locally. Create a local tracking branch?", remoteBranch), true) {
+	confirmed, err := internal.FzfConfirm(fmt.Sprintf("Branch '%s' is not tracked locally. Create a local tracking branch?", remoteBranch), true)
+	if err != nil {
+		return err
+	}
+	if !confirmed {
 		fmt.Fprintln(os.Stderr, "Not creating a local tracking branch. Aborting switch.")
 		return fmt.Errorf("user cancelled")
 	}
@@ -161,9 +165,12 @@ func handleExistingLocalBranch(localBranch, remote string) error {
 		fmt.Printf("Local branch '%s' is not tracking remote branch '%s/%s'.\n",
 			localBranch, remote, localBranch)
 
-		if internal.FzfConfirm(fmt.Sprintf("Set '%s/%s' as the tracking reference for local branch '%s'?",
-			remote, localBranch, localBranch), false) {
-
+		confirmed, err := internal.FzfConfirm(fmt.Sprintf("Set '%s/%s' as the tracking reference for local branch '%s'?",
+			remote, localBranch, localBranch), false)
+		if err != nil {
+			return err
+		}
+		if confirmed {
 			if err := internal.RunCommandQuiet("git", "branch", "--set-upstream-to="+remote+"/"+localBranch, localBranch); err != nil {
 				return fmt.Errorf("could not set tracking reference: %v", err)
 			}
@@ -202,9 +209,12 @@ func handleExistingLocalBranch(localBranch, remote string) error {
 	}
 
 	// Branch is not up to date
-	if internal.FzfConfirm(fmt.Sprintf("Local branch '%s' is not up to date with remote branch '%s/%s'. Reset the local branch to the remote branch?",
-		localBranch, remote, localBranch), false) {
-
+	confirmed, err := internal.FzfConfirm(fmt.Sprintf("Local branch '%s' is not up to date with remote branch '%s/%s'. Reset the local branch to the remote branch?",
+		localBranch, remote, localBranch), false)
+	if err != nil {
+		return err
+	}
+	if confirmed {
 		if err := internal.RunCommandQuiet("git", "reset", "--hard", remoteRef); err != nil {
 			return fmt.Errorf("could not reset local branch: %v", err)
 		}

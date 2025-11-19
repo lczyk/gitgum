@@ -22,7 +22,11 @@ func (p *PushCommand) Execute(args []string) error {
 	if err == nil && remoteBranch != "" {
 		// The current branch already has a remote tracking branch
 		fmt.Printf("Current branch already has a remote tracking branch: %s\n", remoteBranch)
-		if internal.FzfConfirm("Do you want to push to the remote tracking branch?", true) {
+		confirmed, err := internal.FzfConfirm("Do you want to push to the remote tracking branch?", true)
+		if err != nil {
+			return err
+		}
+		if confirmed {
 			if err := internal.RunCommandWithOutput("git", "push"); err != nil {
 				return fmt.Errorf("failed to push: %v", err)
 			}
@@ -84,8 +88,12 @@ func (p *PushCommand) Execute(args []string) error {
 		}
 
 		// Confirm push to existing remote branch
-		if !internal.FzfConfirm(fmt.Sprintf("Remote branch '%s' already exists. Do you want to push to it?",
-			expectedRemoteBranchName), true) {
+		confirmed, err := internal.FzfConfirm(fmt.Sprintf("Remote branch '%s' already exists. Do you want to push to it?",
+			expectedRemoteBranchName), true)
+		if err != nil {
+			return err
+		}
+		if !confirmed {
 			return nil
 		}
 
@@ -94,8 +102,12 @@ func (p *PushCommand) Execute(args []string) error {
 		}
 	} else {
 		// No remote branch found - create it
-		if !internal.FzfConfirm(fmt.Sprintf("No remote branch '%s' found. Do you want to create it?",
-			expectedRemoteBranchName), false) {
+		confirmed, err := internal.FzfConfirm(fmt.Sprintf("No remote branch '%s' found. Do you want to create it?",
+			expectedRemoteBranchName), false)
+		if err != nil {
+			return err
+		}
+		if !confirmed {
 			return nil
 		}
 
