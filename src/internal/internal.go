@@ -198,3 +198,29 @@ func PrintBlue(message string) {
 	reset := "\033[0m"
 	fmt.Printf("%s%s%s\n", black, message, reset)
 }
+
+// GetCurrentBranch returns the name of the current branch
+func GetCurrentBranch() (string, error) {
+	stdout, _, err := RunCommand("git", "rev-parse", "--abbrev-ref", "HEAD")
+	return stdout, err
+}
+
+// GetCurrentBranchUpstream returns the upstream tracking branch for the current branch
+func GetCurrentBranchUpstream() (string, error) {
+	stdout, _, err := RunCommand("git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+	if err != nil {
+		return "", err
+	}
+	return stdout, nil
+}
+
+// RemoteBranchExists checks if a branch exists on a remote
+func RemoteBranchExists(remote, branch string) (bool, error) {
+	// Use git ls-remote to check if the branch exists on the remote
+	_, _, err := RunCommand("git", "ls-remote", "--exit-code", "--heads", remote, branch)
+	if err != nil {
+		// If the command fails, the branch doesn't exist
+		return false, nil
+	}
+	return true, nil
+}

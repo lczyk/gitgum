@@ -12,6 +12,7 @@ type Options struct {
 	Switch     commands.SwitchCommand     `command:"switch" description:"Switch to a branch interactively"`
 	Completion commands.CompletionCommand `command:"completion" description:"Output shell completion script"`
 	Status     commands.StatusCommand     `command:"status" description:"Show the status of the current git repository"`
+	Push       commands.PushCommand       `command:"push" description:"Push the current branch to a remote repository"`
 }
 
 func main() {
