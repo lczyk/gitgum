@@ -6,3 +6,4 @@
 - Use `github.com/lczyk/assert` package (custom assertion library) for tests.
 - Use table-driven tests with subtests for multiple cases
 - gitgum uses external `git` and `fzf` commands. Assume they are in PATH. Don't try to reimplement their functionality.
+- we use major.minor.patch versioning. any breaking changes should bump the minor version. any non-breaking changes should bump the patch version. every now and again the major version is bumped manually.

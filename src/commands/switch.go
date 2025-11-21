@@ -17,12 +17,11 @@ func (s *SwitchCommand) Execute(args []string) error {
 		return err
 	}
 
-	// Define the three modes
+	// Define the two modes
 	modeLocal := "Switch to an existing local branch"
 	modeRemote := "Switch to an existing remote branch and create a local tracking branch"
-	modeNew := "Create a new branch (local)"
 
-	modes := []string{modeLocal, modeRemote, modeNew}
+	modes := []string{modeLocal, modeRemote}
 
 	// Ask user what they want to do
 	selected, err := internal.FzfSelect("What do you want to do?", modes)
@@ -37,8 +36,6 @@ func (s *SwitchCommand) Execute(args []string) error {
 		return switchLocal()
 	case modeRemote:
 		return switchRemote()
-	case modeNew:
-		return switchNew()
 	default:
 		return fmt.Errorf("unknown option: %s", selected)
 	}
@@ -226,10 +223,4 @@ func handleExistingLocalBranch(localBranch, remote string) error {
 	}
 
 	return nil
-}
-
-// switchNew creates a new local branch
-func switchNew() error {
-	fmt.Fprintln(os.Stderr, "Error: This feature is not implemented yet.")
-	return fmt.Errorf("not implemented")
 }
