@@ -23,6 +23,18 @@ func (s *SwitchCommand) Execute(args []string) error {
 
 	modes := []string{modeLocal, modeRemote}
 
+	fmt.Println("Current branch is:", func() string {
+		branch, err := internal.GetCurrentBranch()
+		if err != nil {
+			return "unknown"
+		}
+		trackingRemote, err := internal.GetBranchTrackingRemote(branch)
+		if err == nil && trackingRemote != "" {
+			return fmt.Sprintf("(%s/)%s", trackingRemote, branch)
+		}
+		return branch
+	}())
+
 	// Ask user what they want to do
 	selected, err := internal.FzfSelect("What do you want to do?", modes)
 	if err != nil {
@@ -54,8 +66,26 @@ func switchLocal() error {
 		return fmt.Errorf("no local branches")
 	}
 
+	// Filter out the current branch
+	currentBranch, err := internal.GetCurrentBranch()
+	if err != nil {
+		return fmt.Errorf("error getting current branch: %v", err)
+	}
+
+	var filteredBranches []string
+	for _, branch := range branches {
+		if branch != currentBranch {
+			filteredBranches = append(filteredBranches, branch)
+		}
+	}
+
+	if len(filteredBranches) == 0 {
+		fmt.Fprintln(os.Stderr, "No other local branches found. Aborting switch.")
+		return fmt.Errorf("no other local branches")
+	}
+
 	// Let user select a branch
-	branch, err := internal.FzfSelect("Select a branch to switch to", branches)
+	branch, err := internal.FzfSelect("Select a branch to switch to", filteredBranches)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "No branch selected. Aborting switch.")
 		return err
@@ -93,6 +123,18 @@ func switchRemote() error {
 		return fmt.Errorf("no remotes")
 	}
 
+	// We need to filter out the remote which tracks the current branch
+	// Figure out which remote is tracked by the current branch
+	currentBranch, err := internal.GetCurrentBranch()
+	if err != nil {
+		return fmt.Errorf("error getting current branch: %v", err)
+	}
+	
+	trackingRemote, err := internal.GetBranchTrackingRemote(currentBranch)
+	if err != nil {
+		return fmt.Errorf("error getting tracking remote: %v", err)
+	}
+
 	// Select a remote
 	remote, err := internal.FzfSelect("Select a remote", remotes)
 	if err != nil {
@@ -110,6 +152,22 @@ func switchRemote() error {
 		return fmt.Errorf("no remote branches found for remote '%s'", remote)
 	}
 
+	// Filter out the current branch's tracking remote
+	if remote == trackingRemote {
+		var filteredBranches []string
+		for _, branch := range remoteBranches {
+			if branch != currentBranch {
+				filteredBranches = append(filteredBranches, branch)
+			}
+		}
+		remoteBranches = filteredBranches
+		
+		if len(remoteBranches) == 0 {
+			fmt.Fprintln(os.Stderr, "No other remote branches found. Aborting switch.")
+			return fmt.Errorf("no other remote branches")
+		}
+	}
+	
 	// Select a remote branch
 	remoteBranch, err := internal.FzfSelect("Select a remote branch to switch to", remoteBranches)
 	if err != nil {
