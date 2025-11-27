@@ -23,17 +23,24 @@ func (s *SwitchCommand) Execute(args []string) error {
 
 	modes := []string{modeLocal, modeRemote}
 
+	// Get current branch
+	currentBranch, err := internal.GetCurrentBranch()
+	if err != nil {
+		return fmt.Errorf("error getting current branch: %v", err)
+	}
+
+	// Get tracking remote
+	trackingRemote, err := internal.GetBranchTrackingRemote(currentBranch)
+	if err != nil {
+		return fmt.Errorf("error getting tracking remote: %v", err)
+	}
+
 	// Show current branch
 	fmt.Println("Current branch is:", func() string {
-		branch, err := internal.GetCurrentBranch()
-		if err != nil {
-			return "unknown"
+		if trackingRemote != "" {
+			return fmt.Sprintf("(%s/)%s", trackingRemote, currentBranch)
 		}
-		trackingRemote, err := internal.GetBranchTrackingRemote(branch)
-		if err == nil && trackingRemote != "" {
-			return fmt.Sprintf("(%s/)%s", trackingRemote, branch)
-		}
-		return branch
+		return currentBranch
 	}())
 
 	// Check if there are any local changes that would be overwritten
@@ -56,16 +63,16 @@ func (s *SwitchCommand) Execute(args []string) error {
 	// Execute the selected mode
 	switch selected {
 	case modeLocal:
-		return switchLocal()
+		return switchLocal(currentBranch, trackingRemote)
 	case modeRemote:
-		return switchRemote()
+		return switchRemote(currentBranch, trackingRemote)
 	default:
 		return fmt.Errorf("unknown option: %s", selected)
 	}
 }
 
 // switchLocal switches to an existing local branch
-func switchLocal() error {
+func switchLocal(currentBranch, trackingRemote string) error {
 	// Get all local branches
 	branches, err := internal.GetLocalBranches()
 	if err != nil {
@@ -78,11 +85,6 @@ func switchLocal() error {
 	}
 
 	// Filter out the current branch
-	currentBranch, err := internal.GetCurrentBranch()
-	if err != nil {
-		return fmt.Errorf("error getting current branch: %v", err)
-	}
-
 	var filteredBranches []string
 	for _, branch := range branches {
 		if branch != currentBranch {
@@ -122,7 +124,7 @@ func switchLocal() error {
 }
 
 // switchRemote creates a local tracking branch from a remote branch
-func switchRemote() error {
+func switchRemote(currentBranch, trackingRemote string) error {
 	// Get list of remotes
 	remotes, err := internal.GetRemotes()
 	if err != nil {
@@ -132,18 +134,6 @@ func switchRemote() error {
 	if len(remotes) == 0 {
 		fmt.Fprintln(os.Stderr, "No remotes found. Aborting switch.")
 		return fmt.Errorf("no remotes")
-	}
-	
-	// We need to filter out the remote which tracks the current branch
-	// Figure out which remote is tracked by the current branch
-	currentBranch, err := internal.GetCurrentBranch()
-	if err != nil {
-		return fmt.Errorf("error getting current branch: %v", err)
-	}
-	
-	trackingRemote, err := internal.GetBranchTrackingRemote(currentBranch)
-	if err != nil {
-		return fmt.Errorf("error getting tracking remote: %v", err)
 	}
 
 	// Select a remote

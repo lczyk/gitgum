@@ -24,6 +24,14 @@ SRCS := $(shell find . -name '*.go')
 du: ./bin/gitgum
 	du -h ./bin/gitgum
 
+.PHONY: test
+test:
+	if command -v gotest >/dev/null 2>&1; then \
+		gotest -v ./...; \
+	else \
+		go test -v ./...; \
+	fi
+
 .PHONY: clean
 clean:
 	rm -rf ./bin/gitgum

@@ -154,13 +154,25 @@ func GetRemoteBranches(remote string) ([]string, error) {
 	return branches, nil
 }
 
-// GetBranchTrackingRemote returns the remote that a local branch tracks
+// GetBranchTrackingRemote returns the remote that a local branch tracks.
+// If the branch does not track any remote, returns an empty string.
 func GetBranchTrackingRemote(branch string) (string, error) {
-	stdout, _, err := RunCommand("git", "config", "branch."+branch+".remote")
+	stdout, stderr, err := RunCommand("git", "rev-parse", "--abbrev-ref", branch+"@{u}")
+	_pattern := "no upstream configured for branch"
+	if err != nil && strings.Contains(stderr, _pattern) {
+		// no tracking remote
+		return "", nil
+	}
 	if err != nil {
 		return "", err
 	}
-	return stdout, nil
+	// strip the branch name to get the remote name
+	parts := strings.SplitN(stdout, "/", 2)
+	if len(parts) != 2 {
+		return "", fmt.Errorf("unexpected upstream format: %s", stdout)
+	}
+	remote := parts[0]
+	return remote, nil
 }
 
 // IsWorktreeCheckedOut checks if a branch is checked out in a worktree
