@@ -23,6 +23,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 
 	modes := []string{modeLocal, modeRemote}
 
+	// Show current branch
 	fmt.Println("Current branch is:", func() string {
 		branch, err := internal.GetCurrentBranch()
 		if err != nil {
@@ -34,6 +35,16 @@ func (s *SwitchCommand) Execute(args []string) error {
 		}
 		return branch
 	}())
+
+	// Check if there are any local changes that would be overwritten
+	dirty, err := internal.IsGitDirty(".")
+	if err != nil {
+		return fmt.Errorf("error checking git status: %v", err)
+	}
+	if dirty {
+		fmt.Fprintln(os.Stderr, "You have local changes that would be overwritten by switching branches. Please commit or stash them before switching.")
+		return fmt.Errorf("local changes would be overwritten")
+	}
 
 	// Ask user what they want to do
 	selected, err := internal.FzfSelect("What do you want to do?", modes)
@@ -122,7 +133,7 @@ func switchRemote() error {
 		fmt.Fprintln(os.Stderr, "No remotes found. Aborting switch.")
 		return fmt.Errorf("no remotes")
 	}
-
+	
 	// We need to filter out the remote which tracks the current branch
 	// Figure out which remote is tracked by the current branch
 	currentBranch, err := internal.GetCurrentBranch()
@@ -175,6 +186,7 @@ func switchRemote() error {
 		return err
 	}
 
+	
 	// Check if branch already exists locally
 	if internal.BranchExists(remoteBranch) {
 		return handleExistingLocalBranch(remoteBranch, remote)

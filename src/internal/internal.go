@@ -228,3 +228,24 @@ func RemoteBranchExists(remote, branch string) (bool, error) {
 	}
 	return true, nil
 }
+
+func IsGitDirty(dir string) (bool, error) {
+	cmd := exec.Command("git", "status", "--porcelain=v1")
+	cmd.Dir = dir
+	output, err := cmd.Output()
+	if err != nil {
+		return false, err
+	}
+	files := strings.Split(strings.TrimSpace(string(output)), "\n")
+	
+	// filter out untracked files
+	for _, file := range files {
+		if strings.HasPrefix(file, "??") {
+			continue
+		}
+		if strings.TrimSpace(file) != "" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
