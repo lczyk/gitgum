@@ -7,8 +7,10 @@ _gitgum() {
 
     commands=(
         'switch:Switch to a branch interactively'
+        'checkout-pr:Checkout a pull request from a remote repository'
         'completion:Output shell completion script'
         'status:Show the status of the current git repository'
+        'push:Push the current branch to a remote repository'
     )
 
     local -a global_opts
@@ -42,6 +44,16 @@ _gitgum() {
                 '--help[Show help message]'
             ;;
         switch)
+            _arguments \
+                '-h[Show help message]' \
+                '--help[Show help message]'
+            ;;
+        checkout-pr)
+            _arguments \
+                '-h[Show help message]' \
+                '--help[Show help message]'
+            ;;
+        push)
             _arguments \
                 '-h[Show help message]' \
                 '--help[Show help message]'

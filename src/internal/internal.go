@@ -249,3 +249,15 @@ func IsGitDirty(dir string) (bool, error) {
 	}
 	return false, nil
 }
+
+// SplitLines splits a string into lines and trims whitespace
+func SplitLines(s string) []string {
+	var lines []string
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}

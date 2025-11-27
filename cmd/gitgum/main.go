@@ -12,6 +12,7 @@ import (
 // Options defines the global command structure
 type Options struct {
 	Switch     commands.SwitchCommand     `command:"switch" description:"Switch to a branch interactively"`
+	CheckoutPR commands.CheckoutPRCommand `command:"checkout-pr" description:"Checkout a pull request from a remote repository"`
 	Completion commands.CompletionCommand `command:"completion" description:"Output shell completion script"`
 	Status     commands.StatusCommand     `command:"status" description:"Show the status of the current git repository"`
 	Push       commands.PushCommand       `command:"push" description:"Push the current branch to a remote repository"`

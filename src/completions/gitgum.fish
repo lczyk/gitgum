@@ -12,8 +12,10 @@ end
 
 # Main commands
 complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a switch -d "Switch to a branch interactively"
+complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a checkout-pr -d "Checkout a pull request from a remote repository"
 complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a completion -d "Output shell completion script"
 complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a status -d "Show the status of the current git repository"
+complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a push -d "Push the current branch to a remote repository"
 
 # Global options
 complete -f -c __GITGUM_CMD__ -s h -l help -d "Show help message"
@@ -24,3 +26,12 @@ complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command completion' -s h -
 
 # Status command - help option
 complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command status' -s h -l help -d "Show help for status"
+
+# Checkout-PR command - help option
+complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command checkout-pr' -s h -l help -d "Show help for checkout-pr"
+
+# Push command - help option
+complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command push' -s h -l help -d "Show help for push"
+
+# Switch command - help option
+complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command switch' -s h -l help -d "Show help for switch"
