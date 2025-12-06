@@ -16,6 +16,7 @@ complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a checkout-pr -d "
 complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a completion -d "Output shell completion script"
 complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a status -d "Show the status of the current git repository"
 complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a push -d "Push the current branch to a remote repository"
+complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a clean -d "Discard working tree changes and untracked files"
 
 # Global options
 complete -f -c __GITGUM_CMD__ -s h -l help -d "Show help message"
@@ -35,3 +36,12 @@ complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command push' -s h -l help
 
 # Switch command - help option
 complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command switch' -s h -l help -d "Show help for switch"
+
+# Clean command - flags and options
+complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command clean' -l changes -d "Discard staged and unstaged changes (default: true)"
+complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command clean' -l untracked -d "Remove untracked files (default: true)"
+complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command clean' -l ignored -d "Remove ignored files (default: false)"
+complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command clean' -l all -d "Enable all cleanup options"
+complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command clean' -l yes -d "Skip confirmation prompt"
+complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command clean' -s y -d "Skip confirmation prompt (short)"
+complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command clean' -s h -l help -d "Show help for clean"

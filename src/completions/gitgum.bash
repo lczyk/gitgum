@@ -4,7 +4,7 @@ _gitgum_completion() {
     local cur prev words cword
     _init_completion || return
 
-    local commands="switch checkout-pr completion status push"
+    local commands="switch checkout-pr completion status push clean"
     local global_opts="-h --help"
 
     # Complete first argument (command)
@@ -36,6 +36,9 @@ _gitgum_completion() {
             ;;
         switch)
             COMPREPLY=($(compgen -W "-h --help" -- "$cur"))
+            ;;
+        clean)
+            COMPREPLY=($(compgen -W "--changes --untracked --ignored --all --yes -y -h --help" -- "$cur"))
             ;;
         *)
             COMPREPLY=($(compgen -W "$global_opts" -- "$cur"))

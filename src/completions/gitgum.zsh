@@ -11,6 +11,7 @@ _gitgum() {
         'completion:Output shell completion script'
         'status:Show the status of the current git repository'
         'push:Push the current branch to a remote repository'
+        'clean:Discard working tree changes and untracked files'
     )
 
     local -a global_opts
@@ -55,6 +56,17 @@ _gitgum() {
             ;;
         push)
             _arguments \
+                '-h[Show help message]' \
+                '--help[Show help message]'
+            ;;
+        clean)
+            _arguments \
+                '--changes[Discard staged and unstaged changes (default)]' \
+                '--untracked[Remove untracked files (default)]' \
+                '--ignored[Remove ignored files]' \
+                '--all[Enable all cleanup options]' \
+                '--yes[Skip confirmation prompt]' \
+                '-y[Skip confirmation prompt]' \
                 '-h[Show help message]' \
                 '--help[Show help message]'
             ;;
