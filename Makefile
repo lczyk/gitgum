@@ -26,10 +26,10 @@ du: ./bin/gitgum
 
 .PHONY: test
 test:
-	if command -v gotest >/dev/null 2>&1; then \
-		gotest -v ./...; \
+	@if command -v gotest >/dev/null 2>&1; then \
+		gotest ./...; \
 	else \
-		go test -v ./...; \
+		go test ./...; \
 	fi
 
 .PHONY: clean
