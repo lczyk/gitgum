@@ -8,3 +8,5 @@
 - gitgum uses external `git` and `fzf` commands. Assume they are in PATH. Don't try to reimplement their functionality.
 - we use major.minor.patch versioning. any breaking changes should bump the minor version. any non-breaking changes should bump the patch version. every now and again the major version is bumped manually.
 - the go version does not support --dry-run flag
+- use makefile target 'test' to run tests
+- use makefile target 'build' to build

@@ -17,6 +17,7 @@ complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a completion -d "O
 complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a status -d "Show the status of the current git repository"
 complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a push -d "Push the current branch to a remote repository"
 complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a clean -d "Discard working tree changes and untracked files"
+complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a replay-list -d "List commits on branch A since divergence from trunk B"
 
 # Global options
 complete -f -c __GITGUM_CMD__ -s h -l help -d "Show help message"
@@ -45,3 +46,6 @@ complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command clean' -l all -d "
 complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command clean' -l yes -d "Skip confirmation prompt"
 complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command clean' -s y -d "Skip confirmation prompt (short)"
 complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command clean' -s h -l help -d "Show help for clean"
+
+# Replay-list command - help option
+complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command replay-list' -s h -l help -d "Show help for replay-list"

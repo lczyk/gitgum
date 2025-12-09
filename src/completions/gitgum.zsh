@@ -12,6 +12,7 @@ _gitgum() {
         'status:Show the status of the current git repository'
         'push:Push the current branch to a remote repository'
         'clean:Discard working tree changes and untracked files'
+        'replay-list:List commits on branch A since divergence from trunk B'
     )
 
     local -a global_opts
@@ -67,6 +68,11 @@ _gitgum() {
                 '--all[Enable all cleanup options]' \
                 '--yes[Skip confirmation prompt]' \
                 '-y[Skip confirmation prompt]' \
+                '-h[Show help message]' \
+                '--help[Show help message]'
+            ;;
+        replay-list)
+            _arguments \
                 '-h[Show help message]' \
                 '--help[Show help message]'
             ;;

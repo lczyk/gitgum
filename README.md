@@ -31,6 +31,17 @@ eval "$(gitgum completion bash)"
 eval "$(gitgum completion zsh)"
 ```
 
+## Commands
+
+### `gitgum replay-list A B`
+
+List commits on branch A that have diverged from trunk/base branch B, in chronological order. This is equivalent to running:
+```bash
+git rev-list $(git merge-base A B)..A --reverse
+```
+
+Useful for identifying the feature commits on a branch that need to be replayed or cherry-picked onto another base.
+
 ## ToDo's
 
 - [ ] finish porting from bash version (what other commands do we want?)

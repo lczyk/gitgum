@@ -17,6 +17,7 @@ type Options struct {
 	Status     commands.StatusCommand     `command:"status" description:"Show the status of the current git repository"`
 	Push       commands.PushCommand       `command:"push" description:"Push the current branch to a remote repository"`
 	Clean      commands.CleanCommand      `command:"clean" description:"Discard working tree changes and untracked files"`
+	ReplayList commands.ReplayListCommand `command:"replay-list" description:"List commits on branch A since divergence from trunk B"`
 }
 
 func main() {
