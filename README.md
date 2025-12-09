@@ -33,6 +33,15 @@ eval "$(gitgum completion zsh)"
 
 ## Commands
 
+### `gitgum delete`
+
+Interactively delete a local branch and optionally its remote tracking branch. The command will:
+- Let you select a branch to delete using fzf
+- Warn before deleting `main` or `master` branches
+- Prompt to switch branches if you're trying to delete the current branch
+- Detect remote tracking branches and ask whether to delete them
+- Attempt a safe delete first (`git branch -d`), falling back to force delete (`git branch -D`) with confirmation
+
 ### `gitgum replay-list A B`
 
 List commits on branch A that have diverged from trunk/base branch B, in chronological order. This is equivalent to running:
