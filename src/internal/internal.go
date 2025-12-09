@@ -47,6 +47,56 @@ func runCommandWithInput(input string, name string, args ...string) (string, err
 	return strings.TrimSpace(stdout.String()), err
 }
 
+// WriteFile writes content to a file
+func WriteFile(path string, content string) error {
+	return os.WriteFile(path, []byte(content), 0644)
+}
+
+// GitFileStatus represents the status of a file in git
+type GitFileStatus int
+
+const (
+	GitFileUntracked GitFileStatus = iota
+	GitFileModified
+	GitFileStaged
+	GitFileDeleted
+	GitFileUnknown
+)
+
+// GetGitFileStatus returns the status of a file in git
+func GetGitFileStatus(file string) (GitFileStatus, error) {
+	stdout, _, err := RunCommand("git", "status", "--porcelain", file)
+	if err != nil || stdout == "" {
+		return GitFileUnknown, err
+	}
+	
+	if len(stdout) < 2 {
+		return GitFileUnknown, nil
+	}
+	
+	status := stdout[:2]
+	
+	// Untracked file (status: ??)
+	if status[0] == '?' && status[1] == '?' {
+		return GitFileUntracked, nil
+	}
+	
+	// Staged changes (first character is not space)
+	if status[0] != ' ' && status[0] != '?' {
+		if status[0] == 'D' {
+			return GitFileDeleted, nil
+		}
+		return GitFileStaged, nil
+	}
+	
+	// Modified (second character is not space)
+	if status[1] != ' ' && status[1] != '?' {
+		return GitFileModified, nil
+	}
+	
+	return GitFileUnknown, nil
+}
+
 // FzfSelect presents options via fzf and returns the selected item
 func FzfSelect(prompt string, options []string) (string, error) {
 	if len(options) == 0 {
