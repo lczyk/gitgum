@@ -1,33 +1,14 @@
-# gitgum - Go Implementation
+# gitgum
 
-This directory contains the Go rewrite of gitgum. The implementation currently supports the `switch` and `completion` commands.
-
-## Prerequisites
-
-- Go 1.21 or later
-- `git` (system command)
-- `fzf` (for interactive selections)
+A bunch of git commands with [`fzf`](https://github.com/junegunn/fzf) interface (used to be [gum](https://github.com/charmbracelet/gum), hence the name). The features are very tailored to the kind of workflows I have, but nothing work-specific is encoded in.
 
 ## Build
-
-From the repository root:
 
 ```bash
 make
 ```
 
-This will create the binary at `bin/gitgum`.
-
-Alternatively, build manually:
-
-```bash
-cd src/cmd/gitgum
-go build -o ../../../bin/gitgum
-```
-
 ## Install
-
-Link the binary to your PATH:
 
 ```bash
 ln -s "$PWD/bin/gitgum" ~/.local/bin/gitgum
@@ -35,22 +16,7 @@ ln -s "$PWD/bin/gitgum" ~/.local/bin/gitgum
 ln -s "$PWD/bin/gitgum" ~/.local/bin/gg
 ```
 
-## Usage
-
-### Switch Command
-
-Interactively switch branches with three modes:
-
-```bash
-gitgum switch
-```
-
-Options:
-1. **Switch to an existing local branch** - Select from local branches
-2. **Switch to a remote branch** - Create local tracking branch from remote
-3. **Create a new branch** - Not yet implemented
-
-### Completion Command
+## Shell completions
 
 Generate shell completions:
 
@@ -65,46 +31,11 @@ eval "$(gitgum completion bash)"
 eval "$(gitgum completion zsh)"
 ```
 
-## Testing
+## ToDo's
 
-Run the test suite:
+- [ ] finish porting from bash version (what other commands do we want?)
+- [x] integration tests with mock git repositories
+- [ ] ? unify switch
+- [ ] make switch work well when offline
+- [ ] de-novo shell completions
 
-```bash
-go test ./...
-```
-
-Run tests for a specific package:
-
-```bash
-go test ./src/commands -v
-```
-
-## Architecture
-
-The Go implementation mirrors the bash version but uses:
-- `fzf` for interactive selections (instead of `gum`)
-- System `git` commands for all git operations
-- No dry-run flag support (excluded by design)
-
-### File Structure
-
-- `src/cmd/gitgum/main.go` - CLI dispatcher and command registration
-- `src/commands/switch.go` - Branch switching logic
-- `src/commands/completion.go` - Shell completion generation
-- `src/completions/assets/` - Embedded completion templates (bash, fish, zsh)
-- `cmd/generate-completions/` - Generator for embedding completion assets
-- `src/commands/*_test.go` - Test suites
-
-## Differences from Bash Version
-
-1. Uses `fzf` instead of `gum` for interactive prompts
-2. No dry-run flag (`-n`, `--dry-run`) support
-3. Only `switch` and `completion` commands implemented initially
-4. **Completion templates are now embedded in the binary** (no external files needed at runtime)
-
-## Future Work
-
-- Implement remaining commands (push, delete, commit, status, tree, merge-into)
-- Add `switch new` mode for creating new branches
-- Enhanced error handling and validation
-- Integration tests with mock git repositories
