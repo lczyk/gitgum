@@ -86,6 +86,78 @@ func TestGitFunctions(t *testing.T) {
 				assert.That(t, dirty, "repository should be dirty after modification")
 			},
 		},
+		{
+			name: "GetGitFileStatus detects untracked file",
+			run: func(t *testing.T) {
+				repo := temp_repo.InitTempRepo(t)
+				os.WriteFile(repo+"/untracked.txt", []byte("content"), 0644)
+				status, err := internal.GetGitFileStatus("untracked.txt")
+				assert.NoError(t, err, "get status")
+				assert.Equal(t, internal.GitFileUntracked, status)
+			},
+		},
+		{
+			name: "GetGitFileStatus detects modified file",
+			run: func(t *testing.T) {
+				repo := temp_repo.InitTempRepo(t)
+				// Use the existing README.md from InitTempRepo
+				// Modify it without staging
+				f, ferr := openAppend(repo+"/README.md", "\nmodified content")
+				assert.NoError(t, ferr, "append to README")
+				f.Close()
+				
+				stdout, _, _ := internal.RunCommand("git", "status", "--porcelain", "README.md")
+				t.Logf("git status output: %q", stdout)
+				status, err := internal.GetGitFileStatus("README.md")
+				assert.NoError(t, err, "get status")
+				assert.Equal(t, internal.GitFileModified, status)
+			},
+		},
+		{
+			name: "GetGitFileStatus detects staged file",
+			run: func(t *testing.T) {
+				repo := temp_repo.InitTempRepo(t)
+				os.WriteFile(repo+"/staged.txt", []byte("content"), 0644)
+				internal.RunCommand("git", "add", "staged.txt")
+				status, err := internal.GetGitFileStatus("staged.txt")
+				assert.NoError(t, err, "get status")
+				assert.Equal(t, internal.GitFileStaged, status)
+			},
+		},
+		{
+			name: "GetGitFileStatus detects deleted file",
+			run: func(t *testing.T) {
+				repo := temp_repo.InitTempRepo(t)
+				os.WriteFile(repo+"/deleted.txt", []byte("content"), 0644)
+				internal.RunCommand("git", "add", "deleted.txt")
+				internal.RunCommand("git", "commit", "-m", "add file")
+				os.Remove(repo + "/deleted.txt")
+				internal.RunCommand("git", "rm", "deleted.txt")
+				status, err := internal.GetGitFileStatus("deleted.txt")
+				assert.NoError(t, err, "get status")
+				assert.Equal(t, internal.GitFileDeleted, status)
+			},
+		},
+		{
+			name: "GetGitFileStatus returns unknown for clean file",
+			run: func(t *testing.T) {
+				repo := temp_repo.InitTempRepo(t)
+				os.WriteFile(repo+"/clean.txt", []byte("content"), 0644)
+				internal.RunCommand("git", "add", "clean.txt")
+				internal.RunCommand("git", "commit", "-m", "add file")
+				status, err := internal.GetGitFileStatus("clean.txt")
+				assert.NoError(t, err, "get status")
+				assert.Equal(t, internal.GitFileUnknown, status)
+			},
+		},
+		{
+			name: "GetGitFileStatus returns unknown for nonexistent file",
+			run: func(t *testing.T) {
+				temp_repo.InitTempRepo(t)
+				status, _ := internal.GetGitFileStatus("nonexistent.txt")
+				assert.Equal(t, internal.GitFileUnknown, status)
+			},
+		},
 	}
 
 	for _, tc := range tests {

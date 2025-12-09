@@ -65,16 +65,22 @@ const (
 
 // GetGitFileStatus returns the status of a file in git
 func GetGitFileStatus(file string) (GitFileStatus, error) {
-	stdout, _, err := RunCommand("git", "status", "--porcelain", file)
-	if err != nil || stdout == "" {
+	// Don't use RunCommand because it trims whitespace, which we need for parsing status
+	cmd := exec.Command("git", "status", "--porcelain", file)
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	err := cmd.Run()
+	output := stdout.String()
+	
+	if err != nil || output == "" {
 		return GitFileUnknown, err
 	}
 	
-	if len(stdout) < 2 {
+	if len(output) < 2 {
 		return GitFileUnknown, nil
 	}
 	
-	status := stdout[:2]
+	status := output[:2]
 	
 	// Untracked file (status: ??)
 	if status[0] == '?' && status[1] == '?' {
