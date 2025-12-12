@@ -115,8 +115,9 @@ func switchLocal(currentBranch, trackingRemote string) error {
 	}
 
 	// Switch to the branch
-	if err := internal.RunCommandQuiet("git", "checkout", "--quiet", branch); err != nil {
-		return fmt.Errorf("could not switch to branch '%s': %v", branch, err)
+	_, stderr, err := internal.RunCommand("git", "checkout", "--quiet", branch);
+	if err != nil {
+		return fmt.Errorf("could not switch to branch '%s': %s", branch, stderr)
 	}
 
 	fmt.Printf("Switched to branch '%s'.\n", branch)
@@ -241,8 +242,9 @@ func handleExistingLocalBranch(localBranch, remote string) error {
 	}
 
 	// Switch to the local branch
-	if err := internal.RunCommandQuiet("git", "checkout", "--quiet", localBranch); err != nil {
-		return fmt.Errorf("could not switch to local branch '%s': %v", localBranch, err)
+	_, stderr, err := internal.RunCommand("git", "checkout", "--quiet", localBranch);
+	if err != nil {
+		return fmt.Errorf("could not switch to branch '%s': %s", localBranch, stderr)
 	}
 
 	// Check if local branch is up to date with remote
