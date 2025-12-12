@@ -169,6 +169,25 @@ func switchRemote(currentBranch, trackingRemote string) error {
 			return fmt.Errorf("no other remote branches")
 		}
 	}
+
+	// Filter out branches checked out in other worktrees
+	var availableBranches []string
+	for _, branch := range remoteBranches {
+		isCheckedOut, _, err := internal.IsWorktreeCheckedOut(branch)
+		if err != nil {
+			return fmt.Errorf("error checking worktree status: %v", err)
+		}
+		if !isCheckedOut {
+			availableBranches = append(availableBranches, branch)
+		}
+	}
+
+	if len(availableBranches) == 0 {
+		fmt.Fprintln(os.Stderr, "No available remote branches found (all are checked out in other worktrees). Aborting switch.")
+		return fmt.Errorf("no available remote branches")
+	}
+
+	remoteBranches = availableBranches
 	
 	// Select a remote branch
 	remoteBranch, err := internal.FzfSelect("Select a remote branch to switch to", remoteBranches)
