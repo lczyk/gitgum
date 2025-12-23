@@ -41,6 +41,16 @@ if grep -q "__GITGUM_CMD__" /tmp/gitgum.bash; then
     exit 1
 fi
 
+# Source the bash-completion framework first (provides _init_completion)
+echo "Loading bash-completion framework..."
+if [[ -f /usr/share/bash-completion/bash_completion ]]; then
+    source /usr/share/bash-completion/bash_completion
+elif [[ -f /etc/bash_completion ]]; then
+    source /etc/bash_completion
+else
+    echo "WARNING: bash-completion framework not found, some features may not work"
+fi
+
 # Source the completion script
 echo "Sourcing completion script..."
 # Load bash-completion framework first
