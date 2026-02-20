@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/lczyk/gitgum/src/internal"
 )
@@ -16,12 +17,6 @@ func (s *SwitchCommand) Execute(args []string) error {
 	if err := internal.CheckInGitRepo(); err != nil {
 		return err
 	}
-
-	// Define the two modes
-	modeLocal := "Switch to an existing local branch"
-	modeRemote := "Switch to an existing remote branch and create a local tracking branch"
-
-	modes := []string{modeLocal, modeRemote}
 
 	// Get current branch
 	currentBranch, err := internal.GetCurrentBranch()
@@ -53,175 +48,140 @@ func (s *SwitchCommand) Execute(args []string) error {
 		return fmt.Errorf("local changes would be overwritten")
 	}
 
-	// Ask user what they want to do
-	selected, err := internal.FzfSelect("What do you want to do?", modes)
+	// Get all branches
+	branches, err := getAllBranches(currentBranch, trackingRemote)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "No action selected. Aborting switch.")
-		return err
-	}
-
-	// Execute the selected mode
-	switch selected {
-	case modeLocal:
-		return switchLocal(currentBranch, trackingRemote)
-	case modeRemote:
-		return switchRemote(currentBranch, trackingRemote)
-	default:
-		return fmt.Errorf("unknown option: %s", selected)
-	}
-}
-
-// switchLocal switches to an existing local branch
-func switchLocal(currentBranch, trackingRemote string) error {
-	// Get all local branches
-	branches, err := internal.GetLocalBranches()
-	if err != nil {
-		return fmt.Errorf("error getting local branches: %v", err)
+		return fmt.Errorf("error getting branches: %v", err)
 	}
 
 	if len(branches) == 0 {
-		fmt.Fprintln(os.Stderr, "No local branches found. Aborting switch.")
-		return fmt.Errorf("no local branches")
-	}
-
-	// Filter out the current branch
-	var filteredBranches []string
-	for _, branch := range branches {
-		if branch != currentBranch {
-			filteredBranches = append(filteredBranches, branch)
-		}
-	}
-
-	if len(filteredBranches) == 0 {
-		fmt.Fprintln(os.Stderr, "No other local branches found. Aborting switch.")
-		return fmt.Errorf("no other local branches")
+		fmt.Fprintln(os.Stderr, "No branches available to switch to. Aborting switch.")
+		return fmt.Errorf("no branches available")
 	}
 
 	// Let user select a branch
-	branch, err := internal.FzfSelect("Select a branch to switch to", filteredBranches)
+	selected, err := internal.FzfSelect("Select a branch to switch to", branches)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "No branch selected. Aborting switch.")
 		return err
 	}
 
-	// Check if branch is checked out in another worktree
-	isCheckedOut, worktreePath, err := internal.IsWorktreeCheckedOut(branch)
-	if err != nil {
-		return fmt.Errorf("error checking worktree status: %v", err)
+	// Parse selection
+	parts := strings.SplitN(selected, ": ", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid selection: %s", selected)
 	}
 
-	if isCheckedOut {
-		return fmt.Errorf("branch '%s' is already checked out in another worktree: %s", branch, worktreePath)
+	typ := parts[0]
+	name := parts[1]
+
+	if typ == "local" || typ == "local/remote" {
+		branch := name
+		// Switch to the branch
+		_, stderr, err := internal.RunCommand("git", "checkout", "--quiet", branch)
+		if err != nil {
+			return fmt.Errorf("could not switch to branch '%s': %s", branch, stderr)
+		}
+
+		fmt.Printf("Switched to branch '%s'.\n", branch)
+	} else if typ == "remote" {
+		// Parse remote/branch
+		remoteBranchParts := strings.SplitN(name, "/", 2)
+		if len(remoteBranchParts) != 2 {
+			return fmt.Errorf("invalid remote branch format: %s", name)
+		}
+
+		remote := remoteBranchParts[0]
+		branch := remoteBranchParts[1]
+
+		// Handle remote branch switching
+		if internal.BranchExists(branch) {
+			return handleExistingLocalBranch(branch, remote)
+		}
+
+		// Branch doesn't exist locally, ask to create tracking branch
+		confirmed, err := internal.FzfConfirm(fmt.Sprintf("Branch '%s' is not tracked locally. Create a local tracking branch?", branch), true)
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			fmt.Fprintln(os.Stderr, "Not creating a local tracking branch. Aborting switch.")
+			return fmt.Errorf("user cancelled")
+		}
+
+		// Create and checkout the tracking branch
+		if err := internal.RunCommandQuiet("git", "checkout", "-b", branch, remote+"/"+branch); err != nil {
+			return fmt.Errorf("could not create tracking branch: %v", err)
+		}
+
+		fmt.Printf("Created and switched to local branch '%s' tracking remote branch '%s/%s'.\n",
+			branch, remote, branch)
+	} else {
+		return fmt.Errorf("unknown branch type: %s", typ)
 	}
 
-	// Switch to the branch
-	_, stderr, err := internal.RunCommand("git", "checkout", "--quiet", branch);
-	if err != nil {
-		return fmt.Errorf("could not switch to branch '%s': %s", branch, stderr)
-	}
-
-	fmt.Printf("Switched to branch '%s'.\n", branch)
 	return nil
 }
 
-// switchRemote creates a local tracking branch from a remote branch
-func switchRemote(currentBranch, trackingRemote string) error {
-	// Get list of remotes
-	remotes, err := internal.GetRemotes()
+// getAllBranches collects all available local and remote branches for selection
+func getAllBranches(currentBranch, trackingRemote string) ([]string, error) {
+	var allBranches []string
+
+	// Get local branches
+	locals, err := internal.GetLocalBranches()
 	if err != nil {
-		return fmt.Errorf("error getting remotes: %v", err)
+		return nil, fmt.Errorf("error getting local branches: %v", err)
 	}
 
-	if len(remotes) == 0 {
-		fmt.Fprintln(os.Stderr, "No remotes found. Aborting switch.")
-		return fmt.Errorf("no remotes")
-	}
-
-	// Select a remote
-	remote, err := internal.FzfSelect("Select a remote", remotes)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "No remote selected. Aborting switch.")
-		return err
-	}
-
-	// Get remote branches for this remote
-	remoteBranches, err := internal.GetRemoteBranches(remote)
-	if err != nil {
-		return fmt.Errorf("error getting remote branches: %v", err)
-	}
-
-	if len(remoteBranches) == 0 {
-		return fmt.Errorf("no remote branches found for remote '%s'", remote)
-	}
-
-	// Filter out the current branch's tracking remote
-	if remote == trackingRemote {
-		var filteredBranches []string
-		for _, branch := range remoteBranches {
-			if branch != currentBranch {
-				filteredBranches = append(filteredBranches, branch)
+	for _, branch := range locals {
+		if branch != currentBranch {
+			isCheckedOut, _, err := internal.IsWorktreeCheckedOut(branch)
+			if err != nil {
+				return nil, fmt.Errorf("error checking worktree status for local branch '%s': %v", branch, err)
+			}
+			if !isCheckedOut {
+				trackingRemote, err := internal.GetBranchTrackingRemote(branch)
+				if err != nil {
+					trackingRemote = ""
+				}
+				prefix := "local"
+				if trackingRemote != "" {
+					prefix = "local/remote"
+				}
+				allBranches = append(allBranches, prefix+": "+branch)
 			}
 		}
-		remoteBranches = filteredBranches
-		
-		if len(remoteBranches) == 0 {
-			fmt.Fprintln(os.Stderr, "No other remote branches found. Aborting switch.")
-			return fmt.Errorf("no other remote branches")
-		}
 	}
 
-	// Filter out branches checked out in other worktrees
-	var availableBranches []string
-	for _, branch := range remoteBranches {
-		isCheckedOut, _, err := internal.IsWorktreeCheckedOut(branch)
+	// Get remote branches
+	remotes, err := internal.GetRemotes()
+	if err != nil {
+		return nil, fmt.Errorf("error getting remotes: %v", err)
+	}
+
+	for _, remote := range remotes {
+		remoteBranches, err := internal.GetRemoteBranches(remote)
 		if err != nil {
-			return fmt.Errorf("error checking worktree status: %v", err)
+			return nil, fmt.Errorf("error getting remote branches for '%s': %v", remote, err)
 		}
-		if !isCheckedOut {
-			availableBranches = append(availableBranches, branch)
+
+		for _, branch := range remoteBranches {
+			if !(remote == trackingRemote && branch == currentBranch) {
+				isCheckedOut, _, err := internal.IsWorktreeCheckedOut(branch)
+				if err != nil {
+					return nil, fmt.Errorf("error checking worktree status for remote branch '%s': %v", branch, err)
+				}
+				if !isCheckedOut {
+					allBranches = append(allBranches, "remote: "+remote+"/"+branch)
+				}
+			}
 		}
 	}
 
-	if len(availableBranches) == 0 {
-		fmt.Fprintln(os.Stderr, "No available remote branches found (all are checked out in other worktrees). Aborting switch.")
-		return fmt.Errorf("no available remote branches")
-	}
-
-	remoteBranches = availableBranches
-	
-	// Select a remote branch
-	remoteBranch, err := internal.FzfSelect("Select a remote branch to switch to", remoteBranches)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "No remote branch selected. Aborting switch.")
-		return err
-	}
-
-	
-	// Check if branch already exists locally
-	if internal.BranchExists(remoteBranch) {
-		return handleExistingLocalBranch(remoteBranch, remote)
-	}
-
-	// Branch doesn't exist locally, ask to create tracking branch
-	confirmed, err := internal.FzfConfirm(fmt.Sprintf("Branch '%s' is not tracked locally. Create a local tracking branch?", remoteBranch), true)
-	if err != nil {
-		return err
-	}
-	if !confirmed {
-		fmt.Fprintln(os.Stderr, "Not creating a local tracking branch. Aborting switch.")
-		return fmt.Errorf("user cancelled")
-	}
-
-	// Create and checkout the tracking branch
-	if err := internal.RunCommandQuiet("git", "checkout", "-b", remoteBranch, remote+"/"+remoteBranch); err != nil {
-		return fmt.Errorf("could not create tracking branch: %v", err)
-	}
-
-	fmt.Printf("Created and switched to local branch '%s' tracking remote branch '%s/%s'.\n",
-		remoteBranch, remote, remoteBranch)
-
-	return nil
+	return allBranches, nil
 }
+
+
 
 // handleExistingLocalBranch handles the case where a local branch already exists
 func handleExistingLocalBranch(localBranch, remote string) error {
