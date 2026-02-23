@@ -84,6 +84,11 @@ func (p *PushCommand) Execute(args []string) error {
 		if localCommit == remoteCommit {
 			fmt.Printf("No changes to push. Local branch '%s' is up to date with remote branch '%s'.\n",
 				currentBranch, expectedRemoteBranchName)
+			// Set upstream since we're targeting this remote
+			if err := internal.RunCommandQuiet("git", "branch", "--set-upstream-to="+expectedRemoteBranchName, currentBranch); err != nil {
+				return fmt.Errorf("failed to set upstream: %v", err)
+			}
+			fmt.Printf("Updated upstream to '%s'.\n", expectedRemoteBranchName)
 			return nil
 		}
 
