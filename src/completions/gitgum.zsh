@@ -14,6 +14,7 @@ _gitgum() {
         'clean:Discard working tree changes and untracked files'
         'delete:Delete a local branch and optionally its remote tracking branch'
         'replay-list:List commits on branch A since divergence from trunk B'
+        'empty:Create an empty commit and optionally push it'
     )
 
     local -a global_opts
@@ -78,6 +79,11 @@ _gitgum() {
                 '--help[Show help message]'
             ;;
         replay-list)
+            _arguments \
+                '-h[Show help message]' \
+                '--help[Show help message]'
+            ;;
+        empty)
             _arguments \
                 '-h[Show help message]' \
                 '--help[Show help message]'

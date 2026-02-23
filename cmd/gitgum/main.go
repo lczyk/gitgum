@@ -19,6 +19,7 @@ type Options struct {
 	Clean      commands.CleanCommand      `command:"clean" description:"Discard working tree changes and untracked files"`
 	Delete     commands.DeleteCommand     `command:"delete" description:"Delete a local branch and optionally its remote tracking branch"`
 	ReplayList commands.ReplayListCommand `command:"replay-list" description:"List commits on branch A since divergence from trunk B"`
+	Empty      commands.EmptyCommand      `command:"empty" description:"Create an empty commit and optionally push it"`
 }
 
 func main() {

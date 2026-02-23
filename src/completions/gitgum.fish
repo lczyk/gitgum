@@ -19,6 +19,7 @@ complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a push -d "Push th
 complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a clean -d "Discard working tree changes and untracked files"
 complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a delete -d "Delete a local branch and optionally its remote tracking branch"
 complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a replay-list -d "List commits on branch A since divergence from trunk B"
+complete -f -c __GITGUM_CMD__ -n __fish_gitgum_needs_command -a empty -d "Create an empty commit and optionally push it"
 
 # Global options
 complete -f -c __GITGUM_CMD__ -s h -l help -d "Show help message"
@@ -53,3 +54,6 @@ complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command delete' -s h -l he
 
 # Replay-list command - help option
 complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command replay-list' -s h -l help -d "Show help for replay-list"
+
+# Empty command - help option
+complete -f -c __GITGUM_CMD__ -n '__fish_gitgum_using_command empty' -s h -l help -d "Show help for empty"
