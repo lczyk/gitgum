@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/ktr0731/go-fuzzyfinder"
 )
 
 // ErrFzfCancelled is returned when the user cancels an fzf operation (Ctrl+C or ESC)
@@ -109,21 +111,19 @@ func FzfSelect(prompt string, options []string) (string, error) {
 		return "", fmt.Errorf("no options provided")
 	}
 
-	input := strings.Join(options, "\n")
-	args := []string{
-		"--prompt", prompt + ": ",
-		"--height=40%",
-		"--layout=reverse",
-		"--border=top",
-	}
-
-	selected, err := runCommandWithInput(input, "fzf", args...)
+	idx, err := fuzzyfinder.Find(
+		options,
+		func(i int) string { return options[i] },
+		fuzzyfinder.WithPromptString(prompt+": "),
+	)
 	if err != nil {
-		// User cancelled or fzf not available
-		return "", ErrFzfCancelled
+		if err == fuzzyfinder.ErrAbort {
+			return "", ErrFzfCancelled
+		}
+		return "", err
 	}
 
-	return selected, nil
+	return options[idx], nil
 }
 
 // FzfConfirm asks a yes/no question via fzf
