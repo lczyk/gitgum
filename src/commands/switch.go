@@ -1,10 +1,15 @@
 package commands
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/ktr0731/go-fuzzyfinder"
 	"github.com/lczyk/gitgum/src/internal"
 )
 
@@ -48,23 +53,128 @@ func (s *SwitchCommand) Execute(args []string) error {
 		return fmt.Errorf("local changes would be overwritten")
 	}
 
-	// Get all branches
-	branches, err := getAllBranches(currentBranch, trackingRemote)
+	// Get remotes for parallel fetching
+	remotes, err := internal.GetRemotes()
 	if err != nil {
-		return fmt.Errorf("error getting branches: %v", err)
+		return fmt.Errorf("error getting remotes: %v", err)
 	}
 
-	if len(branches) == 0 {
-		fmt.Fprintln(os.Stderr, "No branches available to switch to. Aborting switch.")
-		return fmt.Errorf("no branches available")
+	var (
+		branchLock   sync.Mutex
+		branches     []string
+		seenBranches = make(map[string]struct{})
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	streamQueue := make(chan string, 1000)
+	go func() {
+		for {
+			select {
+			case branch := <-streamQueue:
+				time.Sleep(streamDelay)
+				branchLock.Lock()
+				if _, seen := seenBranches[branch]; !seen {
+					seenBranches[branch] = struct{}{}
+					branches = append(branches, branch)
+				}
+				branchLock.Unlock()
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	// Stream local branches
+	go func() {
+		locals, err := internal.GetLocalBranches()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error getting local branches: %v\n", err)
+			return
+		}
+
+		for _, branch := range locals {
+			if branch == currentBranch {
+				continue
+			}
+			isCheckedOut, _, err := internal.IsWorktreeCheckedOut(branch)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error checking worktree status for local branch '%s': %v\n", branch, err)
+				continue
+			}
+			if !isCheckedOut {
+				trackingRemote, err := internal.GetBranchTrackingRemote(branch)
+				if err != nil {
+					trackingRemote = ""
+				}
+				prefix := "local"
+				if trackingRemote != "" {
+					prefix = "local/remote"
+				}
+				streamQueue <- prefix + ": " + branch
+			}
+		}
+	}()
+
+	// Query remotes in parallel and stream their branches
+	for _, remote := range remotes {
+		r := remote
+		go func() {
+			branches, err := internal.GetRemoteBranches(r)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error getting remote branches for '%s': %v\n", r, err)
+				return
+			}
+
+			for _, branch := range branches {
+				if !(r == trackingRemote && branch == currentBranch) {
+					isCheckedOut, _, err := internal.IsWorktreeCheckedOut(branch)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "error checking worktree status for remote branch '%s': %v\n", branch, err)
+						continue
+					}
+					if !isCheckedOut {
+						streamQueue <- "remote: " + r + "/" + branch
+					}
+				}
+			}
+		}()
 	}
 
-	// Let user select a branch
-	selected, err := internal.FzfSelect("Select a branch to switch to", branches)
+	prompt := "Select a branch to switch to"
+	selectedIdx, err := fuzzyfinder.Find(
+		&branches,
+		func(i int) string { return branches[i] },
+		fuzzyfinder.WithPromptString(prompt+": "),
+		fuzzyfinder.WithMatcher(func(query, item string) bool {
+			words := strings.Fields(query)
+			for _, word := range words {
+				if !strings.Contains(strings.ToLower(item), strings.ToLower(word)) {
+					return false
+				}
+			}
+			return true
+		}),
+		fuzzyfinder.WithHotReloadLock(&branchLock),
+		fuzzyfinder.WithContext(ctx),
+	)
+	cancel()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "No branch selected. Aborting switch.")
+		if errors.Is(err, fuzzyfinder.ErrAbort) {
+			return internal.ErrFzfCancelled
+		}
 		return err
 	}
+
+	branchLock.Lock()
+	if selectedIdx < 0 || selectedIdx >= len(branches) {
+		branchLock.Unlock()
+		return fmt.Errorf("invalid branch selection index: %d", selectedIdx)
+	}
+	selected := branches[selectedIdx]
+	branchLock.Unlock()
 
 	// Parse selection
 	parts := strings.SplitN(selected, ": ", 2)
@@ -123,65 +233,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 	return nil
 }
 
-// getAllBranches collects all available local and remote branches for selection
-func getAllBranches(currentBranch, trackingRemote string) ([]string, error) {
-	var allBranches []string
-
-	// Get local branches
-	locals, err := internal.GetLocalBranches()
-	if err != nil {
-		return nil, fmt.Errorf("error getting local branches: %v", err)
-	}
-
-	for _, branch := range locals {
-		if branch != currentBranch {
-			isCheckedOut, _, err := internal.IsWorktreeCheckedOut(branch)
-			if err != nil {
-				return nil, fmt.Errorf("error checking worktree status for local branch '%s': %v", branch, err)
-			}
-			if !isCheckedOut {
-				trackingRemote, err := internal.GetBranchTrackingRemote(branch)
-				if err != nil {
-					trackingRemote = ""
-				}
-				prefix := "local"
-				if trackingRemote != "" {
-					prefix = "local/remote"
-				}
-				allBranches = append(allBranches, prefix+": "+branch)
-			}
-		}
-	}
-
-	// Get remote branches
-	remotes, err := internal.GetRemotes()
-	if err != nil {
-		return nil, fmt.Errorf("error getting remotes: %v", err)
-	}
-
-	for _, remote := range remotes {
-		remoteBranches, err := internal.GetRemoteBranches(remote)
-		if err != nil {
-			return nil, fmt.Errorf("error getting remote branches for '%s': %v", remote, err)
-		}
-
-		for _, branch := range remoteBranches {
-			if !(remote == trackingRemote && branch == currentBranch) {
-				isCheckedOut, _, err := internal.IsWorktreeCheckedOut(branch)
-				if err != nil {
-					return nil, fmt.Errorf("error checking worktree status for remote branch '%s': %v", branch, err)
-				}
-				if !isCheckedOut {
-					allBranches = append(allBranches, "remote: "+remote+"/"+branch)
-				}
-			}
-		}
-	}
-
-	return allBranches, nil
-}
-
-
+const streamDelay = 3 * time.Millisecond
 
 // handleExistingLocalBranch handles the case where a local branch already exists
 func handleExistingLocalBranch(localBranch, remote string) error {
@@ -221,7 +273,7 @@ func handleExistingLocalBranch(localBranch, remote string) error {
 	}
 
 	// Switch to the local branch
-	_, stderr, err := internal.RunCommand("git", "checkout", "--quiet", localBranch);
+	_, stderr, err := internal.RunCommand("git", "checkout", "--quiet", localBranch)
 	if err != nil {
 		return fmt.Errorf("could not switch to branch '%s': %s", localBranch, stderr)
 	}
