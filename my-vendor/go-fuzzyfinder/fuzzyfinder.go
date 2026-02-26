@@ -281,25 +281,41 @@ func (f *finder) _draw() {
 			}
 		}
 
-		var posIdx int
+		// Compute positions to highlight for multi-word matching
+		highlightPositions := make(map[int]bool)
+		words := strings.Fields(string(f.state.input))
+		itemRunes := []rune(f.state.items[m.Idx])
+		lowerItemRunes := []rune(strings.ToLower(f.state.items[m.Idx]))
+		for _, word := range words {
+			lowerWord := strings.ToLower(word)
+			wordRunes := []rune(lowerWord)
+			for i := 0; i <= len(lowerItemRunes)-len(wordRunes); i++ {
+				match := true
+				for k := 0; k < len(wordRunes); k++ {
+					if lowerItemRunes[i+k] != wordRunes[k] {
+						match = false
+						break
+					}
+				}
+				if match {
+					for k := 0; k < len(wordRunes); k++ {
+						highlightPositions[i+k] = true
+					}
+				}
+			}
+		}
+
 		w := 2
-		for j, r := range []rune(f.state.items[m.Idx]) {
+		for j, r := range itemRunes {
 			style := tcell.StyleDefault.
 				Foreground(tcell.ColorDefault).
 				Background(tcell.ColorDefault)
 			// Highlight selected strings.
-			hasHighlighted := false
-			if posIdx < len(f.state.input) {
-				from, to := m.Pos[0], m.Pos[1]
-				if !(from == -1 && to == -1) && (from <= j && j <= to) {
-					if unicode.ToLower(f.state.input[posIdx]) == unicode.ToLower(r) {
-						style = tcell.StyleDefault.
-							Foreground(tcell.ColorGreen).
-							Background(tcell.ColorDefault)
-						hasHighlighted = true
-						posIdx++
-					}
-				}
+			hasHighlighted := highlightPositions[j]
+			if hasHighlighted {
+				style = tcell.StyleDefault.
+					Foreground(tcell.ColorGreen).
+					Background(tcell.ColorDefault)
 			}
 			if i == f.state.cursorY {
 				if hasHighlighted {

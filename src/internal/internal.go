@@ -115,6 +115,16 @@ func FzfSelect(prompt string, options []string) (string, error) {
 		options,
 		func(i int) string { return options[i] },
 		fuzzyfinder.WithPromptString(prompt+": "),
+		fuzzyfinder.WithMatcher(func(query string, item string) bool {
+			// Split query into words and check if all words are present in item
+			words := strings.Fields(query)
+			for _, word := range words {
+				if !strings.Contains(strings.ToLower(item), strings.ToLower(word)) {
+					return false
+				}
+			}
+			return true
+		}),
 	)
 	if err != nil {
 		if err == fuzzyfinder.ErrAbort {

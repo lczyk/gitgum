@@ -8,6 +8,8 @@ require (
 	github.com/lczyk/assert v0.2.4
 )
 
+replace github.com/ktr0731/go-fuzzyfinder v0.9.0 => ./my-vendor/go-fuzzyfinder
+
 require (
 	github.com/gdamore/encoding v1.0.1 // indirect
 	github.com/gdamore/tcell/v2 v2.6.0 // indirect

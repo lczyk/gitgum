@@ -32,6 +32,9 @@ test:
 		go test ./...; \
 	fi
 
+	# Run make test in go-fuzzyfinder to ensure it works with the latest changes
+	$(MAKE) -C my-vendor/go-fuzzyfinder unit-test
+
 .PHONY: clean
 clean:
 	rm -rf ./bin/gitgum
