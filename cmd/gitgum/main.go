@@ -1,10 +1,13 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	flags "github.com/jessevdk/go-flags"
+	"github.com/ktr0731/go-fuzzyfinder"
 	"github.com/lczyk/gitgum/src/commands"
 	"github.com/lczyk/gitgum/src/version"
 )
@@ -22,6 +25,40 @@ type Options struct {
 	Empty      commands.EmptyCommand      `command:"empty" description:"Create an empty commit and optionally push it"`
 }
 
+// ErrFzfCancelled is returned when the user cancels an fzf operation (Ctrl+C or ESC)
+var ErrFzfCancelled = errors.New("fzf operation cancelled")
+
+// FzfSelect presents options via fzf and returns the selected item
+func FzfSelect(prompt string, options []string) (string, error) {
+	if len(options) == 0 {
+		return "", fmt.Errorf("no options provided")
+	}
+
+	idx, err := fuzzyfinder.Find(
+		options,
+		func(i int) string { return options[i] },
+		fuzzyfinder.WithPromptString(prompt+": "),
+		fuzzyfinder.WithMatcher(func(query string, item string) bool {
+			// Split query into words and check if all words are present in item
+			words := strings.Fields(query)
+			for _, word := range words {
+				if !strings.Contains(strings.ToLower(item), strings.ToLower(word)) {
+					return false
+				}
+			}
+			return true
+		}),
+	)
+	if err != nil {
+		if err == fuzzyfinder.ErrAbort {
+			return "", ErrFzfCancelled
+		}
+		return "", err
+	}
+
+	return options[idx], nil
+}
+
 func main() {
 	// Check for version flag before parsing to avoid command requirement
 	for _, arg := range os.Args[1:] {
@@ -29,6 +66,20 @@ func main() {
 			fmt.Println(version.GetFullVersion())
 			os.Exit(0)
 		}
+	}
+
+	// If no command provided, use fuzzyfinder to select one
+	if len(os.Args) == 1 {
+		commands := []string{"switch", "status", "push", "clean", "empty"}
+		selected, err := FzfSelect("Select command", commands)
+		if err != nil {
+			if err == ErrFzfCancelled {
+				os.Exit(0)
+			}
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		os.Args = append(os.Args, selected)
 	}
 
 	var opts Options
