@@ -46,15 +46,35 @@ func (p *PushCommand) Execute(args []string) error {
 		return fmt.Errorf("no remotes")
 	}
 
-	remote, err := internal.FzfSelect(fmt.Sprintf("Push '%s' to", currentBranch), remotes)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "No remote selected. Aborting push.")
-		return err
+	var selectedRemote string
+	if len(args) > 0 {
+		providedRemote := args[0]
+		for _, r := range remotes {
+			if r == providedRemote {
+				selectedRemote = r
+				break
+			}
+		}
+		if selectedRemote == "" {
+			remote, err := internal.FzfSelect(fmt.Sprintf("Push '%s' to", currentBranch), remotes, providedRemote)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "No remote selected. Aborting push.")
+				return err
+			}
+			selectedRemote = remote
+		}
+	} else {
+		remote, err := internal.FzfSelect(fmt.Sprintf("Push '%s' to", currentBranch), remotes)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "No remote selected. Aborting push.")
+			return err
+		}
+		selectedRemote = remote
 	}
 
-	expectedRemoteBranchName := remote + "/" + currentBranch
+	expectedRemoteBranchName := selectedRemote + "/" + currentBranch
 
-	remoteBranchExists, err := internal.RemoteBranchExists(remote, currentBranch)
+	remoteBranchExists, err := internal.RemoteBranchExists(selectedRemote, currentBranch)
 	if err != nil {
 		return fmt.Errorf("checking remote branch: %w", err)
 	}
@@ -90,7 +110,7 @@ func (p *PushCommand) Execute(args []string) error {
 			return nil
 		}
 
-		if err := internal.RunCommandWithOutput("git", "push", remote, currentBranch); err != nil {
+		if err := internal.RunCommandWithOutput("git", "push", selectedRemote, currentBranch); err != nil {
 			return fmt.Errorf("failed to push: %w", err)
 		}
 	} else {
@@ -103,7 +123,7 @@ func (p *PushCommand) Execute(args []string) error {
 			return nil
 		}
 
-		if err := internal.RunCommandWithOutput("git", "push", "-u", remote, currentBranch); err != nil {
+		if err := internal.RunCommandWithOutput("git", "push", "-u", selectedRemote, currentBranch); err != nil {
 			return fmt.Errorf("failed to push: %w", err)
 		}
 

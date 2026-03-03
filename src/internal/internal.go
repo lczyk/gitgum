@@ -90,25 +90,31 @@ func GetGitFileStatus(file string) (GitFileStatus, error) {
 }
 
 // FzfSelect presents options via fzf and returns the selected item
-func FzfSelect(prompt string, options []string) (string, error) {
+func FzfSelect(prompt string, options []string, initialQuery ...string) (string, error) {
 	if len(options) == 0 {
 		return "", fmt.Errorf("no options provided")
 	}
 
+	var opts []fuzzyfinder.Option
+	opts = append(opts, fuzzyfinder.WithPromptString(prompt+": "))
+	if len(initialQuery) > 0 {
+		opts = append(opts, fuzzyfinder.WithQuery(initialQuery[0]))
+	}
+	opts = append(opts, fuzzyfinder.WithMatcher(func(query string, item string) bool {
+		// Split query into words and check if all words are present in item
+		words := strings.Fields(query)
+		for _, word := range words {
+			if !strings.Contains(strings.ToLower(item), strings.ToLower(word)) {
+				return false
+			}
+		}
+		return true
+	}))
+
 	idx, err := fuzzyfinder.Find(
 		options,
 		func(i int) string { return options[i] },
-		fuzzyfinder.WithPromptString(prompt+": "),
-		fuzzyfinder.WithMatcher(func(query string, item string) bool {
-			// Split query into words and check if all words are present in item
-			words := strings.Fields(query)
-			for _, word := range words {
-				if !strings.Contains(strings.ToLower(item), strings.ToLower(word)) {
-					return false
-				}
-			}
-			return true
-		}),
+		opts...,
 	)
 	if err != nil {
 		if err == fuzzyfinder.ErrAbort {
