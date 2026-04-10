@@ -11,13 +11,6 @@ make
 ## Install
 
 ```bash
-go install github.com/lczyk/gitgum/cmd/gitgum@latest
-```
-
-Or build locally and symlink:
-
-```bash
-make
 ln -s "$PWD/bin/gitgum" ~/.local/bin/gitgum
 # Or use an alias like 'gg':
 ln -s "$PWD/bin/gitgum" ~/.local/bin/gg
