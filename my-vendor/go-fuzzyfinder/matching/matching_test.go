@@ -11,14 +11,15 @@ func TestMatch(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct {
-		idx           int
-		in            string
-		expected      string // If expected is empty, it means there are no matched strings.
-		caseSensitive bool
+		in       string
+		mode     matching.Mode
+		idx      int
+		expected string // empty means no match expected
 	}{
-		"normal":          {idx: 2, in: "ink now", expected: "inkle Snow"},
-		"case sensitive":  {idx: 1, in: "SOUNDNY", expected: "SOUND OF DESTINY", caseSensitive: true},
-		"case sensitive2": {idx: 0, in: "white um", caseSensitive: true},
+		"smart mode case insensitive": {in: "ink now", idx: 2, expected: "inkle Snow"},
+		"case sensitive match":        {in: "SOUNDNY", mode: matching.ModeCaseSensitive, idx: 1, expected: "SOUND OF DESTINY"},
+		"case sensitive no match":     {in: "white um", mode: matching.ModeCaseSensitive},
+		"case insensitive explicit":   {in: "ink now", mode: matching.ModeCaseInsensitive, idx: 2, expected: "inkle Snow"},
 	}
 	slice := []string{
 		"WHITE ALBUM",
@@ -29,12 +30,7 @@ func TestMatch(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			var matched []matching.Matched
-			if c.caseSensitive {
-				matched = matching.FindAll(c.in, slice, matching.WithMode(matching.ModeCaseSensitive))
-			} else {
-				matched = matching.FindAll(c.in, slice)
-			}
+			matched := matching.FindAll(c.in, slice, matching.WithMode(c.mode))
 			n := len(matched)
 			if c.expected == "" {
 				if n != 0 {
