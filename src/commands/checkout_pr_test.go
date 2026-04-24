@@ -6,13 +6,82 @@ import (
 	"github.com/lczyk/assert"
 )
 
-func TestCheckoutPRCommand_Execute(t *testing.T) {
-	// Note: This is a basic structure test since checkout-pr requires an actual git repo
-	// and interactive fzf input. Full integration testing should be done manually
-	// or with a more sophisticated test setup.
+func TestParsePRRefs(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []PRRef
+	}{
+		{
+			name:     "empty output",
+			input:    "",
+			expected: []PRRef{},
+		},
+		{
+			name:  "single head ref",
+			input: "abc123def456\trefs/pull/42/head",
+			expected: []PRRef{
+				{Number: 42, Type: "head"},
+			},
+		},
+		{
+			name:  "single merge ref",
+			input: "abc123def456\trefs/pull/10/merge",
+			expected: []PRRef{
+				{Number: 10, Type: "merge"},
+			},
+		},
+		{
+			name: "head wins over merge for same PR",
+			input: "aaa\trefs/pull/5/merge\n" +
+				"bbb\trefs/pull/5/head",
+			expected: []PRRef{
+				{Number: 5, Type: "head"},
+			},
+		},
+		{
+			name: "head already present ignores later merge",
+			input: "aaa\trefs/pull/5/head\n" +
+				"bbb\trefs/pull/5/merge",
+			expected: []PRRef{
+				{Number: 5, Type: "head"},
+			},
+		},
+		{
+			name: "multiple PRs sorted descending",
+			input: "aaa\trefs/pull/1/head\n" +
+				"bbb\trefs/pull/99/merge\n" +
+				"ccc\trefs/pull/50/head",
+			expected: []PRRef{
+				{Number: 99, Type: "merge"},
+				{Number: 50, Type: "head"},
+				{Number: 1, Type: "head"},
+			},
+		},
+		{
+			name: "non-PR refs ignored",
+			input: "aaa\trefs/heads/main\n" +
+				"bbb\trefs/tags/v1.0\n" +
+				"ccc\trefs/pull/7/head",
+			expected: []PRRef{
+				{Number: 7, Type: "head"},
+			},
+		},
+	}
 
-	cmd := &CheckoutPRCommand{}
-	assert.That(t, cmd != nil, "CheckoutPRCommand should be created successfully")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parsePRRefs(tt.input)
+			assert.That(t, len(result) == len(tt.expected),
+				"parsePRRefs returned %d refs, want %d", len(result), len(tt.expected))
+			for i, ref := range result {
+				assert.That(t, ref.Number == tt.expected[i].Number,
+					"ref[%d].Number = %d, want %d", i, ref.Number, tt.expected[i].Number)
+				assert.That(t, ref.Type == tt.expected[i].Type,
+					"ref[%d].Type = %q, want %q", i, ref.Type, tt.expected[i].Type)
+			}
+		})
+	}
 }
 
 func TestFormatPROptions(t *testing.T) {
