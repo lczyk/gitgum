@@ -8,10 +8,11 @@ require (
 	github.com/google/gofuzz v1.2.0
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/lczyk/assert v0.3.0
-	github.com/mattn/go-runewidth v0.0.16
+	github.com/mattn/go-runewidth v0.0.23
 )
 
 require (
+	github.com/clipperhouse/uax29/v2 v2.2.0 // indirect
 	github.com/gdamore/encoding v1.0.1 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
