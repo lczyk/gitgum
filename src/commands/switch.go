@@ -64,16 +64,21 @@ func (s *SwitchCommand) Execute(args []string) error {
 	defer cancel()
 
 	// stream branches from git in background, deduplicating and throttling for UX
-	streamQueue := make(chan string, 1000)
+	type branchEntry struct {
+		display  string
+		dedupKey string
+	}
+
+	streamQueue := make(chan branchEntry, 1000)
 	go func() {
 		for {
 			select {
-			case branch := <-streamQueue:
+			case entry := <-streamQueue:
 				time.Sleep(streamDelay)
 				branchLock.Lock()
-				if _, seen := seenBranches[branch]; !seen {
-					seenBranches[branch] = struct{}{}
-					branches = append(branches, branch)
+				if _, seen := seenBranches[entry.dedupKey]; !seen {
+					seenBranches[entry.dedupKey] = struct{}{}
+					branches = append(branches, entry.display)
 				}
 				branchLock.Unlock()
 			case <-ctx.Done():
@@ -100,7 +105,21 @@ func (s *SwitchCommand) Execute(args []string) error {
 				continue
 			}
 			if !isCheckedOut {
-				streamQueue <- "local: " + branch
+				tr, err := internal.GetBranchTrackingRemote(branch)
+				if err != nil {
+					tr = ""
+				}
+				if tr != "" {
+					streamQueue <- branchEntry{
+						display:  "local/remote: " + branch,
+						dedupKey: "remote:" + tr + "/" + branch,
+					}
+				} else {
+					streamQueue <- branchEntry{
+						display:  "local: " + branch,
+						dedupKey: "local:" + branch,
+					}
+				}
 			}
 		}
 	}()
@@ -123,7 +142,10 @@ func (s *SwitchCommand) Execute(args []string) error {
 						continue
 					}
 					if !isCheckedOut {
-						streamQueue <- "remote: " + r + "/" + branch
+						streamQueue <- branchEntry{
+							display:  "remote: " + r + "/" + branch,
+							dedupKey: "remote:" + r + "/" + branch,
+						}
 					}
 				}
 			}

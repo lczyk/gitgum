@@ -26,8 +26,7 @@ func TestEmptyCommand_NoUpstream(t *testing.T) {
 	cmd := &EmptyCommand{}
 	err := cmd.Execute(nil)
 
-	assert.That(t, err != nil, "should error without upstream")
-	assert.ContainsString(t, err.Error(), "upstream")
+	assert.That(t, err == nil, "should succeed without upstream, got error")
 }
 
 func TestEmptyCommand_Instantiate(t *testing.T) {

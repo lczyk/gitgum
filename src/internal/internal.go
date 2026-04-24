@@ -295,6 +295,14 @@ func RemoteBranchExists(remote, branch string) (bool, error) {
 	return true, nil
 }
 
+func IsBranchAheadOfRemote(localBranch, remoteBranch string) (bool, error) {
+	stdout, _, err := RunCommand("git", "log", "--oneline", remoteBranch+".."+localBranch)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(stdout) != "", nil
+}
+
 func IsGitDirty(dir string) (bool, error) {
 	cmd := exec.Command("git", "status", "--porcelain=v1")
 	cmd.Dir = dir
