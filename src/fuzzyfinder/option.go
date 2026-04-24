@@ -2,8 +2,22 @@ package fuzzyfinder
 
 import (
 	"context"
+	"strings"
 	"sync"
 )
+
+// SubstringMatcher is a case-insensitive, whitespace-split substring matcher:
+// the item matches if it contains every whitespace-delimited word from the query
+// (case-insensitive). Suitable for fzf-style filtering of free-form input.
+func SubstringMatcher(query, item string) bool {
+	itemLower := strings.ToLower(item)
+	for _, word := range strings.Fields(query) {
+		if !strings.Contains(itemLower, strings.ToLower(word)) {
+			return false
+		}
+	}
+	return true
+}
 
 type opt struct {
 	mode          mode

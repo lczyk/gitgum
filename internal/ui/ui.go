@@ -3,7 +3,6 @@ package ui
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/lczyk/gitgum/src/fuzzyfinder"
 )
@@ -23,14 +22,7 @@ func FzfSelect(prompt string, options []string, initialQuery ...string) (string,
 	if len(initialQuery) > 0 {
 		opts = append(opts, fuzzyfinder.WithQuery(initialQuery[0]))
 	}
-	opts = append(opts, fuzzyfinder.WithMatcher(func(query string, item string) bool {
-		for _, word := range strings.Fields(query) {
-			if !strings.Contains(strings.ToLower(item), strings.ToLower(word)) {
-				return false
-			}
-		}
-		return true
-	}))
+	opts = append(opts, fuzzyfinder.WithMatcher(fuzzyfinder.SubstringMatcher))
 
 	idx, err := fuzzyfinder.Find(
 		options,

@@ -79,14 +79,7 @@ func pickBranch(ctx context.Context, branches *[]string, lock *sync.Mutex) (stri
 		branches,
 		func(i int) string { return (*branches)[i] },
 		fuzzyfinder.WithPromptString(prompt+": "),
-		fuzzyfinder.WithMatcher(func(query, item string) bool {
-			for _, word := range strings.Fields(query) {
-				if !strings.Contains(strings.ToLower(item), strings.ToLower(word)) {
-					return false
-				}
-			}
-			return true
-		}),
+		fuzzyfinder.WithMatcher(fuzzyfinder.SubstringMatcher),
 		fuzzyfinder.WithHotReloadLock(lock),
 		fuzzyfinder.WithContext(ctx),
 	)
