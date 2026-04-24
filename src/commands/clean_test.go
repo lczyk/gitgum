@@ -34,7 +34,7 @@ func TestCleanCommand_NotInGitRepo(t *testing.T) {
 	temp_repo.ChdirTempDir(t)
 
 	cmd := &CleanCommand{}
-	err := cmd.Execute()
+	err := cmd.Execute(nil)
 
 	assert.That(t, err != nil, "should error when not in git repo")
 	assert.ContainsString(t, err.Error(), "not inside a git repository")
@@ -170,7 +170,7 @@ func TestCleanCommand_Execute(t *testing.T) {
 				tt.setup(t, dir)
 			}
 
-			err := tt.cmd.Execute()
+			err := tt.cmd.Execute(nil)
 			assert.NoError(t, err, "command should succeed")
 
 			if tt.verify != nil {

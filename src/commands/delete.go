@@ -61,7 +61,7 @@ func switchCurrentBranchIfNeeded(branch string, allBranches []string) error {
 	return nil
 }
 
-func (d *DeleteCommand) Execute() error {
+func (d *DeleteCommand) Execute(args []string) error {
 	if err := internal.CheckInGitRepo(); err != nil {
 		return err
 	}

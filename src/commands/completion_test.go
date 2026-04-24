@@ -51,7 +51,7 @@ func TestCompletionCommand_Execute(t *testing.T) {
 			cmd := &CompletionCommand{out: &buf, cmdName: tt.cmdName}
 			cmd.Args.Shell = tt.shell
 
-			err := cmd.Execute()
+			err := cmd.Execute(nil)
 			output := buf.String()
 
 			if tt.wantErr {

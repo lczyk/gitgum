@@ -19,7 +19,7 @@ type CleanCommand struct {
 }
 
 // Execute runs the clean command
-func (c *CleanCommand) Execute() error {
+func (c *CleanCommand) Execute(args []string) error {
 	// Check if we're in a git repository
 	if err := internal.CheckInGitRepo(); err != nil {
 		return err

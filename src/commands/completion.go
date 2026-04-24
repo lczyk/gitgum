@@ -19,7 +19,7 @@ type CompletionCommand struct {
 	cmdName string
 }
 
-func (c *CompletionCommand) Execute() error {
+func (c *CompletionCommand) Execute(args []string) error {
 	cmdName := c.cmdName
 	if cmdName == "" {
 		cmdName = filepath.Base(os.Args[0])

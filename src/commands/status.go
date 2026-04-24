@@ -9,7 +9,7 @@ import (
 
 type StatusCommand struct{}
 
-func (s *StatusCommand) Execute() error {
+func (s *StatusCommand) Execute(args []string) error {
 	if err := internal.CheckInGitRepo(); err != nil {
 		return fmt.Errorf("checking git repo: %w", err)
 	}

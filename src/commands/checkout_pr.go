@@ -22,7 +22,7 @@ type PRRef struct {
 	Type   string // "head" or "merge"
 }
 
-func (c *CheckoutPRCommand) Execute() error {
+func (c *CheckoutPRCommand) Execute(args []string) error {
 	if err := internal.CheckInGitRepo(); err != nil {
 		return err
 	}

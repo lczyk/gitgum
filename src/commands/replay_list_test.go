@@ -113,6 +113,6 @@ func TestReplayListCommand_Execute(t *testing.T) {
 	cmd.Args.BranchA = "feature"
 	cmd.Args.BranchB = "main"
 
-	err := cmd.Execute()
+	err := cmd.Execute(nil)
 	assert.NoError(t, err, "Execute should not error")
 }
