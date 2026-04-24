@@ -41,17 +41,12 @@ func (s *StatusCommand) Execute(args []string) error {
 	lines := strings.Split(stdout, "\n")
 
 	if len(lines) > 1 {
-		changes := strings.Join(lines[1:], "\n")
-		if strings.TrimSpace(changes) != "" {
-			internal.PrintHeader("--- CHANGES ----------------------------")
-			fmt.Println(changes)
-		}
+		internal.PrintHeader("--- CHANGES ----------------------------")
+		fmt.Println(strings.Join(lines[1:], "\n"))
 	}
 
 	internal.PrintHeader("--- STATUS -----------------------------")
-	if len(lines) > 0 {
-		fmt.Println(lines[0])
-	}
+	fmt.Println(lines[0])
 
 	return nil
 }
