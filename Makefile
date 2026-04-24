@@ -9,14 +9,15 @@ help:  ## Show this help
 .PHONY: build
 build: ./bin/gitgum  ## Build the gitgum binary (compressed with upx if available)
 
-./bin/gitgum: $(SRCS) ./src/version/version.go Makefile go.mod go.sum
+./bin/gitgum: $(SRCS) generate-version Makefile go.mod go.sum
 	mkdir -p ./bin
 	go build -o ./bin/gitgum ./cmd/gitgum
 	@if command -v upx >/dev/null 2>&1; then \
 		upx ./bin/gitgum || echo "upx failed, skipping compression"; \
 	fi
 
-./src/version/version.go: VERSION ./src/version/format.go ./src/version/cmd/generate-version/main.go Makefile
+.PHONY: generate-version
+generate-version:
 	go generate ./src/version
 
 .PHONY: du
@@ -27,6 +28,7 @@ du: ./bin/gitgum  ## Show the binary size
 install: ./bin/gitgum  ## Symlink the binary into ~/.local/bin/gitgum
 	mkdir -p $(HOME)/.local/bin
 	ln -sf "$(PWD)/bin/gitgum" "$(HOME)/.local/bin/gitgum"
+	ln -sf "$(PWD)/bin/gitgum" "$(HOME)/.local/bin/gg"
 
 .PHONY: test
 test:  ## Run the test suite (and the vendored go-fuzzyfinder tests)
