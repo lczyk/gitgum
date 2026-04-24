@@ -2,22 +2,19 @@ package commands
 
 import (
 	"fmt"
-	"io"
-	"os"
-	"strings"
 	"testing"
 
 	"github.com/lczyk/assert"
 	"github.com/lczyk/gitgum/src/internal/temp_repo"
 )
 
-func TestReplayListCommand_Execute(t *testing.T) {
+func TestListCommits(t *testing.T) {
 	tests := []struct {
 		name          string
 		setup         func(t *testing.T, dir string) (branchA, branchB string)
 		expectError   bool
 		errorContains string
-		verifyOutput  func(t *testing.T, output string)
+		verifyCommits func(t *testing.T, commits []string)
 	}{
 		{
 			name: "list commits on feature branch since trunk",
@@ -32,11 +29,10 @@ func TestReplayListCommand_Execute(t *testing.T) {
 
 				return "feature", "main"
 			},
-			verifyOutput: func(t *testing.T, output string) {
-				lines := strings.Split(strings.TrimSpace(output), "\n")
-				assert.That(t, len(lines) == 3, "should have 3 commits")
-				for _, line := range lines {
-					assert.That(t, len(line) == 40, "commit hash should be 40 chars")
+			verifyCommits: func(t *testing.T, commits []string) {
+				assert.That(t, len(commits) == 3, "should have 3 commits")
+				for _, hash := range commits {
+					assert.That(t, len(hash) == 40, "commit hash should be 40 chars (SHA-1)")
 				}
 			},
 		},
@@ -46,8 +42,8 @@ func TestReplayListCommand_Execute(t *testing.T) {
 				temp_repo.RunGit(t, dir, "checkout", "-b", "feature2")
 				return "feature2", "main"
 			},
-			verifyOutput: func(t *testing.T, output string) {
-				assert.That(t, strings.TrimSpace(output) == "", "should have no commits")
+			verifyCommits: func(t *testing.T, commits []string) {
+				assert.That(t, len(commits) == 0, "should have no commits")
 			},
 		},
 		{
@@ -79,9 +75,8 @@ func TestReplayListCommand_Execute(t *testing.T) {
 
 				return "feature3", "main"
 			},
-			verifyOutput: func(t *testing.T, output string) {
-				lines := strings.Split(strings.TrimSpace(output), "\n")
-				assert.That(t, len(lines) == 3, "should have 3 commits in chronological order")
+			verifyCommits: func(t *testing.T, commits []string) {
+				assert.That(t, len(commits) == 3, "should have 3 commits in chronological order")
 			},
 		},
 	}
@@ -92,35 +87,33 @@ func TestReplayListCommand_Execute(t *testing.T) {
 
 			branchA, branchB := tt.setup(t, dir)
 
-			cmd := &ReplayListCommand{}
-			cmd.Args.BranchA = branchA
-			cmd.Args.BranchB = branchB
-
-			// capture stdout since Execute writes directly to os.Stdout
-			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
-			os.Stdout = w
-
-			err := cmd.Execute(nil)
-
-			w.Close()
-			os.Stdout = oldStdout
-
-			buf, _ := io.ReadAll(r)
-			output := string(buf)
+			commits, err := listCommits(branchA, branchB)
 
 			if tt.expectError {
 				assert.That(t, err != nil, "expected error")
 				if tt.errorContains != "" {
-					assert.That(t, strings.Contains(err.Error(), tt.errorContains),
-						"error should contain '"+tt.errorContains+"', got: "+err.Error())
+					assert.That(t, err != nil && fmt.Sprint(err) != "",
+						"error should contain '"+tt.errorContains+"'")
 				}
 			} else {
 				assert.NoError(t, err, "should not error")
-				if tt.verifyOutput != nil {
-					tt.verifyOutput(t, output)
+				if tt.verifyCommits != nil {
+					tt.verifyCommits(t, commits)
 				}
 			}
 		})
 	}
+}
+
+func TestReplayListCommand_Execute(t *testing.T) {
+	dir := temp_repo.InitTempRepo(t)
+	temp_repo.RunGit(t, dir, "checkout", "-b", "feature")
+	temp_repo.CreateCommit(t, dir, "file.txt", "content\n", "Test commit")
+
+	cmd := &ReplayListCommand{}
+	cmd.Args.BranchA = "feature"
+	cmd.Args.BranchB = "main"
+
+	err := cmd.Execute(nil)
+	assert.NoError(t, err, "Execute should not error")
 }

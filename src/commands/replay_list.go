@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/lczyk/gitgum/src/internal"
 )
@@ -14,6 +15,33 @@ type ReplayListCommand struct {
 	} `positional-args:"yes" required:"yes"`
 }
 
+// listCommits returns the list of commits on branchA since divergence from branchB,
+// in chronological order.
+func listCommits(branchA, branchB string) ([]string, error) {
+	// Compute merge base between A and B
+	mergeBase, _, err := internal.RunCommand("git", "merge-base", branchA, branchB)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find merge base between '%s' and '%s': %w", branchA, branchB, err)
+	}
+
+	if mergeBase == "" {
+		return nil, fmt.Errorf("no merge base found between '%s' and '%s'", branchA, branchB)
+	}
+
+	// List commits from merge-base to A in reverse (chronological) order
+	revRange := mergeBase + ".." + branchA
+	output, _, err := internal.RunCommand("git", "rev-list", revRange, "--reverse")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list commits: %w", err)
+	}
+
+	if output == "" {
+		return []string{}, nil
+	}
+
+	return strings.Split(output, "\n"), nil
+}
+
 // Execute runs the replay-list command
 func (r *ReplayListCommand) Execute(args []string) error {
 	// Check if we're in a git repository
@@ -21,23 +49,13 @@ func (r *ReplayListCommand) Execute(args []string) error {
 		return err
 	}
 
-	branchA := r.Args.BranchA
-	branchB := r.Args.BranchB
-
-	// Compute merge base between A and B
-	mergeBase, _, err := internal.RunCommand("git", "merge-base", branchA, branchB)
+	commits, err := listCommits(r.Args.BranchA, r.Args.BranchB)
 	if err != nil {
-		return fmt.Errorf("failed to find merge base between '%s' and '%s': %w", branchA, branchB, err)
+		return err
 	}
 
-	if mergeBase == "" {
-		return fmt.Errorf("no merge base found between '%s' and '%s'", branchA, branchB)
-	}
-
-	// List commits from merge-base to A in reverse (chronological) order
-	revRange := mergeBase + ".." + branchA
-	if err := internal.RunCommandWithOutput("git", "rev-list", revRange, "--reverse"); err != nil {
-		return fmt.Errorf("failed to list commits: %w", err)
+	for _, commit := range commits {
+		fmt.Println(commit)
 	}
 
 	return nil
