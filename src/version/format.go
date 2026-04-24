@@ -5,10 +5,14 @@ import "strings"
 //go:generate go run ./cmd/generate-version
 
 func FormatVersion(version, commitSHA, buildDate, buildInfo string) string {
-	result := version
+	var result strings.Builder
+	result.WriteString(version)
+
 	if commitSHA != "" {
-		result += "+" + commitSHA[:min(7, len(commitSHA))]
+		result.WriteByte('+')
+		result.WriteString(commitSHA[:min(7, len(commitSHA))])
 	}
+
 	var infoParts []string
 	if buildDate != "" {
 		infoParts = append(infoParts, buildDate)
@@ -16,8 +20,12 @@ func FormatVersion(version, commitSHA, buildDate, buildInfo string) string {
 	if buildInfo != "" {
 		infoParts = append(infoParts, buildInfo)
 	}
+
 	if len(infoParts) > 0 {
-		return result + " (" + strings.Join(infoParts, ", ") + ")"
+		result.WriteString(" (")
+		result.WriteString(strings.Join(infoParts, ", "))
+		result.WriteByte(')')
 	}
-	return result
+
+	return result.String()
 }
