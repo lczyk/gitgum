@@ -291,20 +291,15 @@ func TestFind_hotReload(t *testing.T) {
 	events := append(runes("adrena"), keys(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone})...)
 	term.SetEvents(events...)
 
-	var mu sync.Mutex
 	assertWithGolden(t, func(t *testing.T) string {
 		_, err := f.Find(
 			&tracks,
 			func(i int) string {
-				mu.Lock()
-				defer mu.Unlock()
 				return tracks[i].Name
 			},
 			fuzzyfinder.WithPreviewWindow(func(i, width, height int) string {
 				// Hack, wait until updateItems is called.
 				time.Sleep(50 * time.Millisecond)
-				mu.Lock()
-				defer mu.Unlock()
 				if i == -1 {
 					return "not found"
 				}
