@@ -3,7 +3,6 @@ package fuzzyfinder
 import (
 	"context"
 	"strings"
-	"sync"
 )
 
 // SubstringMatcher is a case-insensitive, whitespace-split substring matcher:
@@ -20,15 +19,13 @@ func SubstringMatcher(query, item string) bool {
 }
 
 type opt struct {
-	mode          mode
-	hotReload     bool
-	hotReloadLock sync.Locker
-	promptString  string
-	header        string
-	ctx           context.Context
-	query         string
-	selectOne     bool
-	matcher       func(query, item string) bool
+	mode         mode
+	promptString string
+	header       string
+	ctx          context.Context
+	query        string
+	selectOne    bool
+	matcher      func(query, item string) bool
 }
 
 type mode int
@@ -45,8 +42,7 @@ const (
 )
 
 var defaultOption = opt{
-	promptString:  "> ",
-	hotReloadLock: &sync.Mutex{}, // avoid nil panic when hot reload is not used
+	promptString: "> ",
 }
 
 // Option represents available fuzzy-finding options.
@@ -56,17 +52,6 @@ type Option func(*opt)
 func WithMode(m mode) Option {
 	return func(o *opt) {
 		o.mode = m
-	}
-}
-
-// WithHotReloadLock reloads the passed slice automatically when some entries are appended.
-// The caller must pass a pointer of the slice instead of the slice itself.
-// The caller must pass a Locker which is used to synchronize access to the slice.
-// The caller MUST NOT lock in the itemFunc passed to Find / FindMulti because it will be locked by the fuzzyfinder.
-func WithHotReloadLock(lock sync.Locker) Option {
-	return func(o *opt) {
-		o.hotReload = true
-		o.hotReloadLock = lock
 	}
 }
 

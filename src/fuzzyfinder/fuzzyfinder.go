@@ -8,7 +8,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -497,9 +496,37 @@ func (f *finder) filter() {
 	}
 }
 
-func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Option, multi bool) ([]int, error) {
-	if itemFunc == nil {
-		return nil, errors.New("itemFunc must not be nil")
+// findStatic runs the picker against a fixed slice of items.
+func (f *finder) findStatic(items []string, opts []Option, multi bool) ([]int, error) {
+	opt := defaultOption
+	for _, o := range opts {
+		o(&opt)
+	}
+	f.multi = multi
+
+	matched := makeMatched(len(items))
+
+	parentCtx := context.Background()
+	if opt.ctx != nil {
+		parentCtx = opt.ctx
+	}
+	ctx, cancel := context.WithCancel(parentCtx)
+	defer cancel()
+
+	if err := f.initFinder(items, matched, opt); err != nil {
+		return nil, fmt.Errorf("failed to initialize the fuzzy finder: %w", err)
+	}
+	return f.runLoop(ctx, &opt)
+}
+
+// findLive runs the picker against a slice that may grow concurrently;
+// lock guards reads of *itemsPtr while items are appended by the caller.
+func (f *finder) findLive(itemsPtr *[]string, lock sync.Locker, opts []Option, multi bool) ([]int, error) {
+	if itemsPtr == nil {
+		return nil, errors.New("items pointer must not be nil")
+	}
+	if lock == nil {
+		return nil, errors.New("lock must not be nil")
 	}
 
 	opt := defaultOption
@@ -508,76 +535,58 @@ func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Opt
 	}
 	f.multi = multi
 
-	rv := reflect.ValueOf(slice)
-	if opt.hotReload && (rv.Kind() != reflect.Ptr || reflect.Indirect(rv).Kind() != reflect.Slice) {
-		return nil, fmt.Errorf("the first argument must be a pointer to a slice, but got %T", slice)
-	} else if !opt.hotReload && rv.Kind() != reflect.Slice {
-		return nil, fmt.Errorf("the first argument must be a slice, but got %T", slice)
-	}
-
-	makeItems := func(sliceLen int) ([]string, []matching.Matched) {
-		items := make([]string, sliceLen)
-		matched := make([]matching.Matched, sliceLen)
-		for i := 0; i < sliceLen; i++ {
-			items[i] = itemFunc(i)
-			matched[i] = matching.Matched{Idx: i}
-		}
-		return items, matched
-	}
-
-	var (
-		items   []string
-		matched []matching.Matched
-	)
-
 	parentCtx := context.Background()
 	if opt.ctx != nil {
 		parentCtx = opt.ctx
 	}
-
 	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
 
+	lock.Lock()
+	itemsCopy := append([]string(nil), (*itemsPtr)...)
+	lock.Unlock()
+	matched := makeMatched(len(itemsCopy))
+
 	inited := make(chan struct{})
-	if opt.hotReload {
-		opt.hotReloadLock.Lock()
-		rvv := reflect.Indirect(rv)
-		items, matched = makeItems(rvv.Len())
-		opt.hotReloadLock.Unlock()
-
-		go func() {
-			<-inited
-
-			var prev int
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(30 * time.Millisecond):
-					opt.hotReloadLock.Lock()
-					curr := rvv.Len()
-					if prev != curr {
-						items, matched = makeItems(curr)
-						f.updateItems(items, matched)
-					}
-					opt.hotReloadLock.Unlock()
-					prev = curr
+	go func() {
+		<-inited
+		var prev int
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(30 * time.Millisecond):
+				lock.Lock()
+				curr := len(*itemsPtr)
+				if prev != curr {
+					itemsCopy = append([]string(nil), (*itemsPtr)...)
+					f.updateItems(itemsCopy, makeMatched(curr))
 				}
+				lock.Unlock()
+				prev = curr
 			}
-		}()
-	} else {
-		items, matched = makeItems(rv.Len())
-	}
+		}
+	}()
 
-	if err := f.initFinder(items, matched, opt); err != nil {
+	if err := f.initFinder(itemsCopy, matched, opt); err != nil {
 		return nil, fmt.Errorf("failed to initialize the fuzzy finder: %w", err)
 	}
+	close(inited)
+	return f.runLoop(ctx, &opt)
+}
 
+func makeMatched(n int) []matching.Matched {
+	matched := make([]matching.Matched, n)
+	for i := range matched {
+		matched[i] = matching.Matched{Idx: i}
+	}
+	return matched
+}
+
+func (f *finder) runLoop(ctx context.Context, opt *opt) ([]int, error) {
 	if !isInTesting() {
 		defer f.term.Fini()
 	}
-
-	close(inited)
 
 	if opt.selectOne && len(f.state.matched) == 1 {
 		return []int{f.state.matched[0].Idx}, nil
@@ -639,39 +648,54 @@ func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Opt
 	}
 }
 
-// Find displays a UI that provides fuzzy finding against the provided slice.
-// The argument slice must be of a slice type. If not, Find returns
-// an error. itemFunc is called by the length of slice. previewFunc is called
-// when the cursor which points to the currently selected item is changed.
-// If itemFunc is nil, Find returns an error.
-//
-// itemFunc receives an argument i, which is the index of the item currently
-// selected.
-//
-// Find returns ErrAbort if a call to Find is finished with no selection.
-func Find(slice interface{}, itemFunc func(i int) string, opts ...Option) (int, error) {
+// Find displays a fuzzy-finder UI over items and returns the index of the
+// selected entry, or ErrAbort if the user cancels.
+func Find(items []string, opts ...Option) (int, error) {
 	f := &finder{}
-	return f.Find(slice, itemFunc, opts...)
+	return f.Find(items, opts...)
 }
 
-func (f *finder) Find(slice interface{}, itemFunc func(i int) string, opts ...Option) (int, error) {
-	res, err := f.find(slice, itemFunc, opts, false)
-
+func (f *finder) Find(items []string, opts ...Option) (int, error) {
+	res, err := f.findStatic(items, opts, false)
 	if err != nil {
 		return 0, err
 	}
-	return res[0], err
+	return res[0], nil
 }
 
-// FindMulti is nearly the same as Find. The only difference from Find is that
-// the user can select multiple items at once, by using the tab key.
-func FindMulti(slice interface{}, itemFunc func(i int) string, opts ...Option) ([]int, error) {
+// FindMulti behaves like Find but lets the user select multiple items via Tab.
+func FindMulti(items []string, opts ...Option) ([]int, error) {
 	f := &finder{}
-	return f.FindMulti(slice, itemFunc, opts...)
+	return f.FindMulti(items, opts...)
 }
 
-func (f *finder) FindMulti(slice interface{}, itemFunc func(i int) string, opts ...Option) ([]int, error) {
-	return f.find(slice, itemFunc, opts, true)
+func (f *finder) FindMulti(items []string, opts ...Option) ([]int, error) {
+	return f.findStatic(items, opts, true)
+}
+
+// FindLive displays a fuzzy-finder UI over a slice that may grow concurrently.
+// Callers append to *items under lock; the picker re-reads on a 30ms cadence.
+func FindLive(items *[]string, lock sync.Locker, opts ...Option) (int, error) {
+	f := &finder{}
+	return f.FindLive(items, lock, opts...)
+}
+
+func (f *finder) FindLive(items *[]string, lock sync.Locker, opts ...Option) (int, error) {
+	res, err := f.findLive(items, lock, opts, false)
+	if err != nil {
+		return 0, err
+	}
+	return res[0], nil
+}
+
+// FindMultiLive is the multi-select variant of FindLive.
+func FindMultiLive(items *[]string, lock sync.Locker, opts ...Option) ([]int, error) {
+	f := &finder{}
+	return f.FindMultiLive(items, lock, opts...)
+}
+
+func (f *finder) FindMultiLive(items *[]string, lock sync.Locker, opts ...Option) ([]int, error) {
+	return f.findLive(items, lock, opts, true)
 }
 
 func isInTesting() bool {

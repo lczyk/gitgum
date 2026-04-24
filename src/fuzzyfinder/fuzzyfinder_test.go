@@ -82,6 +82,14 @@ type track struct {
 	Album  string
 }
 
+func trackNames() []string {
+	out := make([]string, len(tracks))
+	for i, t := range tracks {
+		out[i] = t.Name
+	}
+	return out
+}
+
 var tracks = []*track{
 	{"あの日自分が出て行ってやっつけた時のことをまだ覚えている人の為に", "", ""},
 	{"ヒトリノ夜", "ポルノグラフィティ", "ロマンチスト・エゴイスト"},
@@ -99,12 +107,7 @@ func TestReal(t *testing.T) {
 		t.Skip("--real is disabled")
 		return
 	}
-	_, err := fuzzyfinder.Find(
-		tracks,
-		func(i int) string {
-			return tracks[i].Name
-		},
-	)
+	_, err := fuzzyfinder.Find(trackNames())
 	if err != nil {
 		t.Fatalf("err is not nil: %s", err)
 	}
@@ -252,13 +255,7 @@ func TestFind(t *testing.T) {
 			)
 
 			assertWithGolden(t, func(t *testing.T) string {
-				_, err := f.Find(
-					tracks,
-					func(i int) string {
-						return tracks[i].Name
-					},
-					opts...,
-				)
+				_, err := f.Find(trackNames(), opts...)
 				if !errors.Is(err, fuzzyfinder.ErrAbort) {
 					t.Fatalf("Find must return ErrAbort, but got '%s'", err)
 				}
@@ -277,14 +274,12 @@ func TestFind_hotReload(t *testing.T) {
 	events := append(runes("adrena"), keys(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone})...)
 	term.SetEvents(events...)
 
+	names := trackNames()
 	assertWithGolden(t, func(t *testing.T) string {
-		_, err := f.Find(
-			&tracks,
-			func(i int) string {
-				return tracks[i].Name
-			},
+		_, err := f.FindLive(
+			&names,
+			&sync.Mutex{},
 			fuzzyfinder.WithMode(fuzzyfinder.ModeCaseSensitive),
-			fuzzyfinder.WithHotReloadLock(&sync.Mutex{}),
 		)
 		if !errors.Is(err, fuzzyfinder.ErrAbort) {
 			t.Fatalf("Find must return ErrAbort, but got '%s'", err)
@@ -303,14 +298,12 @@ func TestFind_hotReloadLock(t *testing.T) {
 	term.SetEvents(events...)
 
 	var mu sync.RWMutex
+	names := trackNames()
 	assertWithGolden(t, func(t *testing.T) string {
-		_, err := f.Find(
-			&tracks,
-			func(i int) string {
-				return tracks[i].Name
-			},
+		_, err := f.FindLive(
+			&names,
+			mu.RLocker(),
 			fuzzyfinder.WithMode(fuzzyfinder.ModeCaseSensitive),
-			fuzzyfinder.WithHotReloadLock(mu.RLocker()),
 		)
 		if !errors.Is(err, fuzzyfinder.ErrAbort) {
 			t.Fatalf("Find must return ErrAbort, but got '%s'", err)
@@ -342,12 +335,7 @@ func TestFind_enter(t *testing.T) {
 			events = append(events, key(input{tcell.KeyEnter, rune(tcell.KeyEnter), tcell.ModNone}))
 			term.SetEvents(events...)
 
-			idx, err := f.Find(
-				tracks,
-				func(i int) string {
-					return tracks[i].Name
-				},
-			)
+			idx, err := f.Find(trackNames())
 
 			if err != nil {
 				t.Fatalf("Find must not return an error, but got '%s'", err)
@@ -370,13 +358,7 @@ func TestFind_withContext(t *testing.T) {
 	cancelFunc()
 
 	assertWithGolden(t, func(t *testing.T) string {
-		_, err := f.Find(
-			tracks,
-			func(i int) string {
-				return tracks[i].Name
-			},
-			fuzzyfinder.WithContext(cancelledCtx),
-		)
+		_, err := f.Find(trackNames(), fuzzyfinder.WithContext(cancelledCtx))
 		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("Find must return ErrAbort, but got '%s'", err)
 		}
@@ -389,10 +371,7 @@ func TestFind_withContext(t *testing.T) {
 func TestFind_WithQuery(t *testing.T) {
 	t.Parallel()
 	var (
-		things    = []string{"one", "three2one"}
-		thingFunc = func(i int) string {
-			return things[i]
-		}
+		things = []string{"one", "three2one"}
 		events = append(runes("one"), key(input{tcell.KeyEnter, rune(tcell.KeyEnter), tcell.ModNone}))
 	)
 
@@ -401,7 +380,7 @@ func TestFind_WithQuery(t *testing.T) {
 		term.SetEvents(events...)
 
 		assertWithGolden(t, func(t *testing.T) string {
-			idx, err := f.Find(things, thingFunc)
+			idx, err := f.Find(things)
 			if err != nil {
 				t.Fatalf("Find must not return an error, but got '%s'", err)
 			}
@@ -418,7 +397,7 @@ func TestFind_WithQuery(t *testing.T) {
 		term.SetEvents(events...)
 
 		assertWithGolden(t, func(t *testing.T) string {
-			idx, err := f.Find(things, thingFunc, fuzzyfinder.WithQuery("three2"))
+			idx, err := f.Find(things, fuzzyfinder.WithQuery("three2"))
 
 			if err != nil {
 				t.Fatalf("Find must not return an error, but got '%s'", err)
@@ -465,13 +444,7 @@ func TestFind_WithSelectOne(t *testing.T) {
 			term.SetEvents(key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 
 			assertWithGolden(t, func(t *testing.T) string {
-				idx, err := f.Find(
-					c.things,
-					func(i int) string {
-						return c.things[i]
-					},
-					append(c.moreOpts, fuzzyfinder.WithSelectOne())...,
-				)
+				idx, err := f.Find(c.things, append(c.moreOpts, fuzzyfinder.WithSelectOne())...)
 				if c.abort {
 					if !errors.Is(err, fuzzyfinder.ErrAbort) {
 						t.Fatalf("Find must return ErrAbort, but got '%s'", err)
@@ -489,30 +462,6 @@ func TestFind_WithSelectOne(t *testing.T) {
 			})
 		})
 	}
-}
-
-func TestFind_error(t *testing.T) {
-	t.Parallel()
-
-	t.Run("not a slice", func(t *testing.T) {
-		t.Parallel()
-
-		f := fuzzyfinder.New()
-		_, err := f.Find("", func(i int) string { return "" })
-		if err == nil {
-			t.Error("Find must return an error, but got nil")
-		}
-	})
-
-	t.Run("itemFunc is nil", func(t *testing.T) {
-		t.Parallel()
-
-		f := fuzzyfinder.New()
-		_, err := f.Find([]string{}, nil)
-		if err == nil {
-			t.Error("Find must return an error, but got nil")
-		}
-	})
 }
 
 func TestFindMulti(t *testing.T) {
@@ -553,12 +502,7 @@ func TestFindMulti(t *testing.T) {
 			events = append(events, key(input{tcell.KeyEnter, rune(tcell.KeyEnter), tcell.ModNone}))
 			term.SetEvents(events...)
 
-			idxs, err := f.FindMulti(
-				tracks,
-				func(i int) string {
-					return tracks[i].Name
-				},
-			)
+			idxs, err := f.FindMulti(trackNames())
 			if c.abort {
 				if !errors.Is(err, fuzzyfinder.ErrAbort) {
 					t.Fatalf("Find must return ErrAbort, but got '%s'", err)
@@ -585,12 +529,7 @@ func BenchmarkFind(b *testing.B) {
 			events := append(runes("adrele!!"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 			term.SetEvents(events...)
 
-			_, err := f.Find(
-				tracks,
-				func(i int) string {
-					return tracks[i].Name
-				},
-			)
+			_, err := f.Find(trackNames())
 			if !errors.Is(err, fuzzyfinder.ErrAbort) {
 				b.Fatalf("expected ErrAbort, but got '%s'", err)
 			}
@@ -605,13 +544,8 @@ func BenchmarkFind(b *testing.B) {
 			events := append(runes("adrele!!"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 			term.SetEvents(events...)
 
-			_, err := f.Find(
-				&tracks,
-				func(i int) string {
-					return tracks[i].Name
-				},
-				fuzzyfinder.WithHotReloadLock(&sync.Mutex{}),
-			)
+			names := trackNames()
+			_, err := f.FindLive(&names, &sync.Mutex{})
 			if !errors.Is(err, fuzzyfinder.ErrAbort) {
 				b.Fatalf("expected ErrAbort, but got '%s'", err)
 			}

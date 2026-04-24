@@ -75,12 +75,11 @@ func (s *SwitchCommand) Execute(args []string) error {
 
 func pickBranch(ctx context.Context, branches *[]string, lock *sync.Mutex) (string, error) {
 	prompt := "Select a branch to switch to"
-	idx, err := fuzzyfinder.Find(
+	idx, err := fuzzyfinder.FindLive(
 		branches,
-		func(i int) string { return (*branches)[i] },
+		lock,
 		fuzzyfinder.WithPromptString(prompt+": "),
 		fuzzyfinder.WithMatcher(fuzzyfinder.SubstringMatcher),
-		fuzzyfinder.WithHotReloadLock(lock),
 		fuzzyfinder.WithContext(ctx),
 	)
 	if err != nil {

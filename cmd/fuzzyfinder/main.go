@@ -65,18 +65,16 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	go func() { readErrCh <- streamItems(ctx, stdin, &lock, &items) }()
 
 	opts := buildOptions(cfg)
-	opts = append(opts, fuzzyfinder.WithContext(ctx), fuzzyfinder.WithHotReloadLock(&lock))
-
-	itemAt := func(i int) string { return items[i] }
+	opts = append(opts, fuzzyfinder.WithContext(ctx))
 
 	var (
 		idxs    []int
 		findErr error
 	)
 	if cfg.multi {
-		idxs, findErr = fuzzyfinder.FindMulti(&items, itemAt, opts...)
+		idxs, findErr = fuzzyfinder.FindMultiLive(&items, &lock, opts...)
 	} else {
-		idx, err := fuzzyfinder.Find(&items, itemAt, opts...)
+		idx, err := fuzzyfinder.FindLive(&items, &lock, opts...)
 		idxs, findErr = []int{idx}, err
 	}
 	cancel()

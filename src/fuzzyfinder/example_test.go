@@ -8,40 +8,20 @@ import (
 )
 
 func ExampleFind() {
-	slice := []struct {
-		id   string
-		name string
-	}{
-		{"id1", "foo"},
-		{"id2", "bar"},
-		{"id3", "baz"},
-	}
-	idx, _ := fuzzyfinder.Find(slice, func(i int) string {
-		return fmt.Sprintf("[%s] %s", slice[i].id, slice[i].name)
-	})
-	fmt.Println(slice[idx])
+	items := []string{"foo", "bar", "baz"}
+	idx, _ := fuzzyfinder.Find(items)
+	fmt.Println(items[idx])
 }
 
 func ExampleFindMulti() {
-	slice := []struct {
-		id   string
-		name string
-	}{
-		{"id1", "foo"},
-		{"id2", "bar"},
-		{"id3", "baz"},
-	}
-	idxs, _ := fuzzyfinder.FindMulti(slice, func(i int) string {
-		return fmt.Sprintf("[%s] %s", slice[i].id, slice[i].name)
-	})
+	items := []string{"foo", "bar", "baz"}
+	idxs, _ := fuzzyfinder.FindMulti(items)
 	for _, idx := range idxs {
-		fmt.Println(slice[idx])
+		fmt.Println(items[idx])
 	}
 }
 
 func ExampleTerminalMock() {
-	// NewWithMockedTerminal returns the finder and the mock — use f.Find so
-	// the mock terminal is the one actually receiving events.
 	f, term := fuzzyfinder.NewWithMockedTerminal()
 	term.SetEvents(
 		tcell.NewEventKey(tcell.KeyRune, 'f', tcell.ModNone),
@@ -50,8 +30,7 @@ func ExampleTerminalMock() {
 		tcell.NewEventKey(tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone),
 	)
 
-	slice := []string{"foo", "bar", "baz"}
-	f.Find(slice, func(i int) string { return slice[i] })
+	f.Find([]string{"foo", "bar", "baz"})
 
 	term.GetResult()
 }

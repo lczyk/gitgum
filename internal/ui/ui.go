@@ -24,11 +24,7 @@ func FzfSelect(prompt string, options []string, initialQuery ...string) (string,
 	}
 	opts = append(opts, fuzzyfinder.WithMatcher(fuzzyfinder.SubstringMatcher))
 
-	idx, err := fuzzyfinder.Find(
-		options,
-		func(i int) string { return options[i] },
-		opts...,
-	)
+	idx, err := fuzzyfinder.Find(options, opts...)
 	if err != nil {
 		if err == fuzzyfinder.ErrAbort {
 			return "", ErrFzfCancelled
