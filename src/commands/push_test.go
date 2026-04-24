@@ -17,8 +17,7 @@ func TestPushCommand_NotInGitRepo(t *testing.T) {
 	cmd := &PushCommand{}
 	err := cmd.Execute(nil)
 
-	assert.That(t, err != nil, "should error outside git repo")
-	assert.ContainsString(t, err.Error(), "not inside a git repository")
+	assert.Error(t, err, "not inside a git repository")
 }
 
 func TestPushCommand_NoRemotes(t *testing.T) {
@@ -27,6 +26,5 @@ func TestPushCommand_NoRemotes(t *testing.T) {
 	cmd := &PushCommand{}
 	err := cmd.Execute(nil)
 
-	assert.That(t, err != nil, "should error without remotes")
-	assert.ContainsString(t, err.Error(), "no remotes")
+	assert.Error(t, err, "no remotes")
 }
