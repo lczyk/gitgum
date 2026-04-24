@@ -18,6 +18,11 @@ import (
 	fuzzyfinder "github.com/ktr0731/go-fuzzyfinder"
 )
 
+type fuzzKey struct {
+	key  tcell.Key
+	name string
+}
+
 var (
 	letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789一花二乃三玖四葉五月")
 	tbkeys  = []tcell.Key{
@@ -82,6 +87,13 @@ func TestFuzz(t *testing.T) {
 
 	fuzz := fuzz.New()
 
+	min := func(a, b int) int {
+		if a < b {
+			return a
+		}
+		return b
+	}
+
 	for i := 0; i < rand.Intn(*numCases)+10; i++ {
 		// number of events in tcell.SimulationScreen is limited 10
 		n := rand.Intn(min(*numEvents, 10))
@@ -110,6 +122,7 @@ func TestFuzz(t *testing.T) {
 					fmt.Fprintln(f, name)
 					t.Errorf("panicked: %s", name)
 				}
+				return
 			}()
 
 			var mu sync.Mutex
@@ -133,7 +146,7 @@ func TestFuzz(t *testing.T) {
 			}
 			if *hotReload {
 				iface = &tracks
-				opts = append(opts, fuzzyfinder.WithHotReloadLock(&mu))
+				opts = append(opts, fuzzyfinder.WithHotReload())
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
 				go func() {

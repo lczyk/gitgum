@@ -2,8 +2,8 @@ package fuzzyfinder_test
 
 import (
 	"context"
-	"errors"
 	"flag"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -16,6 +16,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/google/go-cmp/cmp"
 	fuzzyfinder "github.com/ktr0731/go-fuzzyfinder"
+	"github.com/pkg/errors"
 )
 
 var (
@@ -56,14 +57,14 @@ func assertWithGolden(t *testing.T, f func(t *testing.T) string) {
 	fname := normalizeFilename(name)
 
 	if *update {
-		if err := os.WriteFile(fname, []byte(actual), 0600); err != nil {
+		if err := ioutil.WriteFile(fname, []byte(actual), 0600); err != nil {
 			t.Fatalf("failed to update the golden file: %s", err)
 		}
 		return
 	}
 
 	// Load the golden file.
-	b, err := os.ReadFile(fname)
+	b, err := ioutil.ReadFile(fname)
 	if err != nil {
 		t.Fatalf("failed to load a golden file: %s", err)
 	}
@@ -284,6 +285,44 @@ func TestFind(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestFind_hotReload(t *testing.T) {
+	t.Parallel()
+
+	f, term := fuzzyfinder.NewWithMockedTerminal()
+	events := append(runes("adrena"), keys(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone})...)
+	term.SetEventsV2(events...)
+
+	var mu sync.Mutex
+	assertWithGolden(t, func(t *testing.T) string {
+		_, err := f.Find(
+			&tracks,
+			func(i int) string {
+				mu.Lock()
+				defer mu.Unlock()
+				return tracks[i].Name
+			},
+			fuzzyfinder.WithPreviewWindow(func(i, width, height int) string {
+				// Hack, wait until updateItems is called.
+				time.Sleep(50 * time.Millisecond)
+				mu.Lock()
+				defer mu.Unlock()
+				if i == -1 {
+					return "not found"
+				}
+				return "Name: " + tracks[i].Name + "\nArtist: " + tracks[i].Artist
+			}),
+			fuzzyfinder.WithMode(fuzzyfinder.ModeCaseSensitive),
+			fuzzyfinder.WithHotReload(),
+		)
+		if !errors.Is(err, fuzzyfinder.ErrAbort) {
+			t.Fatalf("Find must return ErrAbort, but got '%s'", err)
+		}
+
+		res := term.GetResult()
+		return res
+	})
 }
 
 func TestFind_hotReloadLock(t *testing.T) {
@@ -680,7 +719,7 @@ func BenchmarkFind(b *testing.B) {
 					}
 					return "Name: " + tracks[i].Name + "\nArtist: " + tracks[i].Artist
 				}),
-				fuzzyfinder.WithHotReloadLock(&sync.Mutex{}),
+				fuzzyfinder.WithHotReload(),
 			)
 			if err != nil {
 				b.Fatalf("should not return an error, but got '%s'", err)
