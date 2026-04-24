@@ -50,13 +50,9 @@ func TestMatch(t *testing.T) {
 			if m.Idx != c.idx {
 				t.Errorf("m.Idx must be equal to %d, but got %d", c.idx, m.Idx)
 			}
-			from, to := m.Pos[0], m.Pos[1]+1
-			var actual string
-			if to > len(slice[c.idx]) {
-				actual = slice[c.idx][from:]
-			} else {
-				actual = slice[c.idx][from:to]
-			}
+			from := m.Pos[0]
+			to := min(m.Pos[1]+1, len(slice[c.idx]))
+			actual := slice[c.idx][from:to]
 			if actual != c.expected {
 				t.Errorf("invalid range: from = %d, to = %d, content = %s, expected = %s", from, to, actual, c.expected)
 			}
