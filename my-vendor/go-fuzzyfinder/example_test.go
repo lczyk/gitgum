@@ -2,7 +2,6 @@ package fuzzyfinder_test
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/gdamore/tcell/v2"
 	fuzzyfinder "github.com/ktr0731/go-fuzzyfinder"
@@ -83,10 +82,5 @@ func ExampleTerminalMock() {
 	slice := []string{"foo", "bar", "baz"}
 	_, _ = f.Find(slice, func(i int) string { return slice[i] })
 
-	// Write out the execution result to a temp file.
-	// We can test it by the golden files testing pattern.
-	//
-	// See https://speakerdeck.com/mitchellh/advanced-testing-with-go?slide=19
-	result := term.GetResult()
-	_ = os.WriteFile("ui.out", []byte(result), 0600)
+	_ = term.GetResult() // screen output; compare against golden files in real tests
 }
