@@ -19,7 +19,7 @@ func ExampleFind() {
 	idx, _ := fuzzyfinder.Find(slice, func(i int) string {
 		return fmt.Sprintf("[%s] %s", slice[i].id, slice[i].name)
 	})
-	fmt.Println(slice[idx]) // The selected item.
+	fmt.Println(slice[idx])
 }
 
 func ExampleFind_previewWindow() {
@@ -41,14 +41,12 @@ func ExampleFind_previewWindow() {
 				return "no results"
 			}
 			s := fmt.Sprintf("%s is selected", slice[i].name)
-			// As an example of using width, if the window width is less than
-			// the length of s, we return the name directly.
 			if width < len([]rune(s)) {
 				return slice[i].name
 			}
 			return s
 		}))
-	fmt.Println(slice[idx]) // The selected item.
+	fmt.Println(slice[idx])
 }
 
 func ExampleFindMulti() {
@@ -80,7 +78,7 @@ func ExampleTerminalMock() {
 	)
 
 	slice := []string{"foo", "bar", "baz"}
-	_, _ = f.Find(slice, func(i int) string { return slice[i] })
+	f.Find(slice, func(i int) string { return slice[i] })
 
-	_ = term.GetResult() // screen output; compare against golden files in real tests
+	term.GetResult() // compare against golden files in real tests
 }
