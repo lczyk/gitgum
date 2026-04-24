@@ -19,8 +19,21 @@ import (
 )
 
 var (
-	letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789一花二乃三玖四葉五月")
-	tbkeys  = []tcell.Key{
+	out       = flag.String("fuzzout", "fuzz.out", "fuzzing error cases")
+	hotReload = flag.Bool("hotreload", false, "enable hot-reloading")
+	numCases  = flag.Int("numCases", 30, "number of test cases")
+	numEvents = flag.Int("numEvents", 10, "number of events")
+)
+
+// TestFuzz executes fuzzing tests.
+//
+// Example:
+//
+//   go test -tags fuzz -run TestFuzz -numCases 10 -numEvents 10
+//
+func TestFuzz(t *testing.T) {
+	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789一花二乃三玖四葉五月")
+	tbkeys := []tcell.Key{
 		tcell.KeyCtrlA,
 		tcell.KeyCtrlB,
 		tcell.KeyCtrlE,
@@ -39,7 +52,7 @@ var (
 		tcell.KeyLeft,
 		tcell.KeyRight,
 	}
-	keyMap = map[tcell.Key]string{
+	keyMap := map[tcell.Key]string{
 		tcell.KeyCtrlA:      "A",
 		tcell.KeyCtrlB:      "B",
 		tcell.KeyCtrlE:      "E",
@@ -58,22 +71,7 @@ var (
 		tcell.KeyLeft:       "left",
 		tcell.KeyRight:      "right",
 	}
-)
 
-var (
-	out       = flag.String("fuzzout", "fuzz.out", "fuzzing error cases")
-	hotReload = flag.Bool("hotreload", false, "enable hot-reloading")
-	numCases  = flag.Int("numCases", 30, "number of test cases")
-	numEvents = flag.Int("numEvents", 10, "number of events")
-)
-
-// TestFuzz executes fuzzing tests.
-//
-// Example:
-//
-//   go test -tags fuzz -run TestFuzz -numCases 10 -numEvents 10
-//
-func TestFuzz(t *testing.T) {
 	f, err := os.Create(*out)
 	if err != nil {
 		t.Fatalf("failed to create a fuzzing output file: %s", err)
@@ -97,10 +95,11 @@ func TestFuzz(t *testing.T) {
 
 		var name string
 		for _, e := range events {
-			if e.(*tcell.EventKey).Rune() != 0 {
-				name += string(e.(*tcell.EventKey).Rune())
+			ek := e.(*tcell.EventKey)
+			if ek.Rune() != 0 {
+				name += string(ek.Rune())
 			} else {
-				name += "[" + keyMap[e.(*tcell.EventKey).Key()] + "]"
+				name += "[" + keyMap[ek.Key()] + "]"
 			}
 		}
 
