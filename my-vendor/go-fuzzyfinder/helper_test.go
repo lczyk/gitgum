@@ -9,7 +9,7 @@ func New() *finder {
 func NewWithMockedTerminal() (*finder, *TerminalMock) {
 	eventsChan := make(chan tcell.Event, 10)
 
-	f := New()
+	f := newFinder()
 	f.termEventsChan = eventsChan
 
 	screen := tcell.NewSimulationScreen("UTF-8")
