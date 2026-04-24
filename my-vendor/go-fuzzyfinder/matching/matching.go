@@ -107,8 +107,9 @@ func match(input string, slice []string, opt opt) (res []Matched) {
 				if idx == len(in) {
 					score, pos, err := scoring.Calculate(s, input)
 					if err != nil {
-						// LINE_MATCHING guarantees s contains all runes of input, so this shouldn't fire
-						continue
+						// LINE_MATCHING guarantees s contains all runes of input, so this shouldn't fire;
+						// break (not continue) so we don't try in[idx] again with idx already == len(in)
+						break LINE_MATCHING
 					}
 					res = append(res, Matched{
 						Idx:   idxOfSlice,
