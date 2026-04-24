@@ -20,7 +20,6 @@ type cell struct {
 type simScreen tcell.SimulationScreen
 
 // TerminalMock is a mocked terminal for testing.
-// Most users should use it by calling UseMockedTerminal.
 type TerminalMock struct {
 	simScreen
 	sizeMu        sync.RWMutex
@@ -255,24 +254,11 @@ func (m *TerminalMock) flush() {
 
 func (m *TerminalMock) close() {}
 
-// UseMockedTerminal switches the terminal, which is used from
-// this package to a mocked one.
-func UseMockedTerminal() *TerminalMock {
-	f := newFinder()
-	return f.UseMockedTerminal()
-}
-
 // UseMockedTerminalV2 switches the terminal, which is used from
 // this package to a mocked one.
 func UseMockedTerminalV2() *TerminalMock {
 	f := newFinder()
 	return f.UseMockedTerminalV2()
-}
-
-func (f *finder) UseMockedTerminal() *TerminalMock {
-	m := &TerminalMock{}
-	f.term = m
-	return m
 }
 
 func (f *finder) UseMockedTerminalV2() *TerminalMock {
