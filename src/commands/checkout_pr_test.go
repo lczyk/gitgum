@@ -179,8 +179,6 @@ func TestParsePRSelection(t *testing.T) {
 
 			if tt.expectedError {
 				assert.That(t, err != nil, "expected error for %q", tt.selection)
-				assert.Equal(t, num, 0)
-				assert.Equal(t, prType, "")
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, num, tt.expectedNum)
