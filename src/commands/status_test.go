@@ -2,6 +2,8 @@ package commands
 
 import (
 	"testing"
+
+	"github.com/lczyk/assert"
 )
 
 func TestParseRemotes(t *testing.T) {
@@ -46,19 +48,7 @@ origin	git@github.com:user/repo.git (push)`,
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := parseRemotes(tt.input)
-
-			if len(result) != len(tt.expected) {
-				t.Errorf("parseRemotes() got %d results, want %d", len(result), len(tt.expected))
-				t.Logf("Got: %v", result)
-				t.Logf("Want: %v", tt.expected)
-				return
-			}
-
-			for i, expected := range tt.expected {
-				if result[i] != expected {
-					t.Errorf("parseRemotes() result[%d] = %q, want %q", i, result[i], expected)
-				}
-			}
+			assert.EqualArrays(t, result, tt.expected)
 		})
 	}
 }
