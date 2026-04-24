@@ -16,6 +16,9 @@ func Test_smithWaterman(t *testing.T) {
 		{"TACGGGCCCGCTA", "TAGCCCTA", 78, [2]int{0, 12}},
 		{"TACGGG-CCCGCTA", "TAGCCCTA", 68, [2]int{0, 13}},
 		{"FLY ME TO THE MOON", "MEON", 16, [2]int{4, 17}},
+		// best DP cell matches only the first s2 char (maxJ < len(s2)-1), so the
+		// remaining s2 chars are found by the forward scan; to must be inclusive.
+		{"XAXBY", "AB", 5, [2]int{0, 3}},
 	}
 
 	for _, c := range cases {

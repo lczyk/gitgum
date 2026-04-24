@@ -79,8 +79,8 @@ func smithWaterman(s1, s2 []rune) (int, [2]int) {
 	var from, to int
 	cnt := 1
 
-	// maxJ is the last index of s2.
-	// If maxJ is equal to the length of s2, it means there are no matched runes after maxJ.
+	// if the best DP cell covered all of s2 (maxJ is the last s2 index), the match
+	// ends at maxI; otherwise scan forward for the remaining s2 chars.
 	if maxJ == len(s2)-1 {
 		to = maxI
 	} else {
@@ -90,7 +90,7 @@ func smithWaterman(s1, s2 []rune) (int, [2]int) {
 				cnt++
 				j++
 				if j == len(s2) {
-					to = i + 1
+					to = i
 					break
 				}
 			}
