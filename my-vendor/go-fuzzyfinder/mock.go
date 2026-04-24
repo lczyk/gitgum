@@ -390,15 +390,3 @@ func parseAttrV2(fg, bg tcell.Color, attr tcell.AttrMask) string {
 
 	return fmt.Sprintf("\x1b[%sm", strings.Join(params, ";"))
 }
-
-func toAnsi3bit(color tcell.Color) int {
-	colors := []tcell.Color{
-		tcell.ColorBlack, tcell.ColorRed, tcell.ColorGreen, tcell.ColorYellow, tcell.ColorBlue, tcell.ColorDarkMagenta, tcell.ColorDarkCyan, tcell.ColorWhite,
-	}
-	for i, c := range colors {
-		if c == color {
-			return i
-		}
-	}
-	return 0
-}
