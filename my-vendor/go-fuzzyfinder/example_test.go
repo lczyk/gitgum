@@ -2,7 +2,7 @@ package fuzzyfinder_test
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 
 	"github.com/gdamore/tcell/v2"
 	fuzzyfinder "github.com/ktr0731/go-fuzzyfinder"
@@ -86,5 +86,5 @@ func ExampleTerminalMock() {
 	//
 	// See https://speakerdeck.com/mitchellh/advanced-testing-with-go?slide=19
 	result := term.GetResult()
-	_ = ioutil.WriteFile("ui.out", []byte(result), 0600)
+	_ = os.WriteFile("ui.out", []byte(result), 0600)
 }

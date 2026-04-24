@@ -2,8 +2,8 @@ package fuzzyfinder_test
 
 import (
 	"context"
+	"errors"
 	"flag"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -16,7 +16,6 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/google/go-cmp/cmp"
 	fuzzyfinder "github.com/ktr0731/go-fuzzyfinder"
-	"github.com/pkg/errors"
 )
 
 var (
@@ -57,14 +56,14 @@ func assertWithGolden(t *testing.T, f func(t *testing.T) string) {
 	fname := normalizeFilename(name)
 
 	if *update {
-		if err := ioutil.WriteFile(fname, []byte(actual), 0600); err != nil {
+		if err := os.WriteFile(fname, []byte(actual), 0600); err != nil {
 			t.Fatalf("failed to update the golden file: %s", err)
 		}
 		return
 	}
 
 	// Load the golden file.
-	b, err := ioutil.ReadFile(fname)
+	b, err := os.ReadFile(fname)
 	if err != nil {
 		t.Fatalf("failed to load a golden file: %s", err)
 	}
