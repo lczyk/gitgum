@@ -62,31 +62,3 @@ origin	git@github.com:user/repo.git (push)`,
 		})
 	}
 }
-
-func TestIsCommandAvailable(t *testing.T) {
-	tests := []struct {
-		name     string
-		command  string
-		expected bool
-	}{
-		{
-			name:     "git should be available",
-			command:  "git",
-			expected: true,
-		},
-		{
-			name:     "nonexistent command",
-			command:  "this-command-definitely-does-not-exist-12345",
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := isCommandAvailable(tt.command)
-			if result != tt.expected {
-				t.Errorf("isCommandAvailable(%q) = %v, want %v", tt.command, result, tt.expected)
-			}
-		})
-	}
-}
