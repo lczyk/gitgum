@@ -49,6 +49,33 @@ const (
 	GitFileUnknown
 )
 
+// parseGitFileStatus parses the git status code and returns the file status
+func parseGitFileStatus(statusCode string) GitFileStatus {
+	if len(statusCode) < 2 {
+		return GitFileUnknown
+	}
+
+	// Untracked file (status: ??)
+	if statusCode[0] == '?' && statusCode[1] == '?' {
+		return GitFileUntracked
+	}
+
+	// Staged changes (first character is not space)
+	if statusCode[0] != ' ' && statusCode[0] != '?' {
+		if statusCode[0] == 'D' {
+			return GitFileDeleted
+		}
+		return GitFileStaged
+	}
+
+	// Modified (second character is not space)
+	if statusCode[1] != ' ' && statusCode[1] != '?' {
+		return GitFileModified
+	}
+
+	return GitFileUnknown
+}
+
 // GetGitFileStatus returns the status of a file in git
 func GetGitFileStatus(file string) (GitFileStatus, error) {
 	// Don't use RunCommand because it trims whitespace, which we need for parsing status
@@ -62,31 +89,7 @@ func GetGitFileStatus(file string) (GitFileStatus, error) {
 		return GitFileUnknown, err
 	}
 
-	if len(output) < 2 {
-		return GitFileUnknown, nil
-	}
-
-	status := output[:2]
-
-	// Untracked file (status: ??)
-	if status[0] == '?' && status[1] == '?' {
-		return GitFileUntracked, nil
-	}
-
-	// Staged changes (first character is not space)
-	if status[0] != ' ' && status[0] != '?' {
-		if status[0] == 'D' {
-			return GitFileDeleted, nil
-		}
-		return GitFileStaged, nil
-	}
-
-	// Modified (second character is not space)
-	if status[1] != ' ' && status[1] != '?' {
-		return GitFileModified, nil
-	}
-
-	return GitFileUnknown, nil
+	return parseGitFileStatus(output), nil
 }
 
 // FzfSelect presents options via fzf and returns the selected item
