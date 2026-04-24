@@ -131,7 +131,12 @@ func parsePRSelection(selection string) (int, string, error) {
 		return 0, "", fmt.Errorf("invalid PR number: %s", matches[1])
 	}
 
-	return prNumber, matches[2], nil
+	prType := matches[2]
+	if prType != "head" && prType != "merge" {
+		return 0, "", fmt.Errorf("invalid PR type: %s", prType)
+	}
+
+	return prNumber, prType, nil
 }
 
 func checkoutPR(remote string, prNumber int, prType string) error {

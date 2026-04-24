@@ -171,6 +171,13 @@ func TestParsePRSelection(t *testing.T) {
 			expectedType:  "",
 			expectedError: true,
 		},
+		{
+			name:          "invalid PR type",
+			selection:     "PR #123 (foo)",
+			expectedNum:   0,
+			expectedType:  "",
+			expectedError: true,
+		},
 	}
 
 	for _, tt := range tests {
