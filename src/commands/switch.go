@@ -23,7 +23,7 @@ func (s *SwitchCommand) checkoutBranch(branch string) error {
 	return nil
 }
 
-func (s *SwitchCommand) Execute(args []string) error {
+func (s *SwitchCommand) Execute() error {
 	// validation: ensure we're in a git repo with clean working tree
 	if err := internal.CheckInGitRepo(); err != nil {
 		return err

@@ -160,7 +160,7 @@ func TestCleanCommand_Execute(t *testing.T) {
 				tt.setup(t, dir)
 			}
 
-			err := tt.cmd.Execute(nil)
+			err := tt.cmd.Execute()
 			assert.NoError(t, err, "command should succeed")
 
 			if tt.verify != nil {

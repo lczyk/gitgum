@@ -8,7 +8,7 @@ import (
 
 type EmptyCommand struct{}
 
-func (e *EmptyCommand) Execute(args []string) error {
+func (e *EmptyCommand) Execute() error {
 	if err := internal.CheckInGitRepo(); err != nil {
 		return err
 	}

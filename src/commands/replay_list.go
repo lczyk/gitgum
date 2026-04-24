@@ -39,7 +39,7 @@ func listCommits(branchA, branchB string) ([]string, error) {
 }
 
 // Execute runs the replay-list command
-func (r *ReplayListCommand) Execute(args []string) error {
+func (r *ReplayListCommand) Execute() error {
 	// Check if we're in a git repository
 	if err := internal.CheckInGitRepo(); err != nil {
 		return err
