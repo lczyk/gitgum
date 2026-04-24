@@ -95,15 +95,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 				continue
 			}
 			if !isCheckedOut {
-				trackingRemote, err := internal.GetBranchTrackingRemote(branch)
-				if err != nil {
-					trackingRemote = ""
-				}
-				prefix := "local"
-				if trackingRemote != "" {
-					prefix = "local/remote"
-				}
-				streamQueue <- prefix + ": " + branch
+				streamQueue <- "local: " + branch
 			}
 		}
 	}()
@@ -175,7 +167,8 @@ func (s *SwitchCommand) Execute(args []string) error {
 	typ := parts[0]
 	name := parts[1]
 
-	if typ == "local" || typ == "local/remote" {
+	switch typ {
+	case "local":
 		branch := name
 		_, stderr, err := internal.RunCommand("git", "checkout", "--quiet", branch)
 		if err != nil {
@@ -183,7 +176,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 		}
 
 		fmt.Printf("Switched to branch '%s'.\n", branch)
-	} else if typ == "remote" {
+	case "remote":
 		remoteBranchParts := strings.SplitN(name, "/", 2)
 		if len(remoteBranchParts) != 2 {
 			return fmt.Errorf("invalid remote branch format: %s", name)
@@ -286,7 +279,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 
 		fmt.Printf("Created and switched to local branch '%s' tracking remote branch '%s/%s'.\n",
 			branch, remote, branch)
-	} else {
+	default:
 		return fmt.Errorf("unknown branch type: %s", typ)
 	}
 
