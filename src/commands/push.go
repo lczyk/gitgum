@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -15,10 +16,16 @@ func (p *PushCommand) Execute(args []string) error {
 	}
 
 	remoteBranch, err := internal.GetCurrentBranchUpstream()
-	if err == nil && remoteBranch != "" {
+	if err != nil {
+		return err
+	}
+	if remoteBranch != "" {
 		fmt.Printf("Current branch already has a remote tracking branch: %s\n", remoteBranch)
 		confirmed, err := internal.FzfConfirm("Do you want to push to the remote tracking branch?", true)
 		if err != nil {
+			if errors.Is(err, internal.ErrFzfCancelled) {
+				return nil
+			}
 			return err
 		}
 		if confirmed {
@@ -58,16 +65,20 @@ func (p *PushCommand) Execute(args []string) error {
 		if selectedRemote == "" {
 			remote, err := internal.FzfSelect(fmt.Sprintf("Push '%s' to", currentBranch), remotes, providedRemote)
 			if err != nil {
-				fmt.Fprintln(os.Stderr, "No remote selected. Aborting push.")
-				return err
+				if errors.Is(err, internal.ErrFzfCancelled) {
+					return nil
+				}
+				return fmt.Errorf("selecting remote: %w", err)
 			}
 			selectedRemote = remote
 		}
 	} else {
 		remote, err := internal.FzfSelect(fmt.Sprintf("Push '%s' to", currentBranch), remotes)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "No remote selected. Aborting push.")
-			return err
+			if errors.Is(err, internal.ErrFzfCancelled) {
+				return nil
+			}
+			return fmt.Errorf("selecting remote: %w", err)
 		}
 		selectedRemote = remote
 	}
@@ -104,6 +115,9 @@ func (p *PushCommand) Execute(args []string) error {
 		confirmed, err := internal.FzfConfirm(fmt.Sprintf("Remote branch '%s' already exists. Do you want to push to it?",
 			expectedRemoteBranchName), true)
 		if err != nil {
+			if errors.Is(err, internal.ErrFzfCancelled) {
+				return nil
+			}
 			return err
 		}
 		if !confirmed {
@@ -113,10 +127,14 @@ func (p *PushCommand) Execute(args []string) error {
 		if err := internal.RunCommandWithOutput("git", "push", selectedRemote, currentBranch); err != nil {
 			return fmt.Errorf("failed to push: %w", err)
 		}
+		fmt.Printf("Pushed to remote branch '%s'.\n", expectedRemoteBranchName)
 	} else {
 		confirmed, err := internal.FzfConfirm(fmt.Sprintf("No remote branch '%s' found. Do you want to create it?",
 			expectedRemoteBranchName), false)
 		if err != nil {
+			if errors.Is(err, internal.ErrFzfCancelled) {
+				return nil
+			}
 			return err
 		}
 		if !confirmed {

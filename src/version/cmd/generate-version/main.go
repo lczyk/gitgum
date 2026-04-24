@@ -37,11 +37,23 @@ func run() error {
 		}
 	}
 
-	commitSHA := getGitCommitSHA(projectRoot)
+	if version == "" {
+		return fmt.Errorf("no version found in VERSION file")
+	}
+
+	commitSHA, err := getGitCommitSHA(projectRoot)
+	if err != nil {
+		return fmt.Errorf("failed to get git commit SHA: %w", err)
+	}
+
 	buildDate := time.Now().UTC().Format(time.RFC3339)
 
 	buildInfo := ""
-	if isGitDirty(projectRoot) {
+	isDirty, err := isGitDirty(projectRoot)
+	if err != nil {
+		return fmt.Errorf("failed to check git status: %w", err)
+	}
+	if isDirty {
 		buildInfo = "dirty"
 	}
 
@@ -87,22 +99,22 @@ func findProjectRoot() (string, error) {
 	}
 }
 
-func getGitCommitSHA(dir string) string {
+func getGitCommitSHA(dir string) (string, error) {
 	cmd := exec.Command("git", "rev-parse", "HEAD")
 	cmd.Dir = dir
 	output, err := cmd.Output()
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return strings.TrimSpace(string(output))
+	return strings.TrimSpace(string(output)), nil
 }
 
-func isGitDirty(dir string) bool {
+func isGitDirty(dir string) (bool, error) {
 	cmd := exec.Command("git", "status", "--porcelain")
 	cmd.Dir = dir
 	output, err := cmd.Output()
 	if err != nil {
-		return false
+		return false, err
 	}
-	return len(strings.TrimSpace(string(output))) > 0
+	return len(strings.TrimSpace(string(output))) > 0, nil
 }

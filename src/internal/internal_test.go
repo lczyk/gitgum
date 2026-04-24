@@ -19,7 +19,7 @@ func TestGitFunctions(t *testing.T) {
 
 	t.Run("GetLocalBranches lists created branch", func(t *testing.T) {
 		repo := temp_repo.InitTempRepo(t)
-		temp_repo.CreateBranch(t, repo, "feature")
+		temp_repo.RunGit(t, repo, "branch", "feature")
 		branches, err := internal.GetLocalBranches()
 		assert.NoError(t, err, "list branches")
 		assert.That(t, slices.Contains(branches, "feature"), "feature branch present")
@@ -35,7 +35,7 @@ func TestGitFunctions(t *testing.T) {
 
 	t.Run("BranchExists detects branch", func(t *testing.T) {
 		repo := temp_repo.InitTempRepo(t)
-		temp_repo.CreateBranch(t, repo, "dev")
+		temp_repo.RunGit(t, repo, "branch", "dev")
 		assert.That(t, internal.BranchExists("dev"), "dev branch exists")
 		assert.That(t, !internal.BranchExists("missing"), "missing branch not exists")
 	})
@@ -117,7 +117,7 @@ func TestGitFunctions(t *testing.T) {
 
 	t.Run("GetBranchUpstream returns empty for branch with no upstream", func(t *testing.T) {
 		repo := temp_repo.InitTempRepo(t)
-		temp_repo.CreateBranch(t, repo, "no-upstream")
+		temp_repo.RunGit(t, repo, "branch", "no-upstream")
 		remote, remoteBranch, err := internal.GetBranchUpstream("no-upstream")
 		assert.NoError(t, err, "no upstream is not an error")
 		assert.Equal(t, "", remote)
@@ -133,6 +133,25 @@ func TestGitFunctions(t *testing.T) {
 		assert.NoError(t, err, "get upstream")
 		assert.Equal(t, "origin", remote)
 		assert.Equal(t, "main", remoteBranch)
+	})
+
+	t.Run("GetCurrentBranchUpstream returns empty for branch with no upstream", func(t *testing.T) {
+		repo := temp_repo.InitTempRepo(t)
+		temp_repo.RunGit(t, repo, "branch", "no-upstream")
+		temp_repo.RunGit(t, repo, "checkout", "no-upstream")
+		upstream, err := internal.GetCurrentBranchUpstream()
+		assert.NoError(t, err, "no upstream is not an error")
+		assert.Equal(t, "", upstream)
+	})
+
+	t.Run("GetCurrentBranchUpstream returns remote tracking branch when set", func(t *testing.T) {
+		repo := temp_repo.InitTempRepo(t)
+		temp_repo.RunGit(t, repo, "remote", "add", "origin", repo) // point at self
+		temp_repo.RunGit(t, repo, "fetch", "origin")
+		temp_repo.RunGit(t, repo, "branch", "--set-upstream-to=origin/main", "main")
+		upstream, err := internal.GetCurrentBranchUpstream()
+		assert.NoError(t, err, "get upstream")
+		assert.Equal(t, "origin/main", upstream)
 	})
 }
 

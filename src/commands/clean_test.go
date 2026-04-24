@@ -30,6 +30,16 @@ func fileContent(t *testing.T, dir, filename, expected string) {
 	assert.That(t, string(content) == expected, filename+" content mismatch")
 }
 
+func TestCleanCommand_NotInGitRepo(t *testing.T) {
+	temp_repo.ChdirTempDir(t)
+
+	cmd := &CleanCommand{}
+	err := cmd.Execute(nil)
+
+	assert.That(t, err != nil, "should error when not in git repo")
+	assert.ContainsString(t, err.Error(), "not inside a git repository")
+}
+
 func TestCleanCommand_Execute(t *testing.T) {
 
 	tests := []struct {
@@ -135,6 +145,20 @@ func TestCleanCommand_Execute(t *testing.T) {
 				fileContent(t, dir, "README.md", "# test repo\n")
 				fileNotExists(t, dir, "untracked.txt")
 				fileNotExists(t, dir, "test.log")
+			},
+		},
+		{
+			name: "nothing to clean when both changes and untracked disabled",
+			setup: func(t *testing.T, dir string) {
+				err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("modified\n"), 0o644)
+				assert.NoError(t, err, "modify tracked file")
+				err = os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("untracked\n"), 0o644)
+				assert.NoError(t, err, "create untracked file")
+			},
+			cmd: &CleanCommand{Changes: boolPtr(false), Untracked: boolPtr(false), Yes: true},
+			verify: func(t *testing.T, dir string) {
+				fileContent(t, dir, "README.md", "modified\n")
+				fileExists(t, dir, "untracked.txt")
 			},
 		},
 	}

@@ -28,9 +28,3 @@ func TestEmptyCommand_NoUpstream(t *testing.T) {
 
 	assert.That(t, err == nil, "should succeed without upstream, got error")
 }
-
-func TestEmptyCommand_Instantiate(t *testing.T) {
-	_ = temp_repo.InitTempRepo(t)
-	cmd := &EmptyCommand{}
-	_ = cmd // verify command is instantiable
-}

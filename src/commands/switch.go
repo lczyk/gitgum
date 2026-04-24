@@ -15,6 +15,14 @@ import (
 
 type SwitchCommand struct{}
 
+func (s *SwitchCommand) checkoutBranch(branch string) error {
+	_, stderr, err := internal.RunCommand("git", "checkout", "--quiet", branch)
+	if err != nil {
+		return fmt.Errorf("could not switch to branch '%s': %s", branch, stderr)
+	}
+	return nil
+}
+
 func (s *SwitchCommand) Execute(args []string) error {
 	// validation: ensure we're in a git repo with clean working tree
 	if err := internal.CheckInGitRepo(); err != nil {
@@ -46,8 +54,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 		return fmt.Errorf("local changes would be overwritten")
 	}
 
-	// setup: prepare branch collection with streaming hot-reload
-	// we'll collect branches from local and all remotes in parallel while the user browses
+	// stream branches from all remotes and local in parallel for faster picker feedback
 
 	remotes, err := internal.GetRemotes()
 	if err != nil {
@@ -87,7 +94,6 @@ func (s *SwitchCommand) Execute(args []string) error {
 		}
 	}()
 
-	// stream local branches
 	go func() {
 		locals, err := internal.GetLocalBranches()
 		if err != nil {
@@ -199,9 +205,8 @@ func (s *SwitchCommand) Execute(args []string) error {
 	switch typ {
 	case "local":
 		branch := name
-		_, stderr, err := internal.RunCommand("git", "checkout", "--quiet", branch)
-		if err != nil {
-			return fmt.Errorf("could not switch to branch '%s': %s", branch, stderr)
+		if err := s.checkoutBranch(branch); err != nil {
+			return err
 		}
 
 		fmt.Printf("Switched to branch '%s'.\n", branch)
@@ -249,9 +254,8 @@ func (s *SwitchCommand) Execute(args []string) error {
 				}
 			}
 
-			_, stderr, err := internal.RunCommand("git", "checkout", "--quiet", branch)
-			if err != nil {
-				return fmt.Errorf("could not switch to branch '%s': %s", branch, stderr)
+			if err := s.checkoutBranch(branch); err != nil {
+				return err
 			}
 
 			localCommit, err := internal.GetCommitHash(branch)

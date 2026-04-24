@@ -12,7 +12,7 @@ import (
 
 var (
 	prRegex        = regexp.MustCompile(`^[a-f0-9]+\s+refs/pull/(\d+)/(head|merge)$`)
-	prSelectionRex = regexp.MustCompile(`^PR #(\d+) \((\w+)\)$`)
+	prSelectionRex = regexp.MustCompile(`^PR #(\d+) \((head|merge)\)$`)
 )
 
 type CheckoutPRCommand struct{}
@@ -95,8 +95,9 @@ func parsePRRefs(lsRemoteOutput string) []PRRef {
 		}
 		prType := matches[2]
 
-		// prefer head over merge
-		if existing, exists := prMap[prNumber]; !exists || (existing.Type == "merge" && prType == "head") {
+		existing, found := prMap[prNumber]
+		// head takes precedence over merge for the same PR number
+		if !found || (existing.Type == "merge" && prType == "head") {
 			prMap[prNumber] = PRRef{Number: prNumber, Type: prType}
 		}
 	}
@@ -131,7 +132,8 @@ func parsePRSelection(selection string) (int, string, error) {
 		return 0, "", fmt.Errorf("invalid PR number: %s", matches[1])
 	}
 
-	return prNumber, matches[2], nil
+	prType := matches[2]
+	return prNumber, prType, nil
 }
 
 func checkoutPR(remote string, prNumber int, prType string) error {

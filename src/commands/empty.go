@@ -18,11 +18,14 @@ func (e *EmptyCommand) Execute(args []string) error {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
 
-	hasUpstream := true
 	upstream, err := internal.GetCurrentBranchUpstream()
-	if err != nil || upstream == "" {
+	if err != nil {
+		return err
+	}
+
+	hasUpstream := upstream != ""
+	if !hasUpstream {
 		fmt.Printf("Current branch '%s' has no upstream tracking branch.\n", currentBranch)
-		hasUpstream = false
 	}
 
 	if hasUpstream {

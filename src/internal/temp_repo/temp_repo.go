@@ -18,7 +18,11 @@ func ChdirTempDir(t *testing.T) string {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("chdir: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chdir(origDir) })
+	t.Cleanup(func() {
+		if err := os.Chdir(origDir); err != nil {
+			t.Fatalf("restore working dir: %v", err)
+		}
+	})
 	return dir
 }
 
@@ -64,9 +68,4 @@ func CreateCommit(t *testing.T, dir, filename, content, message string) {
 	}
 	RunGit(t, dir, "add", filename)
 	RunGit(t, dir, "commit", "-m", message)
-}
-
-func CreateBranch(t *testing.T, dir, branch string) {
-	t.Helper()
-	RunGit(t, dir, "branch", branch)
 }
