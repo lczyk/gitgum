@@ -11,7 +11,7 @@ import (
 type simScreen tcell.SimulationScreen
 
 // TerminalMock is a mocked terminal for testing.
-// Most users should use it by calling UseMockedTerminal.
+// Use NewWithMockedTerminal to create one.
 type TerminalMock struct {
 	simScreen
 }
@@ -81,13 +81,6 @@ func (m *TerminalMock) GetResult() string {
 	s += "\x1b\x5b\x6d" // Reset previous color.
 
 	return s
-}
-
-// UseMockedTerminal switches the terminal, which is used from
-// this package to a mocked one.
-func UseMockedTerminal() *TerminalMock {
-	f := newFinder()
-	return f.UseMockedTerminal()
 }
 
 func (f *finder) UseMockedTerminal() *TerminalMock {

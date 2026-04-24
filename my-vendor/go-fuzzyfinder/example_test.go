@@ -70,16 +70,18 @@ func ExampleFindMulti() {
 }
 
 func ExampleTerminalMock() {
-	// Initialize a mocked terminal.
-	term := fuzzyfinder.UseMockedTerminal()
-	keys := "foo"
-	for _, r := range keys {
-		term.InjectKey(tcell.KeyRune, r, tcell.ModNone)
-	}
-	term.InjectKey(tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone)
+	// NewWithMockedTerminal returns the finder and the mock — use f.Find so
+	// the mock terminal is the one actually receiving events.
+	f, term := fuzzyfinder.NewWithMockedTerminal()
+	term.SetEvents(
+		tcell.NewEventKey(tcell.KeyRune, 'f', tcell.ModNone),
+		tcell.NewEventKey(tcell.KeyRune, 'o', tcell.ModNone),
+		tcell.NewEventKey(tcell.KeyRune, 'o', tcell.ModNone),
+		tcell.NewEventKey(tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone),
+	)
 
 	slice := []string{"foo", "bar", "baz"}
-	_, _ = fuzzyfinder.Find(slice, func(i int) string { return slice[i] })
+	_, _ = f.Find(slice, func(i int) string { return slice[i] })
 
 	// Write out the execution result to a temp file.
 	// We can test it by the golden files testing pattern.
