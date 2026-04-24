@@ -428,8 +428,13 @@ func (f *finder) _drawPreview() {
 				if w+rw > width-1-2 {
 					donePreviewLine = true
 
-					// Discard the rest of the current line.
-					consumeIterator(iter, '\n')
+					// discard the rest of the current line
+					for {
+						r, _, ok := iter.Next()
+						if !ok || r == '\n' {
+							break
+						}
+					}
 
 					style := tcell.StyleDefault.
 						Foreground(tcell.ColorDefault).
@@ -899,13 +904,4 @@ func (f *finder) FindMulti(slice interface{}, itemFunc func(i int) string, opts 
 
 func isInTesting() bool {
 	return flag.Lookup("test.v") != nil
-}
-
-func consumeIterator(iter *ansisgr.Iterator, r rune) {
-	for {
-		r, _, ok := iter.Next()
-		if !ok || r == '\n' {
-			return
-		}
-	}
 }
