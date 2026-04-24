@@ -104,31 +104,24 @@ func parseAttr(fg, bg tcell.Color, attr tcell.AttrMask) string {
 	var params []string
 	if attr&tcell.AttrBold == tcell.AttrBold {
 		params = append(params, "1")
-		attr ^= tcell.AttrBold
 	}
 	if attr&tcell.AttrBlink == tcell.AttrBlink {
 		params = append(params, "5")
-		attr ^= tcell.AttrBlink
 	}
 	if attr&tcell.AttrReverse == tcell.AttrReverse {
 		params = append(params, "7")
-		attr ^= tcell.AttrReverse
 	}
 	if attr&tcell.AttrUnderline == tcell.AttrUnderline {
 		params = append(params, "4")
-		attr ^= tcell.AttrUnderline
 	}
 	if attr&tcell.AttrDim == tcell.AttrDim {
 		params = append(params, "2")
-		attr ^= tcell.AttrDim
 	}
 	if attr&tcell.AttrItalic == tcell.AttrItalic {
 		params = append(params, "3")
-		attr ^= tcell.AttrItalic
 	}
 	if attr&tcell.AttrStrikeThrough == tcell.AttrStrikeThrough {
 		params = append(params, "9")
-		attr ^= tcell.AttrStrikeThrough
 	}
 
 	switch {
@@ -137,9 +130,9 @@ func parseAttr(fg, bg tcell.Color, attr tcell.AttrMask) string {
 		params = append(params, "39")
 	case fg > tcell.Color255:
 		r, g, b := fg.RGB()
-		params = append(params, "38", "2", fmt.Sprint(r), fmt.Sprint(g), fmt.Sprint(b))
+		params = append(params, fmt.Sprintf("38;2;%d;%d;%d", r, g, b))
 	default:
-		params = append(params, "38", "5", fmt.Sprint(fg-tcell.ColorValid))
+		params = append(params, fmt.Sprintf("38;5;%d", fg-tcell.ColorValid))
 	}
 
 	switch {
@@ -148,9 +141,9 @@ func parseAttr(fg, bg tcell.Color, attr tcell.AttrMask) string {
 		params = append(params, "49")
 	case bg > tcell.Color255:
 		r, g, b := bg.RGB()
-		params = append(params, "48", "2", fmt.Sprint(r), fmt.Sprint(g), fmt.Sprint(b))
+		params = append(params, fmt.Sprintf("48;2;%d;%d;%d", r, g, b))
 	default:
-		params = append(params, "48", "5", fmt.Sprint(bg-tcell.ColorValid))
+		params = append(params, fmt.Sprintf("48;5;%d", bg-tcell.ColorValid))
 	}
 
 	return fmt.Sprintf("\x1b[%sm", strings.Join(params, ";"))
