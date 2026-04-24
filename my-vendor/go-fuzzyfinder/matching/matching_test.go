@@ -48,7 +48,7 @@ func TestMatch(t *testing.T) {
 			}
 			m := matched[0]
 			if m.Idx != c.idx {
-				t.Errorf("m.Idx must be equal to %d, but got %d", c.idx, m.Idx)
+				t.Fatalf("m.Idx must be equal to %d, but got %d", c.idx, m.Idx)
 			}
 			from := m.Pos[0]
 			to := min(m.Pos[1]+1, len(slice[c.idx]))
