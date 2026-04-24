@@ -1,39 +1,36 @@
 package scoring
 
-import (
-	"fmt"
-	"testing"
-)
+import "testing"
 
 func Test_smithWaterman(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		s1, s2        string
-		expectedScore int
-		expectedPos   [2]int
+		name      string
+		s1, s2    string
+		wantScore int
+		wantPos   [2]int
 	}{
-		{"TACGGGCCCGCTA", "TAGCCCTA", 78, [2]int{0, 12}},
-		{"TACGGG-CCCGCTA", "TAGCCCTA", 68, [2]int{0, 13}},
-		{"FLY ME TO THE MOON", "MEON", 16, [2]int{4, 17}},
+		{"bioinformatics typical", "TACGGGCCCGCTA", "TAGCCCTA", 78, [2]int{0, 12}},
+		{"gap in corpus", "TACGGG-CCCGCTA", "TAGCCCTA", 68, [2]int{0, 13}},
+		{"phrase with spaces", "FLY ME TO THE MOON", "MEON", 16, [2]int{4, 17}},
 		// best DP cell matches only the first s2 char (maxJ < len(s2)-1), so the
 		// remaining s2 chars are found by the forward scan; to must be inclusive.
-		{"XAXBY", "AB", 5, [2]int{1, 3}},
+		{"forward scan fills tail", "XAXBY", "AB", 5, [2]int{1, 3}},
 		// match starts at s1[1]; backward scan must cross i=0 to set from=1, not default 0.
-		{"XAB", "AB", 33, [2]int{1, 2}},
+		{"backward scan crosses start", "XAB", "AB", 33, [2]int{1, 2}},
 	}
 
 	for _, c := range cases {
-		name := fmt.Sprintf("%s-%s", c.s1, c.s2)
-		t.Run(name, func(t *testing.T) {
+		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 
 			score, pos := smithWaterman([]rune(c.s1), []rune(c.s2))
-			if score != c.expectedScore {
-				t.Errorf("expected %d, but got %d", c.expectedScore, score)
+			if score != c.wantScore {
+				t.Errorf("score: got %d, want %d", score, c.wantScore)
 			}
-			if pos != c.expectedPos {
-				t.Errorf("expected %v, but got %v", c.expectedPos, pos)
+			if pos != c.wantPos {
+				t.Errorf("pos: got %v, want %v", pos, c.wantPos)
 			}
 		})
 	}
