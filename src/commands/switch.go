@@ -15,6 +15,14 @@ import (
 
 type SwitchCommand struct{}
 
+func (s *SwitchCommand) checkoutBranch(branch string) error {
+	_, stderr, err := internal.RunCommand("git", "checkout", "--quiet", branch)
+	if err != nil {
+		return fmt.Errorf("could not switch to branch '%s': %s", branch, stderr)
+	}
+	return nil
+}
+
 func (s *SwitchCommand) Execute(args []string) error {
 	// validation: ensure we're in a git repo with clean working tree
 	if err := internal.CheckInGitRepo(); err != nil {
@@ -197,9 +205,8 @@ func (s *SwitchCommand) Execute(args []string) error {
 	switch typ {
 	case "local":
 		branch := name
-		_, stderr, err := internal.RunCommand("git", "checkout", "--quiet", branch)
-		if err != nil {
-			return fmt.Errorf("could not switch to branch '%s': %s", branch, stderr)
+		if err := s.checkoutBranch(branch); err != nil {
+			return err
 		}
 
 		fmt.Printf("Switched to branch '%s'.\n", branch)
@@ -247,9 +254,8 @@ func (s *SwitchCommand) Execute(args []string) error {
 				}
 			}
 
-			_, stderr, err := internal.RunCommand("git", "checkout", "--quiet", branch)
-			if err != nil {
-				return fmt.Errorf("could not switch to branch '%s': %s", branch, stderr)
+			if err := s.checkoutBranch(branch); err != nil {
+				return err
 			}
 
 			localCommit, err := internal.GetCommitHash(branch)
