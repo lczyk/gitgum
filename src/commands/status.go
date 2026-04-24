@@ -11,7 +11,7 @@ type StatusCommand struct{}
 
 func (s *StatusCommand) Execute(args []string) error {
 	if err := internal.CheckInGitRepo(); err != nil {
-		return err
+		return fmt.Errorf("checking git repo: %w", err)
 	}
 
 	internal.PrintHeader("--- BRANCHES ---------------------------")
