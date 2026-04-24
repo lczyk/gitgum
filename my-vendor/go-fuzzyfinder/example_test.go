@@ -80,5 +80,5 @@ func ExampleTerminalMock() {
 	slice := []string{"foo", "bar", "baz"}
 	f.Find(slice, func(i int) string { return slice[i] })
 
-	term.GetResult() // compare against golden files in real tests
+	term.GetResult()
 }
