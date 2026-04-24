@@ -7,46 +7,62 @@ import (
 	"github.com/lczyk/assert"
 )
 
-func executeCompletion(t *testing.T, cmdName, shell string) (string, error) {
-	t.Helper()
-	var buf strings.Builder
-	cmd := &CompletionCommand{out: &buf, cmdName: cmdName}
-	cmd.Args.Shell = shell
-	err := cmd.Execute(nil)
-	return buf.String(), err
-}
-
 func TestCompletionCommand_Execute(t *testing.T) {
-	testCases := []struct {
-		name    string
-		cmdName string
-		shell   string
+	tests := []struct {
+		name       string
+		cmdName    string
+		shell      string
+		wantErr    bool
+		errMessage string
 	}{
-		{"bash with gitgum", "gitgum", "bash"},
-		{"fish with custom-name", "custom-name", "fish"},
-		{"zsh with gg", "gg", "zsh"},
+		{
+			name:    "bash with gitgum",
+			cmdName: "gitgum",
+			shell:   "bash",
+		},
+		{
+			name:    "fish with custom-name",
+			cmdName: "custom-name",
+			shell:   "fish",
+		},
+		{
+			name:    "zsh with gg",
+			cmdName: "gg",
+			shell:   "zsh",
+		},
+		{
+			name:       "invalid shell",
+			cmdName:    "",
+			shell:      "invalid",
+			wantErr:    true,
+			errMessage: "invalid shell type 'invalid'",
+		},
+		{
+			name:    "default cmd name",
+			cmdName: "",
+			shell:   "bash",
+		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			output, err := executeCompletion(t, tc.cmdName, tc.shell)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf strings.Builder
+			cmd := &CompletionCommand{out: &buf, cmdName: tt.cmdName}
+			cmd.Args.Shell = tt.shell
 
-			assert.NoError(t, err)
-			assert.ContainsString(t, output, tc.cmdName)
-			assert.That(t, !strings.Contains(output, "__GITGUM_CMD__"), "placeholder should be replaced in output")
+			err := cmd.Execute(nil)
+			output := buf.String()
+
+			if tt.wantErr {
+				assert.Error(t, err, tt.errMessage)
+			} else {
+				assert.NoError(t, err)
+				assert.That(t, len(output) > 0, "output should not be empty")
+				assert.That(t, !strings.Contains(output, "__GITGUM_CMD__"), "placeholder should be replaced")
+				if tt.cmdName != "" {
+					assert.ContainsString(t, output, tt.cmdName)
+				}
+			}
 		})
 	}
-}
-
-func TestCompletionCommand_InvalidShell(t *testing.T) {
-	_, err := executeCompletion(t, "", "invalid")
-	assert.Error(t, err, "invalid shell type 'invalid'")
-}
-
-func TestCompletionCommand_DefaultCmdName(t *testing.T) {
-	output, err := executeCompletion(t, "", "bash")
-
-	assert.NoError(t, err)
-	assert.That(t, len(output) > 0, "output should not be empty")
-	assert.That(t, !strings.Contains(output, "__GITGUM_CMD__"), "placeholder should be replaced")
 }
