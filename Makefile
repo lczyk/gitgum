@@ -16,7 +16,7 @@ build: ./bin/gitgum  ## Build the gitgum binary (compressed with upx if availabl
 		upx ./bin/gitgum || echo "upx failed, skipping compression"; \
 	fi
 
-./src/version/version.go: VERSION ./src/version/generate.go ./src/version/cmd/generate-version/main.go Makefile
+./src/version/version.go: VERSION ./src/version/format.go ./src/version/cmd/generate-version/main.go Makefile
 	go generate ./src/version
 
 .PHONY: du
