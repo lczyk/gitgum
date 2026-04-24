@@ -206,7 +206,82 @@ func (s *SwitchCommand) Execute(args []string) error {
 
 		// Handle remote branch switching
 		if internal.BranchExists(branch) {
-			return handleExistingLocalBranch(branch, remote)
+			fmt.Printf("Branch '%s' is already tracked locally as '%s'.\n", branch, branch)
+
+			trackingRemote, err := internal.GetBranchTrackingRemote(branch)
+			if err != nil {
+				trackingRemote = ""
+			}
+
+			if trackingRemote != "" {
+				fmt.Printf("Tracking reference for local branch '%s': '%s'\n", branch, trackingRemote)
+			}
+
+			// offer to update tracking reference if it points to a different remote
+			if trackingRemote != remote {
+				fmt.Printf("Local branch '%s' is not tracking remote branch '%s/%s'.\n",
+					branch, remote, branch)
+
+				confirmed, err := internal.FzfConfirm(fmt.Sprintf("Set '%s/%s' as the tracking reference for local branch '%s'?",
+					remote, branch, branch), false)
+				if err != nil {
+					return err
+				}
+				if confirmed {
+					if err := internal.RunCommandQuiet("git", "branch", "--set-upstream-to="+remote+"/"+branch, branch); err != nil {
+						return fmt.Errorf("could not set tracking reference: %v", err)
+					}
+
+					fmt.Printf("Set tracking reference for local branch '%s' to remote branch '%s/%s'.\n",
+						branch, remote, branch)
+				} else {
+					fmt.Fprintln(os.Stderr, "Not setting tracking reference. Aborting switch.")
+					return fmt.Errorf("user cancelled")
+				}
+			}
+
+			_, stderr, err := internal.RunCommand("git", "checkout", "--quiet", branch)
+			if err != nil {
+				return fmt.Errorf("could not switch to branch '%s': %s", branch, stderr)
+			}
+
+			// check if local is up to date with remote
+			localCommit, err := internal.GetCommitHash(branch)
+			if err != nil {
+				return fmt.Errorf("could not get local commit: %v", err)
+			}
+
+			remoteRef := remote + "/" + branch
+			remoteCommit, err := internal.GetCommitHash(remoteRef)
+			if err != nil {
+				return fmt.Errorf("could not find remote branch '%s': %v", remoteRef, err)
+			}
+
+			if localCommit == remoteCommit {
+				fmt.Printf("Local branch '%s' is up to date with remote branch '%s/%s'.\n",
+					branch, remote, branch)
+				fmt.Printf("Switched to branch '%s' tracking remote branch '%s/%s'.\n",
+					branch, remote, branch)
+				return nil
+			}
+
+			confirmed, err := internal.FzfConfirm(fmt.Sprintf("Local branch '%s' is not up to date with remote branch '%s/%s'. Reset the local branch to the remote branch?",
+				branch, remote, branch), false)
+			if err != nil {
+				return err
+			}
+			if confirmed {
+				if err := internal.RunCommandQuiet("git", "reset", "--hard", remoteRef); err != nil {
+					return fmt.Errorf("could not reset local branch: %v", err)
+				}
+
+				fmt.Printf("Reset local branch '%s' to remote branch '%s/%s'.\n",
+					branch, remote, branch)
+			} else {
+				fmt.Fprintln(os.Stderr, "Not resetting local branch.")
+			}
+
+			return nil
 		}
 
 		// Branch doesn't exist locally, ask to create tracking branch
@@ -234,86 +309,3 @@ func (s *SwitchCommand) Execute(args []string) error {
 }
 
 const streamDelay = 3 * time.Millisecond
-
-// handleExistingLocalBranch handles the case where a local branch already exists
-func handleExistingLocalBranch(localBranch, remote string) error {
-	fmt.Printf("Branch '%s' is already tracked locally as '%s'.\n", localBranch, localBranch)
-
-	// Get current tracking remote
-	trackingRemote, err := internal.GetBranchTrackingRemote(localBranch)
-	if err != nil {
-		trackingRemote = ""
-	}
-
-	if trackingRemote != "" {
-		fmt.Printf("Tracking reference for local branch '%s': '%s'\n", localBranch, trackingRemote)
-	}
-
-	// Check if tracking remote matches
-	if trackingRemote != remote {
-		fmt.Printf("Local branch '%s' is not tracking remote branch '%s/%s'.\n",
-			localBranch, remote, localBranch)
-
-		confirmed, err := internal.FzfConfirm(fmt.Sprintf("Set '%s/%s' as the tracking reference for local branch '%s'?",
-			remote, localBranch, localBranch), false)
-		if err != nil {
-			return err
-		}
-		if confirmed {
-			if err := internal.RunCommandQuiet("git", "branch", "--set-upstream-to="+remote+"/"+localBranch, localBranch); err != nil {
-				return fmt.Errorf("could not set tracking reference: %v", err)
-			}
-
-			fmt.Printf("Set tracking reference for local branch '%s' to remote branch '%s/%s'.\n",
-				localBranch, remote, localBranch)
-		} else {
-			fmt.Fprintln(os.Stderr, "Not setting tracking reference. Aborting switch.")
-			return fmt.Errorf("user cancelled")
-		}
-	}
-
-	// Switch to the local branch
-	_, stderr, err := internal.RunCommand("git", "checkout", "--quiet", localBranch)
-	if err != nil {
-		return fmt.Errorf("could not switch to branch '%s': %s", localBranch, stderr)
-	}
-
-	// Check if local branch is up to date with remote
-	localCommit, err := internal.GetCommitHash(localBranch)
-	if err != nil {
-		return fmt.Errorf("could not get local commit: %v", err)
-	}
-
-	remoteRef := remote + "/" + localBranch
-	remoteCommit, err := internal.GetCommitHash(remoteRef)
-	if err != nil {
-		return fmt.Errorf("could not find remote branch '%s': %v", remoteRef, err)
-	}
-
-	if localCommit == remoteCommit {
-		fmt.Printf("Local branch '%s' is up to date with remote branch '%s/%s'.\n",
-			localBranch, remote, localBranch)
-		fmt.Printf("Switched to branch '%s' tracking remote branch '%s/%s'.\n",
-			localBranch, remote, localBranch)
-		return nil
-	}
-
-	// Branch is not up to date
-	confirmed, err := internal.FzfConfirm(fmt.Sprintf("Local branch '%s' is not up to date with remote branch '%s/%s'. Reset the local branch to the remote branch?",
-		localBranch, remote, localBranch), false)
-	if err != nil {
-		return err
-	}
-	if confirmed {
-		if err := internal.RunCommandQuiet("git", "reset", "--hard", remoteRef); err != nil {
-			return fmt.Errorf("could not reset local branch: %v", err)
-		}
-
-		fmt.Printf("Reset local branch '%s' to remote branch '%s/%s'.\n",
-			localBranch, remote, localBranch)
-	} else {
-		fmt.Fprintln(os.Stderr, "Not resetting local branch.")
-	}
-
-	return nil
-}
