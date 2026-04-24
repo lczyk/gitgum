@@ -119,17 +119,10 @@ func smithWaterman(s1, s2 []rune) (int, [2]int) {
 	return int(float32(maxScore) * (float32(maxScore) / float32(len(s1)))), [2]int{from, to}
 }
 
-var delimiterRunes = map[rune]struct{}{
-	'(': {},
-	'[': {},
-	'{': {},
-	'/': {},
-	'-': {},
-	'_': {},
-	'.': {},
-}
-
 func isDelimiter(r rune) bool {
-	_, ok := delimiterRunes[r]
-	return ok || unicode.IsSpace(r)
+	switch r {
+	case '(', '[', '{', '/', '-', '_', '.':
+		return true
+	}
+	return unicode.IsSpace(r)
 }
