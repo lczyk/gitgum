@@ -1,6 +1,12 @@
 package completions
 
-import _ "embed"
+import (
+	_ "embed"
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
+)
 
 //go:embed gitgum.bash
 var bashCompletion string
@@ -17,7 +23,11 @@ var templates = map[string]string{
 	"zsh":  zshCompletion,
 }
 
-func Get(shell string) (string, bool) {
+func Get(shell string) (string, error) {
 	content, ok := templates[shell]
-	return content, ok
+	if !ok {
+		shells := slices.Sorted(maps.Keys(templates))
+		return "", fmt.Errorf("invalid shell type '%s', must be one of: %s", shell, strings.Join(shells, ", "))
+	}
+	return content, nil
 }

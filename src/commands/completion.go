@@ -22,9 +22,9 @@ type CompletionCommand struct {
 
 func (c *CompletionCommand) Execute(args []string) error {
 	shell := c.Args.Shell
-	content, ok := completions.Get(shell)
-	if !ok {
-		return fmt.Errorf("invalid shell type '%s'. Must be one of: bash, fish, zsh", shell)
+	content, err := completions.Get(shell)
+	if err != nil {
+		return err
 	}
 
 	cmdName := c.cmdName
