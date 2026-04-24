@@ -236,11 +236,8 @@ func (f *finder) _draw() {
 
 	// Item lines
 	itemAreaHeight := maxHeight - 1
-	matched := f.state.matched
-	offset := f.state.cursorY
-	y := f.state.y
-	// From the first (the most bottom) item in the item lines to the end.
-	matched = matched[y-offset:]
+	// slice from the bottom-most visible item upward
+	matched := f.state.matched[f.state.y-f.state.cursorY:]
 
 	for i, m := range matched {
 		if i > itemAreaHeight {
