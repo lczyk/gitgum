@@ -36,7 +36,7 @@ const (
 
 var defaultOption = opt{
 	promptString:  "> ",
-	hotReloadLock: &sync.Mutex{}, // this won't resolve the race condition but avoid nil panic
+	hotReloadLock: &sync.Mutex{}, // nil-guard; callers should provide their own via WithHotReloadLock
 	preselected:   func(i int) bool { return false },
 }
 
@@ -61,16 +61,6 @@ func WithMode(m mode) Option {
 func WithPreviewWindow(f func(i, width, height int) string) Option {
 	return func(o *opt) {
 		o.previewFunc = f
-	}
-}
-
-// WithHotReload reloads the passed slice automatically when some entries are appended.
-// The caller must pass a pointer of the slice instead of the slice itself.
-//
-// Deprecated: use WithHotReloadLock instead.
-func WithHotReload() Option {
-	return func(o *opt) {
-		o.hotReload = true
 	}
 }
 
@@ -142,7 +132,7 @@ func WithQuery(s string) Option {
 	}
 }
 
-// WithQuery enables to set the initial query.
+// WithSelectOne auto-accepts if exactly one item matches.
 func WithSelectOne() Option {
 	return func(o *opt) {
 		o.selectOne = true
