@@ -661,7 +661,7 @@ func BenchmarkFind(b *testing.B) {
 	b.Run("normal", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			f, term := fuzzyfinder.NewWithMockedTerminal()
 			events := append(runes("adrele!!"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 			term.SetEvents(events...)
@@ -678,8 +678,8 @@ func BenchmarkFind(b *testing.B) {
 					return "Name: " + tracks[i].Name + "\nArtist: " + tracks[i].Artist
 				}),
 			)
-			if err != nil {
-				b.Fatalf("should not return an error, but got '%s'", err)
+			if !errors.Is(err, fuzzyfinder.ErrAbort) {
+				b.Fatalf("expected ErrAbort, but got '%s'", err)
 			}
 		}
 	})
@@ -687,7 +687,7 @@ func BenchmarkFind(b *testing.B) {
 	b.Run("hotreload", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			f, term := fuzzyfinder.NewWithMockedTerminal()
 			events := append(runes("adrele!!"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 			term.SetEvents(events...)
@@ -705,8 +705,8 @@ func BenchmarkFind(b *testing.B) {
 				}),
 				fuzzyfinder.WithHotReloadLock(&sync.Mutex{}),
 			)
-			if err != nil {
-				b.Fatalf("should not return an error, but got '%s'", err)
+			if !errors.Is(err, fuzzyfinder.ErrAbort) {
+				b.Fatalf("expected ErrAbort, but got '%s'", err)
 			}
 		}
 	})
