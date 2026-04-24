@@ -752,8 +752,8 @@ func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Opt
 	)
 
 	parentCtx := context.Background()
-	if opt.context != nil {
-		parentCtx = opt.context
+	if opt.ctx != nil {
+		parentCtx = opt.ctx
 	}
 
 	ctx, cancel := context.WithCancel(parentCtx)

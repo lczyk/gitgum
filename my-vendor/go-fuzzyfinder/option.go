@@ -14,7 +14,7 @@ type opt struct {
 	promptString  string
 	header        string
 	beginAtTop    bool
-	context       context.Context
+	ctx           context.Context
 	query         string
 	selectOne     bool
 	preselected   func(i int) bool
@@ -55,7 +55,7 @@ func WithMode(m mode) Option {
 // width and height are the size of the terminal so that you can use these to adjust
 // a preview content. Note that width and height are calculated as a rune-based length.
 //
-// If there is no selected item, previewFunc passes -1 to previewFunc.
+// If there is no selected item, i is -1.
 //
 // If f is nil, the preview feature is disabled.
 func WithPreviewWindow(f func(i, width, height int) string) Option {
@@ -114,7 +114,7 @@ func WithHeader(s string) Option {
 // WithContext enables closing the fuzzy finder from parent.
 func WithContext(ctx context.Context) Option {
 	return func(o *opt) {
-		o.context = ctx
+		o.ctx = ctx
 	}
 }
 
