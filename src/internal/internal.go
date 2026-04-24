@@ -38,11 +38,6 @@ func RunCommandWithOutput(name string, args ...string) error {
 	return cmd.Run()
 }
 
-// WriteFile writes content to a file
-func WriteFile(path string, content string) error {
-	return os.WriteFile(path, []byte(content), 0644)
-}
-
 // GitFileStatus represents the status of a file in git
 type GitFileStatus int
 
