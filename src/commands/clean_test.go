@@ -9,8 +9,28 @@ import (
 	"github.com/lczyk/gitgum/src/internal/temp_repo"
 )
 
+func boolPtr(b bool) *bool { return &b }
+
+func fileNotExists(t *testing.T, dir, filename string) {
+	t.Helper()
+	_, err := os.Stat(filepath.Join(dir, filename))
+	assert.That(t, os.IsNotExist(err), filename+" should be removed")
+}
+
+func fileExists(t *testing.T, dir, filename string) {
+	t.Helper()
+	_, err := os.Stat(filepath.Join(dir, filename))
+	assert.NoError(t, err, filename+" should still exist")
+}
+
+func fileContent(t *testing.T, dir, filename, expected string) {
+	t.Helper()
+	content, err := os.ReadFile(filepath.Join(dir, filename))
+	assert.NoError(t, err, "read "+filename)
+	assert.That(t, string(content) == expected, filename+" content mismatch")
+}
+
 func TestCleanCommand_Execute(t *testing.T) {
-	boolPtr := func(b bool) *bool { return &b }
 
 	tests := []struct {
 		name   string
@@ -28,11 +48,8 @@ func TestCleanCommand_Execute(t *testing.T) {
 			},
 			cmd: &CleanCommand{Yes: true},
 			verify: func(t *testing.T, dir string) {
-				content, err := os.ReadFile(filepath.Join(dir, "README.md"))
-				assert.NoError(t, err, "read README.md")
-				assert.That(t, string(content) == "# test repo\n", "README.md should be reset")
-				_, err = os.Stat(filepath.Join(dir, "untracked.txt"))
-				assert.That(t, os.IsNotExist(err), "untracked.txt should be removed")
+				fileContent(t, dir, "README.md", "# test repo\n")
+				fileNotExists(t, dir, "untracked.txt")
 			},
 		},
 		{
@@ -45,11 +62,8 @@ func TestCleanCommand_Execute(t *testing.T) {
 			},
 			cmd: &CleanCommand{Untracked: boolPtr(false), Yes: true},
 			verify: func(t *testing.T, dir string) {
-				content, err := os.ReadFile(filepath.Join(dir, "README.md"))
-				assert.NoError(t, err, "read README.md")
-				assert.That(t, string(content) == "# test repo\n", "README.md should be reset")
-				_, err = os.Stat(filepath.Join(dir, "untracked.txt"))
-				assert.NoError(t, err, "untracked.txt should still exist")
+				fileContent(t, dir, "README.md", "# test repo\n")
+				fileExists(t, dir, "untracked.txt")
 			},
 		},
 		{
@@ -62,11 +76,8 @@ func TestCleanCommand_Execute(t *testing.T) {
 			},
 			cmd: &CleanCommand{Changes: boolPtr(false), Yes: true},
 			verify: func(t *testing.T, dir string) {
-				content, err := os.ReadFile(filepath.Join(dir, "README.md"))
-				assert.NoError(t, err, "read README.md")
-				assert.That(t, string(content) == "modified\n", "README.md should still be modified")
-				_, err = os.Stat(filepath.Join(dir, "untracked.txt"))
-				assert.That(t, os.IsNotExist(err), "untracked.txt should be removed")
+				fileContent(t, dir, "README.md", "modified\n")
+				fileNotExists(t, dir, "untracked.txt")
 			},
 		},
 		{
@@ -83,10 +94,8 @@ func TestCleanCommand_Execute(t *testing.T) {
 			},
 			cmd: &CleanCommand{Ignored: boolPtr(true), Changes: boolPtr(false), Yes: true},
 			verify: func(t *testing.T, dir string) {
-				_, err := os.Stat(filepath.Join(dir, "untracked.txt"))
-				assert.That(t, os.IsNotExist(err), "untracked.txt should be removed")
-				_, err = os.Stat(filepath.Join(dir, "test.log"))
-				assert.That(t, os.IsNotExist(err), "test.log should be removed")
+				fileNotExists(t, dir, "untracked.txt")
+				fileNotExists(t, dir, "test.log")
 			},
 		},
 		{
@@ -103,10 +112,8 @@ func TestCleanCommand_Execute(t *testing.T) {
 			},
 			cmd: &CleanCommand{Changes: boolPtr(false), Yes: true},
 			verify: func(t *testing.T, dir string) {
-				_, err := os.Stat(filepath.Join(dir, "untracked.txt"))
-				assert.That(t, os.IsNotExist(err), "untracked.txt should be removed")
-				_, err = os.Stat(filepath.Join(dir, "test.log"))
-				assert.NoError(t, err, "test.log should still exist")
+				fileNotExists(t, dir, "untracked.txt")
+				fileExists(t, dir, "test.log")
 			},
 		},
 		{
@@ -125,13 +132,9 @@ func TestCleanCommand_Execute(t *testing.T) {
 			},
 			cmd: &CleanCommand{All: true, Yes: true},
 			verify: func(t *testing.T, dir string) {
-				content, err := os.ReadFile(filepath.Join(dir, "README.md"))
-				assert.NoError(t, err, "read README.md")
-				assert.That(t, string(content) == "# test repo\n", "README.md should be reset")
-				_, err = os.Stat(filepath.Join(dir, "untracked.txt"))
-				assert.That(t, os.IsNotExist(err), "untracked.txt should be removed")
-				_, err = os.Stat(filepath.Join(dir, "test.log"))
-				assert.That(t, os.IsNotExist(err), "test.log should be removed")
+				fileContent(t, dir, "README.md", "# test repo\n")
+				fileNotExists(t, dir, "untracked.txt")
+				fileNotExists(t, dir, "test.log")
 			},
 		},
 	}
