@@ -1,10 +1,6 @@
 package scoring
 
-import (
-	"fmt"
-	"os"
-	"unicode"
-)
+import "unicode"
 
 // smithWaterman calculates a simularity score between s1 and s2
 // by smith-waterman algorithm. smith-waterman algorithm is one of
@@ -83,31 +79,6 @@ func smithWaterman(s1, s2 []rune) (int, [2]int) {
 		}
 	}
 
-	if isDebug() {
-		fmt.Printf("max score = %d (%d, %d)\n\n", maxScore, maxI, maxJ)
-		printSlice := func(m [][]int32) {
-			fmt.Printf("%4c     ", '|')
-			for i := 0; i < len(s2); i++ {
-				fmt.Printf("%3c ", s2[i])
-			}
-			fmt.Printf("\n-------------------------\n")
-
-			fmt.Print("   | ")
-			for i := 0; i <= len(s1); i++ {
-				if i != 0 {
-					fmt.Printf("%3c| ", s1[i-1])
-				}
-				for j := 0; j <= len(s2); j++ {
-					fmt.Printf("%3d ", m[i][j])
-				}
-				fmt.Println()
-			}
-			fmt.Println()
-		}
-		printSlice(H)
-		printSlice(D)
-	}
-
 	// Determine the matched position.
 
 	var from, to int
@@ -143,10 +114,6 @@ func smithWaterman(s1, s2 []rune) (int, [2]int) {
 
 	// We adjust scores by the weight per one rune.
 	return int(float32(maxScore) * (float32(maxScore) / float32(len(s1)))), [2]int{from, to}
-}
-
-func isDebug() bool {
-	return os.Getenv("DEBUG") != ""
 }
 
 var delimiterRunes = map[rune]struct{}{
