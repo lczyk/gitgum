@@ -68,10 +68,6 @@ type finder struct {
 	termEventsChan <-chan tcell.Event
 }
 
-func newFinder() *finder {
-	return &finder{}
-}
-
 func (f *finder) initFinder(items []string, matched []matching.Matched, opt opt) error {
 	if f.term == nil {
 		screen, err := tcell.NewScreen()
@@ -761,7 +757,7 @@ func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Opt
 	defer cancel()
 
 	inited := make(chan struct{})
-	if opt.hotReload && rv.Kind() == reflect.Ptr {
+	if opt.hotReload {
 		opt.hotReloadLock.Lock()
 		rvv := reflect.Indirect(rv)
 		items, matched = makeItems(rvv.Len())
@@ -872,7 +868,7 @@ func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Opt
 //
 // Find returns ErrAbort if a call to Find is finished with no selection.
 func Find(slice interface{}, itemFunc func(i int) string, opts ...Option) (int, error) {
-	f := newFinder()
+	f := &finder{}
 	return f.Find(slice, itemFunc, opts...)
 }
 
@@ -888,7 +884,7 @@ func (f *finder) Find(slice interface{}, itemFunc func(i int) string, opts ...Op
 // FindMulti is nearly the same as Find. The only difference from Find is that
 // the user can select multiple items at once, by using the tab key.
 func FindMulti(slice interface{}, itemFunc func(i int) string, opts ...Option) ([]int, error) {
-	f := newFinder()
+	f := &finder{}
 	return f.FindMulti(slice, itemFunc, opts...)
 }
 
