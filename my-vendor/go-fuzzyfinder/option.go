@@ -87,12 +87,7 @@ const (
 // If Find is called with WithCursorPosition and WithPreselected, the cursor will be positioned at the first preselected item.
 func WithCursorPosition(position cursorPosition) Option {
 	return func(o *opt) {
-		switch position {
-		case CursorPositionTop:
-			o.beginAtTop = true
-		case CursorPositionBottom:
-			o.beginAtTop = false
-		}
+		o.beginAtTop = position == CursorPositionTop
 	}
 }
 

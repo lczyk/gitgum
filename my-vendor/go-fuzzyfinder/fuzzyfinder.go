@@ -738,7 +738,7 @@ func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Opt
 		matched := make([]matching.Matched, sliceLen)
 		for i := 0; i < sliceLen; i++ {
 			items[i] = itemFunc(i)
-			matched[i] = matching.Matched{Idx: i} //nolint:exhaustivestruct
+			matched[i] = matching.Matched{Idx: i}
 		}
 		return items, matched
 	}
