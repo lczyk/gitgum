@@ -14,8 +14,8 @@ func Test_smithWaterman(t *testing.T) {
 		expectedPos   [2]int
 	}{
 		{"TACGGGCCCGCTA", "TAGCCCTA", 78, [2]int{0, 12}},
-		{"TACGGG-CCCGCTA", "TAGCCCTA", 56, [2]int{0, 13}},
-		{"FLY ME TO THE MOON", "MEON", 10, [2]int{4, 17}},
+		{"TACGGG-CCCGCTA", "TAGCCCTA", 68, [2]int{0, 13}},
+		{"FLY ME TO THE MOON", "MEON", 16, [2]int{4, 17}},
 	}
 
 	for _, c := range cases {

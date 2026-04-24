@@ -48,16 +48,14 @@ func smithWaterman(s1, s2 []rune) (int, [2]int) {
 		D[i][0] = -openGap - int32(i)*extGap
 	}
 
-	// Calculate bonuses for each rune of s1.
+	// Calculate bonuses for each rune of s1. First rune always gets bonus;
+	// subsequent runes get it when they immediately follow a delimiter (word-start).
 	bonus := make([]int32, len(s1))
 	bonus[0] = firstCharBonus
-	prevIsDelimiter := isDelimiter(s1[0])
-	for i, r := range s1[1:] {
-		curIsDelimiter := isDelimiter(r)
-		if prevIsDelimiter && !curIsDelimiter {
+	for i := 1; i < len(s1); i++ {
+		if isDelimiter(s1[i-1]) && !isDelimiter(s1[i]) {
 			bonus[i] = firstCharBonus
 		}
-		prevIsDelimiter = curIsDelimiter
 	}
 
 	var maxScore int32
