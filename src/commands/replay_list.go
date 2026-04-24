@@ -24,10 +24,6 @@ func listCommits(branchA, branchB string) ([]string, error) {
 		return nil, fmt.Errorf("failed to find merge base between '%s' and '%s': %w", branchA, branchB, err)
 	}
 
-	if mergeBase == "" {
-		return nil, fmt.Errorf("no merge base found between '%s' and '%s'", branchA, branchB)
-	}
-
 	// List commits from merge-base to A in reverse (chronological) order
 	revRange := mergeBase + ".." + branchA
 	output, _, err := internal.RunCommand("git", "rev-list", revRange, "--reverse")
@@ -36,7 +32,7 @@ func listCommits(branchA, branchB string) ([]string, error) {
 	}
 
 	if output == "" {
-		return []string{}, nil
+		return nil, nil
 	}
 
 	return strings.Split(output, "\n"), nil
