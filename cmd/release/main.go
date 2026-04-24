@@ -41,6 +41,13 @@ func run(args []string) error {
 		return err
 	}
 
+	if state, ok := alreadyReleased(); ok {
+		fmt.Printf("Already released: HEAD is %q (tag %s already at HEAD).\n", state.subject, state.tag)
+		fmt.Printf("Nothing to do. To publish:\n")
+		fmt.Printf("  git push origin main && git push origin %s\n", state.tag)
+		return nil
+	}
+
 	header, current, err := readVersion(versionFile)
 	if err != nil {
 		return err
@@ -75,7 +82,58 @@ func run(args []string) error {
 
 	fmt.Printf("\nTagged %s. To publish:\n", tag)
 	fmt.Printf("  git push origin main && git push origin %s\n", tag)
+	fmt.Println("\nNote: 'git reset HEAD~1' undoes the commit but leaves the tag")
+	fmt.Printf("pointing at the orphaned commit. To fully undo, also run:\n")
+	fmt.Printf("  git tag -d %s\n", tag)
 	return nil
+}
+
+// releasedState describes a HEAD that already represents a release commit
+// matching a tag at HEAD.
+type releasedState struct {
+	tag     string // e.g. "v0.5.0"
+	subject string // commit subject
+}
+
+// alreadyReleased reports whether HEAD is a release commit whose tag is
+// already pointing at HEAD: the commit's subject is "release: vX.Y.Z", the
+// only file it touches is VERSION, and that tag resolves to HEAD. This means
+// a previous release invocation succeeded and a repeat call would be a no-op.
+func alreadyReleased() (releasedState, bool) {
+	subject, err := exec.Command("git", "log", "-1", "--format=%s").Output()
+	if err != nil {
+		return releasedState{}, false
+	}
+	subj := strings.TrimSpace(string(subject))
+	tag, ok := strings.CutPrefix(subj, "release: ")
+	if !ok || !strings.HasPrefix(tag, "v") {
+		return releasedState{}, false
+	}
+
+	// Touched files: the commit must change only VERSION.
+	files, err := exec.Command("git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").Output()
+	if err != nil {
+		return releasedState{}, false
+	}
+	touched := strings.Fields(string(files))
+	if len(touched) != 1 || touched[0] != versionFile {
+		return releasedState{}, false
+	}
+
+	// Tag must exist and point at HEAD (peel through annotated tag objects).
+	tagSHA, err := exec.Command("git", "rev-parse", tag+"^{commit}").Output()
+	if err != nil {
+		return releasedState{}, false
+	}
+	headSHA, err := exec.Command("git", "rev-parse", "HEAD").Output()
+	if err != nil {
+		return releasedState{}, false
+	}
+	if strings.TrimSpace(string(tagSHA)) != strings.TrimSpace(string(headSHA)) {
+		return releasedState{}, false
+	}
+
+	return releasedState{tag: tag, subject: subj}, true
 }
 
 func requireMainBranch() error {
