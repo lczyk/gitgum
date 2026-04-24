@@ -16,11 +16,6 @@ type TerminalMock struct {
 	simScreen
 }
 
-// SetSize changes the pseudo-size of the window.
-func (m *TerminalMock) SetSize(w, h int) {
-	m.simScreen.SetSize(w, h)
-}
-
 // SetEvents sets all events, which are fetched from the terminal event channel.
 // A user of this must set the EscKey event at the end.
 func (m *TerminalMock) SetEvents(events ...tcell.Event) {
@@ -41,18 +36,14 @@ func (m *TerminalMock) GetResult() string {
 	var s string
 
 	// set cursor for snapshot test
-	setCursor := func() {
-		cursorX, cursorY, _ := m.simScreen.GetCursor()
-		mainc, _, _, _ := m.simScreen.GetContent(cursorX, cursorY)
-		if mainc == ' ' {
-			m.simScreen.SetContent(cursorX, cursorY, '█', nil, tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDefault))
-		} else {
-			m.simScreen.SetContent(cursorX, cursorY, mainc, nil, tcell.StyleDefault.Background(tcell.ColorWhite))
-		}
-		m.simScreen.Show()
+	cursorX, cursorY, _ := m.simScreen.GetCursor()
+	mainc, _, _, _ := m.simScreen.GetContent(cursorX, cursorY)
+	if mainc == ' ' {
+		m.simScreen.SetContent(cursorX, cursorY, '█', nil, tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDefault))
+	} else {
+		m.simScreen.SetContent(cursorX, cursorY, mainc, nil, tcell.StyleDefault.Background(tcell.ColorWhite))
 	}
-
-	setCursor()
+	m.simScreen.Show()
 
 	cells, width, height := m.simScreen.GetContents()
 
