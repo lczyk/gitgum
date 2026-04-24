@@ -77,7 +77,6 @@ func smithWaterman(s1, s2 []rune) (int, [2]int) {
 	// Determine the matched position.
 
 	var from, to int
-	cnt := 1
 
 	// if the best DP cell covered all of s2 (maxJ is the last s2 index), the match
 	// ends at maxI; otherwise scan forward for the remaining s2 chars.
@@ -87,7 +86,6 @@ func smithWaterman(s1, s2 []rune) (int, [2]int) {
 		j := maxJ + 1
 		for i := maxI + 1; i < len(s1); i++ {
 			if unicode.ToLower(s1[i]) == unicode.ToLower(s2[j]) {
-				cnt++
 				j++
 				if j == len(s2) {
 					to = i
@@ -97,17 +95,16 @@ func smithWaterman(s1, s2 []rune) (int, [2]int) {
 		}
 	}
 
-	// i >= 0 (not > 0): when the match starts at s1[1], cnt hits len(s2) at i=1
-	// and the check fires on the next iteration i=0 setting from=1. when the last
-	// match is at s1[0] itself, cnt hits len(s2) there and the loop exits at i=-1
-	// leaving from=0 by default -- also correct.
+	// scan left from maxI-1 matching s2[maxJ-1] down to s2[0].
+	// from defaults to 0 when s1[0] itself is the last needed char.
+	nextS2 := maxJ - 1
 	for i := maxI - 1; i >= 0; i-- {
-		if cnt == len(s2) {
+		if nextS2 < 0 {
 			from = i + 1
 			break
 		}
-		if unicode.ToLower(s1[i]) == unicode.ToLower(s2[len(s2)-1-cnt]) {
-			cnt++
+		if unicode.ToLower(s1[i]) == unicode.ToLower(s2[nextS2]) {
+			nextS2--
 		}
 	}
 
