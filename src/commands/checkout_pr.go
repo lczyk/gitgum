@@ -16,7 +16,6 @@ type CheckoutPRCommand struct{}
 // PRRef represents a pull request reference
 type PRRef struct {
 	Number int
-	Ref    string
 	Type   string // "head" or "merge"
 }
 
@@ -105,7 +104,6 @@ func getPRRefs(remote string) ([]PRRef, error) {
 			if existing, exists := prMap[prNumber]; !exists || (existing.Type == "merge" && prType == "head") {
 				prMap[prNumber] = PRRef{
 					Number: prNumber,
-					Ref:    fmt.Sprintf("refs/pull/%d/%s", prNumber, prType),
 					Type:   prType,
 				}
 			}

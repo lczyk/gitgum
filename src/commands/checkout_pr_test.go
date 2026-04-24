@@ -24,23 +24,23 @@ func TestFormatPROptions(t *testing.T) {
 		{
 			name: "single PR head",
 			prRefs: []PRRef{
-				{Number: 123, Ref: "refs/pull/123/head", Type: "head"},
+				{Number: 123, Type: "head"},
 			},
 			expected: []string{"PR #123 (head)"},
 		},
 		{
 			name: "single PR merge",
 			prRefs: []PRRef{
-				{Number: 456, Ref: "refs/pull/456/merge", Type: "merge"},
+				{Number: 456, Type: "merge"},
 			},
 			expected: []string{"PR #456 (merge)"},
 		},
 		{
 			name: "multiple PRs",
 			prRefs: []PRRef{
-				{Number: 123, Ref: "refs/pull/123/head", Type: "head"},
-				{Number: 456, Ref: "refs/pull/456/merge", Type: "merge"},
-				{Number: 789, Ref: "refs/pull/789/head", Type: "head"},
+				{Number: 123, Type: "head"},
+				{Number: 456, Type: "merge"},
+				{Number: 789, Type: "head"},
 			},
 			expected: []string{"PR #123 (head)", "PR #456 (merge)", "PR #789 (head)"},
 		},
