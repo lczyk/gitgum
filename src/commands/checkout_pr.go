@@ -12,7 +12,7 @@ import (
 
 var (
 	prRegex        = regexp.MustCompile(`^[a-f0-9]+\s+refs/pull/(\d+)/(head|merge)$`)
-	prSelectionRex = regexp.MustCompile(`^PR #(\d+) \((\w+)\)$`)
+	prSelectionRex = regexp.MustCompile(`^PR #(\d+) \((head|merge)\)$`)
 )
 
 type CheckoutPRCommand struct{}
@@ -132,10 +132,6 @@ func parsePRSelection(selection string) (int, string, error) {
 	}
 
 	prType := matches[2]
-	if prType != "head" && prType != "merge" {
-		return 0, "", fmt.Errorf("invalid PR type: %s", prType)
-	}
-
 	return prNumber, prType, nil
 }
 
