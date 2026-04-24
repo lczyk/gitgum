@@ -96,9 +96,8 @@ func parsePRRefs(lsRemoteOutput string) []PRRef {
 		prType := matches[2]
 
 		existing, found := prMap[prNumber]
-		isNew := !found
-		isUpgradeToHead := existing.Type == "merge" && prType == "head"
-		if isNew || isUpgradeToHead {
+		// head takes precedence over merge for the same PR number
+		if !found || (existing.Type == "merge" && prType == "head") {
 			prMap[prNumber] = PRRef{Number: prNumber, Type: prType}
 		}
 	}
