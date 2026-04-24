@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	flags "github.com/jessevdk/go-flags"
-	"github.com/ktr0731/go-fuzzyfinder"
 	"github.com/lczyk/gitgum/src/commands"
+	"github.com/lczyk/gitgum/src/fuzzyfinder"
 	"github.com/lczyk/gitgum/src/version"
 )
 

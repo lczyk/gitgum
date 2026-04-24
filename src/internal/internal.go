@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/ktr0731/go-fuzzyfinder"
+	"github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
 // ErrFzfCancelled is returned when the user cancels an fzf operation (Ctrl+C or ESC)

@@ -18,7 +18,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/ktr0731/go-ansisgr"
-	"github.com/ktr0731/go-fuzzyfinder/matching"
+	"github.com/lczyk/gitgum/src/fuzzyfinder/matching"
 	runewidth "github.com/mattn/go-runewidth"
 )
 

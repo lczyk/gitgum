@@ -16,7 +16,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 
 	fuzz "github.com/google/gofuzz"
-	fuzzyfinder "github.com/ktr0731/go-fuzzyfinder"
+	fuzzyfinder "github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
 var (
@@ -30,8 +30,7 @@ var (
 //
 // Example:
 //
-//   go test -tags fuzz -run TestFuzz -numCases 10 -numEvents 10
-//
+//	go test -tags fuzz -run TestFuzz -numCases 10 -numEvents 10
 func TestFuzz(t *testing.T) {
 	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789一花二乃三玖四葉五月")
 	tbkeys := []tcell.Key{

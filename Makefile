@@ -31,13 +31,12 @@ install: ./bin/gitgum  ## Symlink the binary into ~/.local/bin/gitgum
 	ln -sf "$(PWD)/bin/gitgum" "$(HOME)/.local/bin/gg"
 
 .PHONY: test
-test:  ## Run the test suite (and the vendored go-fuzzyfinder tests)
+test:  ## Run the test suite with race detector
 	@if command -v gotest >/dev/null 2>&1; then \
-		gotest ./...; \
+		gotest -race ./...; \
 	else \
-		go test ./...; \
+		go test -race ./...; \
 	fi
-	$(MAKE) -C my-vendor/go-fuzzyfinder unit-test
 
 .PHONY: check
 check:  ## go vet across the module
@@ -54,6 +53,14 @@ fmt-check:  ## Verify gofmt without modifying files
 		echo "Unformatted files:"; echo "$$out"; exit 1; \
 	fi
 
+.PHONY: coverage
+coverage:  ## Run tests with coverage profile
+	go test -coverpkg ./... -covermode=atomic -coverprofile=coverage.txt -race ./...
+
+.PHONY: coverage-web
+coverage-web: coverage  ## Open coverage report in browser
+	go tool cover -html=coverage.txt
+
 .PHONY: verify
 verify: fmt-check check test  ## Pre-commit gate: fmt-check, vet, test
 	@echo "All checks passed."
@@ -62,3 +69,4 @@ verify: fmt-check check test  ## Pre-commit gate: fmt-check, vet, test
 clean:  ## Remove build artifacts and generated files
 	rm -f ./bin/gitgum
 	rm -f ./src/version/version.go
+	rm -f ./coverage.txt

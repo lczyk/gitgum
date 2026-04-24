@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ktr0731/go-fuzzyfinder"
+	"github.com/lczyk/gitgum/src/fuzzyfinder"
 	"github.com/lczyk/gitgum/src/internal"
 )
 
