@@ -18,11 +18,6 @@ import (
 	fuzzyfinder "github.com/ktr0731/go-fuzzyfinder"
 )
 
-type fuzzKey struct {
-	key  tcell.Key
-	name string
-}
-
 var (
 	letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789一花二乃三玖四葉五月")
 	tbkeys  = []tcell.Key{
@@ -120,7 +115,7 @@ func TestFuzz(t *testing.T) {
 			var mu sync.Mutex
 			tracks := tracks
 
-			f, term := fuzzyfinder.NewWithMockedTerminal()
+			finder, term := fuzzyfinder.NewWithMockedTerminal()
 			events = append(events, key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 
 			term.SetEvents(events...)
@@ -161,7 +156,7 @@ func TestFuzz(t *testing.T) {
 				iface = tracks
 			}
 
-			_, err := f.Find(
+			_, err := finder.Find(
 				iface,
 				func(i int) string {
 					mu.Lock()
