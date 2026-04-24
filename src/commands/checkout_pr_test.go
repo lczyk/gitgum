@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/lczyk/assert"
@@ -123,11 +124,12 @@ func TestFormatPROptions(t *testing.T) {
 
 func TestParsePRSelection(t *testing.T) {
 	tests := []struct {
-		name          string
-		selection     string
-		expectedNum   int
-		expectedType  string
-		expectedError bool
+		name           string
+		selection      string
+		expectedNum    int
+		expectedType   string
+		expectedError  bool
+		expectedErrMsg string // substring of error message for error cases
 	}{
 		{
 			name:          "valid head selection",
@@ -151,32 +153,28 @@ func TestParsePRSelection(t *testing.T) {
 			expectedError: false,
 		},
 		{
-			name:          "invalid format - missing type",
-			selection:     "PR #123",
-			expectedNum:   0,
-			expectedType:  "",
-			expectedError: true,
+			name:           "invalid format - missing type",
+			selection:      "PR #123",
+			expectedError:  true,
+			expectedErrMsg: "invalid PR selection format",
 		},
 		{
-			name:          "invalid format - wrong format",
-			selection:     "#123 (head)",
-			expectedNum:   0,
-			expectedType:  "",
-			expectedError: true,
+			name:           "invalid format - wrong format",
+			selection:      "#123 (head)",
+			expectedError:  true,
+			expectedErrMsg: "invalid PR selection format",
 		},
 		{
-			name:          "invalid format - non-numeric PR",
-			selection:     "PR #abc (head)",
-			expectedNum:   0,
-			expectedType:  "",
-			expectedError: true,
+			name:           "invalid format - non-numeric PR",
+			selection:      "PR #abc (head)",
+			expectedError:  true,
+			expectedErrMsg: "invalid PR selection format",
 		},
 		{
-			name:          "invalid PR type",
-			selection:     "PR #123 (foo)",
-			expectedNum:   0,
-			expectedType:  "",
-			expectedError: true,
+			name:           "invalid PR type",
+			selection:      "PR #123 (foo)",
+			expectedError:  true,
+			expectedErrMsg: "invalid PR selection format",
 		},
 	}
 
@@ -186,6 +184,7 @@ func TestParsePRSelection(t *testing.T) {
 
 			if tt.expectedError {
 				assert.That(t, err != nil, "expected error for %q", tt.selection)
+				assert.That(t, strings.Contains(err.Error(), tt.expectedErrMsg), "error %q should contain %q", err.Error(), tt.expectedErrMsg)
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, num, tt.expectedNum)

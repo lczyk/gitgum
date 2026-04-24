@@ -28,4 +28,3 @@ func TestEmptyCommand_NoUpstream(t *testing.T) {
 
 	assert.That(t, err == nil, "should succeed without upstream, got error")
 }
-

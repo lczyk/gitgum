@@ -69,4 +69,3 @@ func CreateCommit(t *testing.T, dir, filename, content, message string) {
 	RunGit(t, dir, "add", filename)
 	RunGit(t, dir, "commit", "-m", message)
 }
-
