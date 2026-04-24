@@ -16,6 +16,7 @@ import (
 type SwitchCommand struct{}
 
 func (s *SwitchCommand) Execute(args []string) error {
+	// validation: ensure we're in a git repo with clean working tree
 	if err := internal.CheckInGitRepo(); err != nil {
 		return err
 	}
@@ -45,6 +46,9 @@ func (s *SwitchCommand) Execute(args []string) error {
 		return fmt.Errorf("local changes would be overwritten")
 	}
 
+	// setup: prepare branch collection with streaming hot-reload
+	// we'll collect branches from local and all remotes in parallel while the user browses
+
 	remotes, err := internal.GetRemotes()
 	if err != nil {
 		return fmt.Errorf("getting remotes: %w", err)
@@ -59,6 +63,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// stream branches from git in background, deduplicating and throttling for UX
 	streamQueue := make(chan string, 1000)
 	go func() {
 		for {
@@ -125,6 +130,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 		}()
 	}
 
+	// user selection: let user pick from live-updating branch list
 	prompt := "Select a branch to switch to"
 	selectedIdx, err := fuzzyfinder.Find(
 		&branches,
@@ -167,6 +173,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 	typ := parts[0]
 	name := parts[1]
 
+	// handle branch selection: different logic for local vs remote branches
 	switch typ {
 	case "local":
 		branch := name
