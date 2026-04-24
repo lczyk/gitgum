@@ -84,7 +84,7 @@ func TestListCommits(t *testing.T) {
 			commits, err := listCommits(branchA, branchB)
 
 			if tt.expectError {
-				assert.That(t, err != nil, "expected error")
+				assert.Error(t, err, assert.AnyError, "expected error")
 				if tt.errorContains != "" {
 					assert.ContainsString(t, err.Error(), tt.errorContains)
 				}

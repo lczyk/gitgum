@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/lczyk/assert"
@@ -103,8 +102,8 @@ func TestParsePRSelection(t *testing.T) {
 			num, prType, err := parsePRSelection(tt.selection)
 
 			if tt.expectedError {
-				assert.That(t, err != nil, "expected error for ", tt.selection)
-				assert.That(t, strings.Contains(err.Error(), tt.expectedErrMsg), "error ", err.Error(), " should contain ", tt.expectedErrMsg)
+				assert.Error(t, err, assert.AnyError, "expected error for ", tt.selection)
+				assert.ContainsString(t, err.Error(), tt.expectedErrMsg)
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expectedNum, num)

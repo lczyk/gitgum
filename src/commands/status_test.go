@@ -13,7 +13,7 @@ func TestStatusCommand_NotInGitRepo(t *testing.T) {
 	cmd := &StatusCommand{}
 	err := cmd.Execute(nil)
 
-	assert.That(t, err != nil, "should error when not in git repo")
+	assert.Error(t, err, assert.AnyError, "should error when not in git repo")
 	assert.ContainsString(t, err.Error(), "not inside a git repository")
 }
 

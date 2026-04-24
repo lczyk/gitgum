@@ -28,7 +28,7 @@ func TestCalculate(t *testing.T) {
 			t.Parallel()
 			score, pos, err := Calculate(c.s1, c.s2)
 			if c.wantErr {
-				assert.That(t, err != nil, "expected error, got nil")
+				assert.Error(t, err, assert.AnyError, "expected error, got nil")
 				return
 			}
 			assert.NoError(t, err)
