@@ -85,14 +85,7 @@ func TestFuzz(t *testing.T) {
 	}
 	defer f.Close()
 
-	fuzz := fuzz.New()
-
-	min := func(a, b int) int {
-		if a < b {
-			return a
-		}
-		return b
-	}
+	fuzzer := fuzz.New()
 
 	for i := 0; i < rand.Intn(*numCases)+10; i++ {
 		// number of events in tcell.SimulationScreen is limited 10
@@ -122,7 +115,6 @@ func TestFuzz(t *testing.T) {
 					fmt.Fprintln(f, name)
 					t.Errorf("panicked: %s", name)
 				}
-				return
 			}()
 
 			var mu sync.Mutex
@@ -138,8 +130,8 @@ func TestFuzz(t *testing.T) {
 				promptStr string
 				header    string
 			)
-			fuzz.Fuzz(&promptStr)
-			fuzz.Fuzz(&header)
+			fuzzer.Fuzz(&promptStr)
+			fuzzer.Fuzz(&header)
 			opts := []fuzzyfinder.Option{
 				fuzzyfinder.WithPromptString(promptStr),
 				fuzzyfinder.WithHeader(header),
@@ -156,9 +148,9 @@ func TestFuzz(t *testing.T) {
 							return
 						default:
 							var t track
-							fuzz.Fuzz(&t.Name)
-							fuzz.Fuzz(&t.Artist)
-							fuzz.Fuzz(&t.Album)
+							fuzzer.Fuzz(&t.Name)
+							fuzzer.Fuzz(&t.Artist)
+							fuzzer.Fuzz(&t.Album)
 							mu.Lock()
 							tracks = append(tracks, &t)
 							mu.Unlock()
