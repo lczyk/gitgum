@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lczyk/assert"
 	"github.com/lczyk/gitgum/src/fuzzyfinder/matching"
 )
 
@@ -32,26 +33,15 @@ func TestMatch(t *testing.T) {
 			t.Parallel()
 
 			matched := matching.FindAll(c.in, slice, matching.WithMode(c.mode))
-			n := len(matched)
 			if c.expected == "" {
-				if n != 0 {
-					t.Errorf("the result length must be 0, but got %d", n)
-				}
+				assert.Equal(t, 0, len(matched))
 				return
 			}
-
-			if n != 1 {
-				t.Fatalf("the result length must be 1, but got %d", n)
-			}
+			assert.Equal(t, 1, len(matched))
 			m := matched[0]
-			if m.Idx != c.idx {
-				t.Fatalf("m.Idx must be equal to %d, but got %d", c.idx, m.Idx)
-			}
+			assert.Equal(t, c.idx, m.Idx)
 			runes := []rune(slice[c.idx])
-			actual := string(runes[m.Pos[0] : m.Pos[1]+1])
-			if actual != c.expected {
-				t.Errorf("invalid pos: from = %d, to = %d, content = %s, expected = %s", m.Pos[0], m.Pos[1], actual, c.expected)
-			}
+			assert.Equal(t, c.expected, string(runes[m.Pos[0]:m.Pos[1]+1]))
 		})
 	}
 }
@@ -69,13 +59,9 @@ func TestFindAllWithMatcher(t *testing.T) {
 	matched := matching.FindAll("foo", slice, matching.WithMatcher(substringMatcher))
 
 	wantIdxs := map[int]bool{0: true, 3: true}
-	if len(matched) != len(wantIdxs) {
-		t.Fatalf("want %d matches, got %d", len(wantIdxs), len(matched))
-	}
+	assert.Equal(t, len(wantIdxs), len(matched))
 	for _, m := range matched {
-		if !wantIdxs[m.Idx] {
-			t.Errorf("unexpected Idx %d in results", m.Idx)
-		}
+		assert.That(t, wantIdxs[m.Idx], "unexpected Idx", m.Idx)
 	}
 }
 

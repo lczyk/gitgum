@@ -1,6 +1,10 @@
 package scoring
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/lczyk/assert"
+)
 
 func Test_smithWaterman(t *testing.T) {
 	t.Parallel()
@@ -26,12 +30,8 @@ func Test_smithWaterman(t *testing.T) {
 			t.Parallel()
 
 			score, pos := smithWaterman([]rune(c.s1), []rune(c.s2))
-			if score != c.wantScore {
-				t.Errorf("score: got %d, want %d", score, c.wantScore)
-			}
-			if pos != c.wantPos {
-				t.Errorf("pos: got %v, want %v", pos, c.wantPos)
-			}
+			assert.Equal(t, c.wantScore, score)
+			assert.Equal(t, c.wantPos, pos)
 		})
 	}
 }

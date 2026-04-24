@@ -1,6 +1,10 @@
 package scoring
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/lczyk/assert"
+)
 
 func TestCalculate(t *testing.T) {
 	t.Parallel()
@@ -24,21 +28,12 @@ func TestCalculate(t *testing.T) {
 			t.Parallel()
 			score, pos, err := Calculate(c.s1, c.s2)
 			if c.wantErr {
-				if err == nil {
-					t.Error("expected error, got nil")
-				}
+				assert.That(t, err != nil, "expected error, got nil")
 				return
 			}
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-				return
-			}
-			if score != c.wantScore {
-				t.Errorf("score: got %d, want %d", score, c.wantScore)
-			}
-			if pos != c.wantPos {
-				t.Errorf("pos: got %v, want %v", pos, c.wantPos)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, c.wantScore, score)
+			assert.Equal(t, c.wantPos, pos)
 		})
 	}
 }

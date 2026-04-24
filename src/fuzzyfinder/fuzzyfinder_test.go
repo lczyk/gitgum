@@ -14,6 +14,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/google/go-cmp/cmp"
+	"github.com/lczyk/assert"
 	fuzzyfinder "github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
@@ -55,17 +56,12 @@ func assertWithGolden(t *testing.T, f func(t *testing.T) string) {
 	fname := normalizeFilename(name)
 
 	if *update {
-		if err := os.WriteFile(fname, []byte(actual), 0600); err != nil {
-			t.Fatalf("failed to update the golden file: %s", err)
-		}
+		assert.NoError(t, os.WriteFile(fname, []byte(actual), 0600), "update golden")
 		return
 	}
 
-	// Load the golden file.
 	b, err := os.ReadFile(fname)
-	if err != nil {
-		t.Fatalf("failed to load a golden file: %s", err)
-	}
+	assert.NoError(t, err, "load golden")
 	expected := string(b)
 	if runtime.GOOS == "windows" {
 		expected = strings.ReplaceAll(expected, "\r\n", "\n")
@@ -108,9 +104,7 @@ func TestReal(t *testing.T) {
 		return
 	}
 	_, err := fuzzyfinder.Find(trackNames())
-	if err != nil {
-		t.Fatalf("err is not nil: %s", err)
-	}
+	assert.NoError(t, err)
 }
 
 func TestFind(t *testing.T) {
@@ -256,9 +250,7 @@ func TestFind(t *testing.T) {
 
 			assertWithGolden(t, func(t *testing.T) string {
 				_, err := f.Find(trackNames(), opts...)
-				if !errors.Is(err, fuzzyfinder.ErrAbort) {
-					t.Fatalf("Find must return ErrAbort, but got '%s'", err)
-				}
+				assert.That(t, errors.Is(err, fuzzyfinder.ErrAbort), "expected ErrAbort, got", err)
 
 				res := term.GetResult()
 				return res
@@ -281,9 +273,7 @@ func TestFind_hotReload(t *testing.T) {
 			&sync.Mutex{},
 			fuzzyfinder.WithMode(fuzzyfinder.ModeCaseSensitive),
 		)
-		if !errors.Is(err, fuzzyfinder.ErrAbort) {
-			t.Fatalf("Find must return ErrAbort, but got '%s'", err)
-		}
+		assert.That(t, errors.Is(err, fuzzyfinder.ErrAbort), "expected ErrAbort, got", err)
 
 		res := term.GetResult()
 		return res
@@ -305,9 +295,7 @@ func TestFind_hotReloadLock(t *testing.T) {
 			mu.RLocker(),
 			fuzzyfinder.WithMode(fuzzyfinder.ModeCaseSensitive),
 		)
-		if !errors.Is(err, fuzzyfinder.ErrAbort) {
-			t.Fatalf("Find must return ErrAbort, but got '%s'", err)
-		}
+		assert.That(t, errors.Is(err, fuzzyfinder.ErrAbort), "expected ErrAbort, got", err)
 
 		res := term.GetResult()
 		return res
@@ -336,13 +324,8 @@ func TestFind_enter(t *testing.T) {
 			term.SetEvents(events...)
 
 			idx, err := f.Find(trackNames())
-
-			if err != nil {
-				t.Fatalf("Find must not return an error, but got '%s'", err)
-			}
-			if idx != c.expected {
-				t.Errorf("expected index: %d, but got %d", c.expected, idx)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, c.expected, idx)
 		})
 	}
 }
@@ -359,9 +342,7 @@ func TestFind_withContext(t *testing.T) {
 
 	assertWithGolden(t, func(t *testing.T) string {
 		_, err := f.Find(trackNames(), fuzzyfinder.WithContext(cancelledCtx))
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("Find must return ErrAbort, but got '%s'", err)
-		}
+		assert.That(t, errors.Is(err, context.Canceled), "expected context.Canceled, got", err)
 
 		res := term.GetResult()
 		return res
@@ -381,14 +362,9 @@ func TestFind_WithQuery(t *testing.T) {
 
 		assertWithGolden(t, func(t *testing.T) string {
 			idx, err := f.Find(things)
-			if err != nil {
-				t.Fatalf("Find must not return an error, but got '%s'", err)
-			}
-			if idx != 0 {
-				t.Errorf("expected index: 0, but got %d", idx)
-			}
-			res := term.GetResult()
-			return res
+			assert.NoError(t, err)
+			assert.Equal(t, 0, idx)
+			return term.GetResult()
 		})
 	})
 
@@ -398,15 +374,9 @@ func TestFind_WithQuery(t *testing.T) {
 
 		assertWithGolden(t, func(t *testing.T) string {
 			idx, err := f.Find(things, fuzzyfinder.WithQuery("three2"))
-
-			if err != nil {
-				t.Fatalf("Find must not return an error, but got '%s'", err)
-			}
-			if idx != 1 {
-				t.Errorf("expected index: 1, but got %d", idx)
-			}
-			res := term.GetResult()
-			return res
+			assert.NoError(t, err)
+			assert.Equal(t, 1, idx)
+			return term.GetResult()
 		})
 	})
 }
@@ -446,19 +416,12 @@ func TestFind_WithSelectOne(t *testing.T) {
 			assertWithGolden(t, func(t *testing.T) string {
 				idx, err := f.Find(c.things, append(c.moreOpts, fuzzyfinder.WithSelectOne())...)
 				if c.abort {
-					if !errors.Is(err, fuzzyfinder.ErrAbort) {
-						t.Fatalf("Find must return ErrAbort, but got '%s'", err)
-					}
+					assert.That(t, errors.Is(err, fuzzyfinder.ErrAbort), "expected ErrAbort, got", err)
 				} else {
-					if err != nil {
-						t.Fatalf("Find must not return an error, but got '%s'", err)
-					}
-					if idx != c.expected {
-						t.Errorf("expected index: %d, but got %d", c.expected, idx)
-					}
+					assert.NoError(t, err)
+					assert.Equal(t, c.expected, idx)
 				}
-				res := term.GetResult()
-				return res
+				return term.GetResult()
 			})
 		})
 	}
@@ -504,18 +467,11 @@ func TestFindMulti(t *testing.T) {
 
 			idxs, err := f.FindMulti(trackNames())
 			if c.abort {
-				if !errors.Is(err, fuzzyfinder.ErrAbort) {
-					t.Fatalf("Find must return ErrAbort, but got '%s'", err)
-				}
+				assert.That(t, errors.Is(err, fuzzyfinder.ErrAbort), "expected ErrAbort, got", err)
 				return
 			}
-			if err != nil {
-				t.Fatalf("Find must not return an error, but got '%s'", err)
-			}
-			expectedSelectedNum := len(c.expected)
-			if n := len(idxs); n != expectedSelectedNum {
-				t.Errorf("expected the number of selected items is %d, but actual %d", expectedSelectedNum, n)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, len(c.expected), len(idxs))
 		})
 	}
 }
@@ -530,9 +486,7 @@ func BenchmarkFind(b *testing.B) {
 			term.SetEvents(events...)
 
 			_, err := f.Find(trackNames())
-			if !errors.Is(err, fuzzyfinder.ErrAbort) {
-				b.Fatalf("expected ErrAbort, but got '%s'", err)
-			}
+			assert.That(b, errors.Is(err, fuzzyfinder.ErrAbort), "expected ErrAbort, got", err)
 		}
 	})
 
@@ -546,9 +500,7 @@ func BenchmarkFind(b *testing.B) {
 
 			names := trackNames()
 			_, err := f.FindLive(&names, &sync.Mutex{})
-			if !errors.Is(err, fuzzyfinder.ErrAbort) {
-				b.Fatalf("expected ErrAbort, but got '%s'", err)
-			}
+			assert.That(b, errors.Is(err, fuzzyfinder.ErrAbort), "expected ErrAbort, got", err)
 		}
 	})
 }
