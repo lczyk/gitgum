@@ -1,0 +1,100 @@
+package fuzzyfinder
+
+import (
+	"context"
+	"strings"
+)
+
+// SubstringMatcher is a case-insensitive, whitespace-split substring matcher:
+// the item matches if it contains every whitespace-delimited word from the query
+// (case-insensitive). Suitable for fzf-style filtering of free-form input.
+func SubstringMatcher(query, item string) bool {
+	itemLower := strings.ToLower(item)
+	for _, word := range strings.Fields(query) {
+		if !strings.Contains(itemLower, strings.ToLower(word)) {
+			return false
+		}
+	}
+	return true
+}
+
+type opt struct {
+	mode         mode
+	promptString string
+	header       string
+	ctx          context.Context
+	query        string
+	selectOne    bool
+	matcher      func(query, item string) bool
+}
+
+type mode int
+
+const (
+	// ModeSmart enables a smart matching. It is the default matching mode.
+	// At the beginning, matching mode is ModeCaseInsensitive, but it switches
+	// over to ModeCaseSensitive if an upper case character is inputted.
+	ModeSmart mode = iota
+	// ModeCaseSensitive enables a case-sensitive matching.
+	ModeCaseSensitive
+	// ModeCaseInsensitive enables a case-insensitive matching.
+	ModeCaseInsensitive
+)
+
+var defaultOption = opt{
+	promptString: "> ",
+}
+
+// Option represents available fuzzy-finding options.
+type Option func(*opt)
+
+// WithMode specifies a matching mode. The default mode is ModeSmart.
+func WithMode(m mode) Option {
+	return func(o *opt) {
+		o.mode = m
+	}
+}
+
+// WithPromptString changes the prompt string. The default value is "> ".
+func WithPromptString(s string) Option {
+	return func(o *opt) {
+		o.promptString = s
+	}
+}
+
+// WithHeader enables to set the header.
+func WithHeader(s string) Option {
+	return func(o *opt) {
+		o.header = s
+	}
+}
+
+// WithContext enables closing the fuzzy finder from parent.
+func WithContext(ctx context.Context) Option {
+	return func(o *opt) {
+		o.ctx = ctx
+	}
+}
+
+// WithQuery enables to set the initial query.
+func WithQuery(s string) Option {
+	return func(o *opt) {
+		o.query = s
+	}
+}
+
+// WithSelectOne automatically selects the item if there is only one match.
+func WithSelectOne() Option {
+	return func(o *opt) {
+		o.selectOne = true
+	}
+}
+
+// WithMatcher enables custom matching logic.
+// The matcher function takes the current query and an item string, and returns true if the item matches.
+// If not provided, the default fuzzy matching is used.
+func WithMatcher(matcher func(query, item string) bool) Option {
+	return func(o *opt) {
+		o.matcher = matcher
+	}
+}

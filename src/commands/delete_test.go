@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
-	"github.com/lczyk/gitgum/src/internal/temp_repo"
+	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
 
 func TestDeleteCommand_NotInGitRepo(t *testing.T) {
@@ -13,7 +13,7 @@ func TestDeleteCommand_NotInGitRepo(t *testing.T) {
 	cmd := &DeleteCommand{}
 	err := cmd.Execute(nil)
 
-	assert.That(t, err != nil, "should error when not in git repo")
+	assert.Error(t, err, assert.AnyError, "should error when not in git repo")
 	assert.ContainsString(t, err.Error(), "not inside a git repository")
 }
 
@@ -28,6 +28,6 @@ func TestDeleteCommand_NoBranches(t *testing.T) {
 	cmd := &DeleteCommand{}
 	err := cmd.Execute(nil)
 
-	assert.That(t, err != nil, "should error when no branches exist")
+	assert.Error(t, err, assert.AnyError, "should error when no branches exist")
 	assert.ContainsString(t, err.Error(), "no branches")
 }

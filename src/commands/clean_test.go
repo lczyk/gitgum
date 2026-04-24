@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
-	"github.com/lczyk/gitgum/src/internal/temp_repo"
+	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
 
 func boolPtr(b bool) *bool { return &b }
@@ -36,25 +36,21 @@ func TestCleanCommand_NotInGitRepo(t *testing.T) {
 	cmd := &CleanCommand{}
 	err := cmd.Execute(nil)
 
-	assert.That(t, err != nil, "should error when not in git repo")
+	assert.Error(t, err, assert.AnyError, "should error when not in git repo")
 	assert.ContainsString(t, err.Error(), "not inside a git repository")
 }
 
 func TestCleanCommand_Execute(t *testing.T) {
 
-	tests := []struct {
-		name   string
+	cases := map[string]struct {
 		setup  func(t *testing.T, dir string)
 		cmd    *CleanCommand
 		verify func(t *testing.T, dir string)
 	}{
-		{
-			name: "clean changes and untracked with --yes",
+		"clean changes and untracked with --yes": {
 			setup: func(t *testing.T, dir string) {
-				err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("modified\n"), 0o644)
-				assert.NoError(t, err, "modify tracked file")
-				err = os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("untracked\n"), 0o644)
-				assert.NoError(t, err, "create untracked file")
+				temp_repo.WriteFile(t, dir, "README.md", "modified\n")
+				temp_repo.WriteFile(t, dir, "untracked.txt", "untracked\n")
 			},
 			cmd: &CleanCommand{Yes: true},
 			verify: func(t *testing.T, dir string) {
@@ -62,13 +58,10 @@ func TestCleanCommand_Execute(t *testing.T) {
 				fileNotExists(t, dir, "untracked.txt")
 			},
 		},
-		{
-			name: "clean only changes with --no-untracked",
+		"clean only changes with --no-untracked": {
 			setup: func(t *testing.T, dir string) {
-				err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("modified\n"), 0o644)
-				assert.NoError(t, err, "modify tracked file")
-				err = os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("untracked\n"), 0o644)
-				assert.NoError(t, err, "create untracked file")
+				temp_repo.WriteFile(t, dir, "README.md", "modified\n")
+				temp_repo.WriteFile(t, dir, "untracked.txt", "untracked\n")
 			},
 			cmd: &CleanCommand{Untracked: boolPtr(false), Yes: true},
 			verify: func(t *testing.T, dir string) {
@@ -76,13 +69,10 @@ func TestCleanCommand_Execute(t *testing.T) {
 				fileExists(t, dir, "untracked.txt")
 			},
 		},
-		{
-			name: "clean only untracked with --no-changes",
+		"clean only untracked with --no-changes": {
 			setup: func(t *testing.T, dir string) {
-				err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("modified\n"), 0o644)
-				assert.NoError(t, err, "modify tracked file")
-				err = os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("untracked\n"), 0o644)
-				assert.NoError(t, err, "create untracked file")
+				temp_repo.WriteFile(t, dir, "README.md", "modified\n")
+				temp_repo.WriteFile(t, dir, "untracked.txt", "untracked\n")
 			},
 			cmd: &CleanCommand{Changes: boolPtr(false), Yes: true},
 			verify: func(t *testing.T, dir string) {
@@ -90,17 +80,13 @@ func TestCleanCommand_Execute(t *testing.T) {
 				fileNotExists(t, dir, "untracked.txt")
 			},
 		},
-		{
-			name: "clean with --ignored includes ignored files",
+		"clean with --ignored includes ignored files": {
 			setup: func(t *testing.T, dir string) {
-				err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("*.log\n"), 0o644)
-				assert.NoError(t, err, "create .gitignore")
+				temp_repo.WriteFile(t, dir, ".gitignore", "*.log\n")
 				temp_repo.RunGit(t, dir, "add", ".gitignore")
 				temp_repo.RunGit(t, dir, "commit", "-m", "add gitignore")
-				err = os.WriteFile(filepath.Join(dir, "test.log"), []byte("log\n"), 0o644)
-				assert.NoError(t, err, "create ignored file")
-				err = os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("untracked\n"), 0o644)
-				assert.NoError(t, err, "create untracked file")
+				temp_repo.WriteFile(t, dir, "test.log", "log\n")
+				temp_repo.WriteFile(t, dir, "untracked.txt", "untracked\n")
 			},
 			cmd: &CleanCommand{Ignored: boolPtr(true), Changes: boolPtr(false), Yes: true},
 			verify: func(t *testing.T, dir string) {
@@ -108,17 +94,13 @@ func TestCleanCommand_Execute(t *testing.T) {
 				fileNotExists(t, dir, "test.log")
 			},
 		},
-		{
-			name: "without --ignored, keep ignored files",
+		"without --ignored, keep ignored files": {
 			setup: func(t *testing.T, dir string) {
-				err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("*.log\n"), 0o644)
-				assert.NoError(t, err, "create .gitignore")
+				temp_repo.WriteFile(t, dir, ".gitignore", "*.log\n")
 				temp_repo.RunGit(t, dir, "add", ".gitignore")
 				temp_repo.RunGit(t, dir, "commit", "-m", "add gitignore")
-				err = os.WriteFile(filepath.Join(dir, "test.log"), []byte("log\n"), 0o644)
-				assert.NoError(t, err, "create ignored file")
-				err = os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("untracked\n"), 0o644)
-				assert.NoError(t, err, "create untracked file")
+				temp_repo.WriteFile(t, dir, "test.log", "log\n")
+				temp_repo.WriteFile(t, dir, "untracked.txt", "untracked\n")
 			},
 			cmd: &CleanCommand{Changes: boolPtr(false), Yes: true},
 			verify: func(t *testing.T, dir string) {
@@ -126,19 +108,14 @@ func TestCleanCommand_Execute(t *testing.T) {
 				fileExists(t, dir, "test.log")
 			},
 		},
-		{
-			name: "--all flag enables everything",
+		"--all flag enables everything": {
 			setup: func(t *testing.T, dir string) {
-				err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("*.log\n"), 0o644)
-				assert.NoError(t, err, "create .gitignore")
+				temp_repo.WriteFile(t, dir, ".gitignore", "*.log\n")
 				temp_repo.RunGit(t, dir, "add", ".gitignore")
 				temp_repo.RunGit(t, dir, "commit", "-m", "add gitignore")
-				err = os.WriteFile(filepath.Join(dir, "README.md"), []byte("modified\n"), 0o644)
-				assert.NoError(t, err, "modify tracked file")
-				err = os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("untracked\n"), 0o644)
-				assert.NoError(t, err, "create untracked file")
-				err = os.WriteFile(filepath.Join(dir, "test.log"), []byte("log\n"), 0o644)
-				assert.NoError(t, err, "create ignored file")
+				temp_repo.WriteFile(t, dir, "README.md", "modified\n")
+				temp_repo.WriteFile(t, dir, "untracked.txt", "untracked\n")
+				temp_repo.WriteFile(t, dir, "test.log", "log\n")
 			},
 			cmd: &CleanCommand{All: true, Yes: true},
 			verify: func(t *testing.T, dir string) {
@@ -147,13 +124,10 @@ func TestCleanCommand_Execute(t *testing.T) {
 				fileNotExists(t, dir, "test.log")
 			},
 		},
-		{
-			name: "nothing to clean when both changes and untracked disabled",
+		"nothing to clean when both changes and untracked disabled": {
 			setup: func(t *testing.T, dir string) {
-				err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("modified\n"), 0o644)
-				assert.NoError(t, err, "modify tracked file")
-				err = os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("untracked\n"), 0o644)
-				assert.NoError(t, err, "create untracked file")
+				temp_repo.WriteFile(t, dir, "README.md", "modified\n")
+				temp_repo.WriteFile(t, dir, "untracked.txt", "untracked\n")
 			},
 			cmd: &CleanCommand{Changes: boolPtr(false), Untracked: boolPtr(false), Yes: true},
 			verify: func(t *testing.T, dir string) {
@@ -163,8 +137,8 @@ func TestCleanCommand_Execute(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range cases {
+		t.Run(name, func(t *testing.T) {
 			dir := temp_repo.InitTempRepo(t)
 			if tt.setup != nil {
 				tt.setup(t, dir)

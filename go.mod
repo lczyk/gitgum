@@ -3,21 +3,20 @@ module github.com/lczyk/gitgum
 go 1.25.3
 
 require (
+	github.com/gdamore/tcell/v2 v2.13.9
+	github.com/google/go-cmp v0.7.0
+	github.com/google/gofuzz v1.2.0
 	github.com/jessevdk/go-flags v1.6.1
-	github.com/ktr0731/go-fuzzyfinder v0.9.0
-	github.com/lczyk/assert v0.2.4
+	github.com/lczyk/assert v0.3.1
+	github.com/mattn/go-runewidth v0.0.23
 )
 
-replace github.com/ktr0731/go-fuzzyfinder v0.9.0 => ./my-vendor/go-fuzzyfinder
-
 require (
+	github.com/clipperhouse/uax29/v2 v2.2.0 // indirect
 	github.com/gdamore/encoding v1.0.1 // indirect
-	github.com/gdamore/tcell/v2 v2.6.0 // indirect
-	github.com/ktr0731/go-ansisgr v0.1.0 // indirect
-	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
-	github.com/mattn/go-runewidth v0.0.16 // indirect
+	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	golang.org/x/sys v0.32.0 // indirect
-	golang.org/x/term v0.31.0 // indirect
-	golang.org/x/text v0.24.0 // indirect
+	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/term v0.37.0 // indirect
+	golang.org/x/text v0.31.0 // indirect
 )

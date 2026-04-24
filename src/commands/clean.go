@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/lczyk/gitgum/src/internal"
+	"github.com/lczyk/gitgum/internal/cmdrun"
+	"github.com/lczyk/gitgum/internal/git"
+	"github.com/lczyk/gitgum/internal/strutil"
+	"github.com/lczyk/gitgum/internal/ui"
 )
 
 const gitCleanDryRunPrefix = "Would remove "
@@ -21,7 +24,7 @@ type CleanCommand struct {
 // Execute runs the clean command
 func (c *CleanCommand) Execute(args []string) error {
 	// Check if we're in a git repository
-	if err := internal.CheckInGitRepo(); err != nil {
+	if err := git.CheckInRepo(); err != nil {
 		return err
 	}
 
@@ -72,7 +75,7 @@ func (c *CleanCommand) Execute(args []string) error {
 	fmt.Println()
 
 	if !c.Yes {
-		confirmed, err := internal.FzfConfirm("Proceed with cleanup? This cannot be undone", false)
+		confirmed, err := ui.FzfConfirm("Proceed with cleanup? This cannot be undone", false)
 		if err != nil {
 			return err
 		}
@@ -85,7 +88,7 @@ func (c *CleanCommand) Execute(args []string) error {
 	// Execute git reset --hard if changes should be discarded
 	if changes {
 		fmt.Println("Discarding changes...")
-		stdout, stderr, err := internal.RunCommand("git", "reset", "--hard")
+		stdout, stderr, err := cmdrun.Run("git", "reset", "--hard")
 		if err != nil {
 			return fmt.Errorf("failed to reset changes: %w\nStdout: %s\nStderr: %s", err, stdout, stderr)
 		}
@@ -102,7 +105,7 @@ func (c *CleanCommand) Execute(args []string) error {
 		}
 
 		fmt.Println("Removing untracked files...")
-		stdout, stderr, err := internal.RunCommand("git", cleanArgs...)
+		stdout, stderr, err := cmdrun.Run("git", cleanArgs...)
 		if err != nil {
 			return fmt.Errorf("failed to clean untracked files: %w\nStdout: %s\nStderr: %s", err, stdout, stderr)
 		}
@@ -127,20 +130,20 @@ func getAffectedFiles(changes, untracked, ignored bool) ([]string, error) {
 	var affectedFiles []string
 
 	if changes {
-		stdout, _, err := internal.RunCommand("git", "diff", "--name-only")
+		stdout, _, err := cmdrun.Run("git", "diff", "--name-only")
 		if err != nil {
 			return nil, fmt.Errorf("listing modified files: %w", err)
 		}
 		if stdout != "" {
-			affectedFiles = append(affectedFiles, internal.SplitLines(stdout)...)
+			affectedFiles = append(affectedFiles, strutil.SplitLines(stdout)...)
 		}
 
-		stdout, _, err = internal.RunCommand("git", "diff", "--cached", "--name-only")
+		stdout, _, err = cmdrun.Run("git", "diff", "--cached", "--name-only")
 		if err != nil {
 			return nil, fmt.Errorf("listing staged files: %w", err)
 		}
 		if stdout != "" {
-			affectedFiles = append(affectedFiles, internal.SplitLines(stdout)...)
+			affectedFiles = append(affectedFiles, strutil.SplitLines(stdout)...)
 		}
 	}
 
@@ -149,12 +152,12 @@ func getAffectedFiles(changes, untracked, ignored bool) ([]string, error) {
 		if ignored {
 			cleanArgs = append(cleanArgs, "-x")
 		}
-		stdout, _, err := internal.RunCommand("git", cleanArgs...)
+		stdout, _, err := cmdrun.Run("git", cleanArgs...)
 		if err != nil {
 			return nil, fmt.Errorf("listing untracked files: %w", err)
 		}
 		if stdout != "" {
-			for _, line := range internal.SplitLines(stdout) {
+			for _, line := range strutil.SplitLines(stdout) {
 				if trimmed, ok := strings.CutPrefix(line, gitCleanDryRunPrefix); ok {
 					affectedFiles = append(affectedFiles, trimmed)
 				}

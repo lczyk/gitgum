@@ -1,0 +1,124 @@
+package fuzzyfinder
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/gdamore/tcell/v2"
+	runewidth "github.com/mattn/go-runewidth"
+)
+
+// TerminalMock is a mocked terminal for testing.
+// Use NewWithMockedTerminal to create one.
+type TerminalMock struct {
+	tcell.SimulationScreen
+}
+
+// SetEvents sets all events, which are fetched from the terminal event channel.
+// A user of this must set the EscKey event at the end.
+func (m *TerminalMock) SetEvents(events ...tcell.Event) {
+	for _, event := range events {
+		switch event := event.(type) {
+		case *tcell.EventKey:
+			m.InjectKey(event.Key(), event.Rune(), event.Modifiers())
+		case *tcell.EventResize:
+			m.SetSize(event.Size())
+		}
+	}
+}
+
+// GetResult returns a flushed string that is displayed to the actual terminal.
+// It contains all escape sequences such that ANSI escape code.
+func (m *TerminalMock) GetResult() string {
+	var s string
+
+	// set cursor for snapshot test
+	cursorX, cursorY, _ := m.GetCursor()
+	mainc, _, _, _ := m.GetContent(cursorX, cursorY)
+	if mainc == ' ' {
+		m.SetContent(cursorX, cursorY, '█', nil, tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDefault))
+	} else {
+		m.SetContent(cursorX, cursorY, mainc, nil, tcell.StyleDefault.Background(tcell.ColorWhite))
+	}
+	m.Show()
+
+	cells, width, height := m.GetContents()
+
+	for h := 0; h < height; h++ {
+		prevFg, prevBg := tcell.ColorDefault, tcell.ColorDefault
+
+		for w := 0; w < width; w++ {
+			cell := cells[h*width+w]
+			fg, bg, attr := cell.Style.Decompose()
+			if fg != prevFg || bg != prevBg {
+				prevFg, prevBg = fg, bg
+
+				s += "\x1b\x5b\x6d" // Reset previous color.
+				v := parseAttr(fg, bg, attr)
+				s += v
+			}
+
+			// tcell >= v2.7 leaves Runes empty for cells that were never written;
+			// treat those as a single space.
+			if len(cell.Runes) == 0 {
+				s += " "
+				continue
+			}
+			s += string(cell.Runes)
+			rw := runewidth.RuneWidth(cell.Runes[0])
+			if rw != 0 {
+				w += rw - 1
+			}
+		}
+		s += "\n"
+	}
+	s += "\x1b\x5b\x6d" // Reset previous color.
+
+	return s
+}
+
+// parseAttr parses color and attribute for testing.
+func parseAttr(fg, bg tcell.Color, attr tcell.AttrMask) string {
+	var params []string
+	if attr&tcell.AttrBold == tcell.AttrBold {
+		params = append(params, "1")
+	}
+	if attr&tcell.AttrBlink == tcell.AttrBlink {
+		params = append(params, "5")
+	}
+	if attr&tcell.AttrReverse == tcell.AttrReverse {
+		params = append(params, "7")
+	}
+	if attr&tcell.AttrUnderline == tcell.AttrUnderline {
+		params = append(params, "4")
+	}
+	if attr&tcell.AttrDim == tcell.AttrDim {
+		params = append(params, "2")
+	}
+	if attr&tcell.AttrItalic == tcell.AttrItalic {
+		params = append(params, "3")
+	}
+	if attr&tcell.AttrStrikeThrough == tcell.AttrStrikeThrough {
+		params = append(params, "9")
+	}
+
+	switch {
+	case fg == tcell.ColorDefault: // caller emits \x1b[m reset first, so nothing extra needed
+	case fg > tcell.Color255:
+		r, g, b := fg.RGB()
+		params = append(params, fmt.Sprintf("38;2;%d;%d;%d", r, g, b))
+	default:
+		params = append(params, fmt.Sprintf("38;5;%d", fg-tcell.ColorValid))
+	}
+
+	switch {
+	case bg == tcell.ColorDefault: // caller emits \x1b[m reset first, so nothing extra needed
+	case bg > tcell.Color255:
+		r, g, b := bg.RGB()
+		params = append(params, fmt.Sprintf("48;2;%d;%d;%d", r, g, b))
+	default:
+		params = append(params, fmt.Sprintf("48;5;%d", bg-tcell.ColorValid))
+	}
+
+	return fmt.Sprintf("\x1b[%sm", strings.Join(params, ";"))
+}

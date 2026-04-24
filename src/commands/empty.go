@@ -3,22 +3,24 @@ package commands
 import (
 	"fmt"
 
-	"github.com/lczyk/gitgum/src/internal"
+	"github.com/lczyk/gitgum/internal/cmdrun"
+	"github.com/lczyk/gitgum/internal/git"
+	"github.com/lczyk/gitgum/internal/ui"
 )
 
 type EmptyCommand struct{}
 
 func (e *EmptyCommand) Execute(args []string) error {
-	if err := internal.CheckInGitRepo(); err != nil {
+	if err := git.CheckInRepo(); err != nil {
 		return err
 	}
 
-	currentBranch, err := internal.GetCurrentBranch()
+	currentBranch, err := git.GetCurrentBranch()
 	if err != nil {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
 
-	upstream, err := internal.GetCurrentBranchUpstream()
+	upstream, err := git.GetCurrentBranchUpstream()
 	if err != nil {
 		return err
 	}
@@ -29,7 +31,7 @@ func (e *EmptyCommand) Execute(args []string) error {
 	}
 
 	if hasUpstream {
-		ahead, err := internal.IsBranchAheadOfRemote(currentBranch, upstream)
+		ahead, err := git.IsBranchAheadOfRemote(currentBranch, upstream)
 		if err != nil {
 			return fmt.Errorf("checking if branch is ahead of remote: %w", err)
 		}
@@ -38,36 +40,36 @@ func (e *EmptyCommand) Execute(args []string) error {
 		}
 	}
 
-	dirty, err := internal.IsGitDirty(".")
+	dirty, err := git.IsDirty(".")
 	if err != nil {
 		return fmt.Errorf("checking if working tree is dirty: %w", err)
 	}
 	if dirty {
 		fmt.Println("Working tree has uncommitted changes. Stashing them before creating empty commit.")
-		if err := internal.RunCommandWithOutput("git", "stash", "--include-untracked"); err != nil {
+		if err := cmdrun.RunWithOutput("git", "stash", "--include-untracked"); err != nil {
 			return fmt.Errorf("stashing changes: %w", err)
 		}
 		defer func() {
 			fmt.Println("Restoring stashed changes.")
-			if err := internal.RunCommandWithOutput("git", "stash", "pop"); err != nil {
+			if err := cmdrun.RunWithOutput("git", "stash", "pop"); err != nil {
 				fmt.Printf("Warning: failed to pop stash: %v\n", err)
 			}
 		}()
 	}
 
-	if err := internal.RunCommandWithOutput("git", "commit", "--allow-empty", "-m", "chore: empty commit"); err != nil {
+	if err := cmdrun.RunWithOutput("git", "commit", "--allow-empty", "-m", "chore: empty commit"); err != nil {
 		return fmt.Errorf("creating empty commit: %w", err)
 	}
 
 	fmt.Printf("Created empty commit on branch '%s'.\n", currentBranch)
 
 	if hasUpstream {
-		confirmed, err := internal.FzfConfirm("Do you want to push this commit to the remote?", true)
+		confirmed, err := ui.FzfConfirm("Do you want to push this commit to the remote?", true)
 		if err != nil {
 			return err
 		}
 		if confirmed {
-			if err := internal.RunCommandWithOutput("git", "push"); err != nil {
+			if err := cmdrun.RunWithOutput("git", "push"); err != nil {
 				return fmt.Errorf("pushing: %w", err)
 			}
 			fmt.Printf("Pushed to remote.\n")

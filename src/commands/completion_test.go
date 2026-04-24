@@ -9,44 +9,21 @@ import (
 )
 
 func TestCompletionCommand_Execute(t *testing.T) {
-	tests := []struct {
-		name       string
+	cases := map[string]struct {
 		cmdName    string
 		shell      string
 		wantErr    bool
 		errMessage string
 	}{
-		{
-			name:    "bash with gitgum",
-			cmdName: "gitgum",
-			shell:   "bash",
-		},
-		{
-			name:    "fish with custom-name",
-			cmdName: "custom-name",
-			shell:   "fish",
-		},
-		{
-			name:    "zsh with gg",
-			cmdName: "gg",
-			shell:   "zsh",
-		},
-		{
-			name:       "invalid shell",
-			cmdName:    "",
-			shell:      "invalid",
-			wantErr:    true,
-			errMessage: "invalid shell type 'invalid'",
-		},
-		{
-			name:    "default cmd name",
-			cmdName: "",
-			shell:   "bash",
-		},
+		"bash with gitgum":      {cmdName: "gitgum", shell: "bash"},
+		"fish with custom-name": {cmdName: "custom-name", shell: "fish"},
+		"zsh with gg":           {cmdName: "gg", shell: "zsh"},
+		"invalid shell":         {shell: "invalid", wantErr: true, errMessage: "invalid shell type 'invalid'"},
+		"default cmd name":      {shell: "bash"},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range cases {
+		t.Run(name, func(t *testing.T) {
 			var buf strings.Builder
 			cmd := &CompletionCommand{out: &buf, cmdName: tt.cmdName}
 			cmd.Args.Shell = tt.shell

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
-	"github.com/lczyk/gitgum/src/internal/temp_repo"
+	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
 
 // EmptyCommand tests validate basic command structure.
@@ -16,7 +16,7 @@ func TestEmptyCommand_NotInGitRepo(t *testing.T) {
 	cmd := &EmptyCommand{}
 	err := cmd.Execute(nil)
 
-	assert.That(t, err != nil, "should error when not in git repo")
+	assert.Error(t, err, assert.AnyError, "should error when not in git repo")
 	assert.ContainsString(t, err.Error(), "repository")
 }
 
