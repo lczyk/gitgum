@@ -28,7 +28,7 @@ func (p *PushCommand) Execute(args []string) error {
 			fmt.Printf("Pushed to remote tracking branch '%s'.\n", remoteBranch)
 			return nil
 		}
-		fmt.Println("Not pushing to remote tracking branch")
+		return nil
 	}
 
 	currentBranch, err := internal.GetCurrentBranch()
