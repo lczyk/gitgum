@@ -28,7 +28,7 @@ func (p *PushCommand) Execute(args []string) error {
 		}
 		if confirmed {
 			if err := internal.RunCommandWithOutput("git", "push"); err != nil {
-				return fmt.Errorf("failed to push: %v", err)
+				return fmt.Errorf("failed to push: %w", err)
 			}
 			fmt.Printf("Pushed to remote tracking branch '%s'.\n", remoteBranch)
 			return nil
@@ -39,13 +39,13 @@ func (p *PushCommand) Execute(args []string) error {
 	// Get current branch
 	currentBranch, err := internal.GetCurrentBranch()
 	if err != nil {
-		return fmt.Errorf("error getting current branch: %v", err)
+		return fmt.Errorf("error getting current branch: %w", err)
 	}
 
 	// Get list of remotes
 	remotes, err := internal.GetRemotes()
 	if err != nil {
-		return fmt.Errorf("error getting remotes: %v", err)
+		return fmt.Errorf("error getting remotes: %w", err)
 	}
 
 	if len(remotes) == 0 {
@@ -65,7 +65,7 @@ func (p *PushCommand) Execute(args []string) error {
 	// Check if the remote branch exists
 	remoteBranchExists, err := internal.RemoteBranchExists(remote, currentBranch)
 	if err != nil {
-		return fmt.Errorf("error checking remote branch: %v", err)
+		return fmt.Errorf("error checking remote branch: %w", err)
 	}
 
 	if remoteBranchExists {
@@ -73,12 +73,12 @@ func (p *PushCommand) Execute(args []string) error {
 		// Check if there are any changes to push
 		localCommit, err := internal.GetCommitHash(currentBranch)
 		if err != nil {
-			return fmt.Errorf("error getting local commit: %v", err)
+			return fmt.Errorf("error getting local commit: %w", err)
 		}
 
 		remoteCommit, err := internal.GetCommitHash(expectedRemoteBranchName)
 		if err != nil {
-			return fmt.Errorf("could not find remote branch '%s': %v", expectedRemoteBranchName, err)
+			return fmt.Errorf("could not find remote branch '%s': %w", expectedRemoteBranchName, err)
 		}
 
 		if localCommit == remoteCommit {
@@ -86,7 +86,7 @@ func (p *PushCommand) Execute(args []string) error {
 				currentBranch, expectedRemoteBranchName)
 			// Set upstream since we're targeting this remote
 			if err := internal.RunCommandQuiet("git", "branch", "--set-upstream-to="+expectedRemoteBranchName, currentBranch); err != nil {
-				return fmt.Errorf("failed to set upstream: %v", err)
+				return fmt.Errorf("failed to set upstream: %w", err)
 			}
 			fmt.Printf("Updated upstream to '%s'.\n", expectedRemoteBranchName)
 			return nil
@@ -103,7 +103,7 @@ func (p *PushCommand) Execute(args []string) error {
 		}
 
 		if err := internal.RunCommandWithOutput("git", "push", remote, currentBranch); err != nil {
-			return fmt.Errorf("failed to push: %v", err)
+			return fmt.Errorf("failed to push: %w", err)
 		}
 	} else {
 		// No remote branch found - create it
@@ -117,7 +117,7 @@ func (p *PushCommand) Execute(args []string) error {
 		}
 
 		if err := internal.RunCommandWithOutput("git", "push", "-u", remote, currentBranch); err != nil {
-			return fmt.Errorf("failed to push: %v", err)
+			return fmt.Errorf("failed to push: %w", err)
 		}
 
 		fmt.Printf("Created and set tracking reference for '%s' to '%s'.\n",
