@@ -5,6 +5,7 @@ package fuzzyfinder
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"reflect"
@@ -19,7 +20,6 @@ import (
 	"github.com/ktr0731/go-ansisgr"
 	"github.com/ktr0731/go-fuzzyfinder/matching"
 	runewidth "github.com/mattn/go-runewidth"
-	"github.com/pkg/errors"
 )
 
 var (
@@ -88,11 +88,11 @@ func (f *finder) initFinder(items []string, matched []matching.Matched, opt opt)
 	if f.term == nil {
 		screen, err := tcell.NewScreen()
 		if err != nil {
-			return errors.Wrap(err, "failed to new screen")
+			return fmt.Errorf("failed to new screen: %w", err)
 		}
 		f.term = screen
 		if err := f.term.Init(); err != nil {
-			return errors.Wrap(err, "failed to initialize screen")
+			return fmt.Errorf("failed to initialize screen: %w", err)
 		}
 
 		eventsChan := make(chan tcell.Event)
@@ -742,9 +742,9 @@ func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Opt
 
 	rv := reflect.ValueOf(slice)
 	if opt.hotReload && (rv.Kind() != reflect.Ptr || reflect.Indirect(rv).Kind() != reflect.Slice) {
-		return nil, errors.Errorf("the first argument must be a pointer to a slice, but got %T", slice)
+		return nil, fmt.Errorf("the first argument must be a pointer to a slice, but got %T", slice)
 	} else if !opt.hotReload && rv.Kind() != reflect.Slice {
-		return nil, errors.Errorf("the first argument must be a slice, but got %T", slice)
+		return nil, fmt.Errorf("the first argument must be a slice, but got %T", slice)
 	}
 
 	makeItems := func(sliceLen int) ([]string, []matching.Matched) {
@@ -804,7 +804,7 @@ func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Opt
 	}
 
 	if err := f.initFinder(items, matched, opt); err != nil {
-		return nil, errors.Wrap(err, "failed to initialize the fuzzy finder")
+		return nil, fmt.Errorf("failed to initialize the fuzzy finder: %w", err)
 	}
 
 	if !isInTesting() {
@@ -867,7 +867,7 @@ func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Opt
 				}
 				return []int{f.state.matched[f.state.y].Idx}, nil
 			case err != nil:
-				return nil, errors.Wrap(err, "failed to read a key")
+				return nil, fmt.Errorf("failed to read a key: %w", err)
 			}
 		}
 	}
