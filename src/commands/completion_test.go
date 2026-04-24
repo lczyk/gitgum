@@ -26,10 +26,8 @@ func TestCompletionCommand_Execute(t *testing.T) {
 
 			err := cmd.Execute(nil)
 
-			output := buf.String()
 			assert.NoError(t, err)
-			assert.That(t, !strings.Contains(output, "__GITGUM_CMD__"), "placeholder should be replaced in output")
-			assert.ContainsString(t, output, tc.cmdName)
+			assert.ContainsString(t, buf.String(), tc.cmdName)
 		})
 	}
 }

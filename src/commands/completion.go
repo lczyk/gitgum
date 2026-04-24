@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/lczyk/gitgum/src/completions"
 )
@@ -21,23 +20,20 @@ type CompletionCommand struct {
 }
 
 func (c *CompletionCommand) Execute(args []string) error {
-	shell := c.Args.Shell
-	content, err := completions.Get(shell)
-	if err != nil {
-		return err
-	}
-
 	cmdName := c.cmdName
 	if cmdName == "" {
 		cmdName = filepath.Base(os.Args[0])
+	}
+
+	result, err := completions.Render(c.Args.Shell, cmdName)
+	if err != nil {
+		return err
 	}
 
 	w := c.out
 	if w == nil {
 		w = os.Stdout
 	}
-
-	result := strings.ReplaceAll(content, "__GITGUM_CMD__", cmdName)
 	fmt.Fprint(w, result)
 	return nil
 }

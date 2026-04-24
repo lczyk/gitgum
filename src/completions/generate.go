@@ -23,11 +23,15 @@ var templates = map[string]string{
 	"zsh":  zshCompletion,
 }
 
-func Get(shell string) (string, error) {
+const placeholder = "__GITGUM_CMD__"
+
+// Render returns the completion script for the given shell with the command
+// name substituted in.
+func Render(shell, cmdName string) (string, error) {
 	content, ok := templates[shell]
 	if !ok {
 		shells := slices.Sorted(maps.Keys(templates))
 		return "", fmt.Errorf("invalid shell type '%s', must be one of: %s", shell, strings.Join(shells, ", "))
 	}
-	return content, nil
+	return strings.ReplaceAll(content, placeholder, cmdName), nil
 }
