@@ -97,7 +97,11 @@ func smithWaterman(s1, s2 []rune) (int, [2]int) {
 		}
 	}
 
-	for i := maxI - 1; i > 0; i-- {
+	// i >= 0 (not > 0): when the match starts at s1[1], cnt hits len(s2) at i=1
+	// and the check fires on the next iteration i=0 setting from=1. when the last
+	// match is at s1[0] itself, cnt hits len(s2) there and the loop exits at i=-1
+	// leaving from=0 by default -- also correct.
+	for i := maxI - 1; i >= 0; i-- {
 		if cnt == len(s2) {
 			from = i + 1
 			break
