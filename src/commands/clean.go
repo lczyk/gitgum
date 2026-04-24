@@ -58,7 +58,10 @@ func (c *CleanCommand) Execute(args []string) error {
 	}
 
 	// Build summary of what will be affected
-	affectedFiles := getAffectedFiles(changes, untracked, ignored)
+	affectedFiles, err := getAffectedFiles(changes, untracked, ignored)
+	if err != nil {
+		return err
+	}
 
 	// Show summary
 	if len(affectedFiles) == 0 {
@@ -85,7 +88,10 @@ func (c *CleanCommand) Execute(args []string) error {
 			return err
 		}
 
-		affectedFiles = getAffectedFiles(changes, untracked, ignored)
+		affectedFiles, err = getAffectedFiles(changes, untracked, ignored)
+		if err != nil {
+			return err
+		}
 
 		if len(affectedFiles) == 0 {
 			fmt.Println("Clean complete")
@@ -94,7 +100,7 @@ func (c *CleanCommand) Execute(args []string) error {
 
 		fmt.Println("Restoring .gitignore files for confirmation...")
 		if err := restoreGitignoreFiles(gitignoreBackup); err != nil {
-			return fmt.Errorf("failed to restore .gitignore files: %v", err)
+			return fmt.Errorf("failed to restore .gitignore files: %w", err)
 		}
 
 		affectedFiles = append(gitignoreFiles, affectedFiles...)
@@ -134,7 +140,7 @@ func (c *CleanCommand) Execute(args []string) error {
 		fmt.Println("Discarding changes...")
 		stdout, stderr, err := internal.RunCommand("git", "reset", "--hard")
 		if err != nil {
-			return fmt.Errorf("failed to reset changes: %v\nStdout: %s\nStderr: %s", err, stdout, stderr)
+			return fmt.Errorf("failed to reset changes: %w\nStdout: %s\nStderr: %s", err, stdout, stderr)
 		}
 		if stdout != "" {
 			fmt.Println(stdout)
@@ -151,7 +157,7 @@ func (c *CleanCommand) Execute(args []string) error {
 		fmt.Println("Removing untracked files...")
 		stdout, stderr, err := internal.RunCommand("git", cleanArgs...)
 		if err != nil {
-			return fmt.Errorf("failed to clean untracked files: %v\nStdout: %s\nStderr: %s", err, stdout, stderr)
+			return fmt.Errorf("failed to clean untracked files: %w\nStdout: %s\nStderr: %s", err, stdout, stderr)
 		}
 		if stdout != "" {
 			fmt.Println(stdout)
@@ -162,32 +168,37 @@ func (c *CleanCommand) Execute(args []string) error {
 	return nil
 }
 
-// getAffectedFiles returns a list of files that will be affected by the clean operation
-func getAffectedFiles(changes, untracked, ignored bool) []string {
+func getAffectedFiles(changes, untracked, ignored bool) ([]string, error) {
 	var affectedFiles []string
-	
+
 	if changes {
-		// Get list of modified files
 		stdout, _, err := internal.RunCommand("git", "diff", "--name-only")
-		if err == nil && stdout != "" {
+		if err != nil {
+			return nil, fmt.Errorf("listing modified files: %w", err)
+		}
+		if stdout != "" {
 			affectedFiles = append(affectedFiles, internal.SplitLines(stdout)...)
 		}
-		// Get staged files
+
 		stdout, _, err = internal.RunCommand("git", "diff", "--cached", "--name-only")
-		if err == nil && stdout != "" {
+		if err != nil {
+			return nil, fmt.Errorf("listing staged files: %w", err)
+		}
+		if stdout != "" {
 			affectedFiles = append(affectedFiles, internal.SplitLines(stdout)...)
 		}
 	}
-	
+
 	if untracked {
-		// Get list of untracked files
 		cleanArgs := []string{"clean", "-fdn"}
 		if ignored {
 			cleanArgs = append(cleanArgs, "-x")
 		}
 		stdout, _, err := internal.RunCommand("git", cleanArgs...)
-		if err == nil && stdout != "" {
-			// Parse output like "Would remove file.txt"
+		if err != nil {
+			return nil, fmt.Errorf("listing untracked files: %w", err)
+		}
+		if stdout != "" {
 			for _, line := range internal.SplitLines(stdout) {
 				if len(line) > 13 && line[:13] == "Would remove " {
 					affectedFiles = append(affectedFiles, line[13:])
@@ -195,8 +206,8 @@ func getAffectedFiles(changes, untracked, ignored bool) []string {
 			}
 		}
 	}
-	
-	return affectedFiles
+
+	return affectedFiles, nil
 }
 
 // gitignoreState tracks the state of a .gitignore file before cleaning
@@ -230,14 +241,14 @@ func cleanGitignoreFiles(gitignoreFiles []string, changes, untracked bool) ([]gi
 
 				_, _, err := internal.RunCommand("rm", file)
 				if err != nil {
-					return nil, fmt.Errorf("failed to remove %s: %v", file, err)
+					return nil, fmt.Errorf("failed to remove %s: %w", file, err)
 				}
 			}
 		} else if changes {
 			backup = append(backup, state)
 			_, _, err := internal.RunCommand("git", "checkout", "HEAD", "--", file)
 			if err != nil {
-				return nil, fmt.Errorf("failed to reset %s: %v", file, err)
+				return nil, fmt.Errorf("failed to reset %s: %w", file, err)
 			}
 		}
 	}
@@ -249,7 +260,7 @@ func restoreGitignoreFiles(backup []gitignoreState) error {
 	for _, state := range backup {
 		if state.fileStatus == internal.GitFileUntracked {
 			if err := internal.WriteFile(state.file, state.content); err != nil {
-				return fmt.Errorf("failed to restore %s: %v", state.file, err)
+				return fmt.Errorf("failed to restore %s: %w", state.file, err)
 			}
 		} else {
 			// stash round-trip restores the working-tree state
