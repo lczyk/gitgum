@@ -13,50 +13,41 @@ import (
 	"github.com/lczyk/gitgum/src/internal"
 )
 
-// SwitchCommand handles interactive branch switching
 type SwitchCommand struct{}
 
-// Execute runs the switch command
 func (s *SwitchCommand) Execute(args []string) error {
-	// Check if we're in a git repository
 	if err := internal.CheckInGitRepo(); err != nil {
 		return err
 	}
 
-	// Get current branch
 	currentBranch, err := internal.GetCurrentBranch()
 	if err != nil {
-		return fmt.Errorf("error getting current branch: %v", err)
+		return fmt.Errorf("getting current branch: %w", err)
 	}
 
-	// Get tracking remote
 	trackingRemote, err := internal.GetBranchTrackingRemote(currentBranch)
 	if err != nil {
-		return fmt.Errorf("error getting tracking remote: %v", err)
+		return fmt.Errorf("getting tracking remote: %w", err)
 	}
 
-	// Show current branch
-	fmt.Println("Current branch is:", func() string {
-		if trackingRemote != "" {
-			return fmt.Sprintf("(%s/)%s", trackingRemote, currentBranch)
-		}
-		return currentBranch
-	}())
+	branchDisplay := currentBranch
+	if trackingRemote != "" {
+		branchDisplay = fmt.Sprintf("(%s/)%s", trackingRemote, currentBranch)
+	}
+	fmt.Println("Current branch is:", branchDisplay)
 
-	// Check if there are any local changes that would be overwritten
 	dirty, err := internal.IsGitDirty(".")
 	if err != nil {
-		return fmt.Errorf("error checking git status: %v", err)
+		return fmt.Errorf("checking git status: %w", err)
 	}
 	if dirty {
 		fmt.Fprintln(os.Stderr, "You have local changes that would be overwritten by switching branches. Please commit or stash them before switching.")
 		return fmt.Errorf("local changes would be overwritten")
 	}
 
-	// Get remotes for parallel fetching
 	remotes, err := internal.GetRemotes()
 	if err != nil {
-		return fmt.Errorf("error getting remotes: %v", err)
+		return fmt.Errorf("getting remotes: %w", err)
 	}
 
 	var (
@@ -86,7 +77,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 		}
 	}()
 
-	// Stream local branches
+	// stream local branches
 	go func() {
 		locals, err := internal.GetLocalBranches()
 		if err != nil {
@@ -117,7 +108,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 		}
 	}()
 
-	// Query remotes in parallel and stream their branches
+	// stream remote branches in parallel
 	for _, remote := range remotes {
 		r := remote
 		go func() {
@@ -176,7 +167,6 @@ func (s *SwitchCommand) Execute(args []string) error {
 	selected := branches[selectedIdx]
 	branchLock.Unlock()
 
-	// Parse selection
 	parts := strings.SplitN(selected, ": ", 2)
 	if len(parts) != 2 {
 		return fmt.Errorf("invalid selection: %s", selected)
@@ -187,7 +177,6 @@ func (s *SwitchCommand) Execute(args []string) error {
 
 	if typ == "local" || typ == "local/remote" {
 		branch := name
-		// Switch to the branch
 		_, stderr, err := internal.RunCommand("git", "checkout", "--quiet", branch)
 		if err != nil {
 			return fmt.Errorf("could not switch to branch '%s': %s", branch, stderr)
@@ -195,7 +184,6 @@ func (s *SwitchCommand) Execute(args []string) error {
 
 		fmt.Printf("Switched to branch '%s'.\n", branch)
 	} else if typ == "remote" {
-		// Parse remote/branch
 		remoteBranchParts := strings.SplitN(name, "/", 2)
 		if len(remoteBranchParts) != 2 {
 			return fmt.Errorf("invalid remote branch format: %s", name)
@@ -204,7 +192,6 @@ func (s *SwitchCommand) Execute(args []string) error {
 		remote := remoteBranchParts[0]
 		branch := remoteBranchParts[1]
 
-		// Handle remote branch switching
 		if internal.BranchExists(branch) {
 			fmt.Printf("Branch '%s' is already tracked locally as '%s'.\n", branch, branch)
 
@@ -229,7 +216,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 				}
 				if confirmed {
 					if err := internal.RunCommandQuiet("git", "branch", "--set-upstream-to="+remote+"/"+branch, branch); err != nil {
-						return fmt.Errorf("could not set tracking reference: %v", err)
+						return fmt.Errorf("setting tracking reference: %w", err)
 					}
 
 					fmt.Printf("Set tracking reference for local branch '%s' to remote branch '%s/%s'.\n",
@@ -245,16 +232,15 @@ func (s *SwitchCommand) Execute(args []string) error {
 				return fmt.Errorf("could not switch to branch '%s': %s", branch, stderr)
 			}
 
-			// check if local is up to date with remote
 			localCommit, err := internal.GetCommitHash(branch)
 			if err != nil {
-				return fmt.Errorf("could not get local commit: %v", err)
+				return fmt.Errorf("getting local commit: %w", err)
 			}
 
 			remoteRef := remote + "/" + branch
 			remoteCommit, err := internal.GetCommitHash(remoteRef)
 			if err != nil {
-				return fmt.Errorf("could not find remote branch '%s': %v", remoteRef, err)
+				return fmt.Errorf("getting remote commit for '%s': %w", remoteRef, err)
 			}
 
 			if localCommit == remoteCommit {
@@ -272,7 +258,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 			}
 			if confirmed {
 				if err := internal.RunCommandQuiet("git", "reset", "--hard", remoteRef); err != nil {
-					return fmt.Errorf("could not reset local branch: %v", err)
+					return fmt.Errorf("resetting local branch: %w", err)
 				}
 
 				fmt.Printf("Reset local branch '%s' to remote branch '%s/%s'.\n",
@@ -284,7 +270,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 			return nil
 		}
 
-		// Branch doesn't exist locally, ask to create tracking branch
+		// branch doesn't exist locally — offer to create tracking branch
 		confirmed, err := internal.FzfConfirm(fmt.Sprintf("Branch '%s' is not tracked locally. Create a local tracking branch?", branch), true)
 		if err != nil {
 			return err
@@ -294,9 +280,8 @@ func (s *SwitchCommand) Execute(args []string) error {
 			return fmt.Errorf("user cancelled")
 		}
 
-		// Create and checkout the tracking branch
 		if err := internal.RunCommandQuiet("git", "checkout", "-b", branch, remote+"/"+branch); err != nil {
-			return fmt.Errorf("could not create tracking branch: %v", err)
+			return fmt.Errorf("creating tracking branch: %w", err)
 		}
 
 		fmt.Printf("Created and switched to local branch '%s' tracking remote branch '%s/%s'.\n",
