@@ -29,8 +29,13 @@ func InitTempRepo(t *testing.T) string {
     RunGit(t, dir, "commit", "-m", "initial commit")
 
     // chdir into repo, restored on cleanup
-    origDir, _ := os.Getwd()
-    _ = os.Chdir(dir)
+    origDir, err := os.Getwd()
+    if err != nil {
+        t.Fatalf("getwd: %v", err)
+    }
+    if err := os.Chdir(dir); err != nil {
+        t.Fatalf("chdir to temp repo: %v", err)
+    }
     t.Cleanup(func() { _ = os.Chdir(origDir) })
     return dir
 }
@@ -58,9 +63,4 @@ func CreateCommit(t *testing.T, dir, filename, content, message string) {
 func CreateBranch(t *testing.T, dir, branch string) {
     t.Helper()
     RunGit(t, dir, "branch", branch)
-}
-
-func AddRemote(t *testing.T, dir, name, url string) {
-    t.Helper()
-    RunGit(t, dir, "remote", "add", name, url)
 }

@@ -37,7 +37,7 @@ func TestGitFunctions(t *testing.T) {
 			name: "GetRemotes lists origin",
 			run: func(t *testing.T) {
 				repo := temp_repo.InitTempRepo(t)
-				temp_repo.AddRemote(t, repo, "origin", "https://example.com/repo.git")
+				temp_repo.RunGit(t, repo, "remote", "add", "origin", "https://example.com/repo.git")
 				remotes, err := internal.GetRemotes()
 				assert.NoError(t, err, "list remotes")
 				assert.That(t, slices.Contains(remotes, "origin"), "origin remote present")
