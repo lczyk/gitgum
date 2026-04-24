@@ -1,7 +1,7 @@
 package matching_test
 
 import (
-	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/ktr0731/go-fuzzyfinder/matching"
@@ -11,14 +11,16 @@ func TestMatch(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct {
-		idx           int
-		in            string
-		expected      string // If expected is empty, it means there are no matched strings.
-		caseSensitive bool
+		in       string
+		mode     matching.Mode
+		idx      int
+		expected string // empty means no match expected
 	}{
-		"normal":          {idx: 2, in: "ink now", expected: "inkle Snow"},
-		"case sensitive":  {idx: 1, in: "SOUNDNY", expected: "SOUND OF DESTINY", caseSensitive: true},
-		"case sensitive2": {idx: 0, in: "white um", caseSensitive: true},
+		"smart mode case insensitive":          {in: "ink now", idx: 2, expected: "inkle Snow"},
+		"case sensitive match":                 {in: "SOUNDNY", mode: matching.ModeCaseSensitive, idx: 1, expected: "SOUND OF DESTINY"},
+		"case sensitive no match":              {in: "white um", mode: matching.ModeCaseSensitive},
+		"case insensitive explicit lowercase":  {in: "ink now", mode: matching.ModeCaseInsensitive, idx: 2, expected: "inkle Snow"},
+		"case insensitive explicit uppercase":  {in: "INK NOW", mode: matching.ModeCaseInsensitive, idx: 2, expected: "inkle Snow"},
 	}
 	slice := []string{
 		"WHITE ALBUM",
@@ -26,16 +28,10 @@ func TestMatch(t *testing.T) {
 		"Twinkle Snow",
 	}
 	for name, c := range cases {
-		c := c
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			var matched []matching.Matched
-			if c.caseSensitive {
-				matched = matching.FindAll(c.in, slice, matching.WithMode(matching.ModeCaseSensitive))
-			} else {
-				matched = matching.FindAll(c.in, slice)
-			}
+			matched := matching.FindAll(c.in, slice, matching.WithMode(c.mode))
 			n := len(matched)
 			if c.expected == "" {
 				if n != 0 {
@@ -49,20 +45,37 @@ func TestMatch(t *testing.T) {
 			}
 			m := matched[0]
 			if m.Idx != c.idx {
-				t.Errorf("m.Idx must be equal to %d, but got %d", c.idx, m.Idx)
+				t.Fatalf("m.Idx must be equal to %d, but got %d", c.idx, m.Idx)
 			}
-			from, to := m.Pos[0], m.Pos[1]+1
-			var actual string
-			fmt.Println(to, slice[c.idx])
-			if to > len(slice[c.idx]) {
-				actual = slice[c.idx][from:]
-			} else {
-				actual = slice[c.idx][from:to]
-			}
+			runes := []rune(slice[c.idx])
+			actual := string(runes[m.Pos[0] : m.Pos[1]+1])
 			if actual != c.expected {
-				t.Errorf("invalid range: from = %d, to = %d, content = %s, expected = %s", from, to, slice[2][from:to], c.expected)
+				t.Errorf("invalid pos: from = %d, to = %d, content = %s, expected = %s", m.Pos[0], m.Pos[1], actual, c.expected)
 			}
 		})
+	}
+}
+
+func TestFindAllWithMatcher(t *testing.T) {
+	t.Parallel()
+
+	slice := []string{"foo", "bar", "baz", "foobar"}
+
+	// matcher that matches items containing query as a substring
+	substringMatcher := func(query, item string) bool {
+		return len(query) > 0 && strings.Contains(item, query)
+	}
+
+	matched := matching.FindAll("foo", slice, matching.WithMatcher(substringMatcher))
+
+	wantIdxs := map[int]bool{0: true, 3: true}
+	if len(matched) != len(wantIdxs) {
+		t.Fatalf("want %d matches, got %d", len(wantIdxs), len(matched))
+	}
+	for _, m := range matched {
+		if !wantIdxs[m.Idx] {
+			t.Errorf("unexpected Idx %d in results", m.Idx)
+		}
 	}
 }
 

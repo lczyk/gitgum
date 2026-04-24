@@ -8,13 +8,12 @@ import (
 type opt struct {
 	mode          mode
 	previewFunc   func(i, width, height int) string
-	multi         bool
 	hotReload     bool
 	hotReloadLock sync.Locker
 	promptString  string
 	header        string
 	beginAtTop    bool
-	context       context.Context
+	ctx           context.Context
 	query         string
 	selectOne     bool
 	preselected   func(i int) bool
@@ -55,22 +54,12 @@ func WithMode(m mode) Option {
 // width and height are the size of the terminal so that you can use these to adjust
 // a preview content. Note that width and height are calculated as a rune-based length.
 //
-// If there is no selected item, previewFunc passes -1 to previewFunc.
+// If there is no selected item, i is -1.
 //
 // If f is nil, the preview feature is disabled.
 func WithPreviewWindow(f func(i, width, height int) string) Option {
 	return func(o *opt) {
 		o.previewFunc = f
-	}
-}
-
-// WithHotReload reloads the passed slice automatically when some entries are appended.
-// The caller must pass a pointer of the slice instead of the slice itself.
-//
-// Deprecated: use WithHotReloadLock instead.
-func WithHotReload() Option {
-	return func(o *opt) {
-		o.hotReload = true
 	}
 }
 
@@ -98,12 +87,7 @@ const (
 // If Find is called with WithCursorPosition and WithPreselected, the cursor will be positioned at the first preselected item.
 func WithCursorPosition(position cursorPosition) Option {
 	return func(o *opt) {
-		switch position {
-		case CursorPositionTop:
-			o.beginAtTop = true
-		case CursorPositionBottom:
-			o.beginAtTop = false
-		}
+		o.beginAtTop = position == CursorPositionTop
 	}
 }
 
@@ -111,13 +95,6 @@ func WithCursorPosition(position cursorPosition) Option {
 func WithPromptString(s string) Option {
 	return func(o *opt) {
 		o.promptString = s
-	}
-}
-
-// withMulti enables to select multiple items by tab key.
-func withMulti() Option {
-	return func(o *opt) {
-		o.multi = true
 	}
 }
 
@@ -131,7 +108,7 @@ func WithHeader(s string) Option {
 // WithContext enables closing the fuzzy finder from parent.
 func WithContext(ctx context.Context) Option {
 	return func(o *opt) {
-		o.context = ctx
+		o.ctx = ctx
 	}
 }
 
@@ -142,7 +119,7 @@ func WithQuery(s string) Option {
 	}
 }
 
-// WithQuery enables to set the initial query.
+// WithSelectOne automatically selects the item if there is only one match.
 func WithSelectOne() Option {
 	return func(o *opt) {
 		o.selectOne = true

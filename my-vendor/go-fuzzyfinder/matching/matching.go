@@ -16,7 +16,7 @@ type Matched struct {
 	// search matched strings.
 	Idx int
 	// Pos is the range of matched position.
-	// [2]int represents an open interval of a position.
+	// [2]int is a closed interval [from, to] -- both indices inclusive.
 	Pos [2]int
 	// score is the value that indicates how it similar to the input string.
 	// The bigger score, the more similar it is.
@@ -75,48 +75,23 @@ func FindAll(in string, slice []string, opts ...Option) []Matched {
 // match iterates each string of slice for check whether it is matched to the input string.
 func match(input string, slice []string, opt opt) (res []Matched) {
 	if opt.matcher != nil {
-		// Use custom matcher
 		for idxOfSlice, s := range slice {
 			if opt.matcher(input, s) {
-				// For custom matcher, calculate positions of matched words
-				words := strings.Fields(input)
-				minPos := len(s)
-				maxPos := 0
-				for _, word := range words {
-					lowerS := strings.ToLower(s)
-					lowerWord := strings.ToLower(word)
-					if idx := strings.Index(lowerS, lowerWord); idx != -1 {
-						if idx < minPos {
-							minPos = idx
-						}
-						end := idx + len(word)
-						if end > maxPos {
-							maxPos = end
-						}
-					}
-				}
-				if minPos > maxPos {
-					minPos, maxPos = 0, len(s)
-				}
-				res = append(res, Matched{
-					Idx:   idxOfSlice,
-					Pos:   [2]int{minPos, maxPos},
-					score: 1000, // High score for matches
-				})
+				res = append(res, Matched{Idx: idxOfSlice, score: 1000})
 			}
 		}
 		return res
 	}
 
 	if opt.mode == ModeSmart {
-		// Find an upper-case rune
-		n := strings.IndexFunc(input, unicode.IsUpper)
-		if n == -1 {
+		if strings.IndexFunc(input, unicode.IsUpper) == -1 {
 			opt.mode = ModeCaseInsensitive
-			input = strings.ToLower(input)
 		} else {
 			opt.mode = ModeCaseSensitive
 		}
+	}
+	if opt.mode == ModeCaseInsensitive {
+		input = strings.ToLower(input)
 	}
 
 	in := []rune(input)
@@ -130,7 +105,12 @@ func match(input string, slice []string, opt opt) (res []Matched) {
 			if r == in[idx] {
 				idx++
 				if idx == len(in) {
-					score, pos := scoring.Calculate(s, input)
+					score, pos, err := scoring.Calculate(s, input)
+					if err != nil {
+						// LINE_MATCHING guarantees s contains all runes of input, so this shouldn't fire;
+						// break (not continue) so we don't try in[idx] again with idx already == len(in)
+						break LINE_MATCHING
+					}
 					res = append(res, Matched{
 						Idx:   idxOfSlice,
 						Pos:   pos,

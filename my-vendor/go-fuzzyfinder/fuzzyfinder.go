@@ -5,6 +5,7 @@ package fuzzyfinder
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"reflect"
@@ -19,7 +20,6 @@ import (
 	"github.com/ktr0731/go-ansisgr"
 	"github.com/ktr0731/go-fuzzyfinder/matching"
 	runewidth "github.com/mattn/go-runewidth"
-	"github.com/pkg/errors"
 )
 
 var (
@@ -27,19 +27,6 @@ var (
 	ErrAbort   = errors.New("abort")
 	errEntered = errors.New("entered")
 )
-
-// Finds the minimum value among the arguments
-func min(vars ...int) int {
-	min := vars[0]
-
-	for _, i := range vars {
-		if min > i {
-			min = i
-		}
-	}
-
-	return min
-}
 
 type state struct {
 	items      []string           // All item names.
@@ -70,31 +57,26 @@ type state struct {
 }
 
 type finder struct {
-	term      terminal
+	term      tcell.Screen
 	stateMu   sync.RWMutex
 	state     state
 	drawTimer *time.Timer
 	eventCh   chan struct{}
 	opt       *opt
+	multi     bool
 
 	termEventsChan <-chan tcell.Event
-}
-
-func newFinder() *finder {
-	return &finder{}
 }
 
 func (f *finder) initFinder(items []string, matched []matching.Matched, opt opt) error {
 	if f.term == nil {
 		screen, err := tcell.NewScreen()
 		if err != nil {
-			return errors.Wrap(err, "failed to new screen")
+			return fmt.Errorf("failed to new screen: %w", err)
 		}
-		f.term = &termImpl{
-			screen: screen,
-		}
+		f.term = screen
 		if err := f.term.Init(); err != nil {
-			return errors.Wrap(err, "failed to initialize screen")
+			return fmt.Errorf("failed to initialize screen: %w", err)
 		}
 
 		eventsChan := make(chan tcell.Event)
@@ -106,7 +88,7 @@ func (f *finder) initFinder(items []string, matched []matching.Matched, opt opt)
 	f.state = state{}
 
 	var cursorPositioned bool
-	if opt.multi {
+	if f.multi {
 		f.state.selection = map[int]int{}
 		f.state.selectionIdx = 1
 
@@ -174,7 +156,7 @@ func (f *finder) updateItems(items []string, matched []matching.Matched) {
 	f.state.allMatched = matched
 
 	// Apply preselection to any new items
-	if f.opt.multi {
+	if f.multi {
 		for i := 0; i < len(items); i++ {
 			// Check if this item is not already in the selection and should be preselected
 			if _, exists := f.state.selection[i]; !exists && f.opt.preselected(i) {
@@ -211,9 +193,8 @@ func (f *finder) _draw() {
 		f.term.SetContent(promptLinePad, maxHeight-1, r, nil, style)
 		promptLinePad++
 	}
-	var r rune
 	var w int
-	for _, r = range f.state.input {
+	for _, r := range f.state.input {
 		style := tcell.StyleDefault.
 			Foreground(tcell.ColorDefault).
 			Background(tcell.ColorDefault).
@@ -252,11 +233,8 @@ func (f *finder) _draw() {
 
 	// Item lines
 	itemAreaHeight := maxHeight - 1
-	matched := f.state.matched
-	offset := f.state.cursorY
-	y := f.state.y
-	// From the first (the most bottom) item in the item lines to the end.
-	matched = matched[y-offset:]
+	// slice from the bottom-most visible item upward
+	matched := f.state.matched[f.state.y-f.state.cursorY:]
 
 	for i, m := range matched {
 		if i > itemAreaHeight {
@@ -271,7 +249,7 @@ func (f *finder) _draw() {
 			f.term.SetContent(1, maxHeight-1-i, ' ', nil, style)
 		}
 
-		if f.opt.multi {
+		if f.multi {
 			if _, ok := f.state.selection[m.Idx]; ok {
 				style := tcell.StyleDefault.
 					Foreground(tcell.ColorRed).
@@ -443,8 +421,13 @@ func (f *finder) _drawPreview() {
 				if w+rw > width-1-2 {
 					donePreviewLine = true
 
-					// Discard the rest of the current line.
-					consumeIterator(iter, '\n')
+					// discard the rest of the current line
+					for {
+						r, _, ok := iter.Next()
+						if !ok || r == '\n' {
+							break
+						}
+					}
 
 					style := tcell.StyleDefault.
 						Foreground(tcell.ColorDefault).
@@ -627,7 +610,7 @@ func (f *finder) readKey(ctx context.Context) error {
 			f.state.y -= min(pageScrollBy, f.state.y)
 			f.state.cursorY -= min(pageScrollBy, f.state.cursorY)
 		case tcell.KeyTab:
-			if !f.opt.multi {
+			if !f.multi {
 				return nil
 			}
 			idx := f.state.matched[f.state.y].Idx
@@ -713,7 +696,7 @@ func (f *finder) filter() {
 
 	// If we are in single-select mode, try to move cursor to the first preselected item
 	// that's still in the matched results
-	if !f.opt.multi {
+	if !f.multi {
 		for i, m := range f.state.matched {
 			if f.opt.preselected(m.Idx) {
 				f.state.y = i
@@ -732,7 +715,7 @@ func (f *finder) filter() {
 	}
 }
 
-func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Option) ([]int, error) {
+func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Option, multi bool) ([]int, error) {
 	if itemFunc == nil {
 		return nil, errors.New("itemFunc must not be nil")
 	}
@@ -741,12 +724,13 @@ func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Opt
 	for _, o := range opts {
 		o(&opt)
 	}
+	f.multi = multi
 
 	rv := reflect.ValueOf(slice)
 	if opt.hotReload && (rv.Kind() != reflect.Ptr || reflect.Indirect(rv).Kind() != reflect.Slice) {
-		return nil, errors.Errorf("the first argument must be a pointer to a slice, but got %T", slice)
+		return nil, fmt.Errorf("the first argument must be a pointer to a slice, but got %T", slice)
 	} else if !opt.hotReload && rv.Kind() != reflect.Slice {
-		return nil, errors.Errorf("the first argument must be a slice, but got %T", slice)
+		return nil, fmt.Errorf("the first argument must be a slice, but got %T", slice)
 	}
 
 	makeItems := func(sliceLen int) ([]string, []matching.Matched) {
@@ -754,7 +738,7 @@ func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Opt
 		matched := make([]matching.Matched, sliceLen)
 		for i := 0; i < sliceLen; i++ {
 			items[i] = itemFunc(i)
-			matched[i] = matching.Matched{Idx: i} //nolint:exhaustivestruct
+			matched[i] = matching.Matched{Idx: i}
 		}
 		return items, matched
 	}
@@ -764,18 +748,16 @@ func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Opt
 		matched []matching.Matched
 	)
 
-	var parentContext context.Context
-	if opt.context != nil {
-		parentContext = opt.context
-	} else {
-		parentContext = context.Background()
+	parentCtx := context.Background()
+	if opt.ctx != nil {
+		parentCtx = opt.ctx
 	}
 
-	ctx, cancel := context.WithCancel(parentContext)
+	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
 
 	inited := make(chan struct{})
-	if opt.hotReload && rv.Kind() == reflect.Ptr {
+	if opt.hotReload {
 		opt.hotReloadLock.Lock()
 		rvv := reflect.Indirect(rv)
 		items, matched = makeItems(rvv.Len())
@@ -806,7 +788,7 @@ func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Opt
 	}
 
 	if err := f.initFinder(items, matched, opt); err != nil {
-		return nil, errors.Wrap(err, "failed to initialize the fuzzy finder")
+		return nil, fmt.Errorf("failed to initialize the fuzzy finder: %w", err)
 	}
 
 	if !isInTesting() {
@@ -853,7 +835,7 @@ func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Opt
 				if len(f.state.matched) == 0 {
 					return nil, ErrAbort
 				}
-				if f.opt.multi {
+				if f.multi {
 					if len(f.state.selection) == 0 {
 						return []int{f.state.matched[f.state.y].Idx}, nil
 					}
@@ -869,7 +851,7 @@ func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Opt
 				}
 				return []int{f.state.matched[f.state.y].Idx}, nil
 			case err != nil:
-				return nil, errors.Wrap(err, "failed to read a key")
+				return nil, fmt.Errorf("failed to read a key: %w", err)
 			}
 		}
 	}
@@ -886,12 +868,12 @@ func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Opt
 //
 // Find returns ErrAbort if a call to Find is finished with no selection.
 func Find(slice interface{}, itemFunc func(i int) string, opts ...Option) (int, error) {
-	f := newFinder()
+	f := &finder{}
 	return f.Find(slice, itemFunc, opts...)
 }
 
 func (f *finder) Find(slice interface{}, itemFunc func(i int) string, opts ...Option) (int, error) {
-	res, err := f.find(slice, itemFunc, opts)
+	res, err := f.find(slice, itemFunc, opts, false)
 
 	if err != nil {
 		return 0, err
@@ -902,25 +884,14 @@ func (f *finder) Find(slice interface{}, itemFunc func(i int) string, opts ...Op
 // FindMulti is nearly the same as Find. The only difference from Find is that
 // the user can select multiple items at once, by using the tab key.
 func FindMulti(slice interface{}, itemFunc func(i int) string, opts ...Option) ([]int, error) {
-	f := newFinder()
+	f := &finder{}
 	return f.FindMulti(slice, itemFunc, opts...)
 }
 
 func (f *finder) FindMulti(slice interface{}, itemFunc func(i int) string, opts ...Option) ([]int, error) {
-	opts = append(opts, withMulti())
-	res, err := f.find(slice, itemFunc, opts)
-	return res, err
+	return f.find(slice, itemFunc, opts, true)
 }
 
 func isInTesting() bool {
 	return flag.Lookup("test.v") != nil
-}
-
-func consumeIterator(iter *ansisgr.Iterator, r rune) {
-	for {
-		r, _, ok := iter.Next()
-		if !ok || r == '\n' {
-			return
-		}
-	}
 }

@@ -5,6 +5,7 @@ package fuzzyfinder_test
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -18,14 +19,22 @@ import (
 	fuzzyfinder "github.com/ktr0731/go-fuzzyfinder"
 )
 
-type fuzzKey struct {
-	key  tcell.Key
-	name string
-}
-
 var (
-	letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789一花二乃三玖四葉五月")
-	tbkeys  = []tcell.Key{
+	out       = flag.String("fuzzout", "fuzz.out", "fuzzing error cases")
+	hotReload = flag.Bool("hotreload", false, "enable hot-reloading")
+	numCases  = flag.Int("numCases", 30, "number of test cases")
+	numEvents = flag.Int("numEvents", 10, "number of events")
+)
+
+// TestFuzz executes fuzzing tests.
+//
+// Example:
+//
+//   go test -tags fuzz -run TestFuzz -numCases 10 -numEvents 10
+//
+func TestFuzz(t *testing.T) {
+	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789一花二乃三玖四葉五月")
+	tbkeys := []tcell.Key{
 		tcell.KeyCtrlA,
 		tcell.KeyCtrlB,
 		tcell.KeyCtrlE,
@@ -44,7 +53,7 @@ var (
 		tcell.KeyLeft,
 		tcell.KeyRight,
 	}
-	keyMap = map[tcell.Key]string{
+	keyMap := map[tcell.Key]string{
 		tcell.KeyCtrlA:      "A",
 		tcell.KeyCtrlB:      "B",
 		tcell.KeyCtrlE:      "E",
@@ -63,36 +72,14 @@ var (
 		tcell.KeyLeft:       "left",
 		tcell.KeyRight:      "right",
 	}
-)
 
-var (
-	out       = flag.String("fuzzout", "fuzz.out", "fuzzing error cases")
-	hotReload = flag.Bool("hotreload", false, "enable hot-reloading")
-	numCases  = flag.Int("numCases", 30, "number of test cases")
-	numEvents = flag.Int("numEvents", 10, "number of events")
-)
-
-// TestFuzz executes fuzzing tests.
-//
-// Example:
-//
-//   go test -tags fuzz -run TestFuzz -numCases 10 -numEvents 10
-//
-func TestFuzz(t *testing.T) {
 	f, err := os.Create(*out)
 	if err != nil {
 		t.Fatalf("failed to create a fuzzing output file: %s", err)
 	}
 	defer f.Close()
 
-	fuzz := fuzz.New()
-
-	min := func(a, b int) int {
-		if a < b {
-			return a
-		}
-		return b
-	}
+	fuzzer := fuzz.New()
 
 	for i := 0; i < rand.Intn(*numCases)+10; i++ {
 		// number of events in tcell.SimulationScreen is limited 10
@@ -109,10 +96,11 @@ func TestFuzz(t *testing.T) {
 
 		var name string
 		for _, e := range events {
-			if e.(*tcell.EventKey).Rune() != 0 {
-				name += string(e.(*tcell.EventKey).Rune())
+			ek := e.(*tcell.EventKey)
+			if ek.Rune() != 0 {
+				name += string(ek.Rune())
 			} else {
-				name += "[" + keyMap[e.(*tcell.EventKey).Key()] + "]"
+				name += "[" + keyMap[ek.Key()] + "]"
 			}
 		}
 
@@ -122,31 +110,30 @@ func TestFuzz(t *testing.T) {
 					fmt.Fprintln(f, name)
 					t.Errorf("panicked: %s", name)
 				}
-				return
 			}()
 
 			var mu sync.Mutex
 			tracks := tracks
 
-			f, term := fuzzyfinder.NewWithMockedTerminal()
+			finder, term := fuzzyfinder.NewWithMockedTerminal()
 			events = append(events, key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 
-			term.SetEventsV2(events...)
+			term.SetEvents(events...)
 
 			var (
 				iface     interface{}
 				promptStr string
 				header    string
 			)
-			fuzz.Fuzz(&promptStr)
-			fuzz.Fuzz(&header)
+			fuzzer.Fuzz(&promptStr)
+			fuzzer.Fuzz(&header)
 			opts := []fuzzyfinder.Option{
 				fuzzyfinder.WithPromptString(promptStr),
 				fuzzyfinder.WithHeader(header),
 			}
 			if *hotReload {
 				iface = &tracks
-				opts = append(opts, fuzzyfinder.WithHotReload())
+				opts = append(opts, fuzzyfinder.WithHotReloadLock(&sync.Mutex{}))
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
 				go func() {
@@ -156,9 +143,9 @@ func TestFuzz(t *testing.T) {
 							return
 						default:
 							var t track
-							fuzz.Fuzz(&t.Name)
-							fuzz.Fuzz(&t.Artist)
-							fuzz.Fuzz(&t.Album)
+							fuzzer.Fuzz(&t.Name)
+							fuzzer.Fuzz(&t.Artist)
+							fuzzer.Fuzz(&t.Album)
 							mu.Lock()
 							tracks = append(tracks, &t)
 							mu.Unlock()
@@ -169,7 +156,7 @@ func TestFuzz(t *testing.T) {
 				iface = tracks
 			}
 
-			_, err := f.Find(
+			_, err := finder.Find(
 				iface,
 				func(i int) string {
 					mu.Lock()
@@ -188,7 +175,7 @@ func TestFuzz(t *testing.T) {
 					}),
 				)...,
 			)
-			if err != fuzzyfinder.ErrAbort {
+			if !errors.Is(err, fuzzyfinder.ErrAbort) {
 				t.Fatalf("Find must return ErrAbort, but got '%s'", err)
 			}
 

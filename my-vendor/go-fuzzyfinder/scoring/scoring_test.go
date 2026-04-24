@@ -5,35 +5,40 @@ import "testing"
 func TestCalculate(t *testing.T) {
 	t.Parallel()
 
-	cases := map[string]struct {
+	cases := []struct {
+		name      string
 		s1, s2    string
-		willPanic bool
+		wantErr   bool
+		wantScore int
+		wantPos   [2]int
 	}{
-		"must not panic":  {s1: "foo", s2: "foo"},
-		"must not panic2": {s1: "", s2: ""},
-		"must panic":      {s1: "foo", s2: "foobar", willPanic: true},
+		{"empty strings", "", "", false, 0, [2]int{-1, -1}},
+		{"equal length", "foo", "foo", false, 108, [2]int{0, 2}},
+		// normal usage: s1 is the corpus, s2 the query — same inputs as smith_waterman_test.go
+		{"s1 longer than s2", "TACGGGCCCGCTA", "TAGCCCTA", false, 78, [2]int{0, 12}},
+		{"s2 longer than s1", "foo", "foobar", true, 0, [2]int{}},
 	}
 
 	for _, c := range cases {
-		if c.willPanic {
-			defer func() {
-				if err := recover(); err == nil {
-					t.Error("Calculate must panic")
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			score, pos, err := Calculate(c.s1, c.s2)
+			if c.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
 				}
-			}()
-		}
-		Calculate(c.s1, c.s2)
-	}
-}
-
-func Test_max(t *testing.T) {
-	t.Parallel()
-
-	if n := max(); n != 0 {
-		t.Errorf("max must return 0 if no args, but got %d", n)
-	}
-
-	if n := max(0, -1, 10, 3); n != 10 {
-		t.Errorf("max must return the maximun number 10, but got %d", n)
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if score != c.wantScore {
+				t.Errorf("score: got %d, want %d", score, c.wantScore)
+			}
+			if pos != c.wantPos {
+				t.Errorf("pos: got %v, want %v", pos, c.wantPos)
+			}
+		})
 	}
 }
