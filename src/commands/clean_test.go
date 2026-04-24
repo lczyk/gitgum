@@ -137,6 +137,20 @@ func TestCleanCommand_Execute(t *testing.T) {
 				fileNotExists(t, dir, "test.log")
 			},
 		},
+		{
+			name: "nothing to clean when both changes and untracked disabled",
+			setup: func(t *testing.T, dir string) {
+				err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("modified\n"), 0o644)
+				assert.NoError(t, err, "modify tracked file")
+				err = os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("untracked\n"), 0o644)
+				assert.NoError(t, err, "create untracked file")
+			},
+			cmd: &CleanCommand{Changes: boolPtr(false), Untracked: boolPtr(false), Yes: true},
+			verify: func(t *testing.T, dir string) {
+				fileContent(t, dir, "README.md", "modified\n")
+				fileExists(t, dir, "untracked.txt")
+			},
+		},
 	}
 
 	for _, tt := range tests {
