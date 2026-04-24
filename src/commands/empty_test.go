@@ -4,13 +4,34 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/gitgum/src/internal/temp_repo"
 )
 
-func TestEmptyCommand_Execute(t *testing.T) {
-	// Note: This is a basic structure test since empty requires an actual git repo
-	// and interactive fzf input. Full integration testing should be done manually
-	// or with a more sophisticated test setup.
-	
+// EmptyCommand tests validate basic command structure.
+// Full E2E testing requires mocking fzf interactions (user input).
+
+func TestEmptyCommand_NotInGitRepo(t *testing.T) {
+	temp_repo.ChdirTempDir(t)
+
 	cmd := &EmptyCommand{}
-	assert.That(t, cmd != nil, "EmptyCommand should be created successfully")
+	err := cmd.Execute(nil)
+
+	assert.That(t, err != nil, "should error when not in git repo")
+	assert.ContainsString(t, err.Error(), "repository")
+}
+
+func TestEmptyCommand_NoUpstream(t *testing.T) {
+	temp_repo.InitTempRepo(t)
+
+	cmd := &EmptyCommand{}
+	err := cmd.Execute(nil)
+
+	assert.That(t, err != nil, "should error without upstream")
+	assert.ContainsString(t, err.Error(), "upstream")
+}
+
+func TestEmptyCommand_Instantiate(t *testing.T) {
+	_ = temp_repo.InitTempRepo(t)
+	cmd := &EmptyCommand{}
+	_ = cmd // verify command is instantiable
 }

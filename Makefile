@@ -1,6 +1,6 @@
 .SUFFIXES:
 
-SRCS := $(shell find ./cmd ./src -name '*.go' ! -name 'generated.go' ! -name 'version.go')
+SRCS := $(shell find ./cmd ./src -name '*.go' ! -name 'version.go')
 
 help:  ## Show this help
 	@echo "Available targets:"
@@ -9,17 +9,14 @@ help:  ## Show this help
 .PHONY: build
 build: ./bin/gitgum  ## Build the gitgum binary (compressed with upx if available)
 
-./bin/gitgum: $(SRCS) ./src/completions/generated.go ./src/version/version.go Makefile go.mod go.sum
+./bin/gitgum: $(SRCS) ./src/version/version.go Makefile go.mod go.sum
 	mkdir -p ./bin
 	go build -o ./bin/gitgum ./cmd/gitgum
 	@if command -v upx >/dev/null 2>&1; then \
 		upx ./bin/gitgum || echo "upx failed, skipping compression"; \
 	fi
 
-./src/completions/generated.go: ./src/completions/gitgum.bash ./src/completions/gitgum.fish ./src/completions/gitgum.zsh ./src/completions/generate.go ./src/completions/cmd/generate-completions/main.go Makefile
-	go generate ./src/completions
-
-./src/version/version.go: VERSION ./src/version/generate.go ./src/version/cmd/generate-version/main.go Makefile
+./src/version/version.go: VERSION ./src/version/format.go ./src/version/cmd/generate-version/main.go Makefile
 	go generate ./src/version
 
 .PHONY: du
@@ -62,5 +59,4 @@ verify: fmt-check check test  ## Pre-commit gate: fmt-check, vet, test
 .PHONY: clean
 clean:  ## Remove build artifacts and generated files
 	rm -f ./bin/gitgum
-	rm -f ./src/completions/generated.go
 	rm -f ./src/version/version.go

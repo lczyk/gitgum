@@ -63,7 +63,7 @@ func main() {
 	// Check for version flag before parsing to avoid command requirement
 	for _, arg := range os.Args[1:] {
 		if arg == "--version" || arg == "-v" {
-			fmt.Println(version.GetFullVersion())
+			fmt.Println(version.FormatVersion(version.Version, version.CommitSHA, version.BuildDate, version.BuildInfo))
 			os.Exit(0)
 		}
 	}

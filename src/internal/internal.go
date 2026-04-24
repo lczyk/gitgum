@@ -38,22 +38,6 @@ func RunCommandWithOutput(name string, args ...string) error {
 	return cmd.Run()
 }
 
-// runCommandWithInput executes a command with stdin input
-func runCommandWithInput(input string, name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
-	cmd.Stdin = strings.NewReader(input)
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = os.Stderr
-	err := cmd.Run()
-	return strings.TrimSpace(stdout.String()), err
-}
-
-// WriteFile writes content to a file
-func WriteFile(path string, content string) error {
-	return os.WriteFile(path, []byte(content), 0644)
-}
-
 // GitFileStatus represents the status of a file in git
 type GitFileStatus int
 
@@ -73,22 +57,22 @@ func GetGitFileStatus(file string) (GitFileStatus, error) {
 	cmd.Stdout = &stdout
 	err := cmd.Run()
 	output := stdout.String()
-	
+
 	if err != nil || output == "" {
 		return GitFileUnknown, err
 	}
-	
+
 	if len(output) < 2 {
 		return GitFileUnknown, nil
 	}
-	
+
 	status := output[:2]
-	
+
 	// Untracked file (status: ??)
 	if status[0] == '?' && status[1] == '?' {
 		return GitFileUntracked, nil
 	}
-	
+
 	// Staged changes (first character is not space)
 	if status[0] != ' ' && status[0] != '?' {
 		if status[0] == 'D' {
@@ -96,12 +80,12 @@ func GetGitFileStatus(file string) (GitFileStatus, error) {
 		}
 		return GitFileStaged, nil
 	}
-	
+
 	// Modified (second character is not space)
 	if status[1] != ' ' && status[1] != '?' {
 		return GitFileModified, nil
 	}
-	
+
 	return GitFileUnknown, nil
 }
 
@@ -220,25 +204,28 @@ func GetRemoteBranches(remote string) ([]string, error) {
 	return branches, nil
 }
 
+// GetBranchUpstream returns the remote and branch name of the upstream for a local branch.
+// returns ("", "", nil) if the branch has no upstream configured.
+func GetBranchUpstream(branch string) (remote string, remoteBranch string, err error) {
+	stdout, stderr, err := RunCommand("git", "rev-parse", "--abbrev-ref", branch+"@{u}")
+	if err != nil && strings.Contains(stderr, "no upstream configured for branch") {
+		return "", "", nil
+	}
+	if err != nil {
+		return "", "", err
+	}
+	parts := strings.SplitN(stdout, "/", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("unexpected upstream format: %s", stdout)
+	}
+	return parts[0], parts[1], nil
+}
+
 // GetBranchTrackingRemote returns the remote that a local branch tracks.
 // If the branch does not track any remote, returns an empty string.
 func GetBranchTrackingRemote(branch string) (string, error) {
-	stdout, stderr, err := RunCommand("git", "rev-parse", "--abbrev-ref", branch+"@{u}")
-	_pattern := "no upstream configured for branch"
-	if err != nil && strings.Contains(stderr, _pattern) {
-		// no tracking remote
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	// strip the branch name to get the remote name
-	parts := strings.SplitN(stdout, "/", 2)
-	if len(parts) != 2 {
-		return "", fmt.Errorf("unexpected upstream format: %s", stdout)
-	}
-	remote := parts[0]
-	return remote, nil
+	remote, _, err := GetBranchUpstream(branch)
+	return remote, err
 }
 
 // IsWorktreeCheckedOut checks if a branch is checked out in a worktree
@@ -272,13 +259,8 @@ func BranchExists(branch string) bool {
 	return err == nil && stdout != ""
 }
 
-// PrintBlue prints a message in black color (mimicking the bash _blue function)
-// Note: The bash version actually uses BLACK color despite the function name
-func PrintBlue(message string) {
-	// ANSI color codes: Black text
-	black := "\033[0;30m"
-	reset := "\033[0m"
-	fmt.Printf("%s%s%s\n", black, message, reset)
+func PrintHeader(message string) {
+	fmt.Printf("\033[0;30m%s\033[0m\n", message)
 }
 
 // GetCurrentBranch returns the name of the current branch
@@ -307,15 +289,6 @@ func RemoteBranchExists(remote, branch string) (bool, error) {
 	return true, nil
 }
 
-// IsBranchAheadOfRemote checks if a local branch is ahead of its remote tracking branch
-func IsBranchAheadOfRemote(localBranch, remoteBranch string) (bool, error) {
-	stdout, _, err := RunCommand("git", "log", "--oneline", remoteBranch+".."+localBranch)
-	if err != nil {
-		return false, err
-	}
-	return strings.TrimSpace(stdout) != "", nil
-}
-
 func IsGitDirty(dir string) (bool, error) {
 	cmd := exec.Command("git", "status", "--porcelain=v1")
 	cmd.Dir = dir
@@ -324,7 +297,7 @@ func IsGitDirty(dir string) (bool, error) {
 		return false, err
 	}
 	files := strings.Split(strings.TrimSpace(string(output)), "\n")
-	
+
 	// filter out untracked files
 	for _, file := range files {
 		if strings.HasPrefix(file, "??") {
