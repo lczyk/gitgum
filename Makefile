@@ -7,7 +7,7 @@ help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: build
-build: ./bin/gitgum  ## Build the gitgum binary (compressed with upx if available)
+build: ./bin/gitgum ./bin/fuzzyfinder  ## Build all binaries (compressed with upx if available)
 
 ./bin/gitgum: $(SRCS) generate-version Makefile go.mod go.sum
 	mkdir -p ./bin
@@ -16,19 +16,28 @@ build: ./bin/gitgum  ## Build the gitgum binary (compressed with upx if availabl
 		upx ./bin/gitgum || echo "upx failed, skipping compression"; \
 	fi
 
+./bin/fuzzyfinder: $(SRCS) Makefile go.mod go.sum
+	mkdir -p ./bin
+	go build -o ./bin/fuzzyfinder ./cmd/fuzzyfinder
+	@if command -v upx >/dev/null 2>&1; then \
+		upx ./bin/fuzzyfinder || echo "upx failed, skipping compression"; \
+	fi
+
 .PHONY: generate-version
 generate-version:
 	go generate ./src/version
 
 .PHONY: du
-du: ./bin/gitgum  ## Show the binary size
-	du -h ./bin/gitgum
+du: ./bin/gitgum ./bin/fuzzyfinder  ## Show binary sizes
+	du -h ./bin/gitgum ./bin/fuzzyfinder
 
 .PHONY: install
-install: ./bin/gitgum  ## Symlink the binary into ~/.local/bin/gitgum
+install: ./bin/gitgum ./bin/fuzzyfinder  ## Symlink binaries into ~/.local/bin
 	mkdir -p $(HOME)/.local/bin
 	ln -sf "$(PWD)/bin/gitgum" "$(HOME)/.local/bin/gitgum"
 	ln -sf "$(PWD)/bin/gitgum" "$(HOME)/.local/bin/gg"
+	ln -sf "$(PWD)/bin/fuzzyfinder" "$(HOME)/.local/bin/fuzzyfinder"
+	ln -sf "$(PWD)/bin/fuzzyfinder" "$(HOME)/.local/bin/ff"
 
 .PHONY: test
 test:  ## Run the test suite with race detector
@@ -67,6 +76,6 @@ verify: fmt-check check test  ## Pre-commit gate: fmt-check, vet, test
 
 .PHONY: clean
 clean:  ## Remove build artifacts and generated files
-	rm -f ./bin/gitgum
+	rm -f ./bin/gitgum ./bin/fuzzyfinder
 	rm -f ./src/version/version.go
 	rm -f ./coverage.txt
