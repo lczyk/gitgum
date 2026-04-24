@@ -34,7 +34,20 @@ func main() {
 			os.Exit(exitOK)
 		}
 	}
+	if isTTY(os.Stdin) {
+		fmt.Fprintln(os.Stderr, "fuzzyfinder: stdin is a terminal; pipe input via stdin (e.g. `find . | fuzzyfinder`)")
+		os.Exit(exitUsage)
+	}
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+}
+
+// isTTY reports whether f is connected to a terminal (no piped/redirected input).
+func isTTY(f *os.File) bool {
+	info, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
 }
 
 type config struct {
