@@ -58,7 +58,7 @@ func TestGitFunctions(t *testing.T) {
 
 	t.Run("GetFileStatus detects untracked file", func(t *testing.T) {
 		repo := temp_repo.InitTempRepo(t)
-		os.WriteFile(repo+"/untracked.txt", []byte("content"), 0644)
+		temp_repo.WriteFile(t, repo, "untracked.txt", "content")
 		status, err := git.GetFileStatus("untracked.txt")
 		assert.NoError(t, err, "get status")
 		assert.Equal(t, git.FileUntracked, status)
@@ -74,7 +74,7 @@ func TestGitFunctions(t *testing.T) {
 
 	t.Run("GetFileStatus detects staged file", func(t *testing.T) {
 		repo := temp_repo.InitTempRepo(t)
-		os.WriteFile(repo+"/staged.txt", []byte("content"), 0644)
+		temp_repo.WriteFile(t, repo, "staged.txt", "content")
 		cmdrun.Run("git", "add", "staged.txt")
 		status, err := git.GetFileStatus("staged.txt")
 		assert.NoError(t, err, "get status")
@@ -83,7 +83,7 @@ func TestGitFunctions(t *testing.T) {
 
 	t.Run("GetFileStatus detects deleted file", func(t *testing.T) {
 		repo := temp_repo.InitTempRepo(t)
-		os.WriteFile(repo+"/deleted.txt", []byte("content"), 0644)
+		temp_repo.WriteFile(t, repo, "deleted.txt", "content")
 		cmdrun.Run("git", "add", "deleted.txt")
 		cmdrun.Run("git", "commit", "-m", "add file")
 		os.Remove(repo + "/deleted.txt")
@@ -95,7 +95,7 @@ func TestGitFunctions(t *testing.T) {
 
 	t.Run("GetFileStatus returns unknown for clean file", func(t *testing.T) {
 		repo := temp_repo.InitTempRepo(t)
-		os.WriteFile(repo+"/clean.txt", []byte("content"), 0644)
+		temp_repo.WriteFile(t, repo, "clean.txt", "content")
 		cmdrun.Run("git", "add", "clean.txt")
 		cmdrun.Run("git", "commit", "-m", "add file")
 		status, err := git.GetFileStatus("clean.txt")

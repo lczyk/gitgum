@@ -5,28 +5,29 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/lczyk/assert"
 )
 
-// chdirs into a fresh temp dir for the duration of the test.
+// ChdirTempDir chdirs into a fresh temp dir for the duration of the test.
+//
+// CAUTION: process cwd is shared, so a test that calls this cannot run in
+// parallel with another test that also calls it (or runs git commands relying
+// on cwd). Prefer passing dir explicitly where possible.
 func ChdirTempDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
+	assert.NoError(t, err, "getwd")
+	assert.NoError(t, os.Chdir(dir), "chdir")
 	t.Cleanup(func() {
-		if err := os.Chdir(origDir); err != nil {
-			t.Fatalf("restore working dir: %v", err)
-		}
+		assert.NoError(t, os.Chdir(origDir), "restore working dir")
 	})
 	return dir
 }
 
-// also chdirs into the repo for the duration of the test.
+// InitTempRepo creates a temp git repo, chdirs into it, makes an initial
+// commit, and returns the repo path.
 func InitTempRepo(t *testing.T) string {
 	t.Helper()
 	dir := ChdirTempDir(t)
@@ -37,35 +38,33 @@ func InitTempRepo(t *testing.T) string {
 	RunGit(t, dir, "config", "commit.gpgsign", "false")
 	RunGit(t, dir, "config", "tag.gpgsign", "false")
 
-	fname := filepath.Join(dir, "README.md")
-	err := os.WriteFile(fname, []byte("# test repo\n"), 0o644)
-	if err != nil {
-		t.Fatalf("write initial file: %v", err)
-	}
+	WriteFile(t, dir, "README.md", "# test repo\n")
 	RunGit(t, dir, "add", "README.md")
 	RunGit(t, dir, "commit", "-m", "initial commit")
 
 	return dir
 }
 
-func RunGit(t *testing.T, dir string, args ...string) string {
+// RunGit runs a git command inside dir and returns its combined output.
+func RunGit(t testing.TB, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v failed: %v\nOutput: %s", args, err, string(out))
-	}
+	assert.NoError(t, err, "git ", args, " failed: ", string(out))
 	return string(out)
 }
 
-func CreateCommit(t *testing.T, dir, filename, content, message string) {
+// WriteFile writes content to dir/filename, failing the test on error.
+func WriteFile(t testing.TB, dir, filename, content string) {
 	t.Helper()
-	fpath := filepath.Join(dir, filename)
-	err := os.WriteFile(fpath, []byte(content), 0o644)
-	if err != nil {
-		t.Fatalf("write file for commit: %v", err)
-	}
+	assert.NoError(t, os.WriteFile(filepath.Join(dir, filename), []byte(content), 0o644), "write ", filename)
+}
+
+// CreateCommit writes a file then stages and commits it.
+func CreateCommit(t testing.TB, dir, filename, content, message string) {
+	t.Helper()
+	WriteFile(t, dir, filename, content)
 	RunGit(t, dir, "add", filename)
 	RunGit(t, dir, "commit", "-m", message)
 }
