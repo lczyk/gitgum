@@ -5,6 +5,7 @@ package fuzzyfinder_test
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -174,7 +175,7 @@ func TestFuzz(t *testing.T) {
 					}),
 				)...,
 			)
-			if err != fuzzyfinder.ErrAbort {
+			if !errors.Is(err, fuzzyfinder.ErrAbort) {
 				t.Fatalf("Find must return ErrAbort, but got '%s'", err)
 			}
 
