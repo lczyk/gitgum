@@ -16,10 +16,11 @@ func TestMatch(t *testing.T) {
 		idx      int
 		expected string // empty means no match expected
 	}{
-		"smart mode case insensitive": {in: "ink now", idx: 2, expected: "inkle Snow"},
-		"case sensitive match":        {in: "SOUNDNY", mode: matching.ModeCaseSensitive, idx: 1, expected: "SOUND OF DESTINY"},
-		"case sensitive no match":     {in: "white um", mode: matching.ModeCaseSensitive},
-		"case insensitive explicit":   {in: "ink now", mode: matching.ModeCaseInsensitive, idx: 2, expected: "inkle Snow"},
+		"smart mode case insensitive":          {in: "ink now", idx: 2, expected: "inkle Snow"},
+		"case sensitive match":                 {in: "SOUNDNY", mode: matching.ModeCaseSensitive, idx: 1, expected: "SOUND OF DESTINY"},
+		"case sensitive no match":              {in: "white um", mode: matching.ModeCaseSensitive},
+		"case insensitive explicit lowercase":  {in: "ink now", mode: matching.ModeCaseInsensitive, idx: 2, expected: "inkle Snow"},
+		"case insensitive explicit uppercase":  {in: "INK NOW", mode: matching.ModeCaseInsensitive, idx: 2, expected: "inkle Snow"},
 	}
 	slice := []string{
 		"WHITE ALBUM",

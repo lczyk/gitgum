@@ -84,14 +84,14 @@ func match(input string, slice []string, opt opt) (res []Matched) {
 	}
 
 	if opt.mode == ModeSmart {
-		// Find an upper-case rune
-		n := strings.IndexFunc(input, unicode.IsUpper)
-		if n == -1 {
+		if strings.IndexFunc(input, unicode.IsUpper) == -1 {
 			opt.mode = ModeCaseInsensitive
-			input = strings.ToLower(input)
 		} else {
 			opt.mode = ModeCaseSensitive
 		}
+	}
+	if opt.mode == ModeCaseInsensitive {
+		input = strings.ToLower(input)
 	}
 
 	in := []rune(input)
