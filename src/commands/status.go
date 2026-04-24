@@ -23,13 +23,11 @@ func (s *StatusCommand) Execute(args []string) error {
 	if err != nil {
 		return fmt.Errorf("error getting remotes: %w", err)
 	}
-	if stdout != "" {
-		remotes := parseRemotes(stdout)
-		if len(remotes) > 0 {
-			internal.PrintHeader("--- REMOTES ----------------------------")
-			for _, remote := range remotes {
-				fmt.Println(remote)
-			}
+	remotes := parseRemotes(stdout)
+	if len(remotes) > 0 {
+		internal.PrintHeader("--- REMOTES ----------------------------")
+		for _, remote := range remotes {
+			fmt.Println(remote)
 		}
 	}
 
