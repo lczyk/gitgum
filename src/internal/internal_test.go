@@ -95,9 +95,6 @@ func TestGitFunctions(t *testing.T) {
 			run: func(t *testing.T) {
 				repo := temp_repo.InitTempRepo(t)
 				assert.NoError(t, appendFile(repo+"/README.md", "\nmodified content"), "append to README")
-				
-				stdout, _, _ := internal.RunCommand("git", "status", "--porcelain", "README.md")
-				t.Logf("git status output: %q", stdout)
 				status, err := internal.GetGitFileStatus("README.md")
 				assert.NoError(t, err, "get status")
 				assert.Equal(t, internal.GitFileModified, status)
