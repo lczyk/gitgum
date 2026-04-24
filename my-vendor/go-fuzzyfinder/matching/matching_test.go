@@ -26,7 +26,6 @@ func TestMatch(t *testing.T) {
 		"Twinkle Snow",
 	}
 	for name, c := range cases {
-		c := c
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
@@ -59,7 +58,7 @@ func TestMatch(t *testing.T) {
 				actual = slice[c.idx][from:to]
 			}
 			if actual != c.expected {
-				t.Errorf("invalid range: from = %d, to = %d, content = %s, expected = %s", from, to, slice[c.idx][from:to], c.expected)
+				t.Errorf("invalid range: from = %d, to = %d, content = %s, expected = %s", from, to, actual, c.expected)
 			}
 		})
 	}
