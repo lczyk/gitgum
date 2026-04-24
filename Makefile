@@ -80,12 +80,12 @@ clean:  ## Remove build artifacts and generated files
 	rm -f ./src/version/version.go
 	rm -f ./coverage.txt
 
-# release-{patch,minor,major}: bumps VERSION, commits, tags. Refuses unless on
-# main with a clean tree. Push manually after inspecting the result.
-.PHONY: release-patch release-minor release-major
-release-patch: ## Bump patch version, commit, and tag
-	@go run ./cmd/release patch
-release-minor: ## Bump minor version, commit, and tag
-	@go run ./cmd/release minor
-release-major: ## Bump major version, commit, and tag
-	@go run ./cmd/release major
+# release: bumps VERSION, commits, tags. Refuses unless on main with a clean
+# tree. Push manually after inspecting the result.
+# Usage: make release BUMP=patch|minor|major
+.PHONY: release
+release: ## Bump version, commit, tag (BUMP=patch|minor|major)
+	@if [ -z "$(BUMP)" ]; then \
+		echo "release: BUMP is required (e.g. make release BUMP=patch)" >&2; exit 1; \
+	fi
+	@go run ./cmd/release $(BUMP)
