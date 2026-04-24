@@ -5,27 +5,25 @@ import "testing"
 func TestCalculate(t *testing.T) {
 	t.Parallel()
 
-	t.Run("equal-length strings", func(t *testing.T) {
-		t.Parallel()
-		_, _, err := Calculate("foo", "foo")
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
+	cases := []struct {
+		name    string
+		s1, s2  string
+		wantErr bool
+	}{
+		{"equal-length strings", "foo", "foo", false},
+		{"empty strings", "", "", false},
+		{"s2 longer than s1", "foo", "foobar", true},
+	}
 
-	t.Run("empty strings", func(t *testing.T) {
-		t.Parallel()
-		_, _, err := Calculate("", "")
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("error when s2 longer than s1", func(t *testing.T) {
-		t.Parallel()
-		_, _, err := Calculate("foo", "foobar")
-		if err == nil {
-			t.Error("Calculate must return error when s2 is longer than s1")
-		}
-	})
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			_, _, err := Calculate(c.s1, c.s2)
+			if c.wantErr && err == nil {
+				t.Error("expected error, got nil")
+			} else if !c.wantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
 }
