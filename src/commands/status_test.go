@@ -38,6 +38,29 @@ func TestParseRemotes(t *testing.T) {
 			expected: []string{},
 		},
 		{
+			name:     "incomplete line with only name",
+			input:    "origin",
+			expected: []string{},
+		},
+		{
+			name:     "whitespace-only line",
+			input:    "   \t   ",
+			expected: []string{},
+		},
+		{
+			name:  "mixed valid and incomplete lines",
+			input: "origin\thttps://github.com/user/repo.git (fetch)\nincomplete-line\nupstream\thttps://github.com/upstream/repo.git (fetch)",
+			expected: []string{
+				"origin https://github.com/user/repo.git",
+				"upstream https://github.com/upstream/repo.git",
+			},
+		},
+		{
+			name:     "deduplicates identical entries",
+			input:    "origin\thttps://example.com (fetch)\norigin\thttps://example.com (push)\norigin\thttps://example.com (fetch)",
+			expected: []string{"origin https://example.com"},
+		},
+		{
 			name: "single remote with fetch and push",
 			input: `origin	https://github.com/user/repo.git (fetch)
 origin	https://github.com/user/repo.git (push)`,
