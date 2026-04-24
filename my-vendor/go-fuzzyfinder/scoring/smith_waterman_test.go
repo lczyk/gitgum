@@ -2,16 +2,11 @@ package scoring
 
 import (
 	"fmt"
-	"os"
 	"testing"
 )
 
 func Test_smithWaterman(t *testing.T) {
 	t.Parallel()
-
-	old := os.Getenv("DEBUG")
-	os.Setenv("DEBUG", "true")
-	defer os.Setenv("DEBUG", old)
 
 	cases := []struct {
 		s1, s2        string
@@ -24,14 +19,13 @@ func Test_smithWaterman(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		c := c
 		name := fmt.Sprintf("%s-%s", c.s1, c.s2)
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
 			score, pos := smithWaterman([]rune(c.s1), []rune(c.s2))
 			if score != c.expectedScore {
-				t.Errorf("expected 78, but got %d", score)
+				t.Errorf("expected %d, but got %d", c.expectedScore, score)
 			}
 			if pos != c.expectedPos {
 				t.Errorf("expected %v, but got %v", c.expectedPos, pos)
