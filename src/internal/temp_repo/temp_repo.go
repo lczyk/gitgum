@@ -70,7 +70,3 @@ func CreateCommit(t *testing.T, dir, filename, content, message string) {
 	RunGit(t, dir, "commit", "-m", message)
 }
 
-func CreateBranch(t *testing.T, dir, branch string) {
-	t.Helper()
-	RunGit(t, dir, "branch", branch)
-}
