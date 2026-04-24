@@ -104,9 +104,7 @@ func parseAttr(fg, bg tcell.Color, attr tcell.AttrMask) string {
 	}
 
 	switch {
-	case fg == 0: // Ignore.
-	case fg == tcell.ColorDefault:
-		params = append(params, "39")
+	case fg == tcell.ColorDefault: // caller emits \x1b[m reset first, so nothing extra needed
 	case fg > tcell.Color255:
 		r, g, b := fg.RGB()
 		params = append(params, fmt.Sprintf("38;2;%d;%d;%d", r, g, b))
@@ -115,9 +113,7 @@ func parseAttr(fg, bg tcell.Color, attr tcell.AttrMask) string {
 	}
 
 	switch {
-	case bg == 0: // Ignore.
-	case bg == tcell.ColorDefault:
-		params = append(params, "49")
+	case bg == tcell.ColorDefault: // caller emits \x1b[m reset first, so nothing extra needed
 	case bg > tcell.Color255:
 		r, g, b := bg.RGB()
 		params = append(params, fmt.Sprintf("48;2;%d;%d;%d", r, g, b))
