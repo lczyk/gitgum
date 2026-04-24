@@ -24,22 +24,7 @@ func (s *StatusCommand) Execute(args []string) error {
 		return fmt.Errorf("error getting remotes: %w", err)
 	}
 	if stdout != "" {
-		// deduplicate remotes by (name, url) pair
-		seen := make(map[string]bool)
-		var remotes []string
-		for _, line := range strings.Split(stdout, "\n") {
-			if line == "" {
-				continue
-			}
-			fields := strings.Fields(line)
-			if len(fields) >= 2 {
-				entry := fields[0] + " " + fields[1]
-				if !seen[entry] {
-					seen[entry] = true
-					remotes = append(remotes, entry)
-				}
-			}
-		}
+		remotes := parseRemotes(stdout)
 		if len(remotes) > 0 {
 			internal.PrintHeader("--- REMOTES ----------------------------")
 			for _, remote := range remotes {
@@ -64,4 +49,27 @@ func (s *StatusCommand) Execute(args []string) error {
 	fmt.Println(lines[0])
 
 	return nil
+}
+
+func parseRemotes(remoteOutput string) []string {
+	lines := strings.Split(remoteOutput, "\n")
+	seen := make(map[string]bool)
+	var remotes []string
+
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) >= 2 {
+			entry := fields[0] + " " + fields[1]
+			if !seen[entry] {
+				seen[entry] = true
+				remotes = append(remotes, entry)
+			}
+		}
+	}
+
+	return remotes
 }
