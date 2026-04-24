@@ -54,15 +54,27 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 
+	// Read synchronously until we have at least one item (or EOF). This avoids
+	// launching the picker — and opening /dev/tty — when stdin is closed empty.
+	br := bufio.NewReader(stdin)
+	first, err := readFirstLine(br)
+	if err != nil {
+		fmt.Fprintf(stderr, "fuzzyfinder: read stdin: %v\n", err)
+		return exitUsage
+	}
+	if first == "" {
+		return exitNoMatch
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var (
 		lock  sync.Mutex
-		items []string
+		items = []string{first}
 	)
 	readErrCh := make(chan error, 1)
-	go func() { readErrCh <- streamItems(ctx, stdin, &lock, &items) }()
+	go func() { readErrCh <- streamItems(ctx, br, &lock, &items) }()
 
 	opts := buildOptions(cfg)
 	opts = append(opts, fuzzyfinder.WithContext(ctx))
@@ -90,6 +102,24 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return exitNoMatch
 	}
 	return writeResult(stdout, stderr, items, idxs, findErr)
+}
+
+// readFirstLine returns the first non-empty line from r, or "" if r reaches
+// EOF without yielding one. Trailing \r is trimmed.
+func readFirstLine(r *bufio.Reader) (string, error) {
+	for {
+		line, err := r.ReadString('\n')
+		line = strings.TrimRight(strings.TrimSuffix(line, "\n"), "\r")
+		if line != "" {
+			return line, nil
+		}
+		if err == io.EOF {
+			return "", nil
+		}
+		if err != nil {
+			return "", err
+		}
+	}
 }
 
 // streamItems reads lines from r and appends them to *items under lock until
