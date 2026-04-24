@@ -7,11 +7,6 @@ import (
 	"github.com/lczyk/assert"
 )
 
-// CompletionCommand tests validate shell completion script generation.
-// Tests cover multiple shell types (bash, fish, zsh), custom and default command names,
-// and error handling for invalid shells. Output validation ensures the placeholder
-// is replaced with the actual command name in all cases.
-
 func executeCompletion(t *testing.T, cmdName, shell string) (string, error) {
 	t.Helper()
 	var buf strings.Builder
