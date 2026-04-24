@@ -2,7 +2,7 @@ package version
 
 import "strings"
 
-//go:generate go run ./cmd/generate-version
+//go:generate go run ../../cmd/generate-version
 
 func FormatVersion(version, commitSHA, buildDate, buildInfo string) string {
 	var result strings.Builder
