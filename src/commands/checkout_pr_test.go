@@ -176,9 +176,11 @@ func TestParsePRSelection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			num, prType, err := parsePRSelection(tt.selection)
-			
+
 			if tt.expectedError {
 				assert.That(t, err != nil, "expected error for %q", tt.selection)
+				assert.Equal(t, num, 0)
+				assert.Equal(t, prType, "")
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, num, tt.expectedNum)
