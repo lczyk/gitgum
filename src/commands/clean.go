@@ -26,20 +26,9 @@ func (c *CleanCommand) Execute(args []string) error {
 	}
 
 	// Apply defaults
-	changes := true
-	untracked := true
-	ignored := false
-
-	// Override defaults with explicit flags
-	if c.Changes != nil {
-		changes = *c.Changes
-	}
-	if c.Untracked != nil {
-		untracked = *c.Untracked
-	}
-	if c.Ignored != nil {
-		ignored = *c.Ignored
-	}
+	changes := boolValue(c.Changes, true)
+	untracked := boolValue(c.Untracked, true)
+	ignored := boolValue(c.Ignored, false)
 
 	// If --all is specified, enable all cleanup options
 	if c.All {
@@ -124,6 +113,14 @@ func (c *CleanCommand) Execute(args []string) error {
 
 	fmt.Println("Clean complete")
 	return nil
+}
+
+// boolValue returns the dereferenced bool pointer value, or the default if nil.
+func boolValue(ptr *bool, defaultVal bool) bool {
+	if ptr != nil {
+		return *ptr
+	}
+	return defaultVal
 }
 
 func getAffectedFiles(changes, untracked, ignored bool) ([]string, error) {
