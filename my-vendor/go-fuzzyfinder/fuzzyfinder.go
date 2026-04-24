@@ -196,9 +196,8 @@ func (f *finder) _draw() {
 		f.term.SetContent(promptLinePad, maxHeight-1, r, nil, style)
 		promptLinePad++
 	}
-	var r rune
 	var w int
-	for _, r = range f.state.input {
+	for _, r := range f.state.input {
 		style := tcell.StyleDefault.
 			Foreground(tcell.ColorDefault).
 			Background(tcell.ColorDefault).
@@ -755,14 +754,12 @@ func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Opt
 		matched []matching.Matched
 	)
 
-	var parentContext context.Context
+	parentCtx := context.Background()
 	if opt.context != nil {
-		parentContext = opt.context
-	} else {
-		parentContext = context.Background()
+		parentCtx = opt.context
 	}
 
-	ctx, cancel := context.WithCancel(parentContext)
+	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
 
 	inited := make(chan struct{})
@@ -898,8 +895,7 @@ func FindMulti(slice interface{}, itemFunc func(i int) string, opts ...Option) (
 }
 
 func (f *finder) FindMulti(slice interface{}, itemFunc func(i int) string, opts ...Option) ([]int, error) {
-	res, err := f.find(slice, itemFunc, opts, true)
-	return res, err
+	return f.find(slice, itemFunc, opts, true)
 }
 
 func isInTesting() bool {
