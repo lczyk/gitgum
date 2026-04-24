@@ -209,24 +209,28 @@ func GetRemoteBranches(remote string) ([]string, error) {
 	return branches, nil
 }
 
+// GetBranchUpstream returns the remote and branch name of the upstream for a local branch.
+// returns ("", "", nil) if the branch has no upstream configured.
+func GetBranchUpstream(branch string) (remote string, remoteBranch string, err error) {
+	stdout, stderr, err := RunCommand("git", "rev-parse", "--abbrev-ref", branch+"@{u}")
+	if err != nil && strings.Contains(stderr, "no upstream configured for branch") {
+		return "", "", nil
+	}
+	if err != nil {
+		return "", "", err
+	}
+	parts := strings.SplitN(stdout, "/", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("unexpected upstream format: %s", stdout)
+	}
+	return parts[0], parts[1], nil
+}
+
 // GetBranchTrackingRemote returns the remote that a local branch tracks.
 // If the branch does not track any remote, returns an empty string.
 func GetBranchTrackingRemote(branch string) (string, error) {
-	stdout, stderr, err := RunCommand("git", "rev-parse", "--abbrev-ref", branch+"@{u}")
-	if err != nil && strings.Contains(stderr, "no upstream configured for branch") {
-		// no tracking remote
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	// strip the branch name to get the remote name
-	parts := strings.SplitN(stdout, "/", 2)
-	if len(parts) != 2 {
-		return "", fmt.Errorf("unexpected upstream format: %s", stdout)
-	}
-	remote := parts[0]
-	return remote, nil
+	remote, _, err := GetBranchUpstream(branch)
+	return remote, err
 }
 
 // IsWorktreeCheckedOut checks if a branch is checked out in a worktree

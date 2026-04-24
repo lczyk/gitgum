@@ -148,6 +148,30 @@ func TestGitFunctions(t *testing.T) {
 				assert.Equal(t, internal.GitFileUnknown, status)
 			},
 		},
+		{
+			name: "GetBranchUpstream returns empty for branch with no upstream",
+			run: func(t *testing.T) {
+				repo := temp_repo.InitTempRepo(t)
+				temp_repo.CreateBranch(t, repo, "no-upstream")
+				remote, remoteBranch, err := internal.GetBranchUpstream("no-upstream")
+				assert.NoError(t, err, "no upstream is not an error")
+				assert.Equal(t, "", remote)
+				assert.Equal(t, "", remoteBranch)
+			},
+		},
+		{
+			name: "GetBranchUpstream returns remote and branch for tracked branch",
+			run: func(t *testing.T) {
+				repo := temp_repo.InitTempRepo(t)
+				temp_repo.RunGit(t, repo, "remote", "add", "origin", repo) // point at self
+				temp_repo.RunGit(t, repo, "fetch", "origin")
+				temp_repo.RunGit(t, repo, "branch", "--set-upstream-to=origin/main", "main")
+				remote, remoteBranch, err := internal.GetBranchUpstream("main")
+				assert.NoError(t, err, "get upstream")
+				assert.Equal(t, "origin", remote)
+				assert.Equal(t, "main", remoteBranch)
+			},
+		},
 	}
 
 	for _, tc := range tests {

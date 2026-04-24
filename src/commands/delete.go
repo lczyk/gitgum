@@ -3,7 +3,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/lczyk/gitgum/src/internal"
 )
@@ -93,29 +92,22 @@ func (d *DeleteCommand) Execute(args []string) error {
 	}
 
 	// non-fatal: if we can't determine upstream, just skip remote deletion
-	upstreamBranch, _, err := internal.RunCommand("git", "for-each-ref", "--format=%(upstream:short)", "refs/heads/"+branch)
+	remoteName, remoteBranchName, err := internal.GetBranchUpstream(branch)
 	if err != nil {
-		upstreamBranch = ""
+		remoteName = ""
 	}
 
 	needsToDeleteRemote := false
-	var remoteName, remoteBranchName string
 
-	if upstreamBranch != "" {
-		parts := strings.SplitN(upstreamBranch, "/", 2)
-		if len(parts) == 2 {
-			remoteName = parts[0]
-			remoteBranchName = parts[1]
-
-			confirmed, err := internal.FzfConfirm(
-				fmt.Sprintf("Branch '%s' is tracking remote branch '%s'. Do you want to delete the remote branch as well?", branch, upstreamBranch),
-				false,
-			)
-			if err != nil {
-				return err
-			}
-			needsToDeleteRemote = confirmed
+	if remoteName != "" && remoteBranchName != "" {
+		confirmed, err := internal.FzfConfirm(
+			fmt.Sprintf("Branch '%s' is tracking remote branch '%s/%s'. Do you want to delete the remote branch as well?", branch, remoteName, remoteBranchName),
+			false,
+		)
+		if err != nil {
+			return err
 		}
+		needsToDeleteRemote = confirmed
 	}
 
 	// try safe delete first, fall back to force delete with confirmation
@@ -149,10 +141,10 @@ func (d *DeleteCommand) Execute(args []string) error {
 
 	if needsToDeleteRemote && remoteName != "" && remoteBranchName != "" {
 		if err := internal.RunCommandWithOutput("git", "push", "--delete", remoteName, remoteBranchName); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: Could not delete remote branch '%s'.\n", upstreamBranch)
+			fmt.Fprintf(os.Stderr, "Error: Could not delete remote branch '%s/%s'.\n", remoteName, remoteBranchName)
 			return fmt.Errorf("deleting remote branch: %w", err)
 		}
-		fmt.Printf("Deleted remote branch '%s'.\n", upstreamBranch)
+		fmt.Printf("Deleted remote branch '%s/%s'.\n", remoteName, remoteBranchName)
 	}
 
 	return nil
