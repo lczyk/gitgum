@@ -5,8 +5,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
-
-	"github.com/lczyk/assert"
 )
 
 // chdirs into a fresh temp dir for the duration of the test.
@@ -37,7 +35,9 @@ func InitTempRepo(t *testing.T) string {
 
 	fname := filepath.Join(dir, "README.md")
 	err := os.WriteFile(fname, []byte("# test repo\n"), 0o644)
-	assert.NoError(t, err, "write initial file")
+	if err != nil {
+		t.Fatalf("write initial file: %v", err)
+	}
 	RunGit(t, dir, "add", "README.md")
 	RunGit(t, dir, "commit", "-m", "initial commit")
 
@@ -59,7 +59,9 @@ func CreateCommit(t *testing.T, dir, filename, content, message string) {
 	t.Helper()
 	fpath := filepath.Join(dir, filename)
 	err := os.WriteFile(fpath, []byte(content), 0o644)
-	assert.NoError(t, err, "write file for commit")
+	if err != nil {
+		t.Fatalf("write file for commit: %v", err)
+	}
 	RunGit(t, dir, "add", filename)
 	RunGit(t, dir, "commit", "-m", message)
 }
