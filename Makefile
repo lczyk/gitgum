@@ -86,7 +86,7 @@ clean:  ## Remove build artifacts and generated files
 release-patch: BUMP := patch
 release-minor: BUMP := minor
 release-major: BUMP := major
-release-patch release-minor release-major: ## Bump version, commit, and tag (patch|minor|major)
+release-patch release-minor release-major:  ## Bump version, commit, and tag (patch|minor|major)
 	@branch=$$(git rev-parse --abbrev-ref HEAD); \
 	if [ "$$branch" != "main" ]; then \
 		echo "release: must be on main branch (current: $$branch)" >&2; exit 1; \

@@ -53,7 +53,7 @@ Useful for identifying the feature commits on a branch that need to be replayed 
 
 ## ToDo's
 
-- [ ] finish porting from bash version (what other commands do we want?)
+- [x] finish porting from bash version (what other commands do we want?)
 - [x] integration tests with mock git repositories
 - [ ] ? unify switch
 - [ ] make switch work well when offline
