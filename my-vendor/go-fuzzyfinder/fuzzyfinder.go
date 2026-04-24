@@ -63,6 +63,7 @@ type finder struct {
 	drawTimer *time.Timer
 	eventCh   chan struct{}
 	opt       *opt
+	multi     bool
 
 	termEventsChan <-chan tcell.Event
 }
@@ -91,7 +92,7 @@ func (f *finder) initFinder(items []string, matched []matching.Matched, opt opt)
 	f.state = state{}
 
 	var cursorPositioned bool
-	if opt.multi {
+	if f.multi {
 		f.state.selection = map[int]int{}
 		f.state.selectionIdx = 1
 
@@ -159,7 +160,7 @@ func (f *finder) updateItems(items []string, matched []matching.Matched) {
 	f.state.allMatched = matched
 
 	// Apply preselection to any new items
-	if f.opt.multi {
+	if f.multi {
 		for i := 0; i < len(items); i++ {
 			// Check if this item is not already in the selection and should be preselected
 			if _, exists := f.state.selection[i]; !exists && f.opt.preselected(i) {
@@ -252,7 +253,7 @@ func (f *finder) _draw() {
 			f.term.SetContent(1, maxHeight-1-i, ' ', nil, style)
 		}
 
-		if f.opt.multi {
+		if f.multi {
 			if _, ok := f.state.selection[m.Idx]; ok {
 				style := tcell.StyleDefault.
 					Foreground(tcell.ColorRed).
@@ -613,7 +614,7 @@ func (f *finder) readKey(ctx context.Context) error {
 			f.state.y -= min(pageScrollBy, f.state.y)
 			f.state.cursorY -= min(pageScrollBy, f.state.cursorY)
 		case tcell.KeyTab:
-			if !f.opt.multi {
+			if !f.multi {
 				return nil
 			}
 			idx := f.state.matched[f.state.y].Idx
@@ -699,7 +700,7 @@ func (f *finder) filter() {
 
 	// If we are in single-select mode, try to move cursor to the first preselected item
 	// that's still in the matched results
-	if !f.opt.multi {
+	if !f.multi {
 		for i, m := range f.state.matched {
 			if f.opt.preselected(m.Idx) {
 				f.state.y = i
@@ -727,7 +728,7 @@ func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Opt
 	for _, o := range opts {
 		o(&opt)
 	}
-	opt.multi = multi
+	f.multi = multi
 
 	rv := reflect.ValueOf(slice)
 	if opt.hotReload && (rv.Kind() != reflect.Ptr || reflect.Indirect(rv).Kind() != reflect.Slice) {
@@ -838,7 +839,7 @@ func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Opt
 				if len(f.state.matched) == 0 {
 					return nil, ErrAbort
 				}
-				if f.opt.multi {
+				if f.multi {
 					if len(f.state.selection) == 0 {
 						return []int{f.state.matched[f.state.y].Idx}, nil
 					}

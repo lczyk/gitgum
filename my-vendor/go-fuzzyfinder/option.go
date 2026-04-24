@@ -8,7 +8,6 @@ import (
 type opt struct {
 	mode          mode
 	previewFunc   func(i, width, height int) string
-	multi         bool
 	hotReload     bool
 	hotReloadLock sync.Locker
 	promptString  string
