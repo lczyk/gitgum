@@ -2,7 +2,7 @@ package internal_test
 
 import (
 	"os"
-	"strings"
+	"slices"
 	"testing"
 
 	"github.com/lczyk/assert"
@@ -10,9 +10,6 @@ import (
 	"github.com/lczyk/gitgum/src/internal/temp_repo"
 )
 
-// Tests rely on dynamically created temporary git repositories. Each subtest
-// initializes its own repo via temp_repo.InitTempRepo to remain deterministic.
-// Run with: go test ./src/internal
 func TestGitFunctions(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -33,7 +30,7 @@ func TestGitFunctions(t *testing.T) {
 				temp_repo.CreateBranch(t, repo, "feature")
 				branches, err := internal.GetLocalBranches()
 				assert.NoError(t, err, "list branches")
-				assert.That(t, contains(branches, "feature"), "feature branch present")
+				assert.That(t, slices.Contains(branches, "feature"), "feature branch present")
 			},
 		},
 		{
@@ -43,7 +40,7 @@ func TestGitFunctions(t *testing.T) {
 				temp_repo.AddRemote(t, repo, "origin", "https://example.com/repo.git")
 				remotes, err := internal.GetRemotes()
 				assert.NoError(t, err, "list remotes")
-				assert.That(t, contains(remotes, "origin"), "origin remote present")
+				assert.That(t, slices.Contains(remotes, "origin"), "origin remote present")
 			},
 		},
 		{
@@ -77,10 +74,7 @@ func TestGitFunctions(t *testing.T) {
 			name: "IsGitDirty true after modification",
 			run: func(t *testing.T) {
 				repo := temp_repo.InitTempRepo(t)
-				// Append to tracked file
-				f, ferr := openAppend(repo+"/README.md", "extra")
-				assert.NoError(t, ferr, "append to README")
-				f.Close()
+				assert.NoError(t, appendFile(repo+"/README.md", "extra"), "append to README")
 				dirty, derr := internal.IsGitDirty(repo)
 				assert.NoError(t, derr, "check dirty state")
 				assert.That(t, dirty, "repository should be dirty after modification")
@@ -100,11 +94,7 @@ func TestGitFunctions(t *testing.T) {
 			name: "GetGitFileStatus detects modified file",
 			run: func(t *testing.T) {
 				repo := temp_repo.InitTempRepo(t)
-				// Use the existing README.md from InitTempRepo
-				// Modify it without staging
-				f, ferr := openAppend(repo+"/README.md", "\nmodified content")
-				assert.NoError(t, ferr, "append to README")
-				f.Close()
+				assert.NoError(t, appendFile(repo+"/README.md", "\nmodified content"), "append to README")
 				
 				stdout, _, _ := internal.RunCommand("git", "status", "--porcelain", "README.md")
 				t.Logf("git status output: %q", stdout)
@@ -165,19 +155,12 @@ func TestGitFunctions(t *testing.T) {
 	}
 }
 
-func contains(list []string, item string) bool {
-	for _, v := range list {
-		if strings.TrimSpace(v) == item {
-			return true
-		}
-	}
-	return false
-}
-
-// openAppend appends content to a file, creating if necessary.
-func openAppend(path, s string) (*os.File, error) {
+func appendFile(path, s string) error {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil { return nil, err }
+	if err != nil {
+		return err
+	}
+	defer f.Close()
 	_, err = f.WriteString(s)
-	return f, err
+	return err
 }
