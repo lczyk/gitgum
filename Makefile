@@ -88,4 +88,4 @@ release: ## Bump version, commit, tag (BUMP=patch|minor|major)
 	@if [ -z "$(BUMP)" ]; then \
 		echo "release: BUMP is required (e.g. make release BUMP=patch)" >&2; exit 1; \
 	fi
-	@go run ./cmd/release $(BUMP)
+	@go run ./cmd/gitgum release $(BUMP)

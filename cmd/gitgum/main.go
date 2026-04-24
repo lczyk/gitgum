@@ -22,6 +22,7 @@ type Options struct {
 	Delete     commands.DeleteCommand     `command:"delete" description:"Delete a local branch and optionally its remote tracking branch"`
 	ReplayList commands.ReplayListCommand `command:"replay-list" description:"List commits on branch A since divergence from trunk B"`
 	Empty      commands.EmptyCommand      `command:"empty" description:"Create an empty commit and optionally push it"`
+	Release    commands.ReleaseCommand    `command:"release" description:"Bump VERSION (or latest tag), commit, and tag"`
 }
 
 // ErrFzfCancelled is returned when the user cancels an fzf operation (Ctrl+C or ESC)
