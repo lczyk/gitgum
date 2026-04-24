@@ -22,9 +22,6 @@ func (e *EmptyCommand) Execute(args []string) error {
 	if err != nil {
 		return fmt.Errorf("error getting upstream branch: %w", err)
 	}
-	if upstream == "" {
-		return fmt.Errorf("current branch '%s' has no upstream remote tracking branch", currentBranch)
-	}
 
 	ahead, err := internal.IsBranchAheadOfRemote(currentBranch, upstream)
 	if err != nil {
