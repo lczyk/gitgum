@@ -13,17 +13,17 @@ func FormatVersion(version, commitSHA, buildDate, buildInfo string) string {
 		result.WriteString(commitSHA[:min(7, len(commitSHA))])
 	}
 
-	var infoParts []string
-	if buildDate != "" {
-		infoParts = append(infoParts, buildDate)
-	}
-	if buildInfo != "" {
-		infoParts = append(infoParts, buildInfo)
-	}
-
-	if len(infoParts) > 0 {
+	if buildDate != "" || buildInfo != "" {
 		result.WriteString(" (")
-		result.WriteString(strings.Join(infoParts, ", "))
+		if buildDate != "" {
+			result.WriteString(buildDate)
+			if buildInfo != "" {
+				result.WriteString(", ")
+			}
+		}
+		if buildInfo != "" {
+			result.WriteString(buildInfo)
+		}
 		result.WriteByte(')')
 	}
 
