@@ -13,11 +13,10 @@ func TestCleanCommand_Execute(t *testing.T) {
 	boolPtr := func(b bool) *bool { return &b }
 	
 	tests := []struct {
-		name          string
-		setup         func(t *testing.T, dir string)
-		cmd           *CleanCommand
-		verify        func(t *testing.T, dir string)
-		expectError   bool
+		name   string
+		setup  func(t *testing.T, dir string)
+		cmd    *CleanCommand
+		verify func(t *testing.T, dir string)
 	}{
 		{
 			name: "clean changes and untracked with --yes",
@@ -39,7 +38,7 @@ func TestCleanCommand_Execute(t *testing.T) {
 				_, err = os.Stat(filepath.Join(dir, "untracked.txt"))
 				assert.That(t, os.IsNotExist(err), "untracked.txt should be removed")
 			},
-			expectError: false,
+
 		},
 		{
 			name: "clean only changes with --no-untracked",
@@ -61,7 +60,7 @@ func TestCleanCommand_Execute(t *testing.T) {
 				_, err = os.Stat(filepath.Join(dir, "untracked.txt"))
 				assert.NoError(t, err, "untracked.txt should still exist")
 			},
-			expectError: false,
+
 		},
 		{
 			name: "clean only untracked with --no-changes",
@@ -83,7 +82,7 @@ func TestCleanCommand_Execute(t *testing.T) {
 				_, err = os.Stat(filepath.Join(dir, "untracked.txt"))
 				assert.That(t, os.IsNotExist(err), "untracked.txt should be removed")
 			},
-			expectError: false,
+
 		},
 		{
 			name: "clean with --ignored includes ignored files",
@@ -108,7 +107,7 @@ func TestCleanCommand_Execute(t *testing.T) {
 				_, err = os.Stat(filepath.Join(dir, "test.log"))
 				assert.That(t, os.IsNotExist(err), "test.log should be removed")
 			},
-			expectError: false,
+
 		},
 		{
 			name: "without --ignored, keep ignored files",
@@ -121,19 +120,18 @@ func TestCleanCommand_Execute(t *testing.T) {
 				// Add ignored file
 				err = os.WriteFile(filepath.Join(dir, "test.log"), []byte("log\n"), 0o644)
 				assert.NoError(t, err, "create ignored file")
-			// Add untracked file
-			err = os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("untracked\n"), 0o644)
-			assert.NoError(t, err, "create untracked file")
-		},
-		cmd: &CleanCommand{Changes: boolPtr(false), Yes: true},
-		verify: func(t *testing.T, dir string) {
-			// Verify untracked file is removed but ignored file remains
+				// Add untracked file
+				err = os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("untracked\n"), 0o644)
+				assert.NoError(t, err, "create untracked file")
+			},
+			cmd: &CleanCommand{Changes: boolPtr(false), Yes: true},
+			verify: func(t *testing.T, dir string) {
+				// Verify untracked file is removed but ignored file remains
 				_, err := os.Stat(filepath.Join(dir, "untracked.txt"))
 				assert.That(t, os.IsNotExist(err), "untracked.txt should be removed")
 				_, err = os.Stat(filepath.Join(dir, "test.log"))
 				assert.NoError(t, err, "test.log should still exist")
 			},
-			expectError: false,
 		},
 		{
 			name: "--all flag enables everything",
@@ -163,7 +161,7 @@ func TestCleanCommand_Execute(t *testing.T) {
 				_, err = os.Stat(filepath.Join(dir, "test.log"))
 				assert.That(t, os.IsNotExist(err), "test.log should be removed")
 			},
-			expectError: false,
+
 		},
 	}
 
@@ -180,11 +178,7 @@ func TestCleanCommand_Execute(t *testing.T) {
 			// Execute command
 			err := tt.cmd.Execute(nil)
 
-			if tt.expectError {
-				assert.That(t, err != nil, "expected error")
-			} else {
-				assert.NoError(t, err, "command should succeed")
-			}
+			assert.NoError(t, err, "command should succeed")
 
 			// Verify results
 			if tt.verify != nil {
