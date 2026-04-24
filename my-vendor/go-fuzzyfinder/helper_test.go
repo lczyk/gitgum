@@ -16,7 +16,7 @@ func NewWithMockedTerminal() (*finder, *TerminalMock) {
 	if err := screen.Init(); err != nil {
 		panic(err)
 	}
-	m := &TerminalMock{simScreen: screen}
+	m := &TerminalMock{SimulationScreen: screen}
 	f.term = m
 	go m.ChannelEvents(eventsChan, nil)
 

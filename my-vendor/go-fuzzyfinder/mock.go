@@ -8,12 +8,10 @@ import (
 	runewidth "github.com/mattn/go-runewidth"
 )
 
-type simScreen tcell.SimulationScreen
-
 // TerminalMock is a mocked terminal for testing.
 // Use NewWithMockedTerminal to create one.
 type TerminalMock struct {
-	simScreen
+	tcell.SimulationScreen
 }
 
 // SetEvents sets all events, which are fetched from the terminal event channel.
@@ -22,9 +20,9 @@ func (m *TerminalMock) SetEvents(events ...tcell.Event) {
 	for _, event := range events {
 		switch event := event.(type) {
 		case *tcell.EventKey:
-			m.simScreen.InjectKey(event.Key(), event.Rune(), event.Modifiers())
+			m.InjectKey(event.Key(), event.Rune(), event.Modifiers())
 		case *tcell.EventResize:
-			m.simScreen.SetSize(event.Size())
+			m.SetSize(event.Size())
 		}
 	}
 }
@@ -35,16 +33,16 @@ func (m *TerminalMock) GetResult() string {
 	var s string
 
 	// set cursor for snapshot test
-	cursorX, cursorY, _ := m.simScreen.GetCursor()
-	mainc, _, _, _ := m.simScreen.GetContent(cursorX, cursorY)
+	cursorX, cursorY, _ := m.GetCursor()
+	mainc, _, _, _ := m.GetContent(cursorX, cursorY)
 	if mainc == ' ' {
-		m.simScreen.SetContent(cursorX, cursorY, '█', nil, tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDefault))
+		m.SetContent(cursorX, cursorY, '█', nil, tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDefault))
 	} else {
-		m.simScreen.SetContent(cursorX, cursorY, mainc, nil, tcell.StyleDefault.Background(tcell.ColorWhite))
+		m.SetContent(cursorX, cursorY, mainc, nil, tcell.StyleDefault.Background(tcell.ColorWhite))
 	}
-	m.simScreen.Show()
+	m.Show()
 
-	cells, width, height := m.simScreen.GetContents()
+	cells, width, height := m.GetContents()
 
 	for h := 0; h < height; h++ {
 		prevFg, prevBg := tcell.ColorDefault, tcell.ColorDefault
