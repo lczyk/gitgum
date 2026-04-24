@@ -28,10 +28,27 @@ func ChdirTempDir(t *testing.T) string {
 
 // InitTempRepo creates a temp git repo, chdirs into it, makes an initial
 // commit, and returns the repo path.
+//
+// Uses ChdirTempDir under the hood, so tests using InitTempRepo cannot run in
+// parallel. Use NewRepo for parallel-safe tests that pass dir explicitly.
 func InitTempRepo(t *testing.T) string {
 	t.Helper()
 	dir := ChdirTempDir(t)
+	initRepoAt(t, dir)
+	return dir
+}
 
+// NewRepo creates a temp git repo without chdir-ing into it and returns its
+// path. Safe to call from t.Parallel() tests.
+func NewRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	initRepoAt(t, dir)
+	return dir
+}
+
+func initRepoAt(t testing.TB, dir string) {
+	t.Helper()
 	RunGit(t, dir, "init")
 	RunGit(t, dir, "config", "user.name", "Test User")
 	RunGit(t, dir, "config", "user.email", "test@example.com")
@@ -41,8 +58,6 @@ func InitTempRepo(t *testing.T) string {
 	WriteFile(t, dir, "README.md", "# test repo\n")
 	RunGit(t, dir, "add", "README.md")
 	RunGit(t, dir, "commit", "-m", "initial commit")
-
-	return dir
 }
 
 // RunGit runs a git command inside dir and returns its combined output.

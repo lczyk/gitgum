@@ -6,145 +6,177 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
-	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
 
-func TestGitFunctions(t *testing.T) {
-	t.Run("CheckInRepo succeeds", func(t *testing.T) {
-		temp_repo.InitTempRepo(t)
-		err := git.CheckInRepo()
-		assert.NoError(t, err, "should be inside git repo")
-	})
+// Each subtest gets its own tmpdir Repo and runs t.Parallel(). The Repo type
+// makes the dir explicit, removing the process-cwd dependency that previously
+// serialised these tests.
 
-	t.Run("GetLocalBranches lists created branch", func(t *testing.T) {
-		repo := temp_repo.InitTempRepo(t)
-		temp_repo.RunGit(t, repo, "branch", "feature")
-		branches, err := git.GetLocalBranches()
-		assert.NoError(t, err, "list branches")
-		assert.That(t, slices.Contains(branches, "feature"), "feature branch present")
-	})
+func TestCheckInRepo(t *testing.T) {
+	t.Parallel()
+	r := git.Repo{Dir: temp_repo.NewRepo(t)}
+	assert.NoError(t, r.CheckInRepo())
+}
 
-	t.Run("GetRemotes lists origin", func(t *testing.T) {
-		repo := temp_repo.InitTempRepo(t)
-		temp_repo.RunGit(t, repo, "remote", "add", "origin", "https://example.com/repo.git")
-		remotes, err := git.GetRemotes()
-		assert.NoError(t, err, "list remotes")
-		assert.That(t, slices.Contains(remotes, "origin"), "origin remote present")
-	})
+func TestGetLocalBranches(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "branch", "feature")
+	branches, err := git.Repo{Dir: dir}.GetLocalBranches()
+	assert.NoError(t, err)
+	assert.That(t, slices.Contains(branches, "feature"), "feature branch present")
+}
 
-	t.Run("BranchExists detects branch", func(t *testing.T) {
-		repo := temp_repo.InitTempRepo(t)
-		temp_repo.RunGit(t, repo, "branch", "dev")
-		assert.That(t, git.BranchExists("dev"), "dev branch exists")
-		assert.That(t, !git.BranchExists("missing"), "missing branch not exists")
-	})
+func TestGetRemotes(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "remote", "add", "origin", "https://example.com/repo.git")
+	remotes, err := git.Repo{Dir: dir}.GetRemotes()
+	assert.NoError(t, err)
+	assert.That(t, slices.Contains(remotes, "origin"), "origin remote present")
+}
 
-	t.Run("GetCommitHash for HEAD returns hash", func(t *testing.T) {
-		temp_repo.InitTempRepo(t)
-		hash, err := git.GetCommitHash("HEAD")
-		assert.NoError(t, err, "get hash")
-		assert.That(t, len(hash) >= 7, "hash length plausible")
-	})
+func TestBranchExists(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "branch", "dev")
+	r := git.Repo{Dir: dir}
+	assert.That(t, r.BranchExists("dev"), "dev branch exists")
+	assert.That(t, !r.BranchExists("missing"), "missing branch absent")
+}
 
-	t.Run("IsDirty true after modification", func(t *testing.T) {
-		repo := temp_repo.InitTempRepo(t)
-		assert.NoError(t, appendFile(repo+"/README.md", "extra"), "append to README")
-		dirty, derr := git.IsDirty(repo)
-		assert.NoError(t, derr, "check dirty state")
-		assert.That(t, dirty, "repository should be dirty after modification")
-	})
+func TestGetCommitHash(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	hash, err := git.Repo{Dir: dir}.GetCommitHash("HEAD")
+	assert.NoError(t, err)
+	assert.That(t, len(hash) >= 7, "hash length plausible")
+}
 
-	t.Run("GetFileStatus detects untracked file", func(t *testing.T) {
-		repo := temp_repo.InitTempRepo(t)
-		temp_repo.WriteFile(t, repo, "untracked.txt", "content")
-		status, err := git.GetFileStatus("untracked.txt")
-		assert.NoError(t, err, "get status")
-		assert.Equal(t, git.FileUntracked, status)
-	})
+func TestIsDirty(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	assert.NoError(t, appendFile(dir+"/README.md", "extra"))
+	dirty, err := git.Repo{Dir: dir}.IsDirty()
+	assert.NoError(t, err)
+	assert.That(t, dirty, "repo should be dirty after modification")
+}
 
-	t.Run("GetFileStatus detects modified file", func(t *testing.T) {
-		repo := temp_repo.InitTempRepo(t)
-		assert.NoError(t, appendFile(repo+"/README.md", "\nmodified content"), "append to README")
-		status, err := git.GetFileStatus("README.md")
-		assert.NoError(t, err, "get status")
-		assert.Equal(t, git.FileModified, status)
-	})
+func TestGetFileStatus(t *testing.T) {
+	t.Parallel()
 
-	t.Run("GetFileStatus detects staged file", func(t *testing.T) {
-		repo := temp_repo.InitTempRepo(t)
-		temp_repo.WriteFile(t, repo, "staged.txt", "content")
-		cmdrun.Run("git", "add", "staged.txt")
-		status, err := git.GetFileStatus("staged.txt")
-		assert.NoError(t, err, "get status")
-		assert.Equal(t, git.FileStaged, status)
-	})
+	cases := map[string]struct {
+		setup func(t *testing.T, dir string) string // returns target file
+		want  git.FileStatus
+	}{
+		"untracked": {
+			setup: func(t *testing.T, dir string) string {
+				temp_repo.WriteFile(t, dir, "untracked.txt", "content")
+				return "untracked.txt"
+			},
+			want: git.FileUntracked,
+		},
+		"modified": {
+			setup: func(t *testing.T, dir string) string {
+				assert.NoError(t, appendFile(dir+"/README.md", "\nmodified content"))
+				return "README.md"
+			},
+			want: git.FileModified,
+		},
+		"staged": {
+			setup: func(t *testing.T, dir string) string {
+				temp_repo.WriteFile(t, dir, "staged.txt", "content")
+				temp_repo.RunGit(t, dir, "add", "staged.txt")
+				return "staged.txt"
+			},
+			want: git.FileStaged,
+		},
+		"deleted": {
+			setup: func(t *testing.T, dir string) string {
+				temp_repo.WriteFile(t, dir, "deleted.txt", "content")
+				temp_repo.RunGit(t, dir, "add", "deleted.txt")
+				temp_repo.RunGit(t, dir, "commit", "-m", "add file")
+				assert.NoError(t, os.Remove(dir+"/deleted.txt"))
+				temp_repo.RunGit(t, dir, "rm", "deleted.txt")
+				return "deleted.txt"
+			},
+			want: git.FileDeleted,
+		},
+		"clean": {
+			setup: func(t *testing.T, dir string) string {
+				temp_repo.WriteFile(t, dir, "clean.txt", "content")
+				temp_repo.RunGit(t, dir, "add", "clean.txt")
+				temp_repo.RunGit(t, dir, "commit", "-m", "add file")
+				return "clean.txt"
+			},
+			want: git.FileUnknown,
+		},
+		"nonexistent": {
+			setup: func(t *testing.T, dir string) string { return "nonexistent.txt" },
+			want:  git.FileUnknown,
+		},
+	}
 
-	t.Run("GetFileStatus detects deleted file", func(t *testing.T) {
-		repo := temp_repo.InitTempRepo(t)
-		temp_repo.WriteFile(t, repo, "deleted.txt", "content")
-		cmdrun.Run("git", "add", "deleted.txt")
-		cmdrun.Run("git", "commit", "-m", "add file")
-		os.Remove(repo + "/deleted.txt")
-		cmdrun.Run("git", "rm", "deleted.txt")
-		status, err := git.GetFileStatus("deleted.txt")
-		assert.NoError(t, err, "get status")
-		assert.Equal(t, git.FileDeleted, status)
-	})
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			dir := temp_repo.NewRepo(t)
+			file := c.setup(t, dir)
+			status, _ := git.Repo{Dir: dir}.GetFileStatus(file)
+			assert.Equal(t, c.want, status)
+		})
+	}
+}
 
-	t.Run("GetFileStatus returns unknown for clean file", func(t *testing.T) {
-		repo := temp_repo.InitTempRepo(t)
-		temp_repo.WriteFile(t, repo, "clean.txt", "content")
-		cmdrun.Run("git", "add", "clean.txt")
-		cmdrun.Run("git", "commit", "-m", "add file")
-		status, err := git.GetFileStatus("clean.txt")
-		assert.NoError(t, err, "get status")
-		assert.Equal(t, git.FileUnknown, status)
-	})
+func TestGetBranchUpstream(t *testing.T) {
+	t.Parallel()
 
-	t.Run("GetFileStatus returns unknown for nonexistent file", func(t *testing.T) {
-		temp_repo.InitTempRepo(t)
-		status, _ := git.GetFileStatus("nonexistent.txt")
-		assert.Equal(t, git.FileUnknown, status)
-	})
-
-	t.Run("GetBranchUpstream returns empty for branch with no upstream", func(t *testing.T) {
-		repo := temp_repo.InitTempRepo(t)
-		temp_repo.RunGit(t, repo, "branch", "no-upstream")
-		remote, remoteBranch, err := git.GetBranchUpstream("no-upstream")
-		assert.NoError(t, err, "no upstream is not an error")
+	t.Run("no upstream", func(t *testing.T) {
+		t.Parallel()
+		dir := temp_repo.NewRepo(t)
+		temp_repo.RunGit(t, dir, "branch", "no-upstream")
+		remote, remoteBranch, err := git.Repo{Dir: dir}.GetBranchUpstream("no-upstream")
+		assert.NoError(t, err)
 		assert.Equal(t, "", remote)
 		assert.Equal(t, "", remoteBranch)
 	})
 
-	t.Run("GetBranchUpstream returns remote and branch for tracked branch", func(t *testing.T) {
-		repo := temp_repo.InitTempRepo(t)
-		temp_repo.RunGit(t, repo, "remote", "add", "origin", repo)
-		temp_repo.RunGit(t, repo, "fetch", "origin")
-		temp_repo.RunGit(t, repo, "branch", "--set-upstream-to=origin/main", "main")
-		remote, remoteBranch, err := git.GetBranchUpstream("main")
-		assert.NoError(t, err, "get upstream")
+	t.Run("tracked branch", func(t *testing.T) {
+		t.Parallel()
+		dir := temp_repo.NewRepo(t)
+		temp_repo.RunGit(t, dir, "remote", "add", "origin", dir)
+		temp_repo.RunGit(t, dir, "fetch", "origin")
+		temp_repo.RunGit(t, dir, "branch", "--set-upstream-to=origin/main", "main")
+		remote, remoteBranch, err := git.Repo{Dir: dir}.GetBranchUpstream("main")
+		assert.NoError(t, err)
 		assert.Equal(t, "origin", remote)
 		assert.Equal(t, "main", remoteBranch)
 	})
+}
 
-	t.Run("GetCurrentBranchUpstream returns empty for branch with no upstream", func(t *testing.T) {
-		repo := temp_repo.InitTempRepo(t)
-		temp_repo.RunGit(t, repo, "branch", "no-upstream")
-		temp_repo.RunGit(t, repo, "checkout", "no-upstream")
-		upstream, err := git.GetCurrentBranchUpstream()
-		assert.NoError(t, err, "no upstream is not an error")
+func TestGetCurrentBranchUpstream(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no upstream", func(t *testing.T) {
+		t.Parallel()
+		dir := temp_repo.NewRepo(t)
+		temp_repo.RunGit(t, dir, "branch", "no-upstream")
+		temp_repo.RunGit(t, dir, "checkout", "no-upstream")
+		upstream, err := git.Repo{Dir: dir}.GetCurrentBranchUpstream()
+		assert.NoError(t, err)
 		assert.Equal(t, "", upstream)
 	})
 
-	t.Run("GetCurrentBranchUpstream returns remote tracking branch when set", func(t *testing.T) {
-		repo := temp_repo.InitTempRepo(t)
-		temp_repo.RunGit(t, repo, "remote", "add", "origin", repo)
-		temp_repo.RunGit(t, repo, "fetch", "origin")
-		temp_repo.RunGit(t, repo, "branch", "--set-upstream-to=origin/main", "main")
-		upstream, err := git.GetCurrentBranchUpstream()
-		assert.NoError(t, err, "get upstream")
+	t.Run("set", func(t *testing.T) {
+		t.Parallel()
+		dir := temp_repo.NewRepo(t)
+		temp_repo.RunGit(t, dir, "remote", "add", "origin", dir)
+		temp_repo.RunGit(t, dir, "fetch", "origin")
+		temp_repo.RunGit(t, dir, "branch", "--set-upstream-to=origin/main", "main")
+		upstream, err := git.Repo{Dir: dir}.GetCurrentBranchUpstream()
+		assert.NoError(t, err)
 		assert.Equal(t, "origin/main", upstream)
 	})
 }

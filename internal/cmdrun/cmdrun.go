@@ -7,9 +7,17 @@ import (
 	"strings"
 )
 
-// Run executes a command and returns trimmed stdout, stderr, and error.
+// Run executes a command in the current working directory and returns trimmed
+// stdout, stderr, and error.
 func Run(name string, args ...string) (string, string, error) {
+	return RunIn("", name, args...)
+}
+
+// RunIn executes a command in dir (or the current working directory if dir is
+// empty) and returns trimmed stdout, stderr, and error.
+func RunIn(dir, name string, args ...string) (string, string, error) {
 	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

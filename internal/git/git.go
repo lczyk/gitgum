@@ -9,6 +9,17 @@ import (
 	"github.com/lczyk/gitgum/internal/cmdrun"
 )
 
+// Repo is a git repository identified by an absolute path. The zero value
+// addresses the current working directory, matching the CLI's natural binding.
+// Tests should construct Repo{Dir: tmpdir} and use the methods so they can
+// run in parallel without sharing process cwd.
+type Repo struct {
+	Dir string
+}
+
+// CWD returns a Repo bound to the process's current working directory.
+func CWD() Repo { return Repo{} }
+
 // FileStatus represents the status of a file in git.
 type FileStatus int
 
@@ -39,10 +50,15 @@ func parseFileStatus(statusCode string) FileStatus {
 	return FileUnknown
 }
 
+func (r Repo) run(args ...string) (string, string, error) {
+	return cmdrun.RunIn(r.Dir, "git", args...)
+}
+
 // GetFileStatus returns the status of a file in git.
-func GetFileStatus(file string) (FileStatus, error) {
+func (r Repo) GetFileStatus(file string) (FileStatus, error) {
 	// Don't use cmdrun.Run because it trims whitespace, which we need for parsing status.
 	cmd := exec.Command("git", "status", "--porcelain", file)
+	cmd.Dir = r.Dir
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	err := cmd.Run()
@@ -54,17 +70,16 @@ func GetFileStatus(file string) (FileStatus, error) {
 }
 
 // CheckInRepo verifies we're inside a git repository.
-func CheckInRepo() error {
-	_, _, err := cmdrun.Run("git", "rev-parse", "--is-inside-work-tree")
-	if err != nil {
+func (r Repo) CheckInRepo() error {
+	if _, _, err := r.run("rev-parse", "--is-inside-work-tree"); err != nil {
 		return fmt.Errorf("not inside a git repository")
 	}
 	return nil
 }
 
 // GetLocalBranches returns a list of local git branches.
-func GetLocalBranches() ([]string, error) {
-	stdout, _, err := cmdrun.Run("git", "branch")
+func (r Repo) GetLocalBranches() ([]string, error) {
+	stdout, _, err := r.run("branch")
 	if err != nil {
 		return nil, err
 	}
@@ -81,8 +96,8 @@ func GetLocalBranches() ([]string, error) {
 }
 
 // GetRemotes returns a list of git remotes.
-func GetRemotes() ([]string, error) {
-	stdout, _, err := cmdrun.Run("git", "remote")
+func (r Repo) GetRemotes() ([]string, error) {
+	stdout, _, err := r.run("remote")
 	if err != nil {
 		return nil, err
 	}
@@ -97,8 +112,8 @@ func GetRemotes() ([]string, error) {
 }
 
 // GetRemoteBranches returns branches for a specific remote.
-func GetRemoteBranches(remote string) ([]string, error) {
-	stdout, _, err := cmdrun.Run("git", "branch", "-r")
+func (r Repo) GetRemoteBranches(remote string) ([]string, error) {
+	stdout, _, err := r.run("branch", "-r")
 	if err != nil {
 		return nil, err
 	}
@@ -115,8 +130,8 @@ func GetRemoteBranches(remote string) ([]string, error) {
 
 // GetBranchUpstream returns the remote and branch name of the upstream for a local branch.
 // Returns ("", "", nil) if the branch has no upstream configured.
-func GetBranchUpstream(branch string) (remote string, remoteBranch string, err error) {
-	stdout, stderr, err := cmdrun.Run("git", "rev-parse", "--abbrev-ref", branch+"@{u}")
+func (r Repo) GetBranchUpstream(branch string) (remote string, remoteBranch string, err error) {
+	stdout, stderr, err := r.run("rev-parse", "--abbrev-ref", branch+"@{u}")
 	if err != nil && strings.Contains(stderr, "no upstream configured for branch") {
 		return "", "", nil
 	}
@@ -131,14 +146,14 @@ func GetBranchUpstream(branch string) (remote string, remoteBranch string, err e
 }
 
 // GetBranchTrackingRemote returns the remote that a local branch tracks, or "" if none.
-func GetBranchTrackingRemote(branch string) (string, error) {
-	remote, _, err := GetBranchUpstream(branch)
+func (r Repo) GetBranchTrackingRemote(branch string) (string, error) {
+	remote, _, err := r.GetBranchUpstream(branch)
 	return remote, err
 }
 
 // IsWorktreeCheckedOut checks if a branch is checked out in a worktree.
-func IsWorktreeCheckedOut(branch string) (bool, string, error) {
-	stdout, _, err := cmdrun.Run("git", "worktree", "list")
+func (r Repo) IsWorktreeCheckedOut(branch string) (bool, string, error) {
+	stdout, _, err := r.run("worktree", "list")
 	if err != nil {
 		return false, "", err
 	}
@@ -154,27 +169,27 @@ func IsWorktreeCheckedOut(branch string) (bool, string, error) {
 }
 
 // GetCommitHash returns the commit hash for a ref.
-func GetCommitHash(ref string) (string, error) {
-	stdout, _, err := cmdrun.Run("git", "rev-parse", ref)
+func (r Repo) GetCommitHash(ref string) (string, error) {
+	stdout, _, err := r.run("rev-parse", ref)
 	return stdout, err
 }
 
 // BranchExists checks if a local branch exists.
-func BranchExists(branch string) bool {
-	stdout, _, err := cmdrun.Run("git", "branch", "--list", branch, "--format=%(refname:short)")
+func (r Repo) BranchExists(branch string) bool {
+	stdout, _, err := r.run("branch", "--list", branch, "--format=%(refname:short)")
 	return err == nil && stdout != ""
 }
 
 // GetCurrentBranch returns the name of the current branch.
-func GetCurrentBranch() (string, error) {
-	stdout, _, err := cmdrun.Run("git", "rev-parse", "--abbrev-ref", "HEAD")
+func (r Repo) GetCurrentBranch() (string, error) {
+	stdout, _, err := r.run("rev-parse", "--abbrev-ref", "HEAD")
 	return stdout, err
 }
 
 // GetCurrentBranchUpstream returns the upstream tracking branch for the current branch.
 // Returns ("", nil) if the current branch has no upstream configured.
-func GetCurrentBranchUpstream() (string, error) {
-	stdout, stderr, err := cmdrun.Run("git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+func (r Repo) GetCurrentBranchUpstream() (string, error) {
+	stdout, stderr, err := r.run("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
 	if err != nil && strings.Contains(stderr, "no upstream configured for branch") {
 		return "", nil
 	}
@@ -185,8 +200,8 @@ func GetCurrentBranchUpstream() (string, error) {
 }
 
 // RemoteBranchExists checks if a branch exists on a remote.
-func RemoteBranchExists(remote, branch string) (bool, error) {
-	_, _, err := cmdrun.Run("git", "ls-remote", "--exit-code", "--heads", remote, branch)
+func (r Repo) RemoteBranchExists(remote, branch string) (bool, error) {
+	_, _, err := r.run("ls-remote", "--exit-code", "--heads", remote, branch)
 	if err != nil {
 		return false, nil
 	}
@@ -194,18 +209,18 @@ func RemoteBranchExists(remote, branch string) (bool, error) {
 }
 
 // IsBranchAheadOfRemote reports whether localBranch has commits not in remoteBranch.
-func IsBranchAheadOfRemote(localBranch, remoteBranch string) (bool, error) {
-	stdout, _, err := cmdrun.Run("git", "log", "--oneline", remoteBranch+".."+localBranch)
+func (r Repo) IsBranchAheadOfRemote(localBranch, remoteBranch string) (bool, error) {
+	stdout, _, err := r.run("log", "--oneline", remoteBranch+".."+localBranch)
 	if err != nil {
 		return false, err
 	}
 	return strings.TrimSpace(stdout) != "", nil
 }
 
-// IsDirty reports whether dir has tracked changes (ignoring untracked files).
-func IsDirty(dir string) (bool, error) {
+// IsDirty reports whether the repo has tracked changes (ignoring untracked files).
+func (r Repo) IsDirty() (bool, error) {
 	cmd := exec.Command("git", "status", "--porcelain=v1")
-	cmd.Dir = dir
+	cmd.Dir = r.Dir
 	output, err := cmd.Output()
 	if err != nil {
 		return false, err
@@ -220,3 +235,35 @@ func IsDirty(dir string) (bool, error) {
 	}
 	return false, nil
 }
+
+// Free-function shims that operate on the current working directory. These
+// preserve the existing CLI command call sites — production binaries inherit
+// the user's CWD and these forward to Repo{}.
+
+func GetFileStatus(file string) (FileStatus, error) { return CWD().GetFileStatus(file) }
+func CheckInRepo() error                            { return CWD().CheckInRepo() }
+func GetLocalBranches() ([]string, error)           { return CWD().GetLocalBranches() }
+func GetRemotes() ([]string, error)                 { return CWD().GetRemotes() }
+func GetRemoteBranches(remote string) ([]string, error) {
+	return CWD().GetRemoteBranches(remote)
+}
+func GetBranchUpstream(branch string) (string, string, error) {
+	return CWD().GetBranchUpstream(branch)
+}
+func GetBranchTrackingRemote(branch string) (string, error) {
+	return CWD().GetBranchTrackingRemote(branch)
+}
+func IsWorktreeCheckedOut(branch string) (bool, string, error) {
+	return CWD().IsWorktreeCheckedOut(branch)
+}
+func GetCommitHash(ref string) (string, error)  { return CWD().GetCommitHash(ref) }
+func BranchExists(branch string) bool           { return CWD().BranchExists(branch) }
+func GetCurrentBranch() (string, error)         { return CWD().GetCurrentBranch() }
+func GetCurrentBranchUpstream() (string, error) { return CWD().GetCurrentBranchUpstream() }
+func RemoteBranchExists(remote, branch string) (bool, error) {
+	return CWD().RemoteBranchExists(remote, branch)
+}
+func IsBranchAheadOfRemote(local, remote string) (bool, error) {
+	return CWD().IsBranchAheadOfRemote(local, remote)
+}
+func IsDirty(dir string) (bool, error) { return Repo{Dir: dir}.IsDirty() }
