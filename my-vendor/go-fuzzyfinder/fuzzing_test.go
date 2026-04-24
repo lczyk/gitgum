@@ -123,7 +123,7 @@ func TestFuzz(t *testing.T) {
 			f, term := fuzzyfinder.NewWithMockedTerminal()
 			events = append(events, key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 
-			term.SetEventsV2(events...)
+			term.SetEvents(events...)
 
 			var (
 				iface     interface{}

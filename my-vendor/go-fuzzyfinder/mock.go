@@ -66,7 +66,7 @@ func (m *TerminalMock) GetResult() string {
 				prevFg, prevBg = fg, bg
 
 				s += "\x1b\x5b\x6d" // Reset previous color.
-				v := parseAttrV2(fg, bg, attr)
+				v := parseAttr(fg, bg, attr)
 				s += v
 			}
 
@@ -102,8 +102,8 @@ func (f *finder) UseMockedTerminal() *TerminalMock {
 	return m
 }
 
-// parseAttrV2 parses color and attribute for testing.
-func parseAttrV2(fg, bg tcell.Color, attr tcell.AttrMask) string {
+// parseAttr parses color and attribute for testing.
+func parseAttr(fg, bg tcell.Color, attr tcell.AttrMask) string {
 	if attr == tcell.AttrInvalid {
 		panic("invalid attribute")
 	}
