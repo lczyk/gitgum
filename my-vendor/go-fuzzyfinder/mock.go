@@ -24,8 +24,7 @@ func (m *TerminalMock) SetEvents(events ...tcell.Event) {
 		case *tcell.EventKey:
 			m.simScreen.InjectKey(event.Key(), event.Rune(), event.Modifiers())
 		case *tcell.EventResize:
-			w, h := event.Size()
-			m.simScreen.SetSize(w, h)
+			m.simScreen.SetSize(event.Size())
 		}
 	}
 }
@@ -76,10 +75,6 @@ func (m *TerminalMock) GetResult() string {
 
 // parseAttr parses color and attribute for testing.
 func parseAttr(fg, bg tcell.Color, attr tcell.AttrMask) string {
-	if attr == tcell.AttrInvalid {
-		panic("invalid attribute")
-	}
-
 	var params []string
 	if attr&tcell.AttrBold == tcell.AttrBold {
 		params = append(params, "1")
