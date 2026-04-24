@@ -2,7 +2,6 @@ package fuzzyfinder_test
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"log"
 	"os"
@@ -250,7 +249,7 @@ func TestFind(t *testing.T) {
 
 			assertWithGolden(t, func(t *testing.T) string {
 				_, err := f.Find(trackNames(), opts...)
-				assert.That(t, errors.Is(err, fuzzyfinder.ErrAbort), "expected ErrAbort, got", err)
+				assert.Error(t, err, fuzzyfinder.ErrAbort)
 
 				res := term.GetResult()
 				return res
@@ -273,7 +272,7 @@ func TestFind_hotReload(t *testing.T) {
 			&sync.Mutex{},
 			fuzzyfinder.WithMode(fuzzyfinder.ModeCaseSensitive),
 		)
-		assert.That(t, errors.Is(err, fuzzyfinder.ErrAbort), "expected ErrAbort, got", err)
+		assert.Error(t, err, fuzzyfinder.ErrAbort)
 
 		res := term.GetResult()
 		return res
@@ -295,7 +294,7 @@ func TestFind_hotReloadLock(t *testing.T) {
 			mu.RLocker(),
 			fuzzyfinder.WithMode(fuzzyfinder.ModeCaseSensitive),
 		)
-		assert.That(t, errors.Is(err, fuzzyfinder.ErrAbort), "expected ErrAbort, got", err)
+		assert.Error(t, err, fuzzyfinder.ErrAbort)
 
 		res := term.GetResult()
 		return res
@@ -342,7 +341,7 @@ func TestFind_withContext(t *testing.T) {
 
 	assertWithGolden(t, func(t *testing.T) string {
 		_, err := f.Find(trackNames(), fuzzyfinder.WithContext(cancelledCtx))
-		assert.That(t, errors.Is(err, context.Canceled), "expected context.Canceled, got", err)
+		assert.Error(t, err, context.Canceled)
 
 		res := term.GetResult()
 		return res
@@ -416,7 +415,7 @@ func TestFind_WithSelectOne(t *testing.T) {
 			assertWithGolden(t, func(t *testing.T) string {
 				idx, err := f.Find(c.things, append(c.moreOpts, fuzzyfinder.WithSelectOne())...)
 				if c.abort {
-					assert.That(t, errors.Is(err, fuzzyfinder.ErrAbort), "expected ErrAbort, got", err)
+					assert.Error(t, err, fuzzyfinder.ErrAbort)
 				} else {
 					assert.NoError(t, err)
 					assert.Equal(t, c.expected, idx)
@@ -467,11 +466,11 @@ func TestFindMulti(t *testing.T) {
 
 			idxs, err := f.FindMulti(trackNames())
 			if c.abort {
-				assert.That(t, errors.Is(err, fuzzyfinder.ErrAbort), "expected ErrAbort, got", err)
+				assert.Error(t, err, fuzzyfinder.ErrAbort)
 				return
 			}
 			assert.NoError(t, err)
-			assert.Equal(t, len(c.expected), len(idxs))
+			assert.Len(t, idxs, len(c.expected))
 		})
 	}
 }
@@ -486,7 +485,7 @@ func BenchmarkFind(b *testing.B) {
 			term.SetEvents(events...)
 
 			_, err := f.Find(trackNames())
-			assert.That(b, errors.Is(err, fuzzyfinder.ErrAbort), "expected ErrAbort, got", err)
+			assert.Error(b, err, fuzzyfinder.ErrAbort)
 		}
 	})
 
@@ -500,7 +499,7 @@ func BenchmarkFind(b *testing.B) {
 
 			names := trackNames()
 			_, err := f.FindLive(&names, &sync.Mutex{})
-			assert.That(b, errors.Is(err, fuzzyfinder.ErrAbort), "expected ErrAbort, got", err)
+			assert.Error(b, err, fuzzyfinder.ErrAbort)
 		}
 	})
 }

@@ -116,10 +116,10 @@ func TestFuzz(t *testing.T) {
 					}
 				}()
 				_, err := finder.FindLive(&items, &mu, opts...)
-				assert.That(t, errors.Is(err, fuzzyfinder.ErrAbort), "expected ErrAbort, got", err)
+				assert.Error(t, err, fuzzyfinder.ErrAbort)
 			} else {
 				_, err := finder.Find(items, opts...)
-				assert.That(t, errors.Is(err, fuzzyfinder.ErrAbort), "expected ErrAbort, got", err)
+				assert.Error(t, err, fuzzyfinder.ErrAbort)
 			}
 		})
 	}

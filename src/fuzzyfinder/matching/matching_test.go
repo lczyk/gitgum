@@ -34,10 +34,10 @@ func TestMatch(t *testing.T) {
 
 			matched := matching.FindAll(c.in, slice, matching.WithMode(c.mode))
 			if c.expected == "" {
-				assert.Equal(t, 0, len(matched))
+				assert.Len(t, matched, 0)
 				return
 			}
-			assert.Equal(t, 1, len(matched))
+			assert.Len(t, matched, 1)
 			m := matched[0]
 			assert.Equal(t, c.idx, m.Idx)
 			runes := []rune(slice[c.idx])
@@ -59,7 +59,7 @@ func TestFindAllWithMatcher(t *testing.T) {
 	matched := matching.FindAll("foo", slice, matching.WithMatcher(substringMatcher))
 
 	wantIdxs := map[int]bool{0: true, 3: true}
-	assert.Equal(t, len(wantIdxs), len(matched))
+	assert.Len(t, matched, len(wantIdxs))
 	for _, m := range matched {
 		assert.That(t, wantIdxs[m.Idx], "unexpected Idx", m.Idx)
 	}

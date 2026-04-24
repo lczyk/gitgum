@@ -28,9 +28,9 @@ func TestListCommits(t *testing.T) {
 				return "feature", "main"
 			},
 			verifyCommits: func(t *testing.T, commits []string) {
-				assert.That(t, len(commits) == 3, "should have 3 commits")
+				assert.Len(t, commits, 3, "should have 3 commits")
 				for _, hash := range commits {
-					assert.That(t, len(hash) == 40, "commit hash should be 40 chars (SHA-1)")
+					assert.Len(t, hash, 40, "commit hash should be 40 chars (SHA-1)")
 				}
 			},
 		},
@@ -40,7 +40,7 @@ func TestListCommits(t *testing.T) {
 				return "feature2", "main"
 			},
 			verifyCommits: func(t *testing.T, commits []string) {
-				assert.That(t, len(commits) == 0, "should have no commits")
+				assert.Len(t, commits, 0, "should have no commits")
 			},
 		},
 		"error when branch A doesn't exist": {
@@ -70,7 +70,7 @@ func TestListCommits(t *testing.T) {
 				return "feature3", "main"
 			},
 			verifyCommits: func(t *testing.T, commits []string) {
-				assert.That(t, len(commits) == 3, "should have 3 commits in chronological order")
+				assert.Len(t, commits, 3, "should have 3 commits in chronological order")
 			},
 		},
 	}
