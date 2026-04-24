@@ -67,7 +67,7 @@ func TestListCommits(t *testing.T) {
 			setup: func(t *testing.T, dir string) (string, string) {
 				temp_repo.RunGit(t, dir, "checkout", "-b", "feature3")
 
-				for i := 0; i < 3; i++ {
+				for i := range 3 {
 					temp_repo.CreateCommit(t, dir,
 						fmt.Sprintf("ordered%c.txt", 'a'+i), "content\n",
 						fmt.Sprintf("Ordered commit %c", 'A'+i))
@@ -92,8 +92,7 @@ func TestListCommits(t *testing.T) {
 			if tt.expectError {
 				assert.That(t, err != nil, "expected error")
 				if tt.errorContains != "" {
-					assert.That(t, err != nil && fmt.Sprint(err) != "",
-						"error should contain '"+tt.errorContains+"'")
+					assert.ContainsString(t, err.Error(), tt.errorContains)
 				}
 			} else {
 				assert.NoError(t, err, "should not error")
