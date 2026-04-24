@@ -3,8 +3,6 @@ package completions
 import (
 	_ "embed"
 	"fmt"
-	"maps"
-	"slices"
 	"strings"
 )
 
@@ -19,18 +17,20 @@ var zshCompletion string
 
 const placeholder = "__GITGUM_CMD__"
 
+var templates = map[string]string{
+	"bash": bashCompletion,
+	"fish": fishCompletion,
+	"zsh":  zshCompletion,
+}
+
+var validShells = []string{"bash", "fish", "zsh"}
+
 // Render returns the completion script for the given shell with the command
 // name substituted in.
 func Render(shell, cmdName string) (string, error) {
-	templates := map[string]string{
-		"bash": bashCompletion,
-		"fish": fishCompletion,
-		"zsh":  zshCompletion,
-	}
 	content, ok := templates[shell]
 	if !ok {
-		shells := slices.Sorted(maps.Keys(templates))
-		return "", fmt.Errorf("invalid shell type '%s', must be one of: %s", shell, strings.Join(shells, ", "))
+		return "", fmt.Errorf("invalid shell type '%s', must be one of: %s", shell, strings.Join(validShells, ", "))
 	}
 	return strings.ReplaceAll(content, placeholder, cmdName), nil
 }
