@@ -38,17 +38,6 @@ func RunCommandWithOutput(name string, args ...string) error {
 	return cmd.Run()
 }
 
-// runCommandWithInput executes a command with stdin input
-func runCommandWithInput(input string, name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
-	cmd.Stdin = strings.NewReader(input)
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = os.Stderr
-	err := cmd.Run()
-	return strings.TrimSpace(stdout.String()), err
-}
-
 // WriteFile writes content to a file
 func WriteFile(path string, content string) error {
 	return os.WriteFile(path, []byte(content), 0644)
@@ -224,8 +213,7 @@ func GetRemoteBranches(remote string) ([]string, error) {
 // If the branch does not track any remote, returns an empty string.
 func GetBranchTrackingRemote(branch string) (string, error) {
 	stdout, stderr, err := RunCommand("git", "rev-parse", "--abbrev-ref", branch+"@{u}")
-	_pattern := "no upstream configured for branch"
-	if err != nil && strings.Contains(stderr, _pattern) {
+	if err != nil && strings.Contains(stderr, "no upstream configured for branch") {
 		// no tracking remote
 		return "", nil
 	}
@@ -272,13 +260,8 @@ func BranchExists(branch string) bool {
 	return err == nil && stdout != ""
 }
 
-// PrintBlue prints a message in black color (mimicking the bash _blue function)
-// Note: The bash version actually uses BLACK color despite the function name
-func PrintBlue(message string) {
-	// ANSI color codes: Black text
-	black := "\033[0;30m"
-	reset := "\033[0m"
-	fmt.Printf("%s%s%s\n", black, message, reset)
+func PrintHeader(message string) {
+	fmt.Printf("\033[0;30m%s\033[0m\n", message)
 }
 
 // GetCurrentBranch returns the name of the current branch

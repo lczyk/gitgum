@@ -17,7 +17,7 @@ func (s *StatusCommand) Execute(args []string) error {
 	}
 
 	// Show the remote branches and their status
-	internal.PrintBlue("--- BRANCHES ---------------------------")
+	internal.PrintHeader("--- BRANCHES ---------------------------")
 	if err := internal.RunCommandWithOutput("git", "--no-pager", "branch", "-vv"); err != nil {
 		return fmt.Errorf("error getting branches: %v", err)
 	}
@@ -32,7 +32,7 @@ func (s *StatusCommand) Execute(args []string) error {
 		// Process remotes to get unique entries (remove duplicates from fetch/push)
 		remotes := parseRemotes(stdout)
 		if len(remotes) > 0 {
-			internal.PrintBlue("--- REMOTES ----------------------------")
+			internal.PrintHeader("--- REMOTES ----------------------------")
 			for _, remote := range remotes {
 				fmt.Println(remote)
 			}
@@ -46,12 +46,12 @@ func (s *StatusCommand) Execute(args []string) error {
 	}
 
 	if changes != "" {
-		internal.PrintBlue("--- CHANGES ----------------------------")
+		internal.PrintHeader("--- CHANGES ----------------------------")
 		fmt.Println(changes)
 	}
 
 	// Show the status of the repository at the very end
-	internal.PrintBlue("--- STATUS -----------------------------")
+	internal.PrintHeader("--- STATUS -----------------------------")
 
 	// Try to use unbuffer to preserve color output
 	if isCommandAvailable("unbuffer") {
