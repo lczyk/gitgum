@@ -2,8 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 
 	"github.com/lczyk/gitgum/src/internal"
 )
@@ -29,7 +27,7 @@ func (r *ReplayListCommand) Execute(args []string) error {
 	// Compute merge base between A and B
 	mergeBase, _, err := internal.RunCommand("git", "merge-base", branchA, branchB)
 	if err != nil {
-		return fmt.Errorf("failed to find merge base between '%s' and '%s': %v", branchA, branchB, err)
+		return fmt.Errorf("failed to find merge base between '%s' and '%s': %w", branchA, branchB, err)
 	}
 
 	if mergeBase == "" {
@@ -38,12 +36,8 @@ func (r *ReplayListCommand) Execute(args []string) error {
 
 	// List commits from merge-base to A in reverse (chronological) order
 	revRange := mergeBase + ".." + branchA
-	cmd := exec.Command("git", "rev-list", revRange, "--reverse")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to list commits: %v", err)
+	if err := internal.RunCommandWithOutput("git", "rev-list", revRange, "--reverse"); err != nil {
+		return fmt.Errorf("failed to list commits: %w", err)
 	}
 
 	return nil
