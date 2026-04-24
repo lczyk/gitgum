@@ -70,7 +70,7 @@ type state struct {
 }
 
 type finder struct {
-	term      terminal
+	term      tcell.Screen
 	stateMu   sync.RWMutex
 	state     state
 	drawTimer *time.Timer
@@ -90,9 +90,7 @@ func (f *finder) initFinder(items []string, matched []matching.Matched, opt opt)
 		if err != nil {
 			return errors.Wrap(err, "failed to new screen")
 		}
-		f.term = &termImpl{
-			screen: screen,
-		}
+		f.term = screen
 		if err := f.term.Init(); err != nil {
 			return errors.Wrap(err, "failed to initialize screen")
 		}
