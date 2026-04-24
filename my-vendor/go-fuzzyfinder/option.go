@@ -104,13 +104,6 @@ func WithPromptString(s string) Option {
 	}
 }
 
-// withMulti enables to select multiple items by tab key.
-func withMulti() Option {
-	return func(o *opt) {
-		o.multi = true
-	}
-}
-
 // WithHeader enables to set the header.
 func WithHeader(s string) Option {
 	return func(o *opt) {

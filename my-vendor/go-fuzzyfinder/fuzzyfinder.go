@@ -730,7 +730,7 @@ func (f *finder) filter() {
 	}
 }
 
-func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Option) ([]int, error) {
+func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Option, multi bool) ([]int, error) {
 	if itemFunc == nil {
 		return nil, errors.New("itemFunc must not be nil")
 	}
@@ -739,6 +739,7 @@ func (f *finder) find(slice interface{}, itemFunc func(i int) string, opts []Opt
 	for _, o := range opts {
 		o(&opt)
 	}
+	opt.multi = multi
 
 	rv := reflect.ValueOf(slice)
 	if opt.hotReload && (rv.Kind() != reflect.Ptr || reflect.Indirect(rv).Kind() != reflect.Slice) {
@@ -889,7 +890,7 @@ func Find(slice interface{}, itemFunc func(i int) string, opts ...Option) (int, 
 }
 
 func (f *finder) Find(slice interface{}, itemFunc func(i int) string, opts ...Option) (int, error) {
-	res, err := f.find(slice, itemFunc, opts)
+	res, err := f.find(slice, itemFunc, opts, false)
 
 	if err != nil {
 		return 0, err
@@ -905,8 +906,7 @@ func FindMulti(slice interface{}, itemFunc func(i int) string, opts ...Option) (
 }
 
 func (f *finder) FindMulti(slice interface{}, itemFunc func(i int) string, opts ...Option) ([]int, error) {
-	opts = append(opts, withMulti())
-	res, err := f.find(slice, itemFunc, opts)
+	res, err := f.find(slice, itemFunc, opts, true)
 	return res, err
 }
 
