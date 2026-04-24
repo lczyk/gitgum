@@ -152,19 +152,17 @@ func isDebug() bool {
 	return os.Getenv("DEBUG") != ""
 }
 
-var delimiterRunes = map[rune]interface{}{
-	'(': nil,
-	'[': nil,
-	'{': nil,
-	'/': nil,
-	'-': nil,
-	'_': nil,
-	'.': nil,
+var delimiterRunes = map[rune]struct{}{
+	'(': {},
+	'[': {},
+	'{': {},
+	'/': {},
+	'-': {},
+	'_': {},
+	'.': {},
 }
 
 func isDelimiter(r rune) bool {
-	if _, ok := delimiterRunes[r]; ok {
-		return true
-	}
-	return unicode.IsSpace(r)
+	_, ok := delimiterRunes[r]
+	return ok || unicode.IsSpace(r)
 }
