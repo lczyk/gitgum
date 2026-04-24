@@ -75,34 +75,9 @@ func FindAll(in string, slice []string, opts ...Option) []Matched {
 // match iterates each string of slice for check whether it is matched to the input string.
 func match(input string, slice []string, opt opt) (res []Matched) {
 	if opt.matcher != nil {
-		// Use custom matcher
 		for idxOfSlice, s := range slice {
 			if opt.matcher(input, s) {
-				// For custom matcher, calculate positions of matched words
-				words := strings.Fields(input)
-				minPos := len(s)
-				maxPos := 0
-				for _, word := range words {
-					lowerS := strings.ToLower(s)
-					lowerWord := strings.ToLower(word)
-					if idx := strings.Index(lowerS, lowerWord); idx != -1 {
-						if idx < minPos {
-							minPos = idx
-						}
-						end := idx + len(word)
-						if end > maxPos {
-							maxPos = end
-						}
-					}
-				}
-				if minPos > maxPos {
-					minPos, maxPos = 0, len(s)
-				}
-				res = append(res, Matched{
-					Idx:   idxOfSlice,
-					Pos:   [2]int{minPos, maxPos},
-					score: 1000, // High score for matches
-				})
+				res = append(res, Matched{Idx: idxOfSlice, score: 1000})
 			}
 		}
 		return res

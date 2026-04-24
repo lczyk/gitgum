@@ -1,7 +1,7 @@
 package matching_test
 
 import (
-	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/ktr0731/go-fuzzyfinder/matching"
@@ -53,16 +53,38 @@ func TestMatch(t *testing.T) {
 			}
 			from, to := m.Pos[0], m.Pos[1]+1
 			var actual string
-			fmt.Println(to, slice[c.idx])
 			if to > len(slice[c.idx]) {
 				actual = slice[c.idx][from:]
 			} else {
 				actual = slice[c.idx][from:to]
 			}
 			if actual != c.expected {
-				t.Errorf("invalid range: from = %d, to = %d, content = %s, expected = %s", from, to, slice[2][from:to], c.expected)
+				t.Errorf("invalid range: from = %d, to = %d, content = %s, expected = %s", from, to, slice[c.idx][from:to], c.expected)
 			}
 		})
+	}
+}
+
+func TestFindAllWithMatcher(t *testing.T) {
+	t.Parallel()
+
+	slice := []string{"foo", "bar", "baz", "foobar"}
+
+	// matcher that matches items containing query as a substring
+	substringMatcher := func(query, item string) bool {
+		return len(query) > 0 && strings.Contains(item, query)
+	}
+
+	matched := matching.FindAll("foo", slice, matching.WithMatcher(substringMatcher))
+
+	wantIdxs := map[int]bool{0: true, 3: true}
+	if len(matched) != len(wantIdxs) {
+		t.Fatalf("want %d matches, got %d", len(wantIdxs), len(matched))
+	}
+	for _, m := range matched {
+		if !wantIdxs[m.Idx] {
+			t.Errorf("unexpected Idx %d in results", m.Idx)
+		}
 	}
 }
 
