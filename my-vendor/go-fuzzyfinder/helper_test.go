@@ -12,7 +12,7 @@ func NewWithMockedTerminal() (*finder, *TerminalMock) {
 	f := New()
 	f.termEventsChan = eventsChan
 
-	m := f.UseMockedTerminalV2()
+	m := f.UseMockedTerminal()
 	go m.ChannelEvents(eventsChan, nil)
 
 	w, h := 60, 10 // A normally value.

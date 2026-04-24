@@ -71,7 +71,7 @@ func ExampleFindMulti() {
 
 func ExampleTerminalMock() {
 	// Initialize a mocked terminal.
-	term := fuzzyfinder.UseMockedTerminalV2()
+	term := fuzzyfinder.UseMockedTerminal()
 	keys := "foo"
 	for _, r := range keys {
 		term.InjectKey(tcell.KeyRune, r, tcell.ModNone)

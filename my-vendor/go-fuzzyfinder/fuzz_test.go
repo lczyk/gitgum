@@ -17,7 +17,7 @@ func FuzzPreviewWindow(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, s string) {
 		finder, term := fuzzyfinder.NewWithMockedTerminal()
-		term.SetEventsV2(key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
+		term.SetEvents(key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 
 		_, err := finder.Find(
 			slice,
