@@ -50,11 +50,10 @@ func TestMatch(t *testing.T) {
 			if m.Idx != c.idx {
 				t.Fatalf("m.Idx must be equal to %d, but got %d", c.idx, m.Idx)
 			}
-			from := m.Pos[0]
-			to := min(m.Pos[1]+1, len(slice[c.idx]))
-			actual := slice[c.idx][from:to]
+			runes := []rune(slice[c.idx])
+			actual := string(runes[m.Pos[0] : m.Pos[1]+1])
 			if actual != c.expected {
-				t.Errorf("invalid range: from = %d, to = %d, content = %s, expected = %s", from, to, actual, c.expected)
+				t.Errorf("invalid pos: from = %d, to = %d, content = %s, expected = %s", m.Pos[0], m.Pos[1], actual, c.expected)
 			}
 		})
 	}
