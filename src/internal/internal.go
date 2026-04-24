@@ -275,9 +275,13 @@ func GetCurrentBranch() (string, error) {
 	return stdout, err
 }
 
-// GetCurrentBranchUpstream returns the upstream tracking branch for the current branch
+// GetCurrentBranchUpstream returns the upstream tracking branch for the current branch.
+// returns ("", nil) if the current branch has no upstream configured.
 func GetCurrentBranchUpstream() (string, error) {
-	stdout, _, err := RunCommand("git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+	stdout, stderr, err := RunCommand("git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+	if err != nil && strings.Contains(stderr, "no upstream configured for branch") {
+		return "", nil
+	}
 	if err != nil {
 		return "", err
 	}

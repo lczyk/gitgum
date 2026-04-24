@@ -134,6 +134,25 @@ func TestGitFunctions(t *testing.T) {
 		assert.Equal(t, "origin", remote)
 		assert.Equal(t, "main", remoteBranch)
 	})
+
+	t.Run("GetCurrentBranchUpstream returns empty for branch with no upstream", func(t *testing.T) {
+		repo := temp_repo.InitTempRepo(t)
+		temp_repo.CreateBranch(t, repo, "no-upstream")
+		temp_repo.RunGit(t, repo, "checkout", "no-upstream")
+		upstream, err := internal.GetCurrentBranchUpstream()
+		assert.NoError(t, err, "no upstream is not an error")
+		assert.Equal(t, "", upstream)
+	})
+
+	t.Run("GetCurrentBranchUpstream returns remote tracking branch when set", func(t *testing.T) {
+		repo := temp_repo.InitTempRepo(t)
+		temp_repo.RunGit(t, repo, "remote", "add", "origin", repo) // point at self
+		temp_repo.RunGit(t, repo, "fetch", "origin")
+		temp_repo.RunGit(t, repo, "branch", "--set-upstream-to=origin/main", "main")
+		upstream, err := internal.GetCurrentBranchUpstream()
+		assert.NoError(t, err, "get upstream")
+		assert.Equal(t, "origin/main", upstream)
+	})
 }
 
 func appendFile(path, s string) error {

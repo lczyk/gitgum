@@ -15,7 +15,10 @@ func (p *PushCommand) Execute(args []string) error {
 	}
 
 	remoteBranch, err := internal.GetCurrentBranchUpstream()
-	if err == nil && remoteBranch != "" {
+	if err != nil {
+		return err
+	}
+	if remoteBranch != "" {
 		fmt.Printf("Current branch already has a remote tracking branch: %s\n", remoteBranch)
 		confirmed, err := internal.FzfConfirm("Do you want to push to the remote tracking branch?", true)
 		if err != nil {
