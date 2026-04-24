@@ -62,22 +62,22 @@ func GetGitFileStatus(file string) (GitFileStatus, error) {
 	cmd.Stdout = &stdout
 	err := cmd.Run()
 	output := stdout.String()
-	
+
 	if err != nil || output == "" {
 		return GitFileUnknown, err
 	}
-	
+
 	if len(output) < 2 {
 		return GitFileUnknown, nil
 	}
-	
+
 	status := output[:2]
-	
+
 	// Untracked file (status: ??)
 	if status[0] == '?' && status[1] == '?' {
 		return GitFileUntracked, nil
 	}
-	
+
 	// Staged changes (first character is not space)
 	if status[0] != ' ' && status[0] != '?' {
 		if status[0] == 'D' {
@@ -85,12 +85,12 @@ func GetGitFileStatus(file string) (GitFileStatus, error) {
 		}
 		return GitFileStaged, nil
 	}
-	
+
 	// Modified (second character is not space)
 	if status[1] != ' ' && status[1] != '?' {
 		return GitFileModified, nil
 	}
-	
+
 	return GitFileUnknown, nil
 }
 
@@ -311,7 +311,7 @@ func IsGitDirty(dir string) (bool, error) {
 		return false, err
 	}
 	files := strings.Split(strings.TrimSpace(string(output)), "\n")
-	
+
 	// filter out untracked files
 	for _, file := range files {
 		if strings.HasPrefix(file, "??") {

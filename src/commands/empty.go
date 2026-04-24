@@ -18,17 +18,8 @@ func (e *EmptyCommand) Execute(args []string) error {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
 
-	upstream, err := internal.GetCurrentBranchUpstream()
-	if err != nil {
+	if _, err := internal.GetCurrentBranchUpstream(); err != nil {
 		return fmt.Errorf("getting upstream: %w", err)
-	}
-
-	ahead, err := internal.IsBranchAheadOfRemote(currentBranch, upstream)
-	if err != nil {
-		return fmt.Errorf("checking ahead status: %w", err)
-	}
-	if ahead {
-		return fmt.Errorf("refusing to create empty commit: branch '%s' is ahead of remote '%s'", currentBranch, upstream)
 	}
 
 	if err := internal.RunCommandWithOutput("git", "commit", "--allow-empty", "-m", "chore: empty commit"); err != nil {

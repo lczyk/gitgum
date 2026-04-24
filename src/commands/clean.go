@@ -164,4 +164,3 @@ func getAffectedFiles(changes, untracked, ignored bool) ([]string, error) {
 
 	return affectedFiles, nil
 }
-

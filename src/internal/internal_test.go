@@ -12,8 +12,8 @@ import (
 
 func TestGitFunctions(t *testing.T) {
 	tests := []struct {
-		name  string
-		run   func(t *testing.T)
+		name string
+		run  func(t *testing.T)
 	}{
 		{
 			name: "CheckInGitRepo succeeds",
