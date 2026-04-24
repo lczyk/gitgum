@@ -1,1 +1,9 @@
 bin/
+
+# Go build artifacts accidentally produced in repo root
+/gitgum
+/generate-version
+
+# Editor / OS noise
+.DS_Store
+*.swp
