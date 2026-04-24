@@ -46,8 +46,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 		return fmt.Errorf("local changes would be overwritten")
 	}
 
-	// setup: prepare branch collection with streaming hot-reload
-	// we'll collect branches from local and all remotes in parallel while the user browses
+	// stream branches from all remotes and local in parallel for faster picker feedback
 
 	remotes, err := internal.GetRemotes()
 	if err != nil {
@@ -87,7 +86,6 @@ func (s *SwitchCommand) Execute(args []string) error {
 		}
 	}()
 
-	// stream local branches
 	go func() {
 		locals, err := internal.GetLocalBranches()
 		if err != nil {
