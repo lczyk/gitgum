@@ -58,6 +58,12 @@ func (m *TerminalMock) GetResult() string {
 				s += v
 			}
 
+			// tcell >= v2.7 leaves Runes empty for cells that were never written;
+			// treat those as a single space.
+			if len(cell.Runes) == 0 {
+				s += " "
+				continue
+			}
 			s += string(cell.Runes)
 			rw := runewidth.RuneWidth(cell.Runes[0])
 			if rw != 0 {
