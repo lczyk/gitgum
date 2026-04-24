@@ -44,6 +44,24 @@ func TestFormatVersion(t *testing.T) {
 			buildInfo: "dirty",
 			want:      "1.0.0+abc1234 (dirty)",
 		},
+		{
+			name:      "short commit SHA",
+			version:   "1.0.0",
+			commitSHA: "abc",
+			want:      "1.0.0+abc",
+		},
+		{
+			name:      "commit SHA exactly 7 chars",
+			version:   "1.0.0",
+			commitSHA: "abcdefg",
+			want:      "1.0.0+abcdefg",
+		},
+		{
+			name:      "single char commit SHA",
+			version:   "1.0.0",
+			commitSHA: "a",
+			want:      "1.0.0+a",
+		},
 	}
 
 	for _, tt := range tests {

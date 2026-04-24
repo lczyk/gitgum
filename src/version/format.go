@@ -8,7 +8,7 @@ func GetFullVersion() string {
 
 func FormatVersion(version, commitSHA, buildDate, buildInfo string) string {
 	if commitSHA != "" {
-		version += "+" + commitSHA[:7]
+		version += "+" + commitSHA[:min(7, len(commitSHA))]
 	}
 	var infoParts []string
 	if buildDate != "" {
