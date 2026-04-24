@@ -9,15 +9,13 @@ import (
 )
 
 func TestListCommits(t *testing.T) {
-	tests := []struct {
-		name          string
+	cases := map[string]struct {
 		setup         func(t *testing.T, dir string) (branchA, branchB string)
 		expectError   bool
 		errorContains string
 		verifyCommits func(t *testing.T, commits []string)
 	}{
-		{
-			name: "list commits on feature branch since trunk",
+		"list commits on feature branch since trunk": {
 			setup: func(t *testing.T, dir string) (string, string) {
 				temp_repo.RunGit(t, dir, "checkout", "-b", "feature")
 
@@ -36,8 +34,7 @@ func TestListCommits(t *testing.T) {
 				}
 			},
 		},
-		{
-			name: "empty list when branches are at same commit",
+		"empty list when branches are at same commit": {
 			setup: func(t *testing.T, dir string) (string, string) {
 				temp_repo.RunGit(t, dir, "checkout", "-b", "feature2")
 				return "feature2", "main"
@@ -46,24 +43,21 @@ func TestListCommits(t *testing.T) {
 				assert.That(t, len(commits) == 0, "should have no commits")
 			},
 		},
-		{
-			name: "error when branch A doesn't exist",
+		"error when branch A doesn't exist": {
 			setup: func(t *testing.T, dir string) (string, string) {
 				return "nonexistent", "main"
 			},
 			expectError:   true,
 			errorContains: "merge base",
 		},
-		{
-			name: "error when branch B doesn't exist",
+		"error when branch B doesn't exist": {
 			setup: func(t *testing.T, dir string) (string, string) {
 				return "main", "nonexistent"
 			},
 			expectError:   true,
 			errorContains: "merge base",
 		},
-		{
-			name: "list commits in chronological order",
+		"list commits in chronological order": {
 			setup: func(t *testing.T, dir string) (string, string) {
 				temp_repo.RunGit(t, dir, "checkout", "-b", "feature3")
 
@@ -81,8 +75,8 @@ func TestListCommits(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range cases {
+		t.Run(name, func(t *testing.T) {
 			dir := temp_repo.InitTempRepo(t)
 
 			branchA, branchB := tt.setup(t, dir)

@@ -42,14 +42,12 @@ func TestCleanCommand_NotInGitRepo(t *testing.T) {
 
 func TestCleanCommand_Execute(t *testing.T) {
 
-	tests := []struct {
-		name   string
+	cases := map[string]struct {
 		setup  func(t *testing.T, dir string)
 		cmd    *CleanCommand
 		verify func(t *testing.T, dir string)
 	}{
-		{
-			name: "clean changes and untracked with --yes",
+		"clean changes and untracked with --yes": {
 			setup: func(t *testing.T, dir string) {
 				temp_repo.WriteFile(t, dir, "README.md", "modified\n")
 				temp_repo.WriteFile(t, dir, "untracked.txt", "untracked\n")
@@ -60,8 +58,7 @@ func TestCleanCommand_Execute(t *testing.T) {
 				fileNotExists(t, dir, "untracked.txt")
 			},
 		},
-		{
-			name: "clean only changes with --no-untracked",
+		"clean only changes with --no-untracked": {
 			setup: func(t *testing.T, dir string) {
 				temp_repo.WriteFile(t, dir, "README.md", "modified\n")
 				temp_repo.WriteFile(t, dir, "untracked.txt", "untracked\n")
@@ -72,8 +69,7 @@ func TestCleanCommand_Execute(t *testing.T) {
 				fileExists(t, dir, "untracked.txt")
 			},
 		},
-		{
-			name: "clean only untracked with --no-changes",
+		"clean only untracked with --no-changes": {
 			setup: func(t *testing.T, dir string) {
 				temp_repo.WriteFile(t, dir, "README.md", "modified\n")
 				temp_repo.WriteFile(t, dir, "untracked.txt", "untracked\n")
@@ -84,8 +80,7 @@ func TestCleanCommand_Execute(t *testing.T) {
 				fileNotExists(t, dir, "untracked.txt")
 			},
 		},
-		{
-			name: "clean with --ignored includes ignored files",
+		"clean with --ignored includes ignored files": {
 			setup: func(t *testing.T, dir string) {
 				temp_repo.WriteFile(t, dir, ".gitignore", "*.log\n")
 				temp_repo.RunGit(t, dir, "add", ".gitignore")
@@ -99,8 +94,7 @@ func TestCleanCommand_Execute(t *testing.T) {
 				fileNotExists(t, dir, "test.log")
 			},
 		},
-		{
-			name: "without --ignored, keep ignored files",
+		"without --ignored, keep ignored files": {
 			setup: func(t *testing.T, dir string) {
 				temp_repo.WriteFile(t, dir, ".gitignore", "*.log\n")
 				temp_repo.RunGit(t, dir, "add", ".gitignore")
@@ -114,8 +108,7 @@ func TestCleanCommand_Execute(t *testing.T) {
 				fileExists(t, dir, "test.log")
 			},
 		},
-		{
-			name: "--all flag enables everything",
+		"--all flag enables everything": {
 			setup: func(t *testing.T, dir string) {
 				temp_repo.WriteFile(t, dir, ".gitignore", "*.log\n")
 				temp_repo.RunGit(t, dir, "add", ".gitignore")
@@ -131,8 +124,7 @@ func TestCleanCommand_Execute(t *testing.T) {
 				fileNotExists(t, dir, "test.log")
 			},
 		},
-		{
-			name: "nothing to clean when both changes and untracked disabled",
+		"nothing to clean when both changes and untracked disabled": {
 			setup: func(t *testing.T, dir string) {
 				temp_repo.WriteFile(t, dir, "README.md", "modified\n")
 				temp_repo.WriteFile(t, dir, "untracked.txt", "untracked\n")
@@ -145,8 +137,8 @@ func TestCleanCommand_Execute(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range cases {
+		t.Run(name, func(t *testing.T) {
 			dir := temp_repo.InitTempRepo(t)
 			if tt.setup != nil {
 				tt.setup(t, dir)
