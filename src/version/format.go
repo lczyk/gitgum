@@ -1,19 +1,22 @@
 package version
 
 func GetFullVersion() string {
-	version := Version
-	if CommitSHA != "" {
-		version += "+" + CommitSHA[:7]
+	return FormatVersion(Version, CommitSHA, BuildDate, BuildInfo)
+}
+
+func FormatVersion(version, commitSHA, buildDate, buildInfo string) string {
+	if commitSHA != "" {
+		version += "+" + commitSHA[:7]
 	}
 	info := ""
-	if BuildDate != "" {
-		info = BuildDate
+	if buildDate != "" {
+		info = buildDate
 	}
-	if BuildInfo != "" {
+	if buildInfo != "" {
 		if info != "" {
-			info += ", " + BuildInfo
+			info += ", " + buildInfo
 		} else {
-			info = BuildInfo
+			info = buildInfo
 		}
 	}
 	if info != "" {

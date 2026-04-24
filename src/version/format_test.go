@@ -2,18 +2,7 @@ package version
 
 import "testing"
 
-func TestGetFullVersion(t *testing.T) {
-	origVersion := Version
-	origSHA := CommitSHA
-	origDate := BuildDate
-	origInfo := BuildInfo
-	t.Cleanup(func() {
-		Version = origVersion
-		CommitSHA = origSHA
-		BuildDate = origDate
-		BuildInfo = origInfo
-	})
-
+func TestFormatVersion(t *testing.T) {
 	tests := []struct {
 		name      string
 		version   string
@@ -59,14 +48,9 @@ func TestGetFullVersion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			Version = tt.version
-			CommitSHA = tt.commitSHA
-			BuildDate = tt.buildDate
-			BuildInfo = tt.buildInfo
-
-			got := GetFullVersion()
+			got := FormatVersion(tt.version, tt.commitSHA, tt.buildDate, tt.buildInfo)
 			if got != tt.want {
-				t.Errorf("GetFullVersion() = %q, want %q", got, tt.want)
+				t.Errorf("FormatVersion() = %q, want %q", got, tt.want)
 			}
 		})
 	}
