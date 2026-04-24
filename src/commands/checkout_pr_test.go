@@ -72,14 +72,7 @@ func TestParsePRRefs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := parsePRRefs(tt.input)
-			assert.That(t, len(result) == len(tt.expected),
-				"parsePRRefs returned %d refs, want %d", len(result), len(tt.expected))
-			for i, ref := range result {
-				assert.That(t, ref.Number == tt.expected[i].Number,
-					"ref[%d].Number = %d, want %d", i, ref.Number, tt.expected[i].Number)
-				assert.That(t, ref.Type == tt.expected[i].Type,
-					"ref[%d].Type = %q, want %q", i, ref.Type, tt.expected[i].Type)
-			}
+			assert.EqualArrays(t, result, tt.expected)
 		})
 	}
 }
@@ -123,10 +116,7 @@ func TestFormatPROptions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := formatPROptions(tt.prRefs)
-			assert.That(t, len(result) == len(tt.expected), "formatPROptions should return correct number of options")
-			for i, option := range result {
-				assert.That(t, option == tt.expected[i], "formatPROptions should format option correctly")
-			}
+			assert.EqualArrays(t, result, tt.expected)
 		})
 	}
 }
@@ -188,11 +178,11 @@ func TestParsePRSelection(t *testing.T) {
 			num, prType, err := parsePRSelection(tt.selection)
 			
 			if tt.expectedError {
-				assert.That(t, err != nil, "parsePRSelection should return error for invalid input")
+				assert.That(t, err != nil, "expected error for %q", tt.selection)
 			} else {
-				assert.That(t, err == nil, "parsePRSelection should not return error for valid input")
-				assert.That(t, num == tt.expectedNum, "parsePRSelection should return correct PR number")
-				assert.That(t, prType == tt.expectedType, "parsePRSelection should return correct PR type")
+				assert.NoError(t, err)
+				assert.Equal(t, num, tt.expectedNum)
+				assert.Equal(t, prType, tt.expectedType)
 			}
 		})
 	}
