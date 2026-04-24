@@ -7,6 +7,9 @@ import (
 	"github.com/lczyk/gitgum/src/internal/temp_repo"
 )
 
+// EmptyCommand tests validate basic command structure.
+// Full E2E testing requires mocking fzf interactions (user input).
+
 func TestEmptyCommand_NotInGitRepo(t *testing.T) {
 	temp_repo.ChdirTempDir(t)
 
@@ -25,4 +28,10 @@ func TestEmptyCommand_NoUpstream(t *testing.T) {
 
 	assert.That(t, err != nil, "should error without upstream")
 	assert.ContainsString(t, err.Error(), "upstream")
+}
+
+func TestEmptyCommand_Instantiate(t *testing.T) {
+	_ = temp_repo.InitTempRepo(t)
+	cmd := &EmptyCommand{}
+	_ = cmd // verify command is instantiable
 }
