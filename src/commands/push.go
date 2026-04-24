@@ -127,6 +127,7 @@ func (p *PushCommand) Execute(args []string) error {
 		if err := internal.RunCommandWithOutput("git", "push", selectedRemote, currentBranch); err != nil {
 			return fmt.Errorf("failed to push: %w", err)
 		}
+		fmt.Printf("Pushed to remote branch '%s'.\n", expectedRemoteBranchName)
 	} else {
 		confirmed, err := internal.FzfConfirm(fmt.Sprintf("No remote branch '%s' found. Do you want to create it?",
 			expectedRemoteBranchName), false)
