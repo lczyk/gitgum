@@ -151,7 +151,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 		fmt.Printf("Deleted local branch '%s'.\n", branch)
 	}
 
-	if needsToDeleteRemote && remoteName != "" && remoteBranchName != "" {
+	if needsToDeleteRemote {
 		if err := internal.RunCommandWithOutput("git", "push", "--delete", remoteName, remoteBranchName); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: Could not delete remote branch '%s/%s'.\n", remoteName, remoteBranchName)
 			return fmt.Errorf("deleting remote branch: %w", err)
