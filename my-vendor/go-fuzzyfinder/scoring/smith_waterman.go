@@ -51,14 +51,13 @@ func smithWaterman(s1, s2 []rune) (int, [2]int) {
 	// Calculate bonuses for each rune of s1.
 	bonus := make([]int32, len(s1))
 	bonus[0] = firstCharBonus
-	prevCh := s1[0]
-	prevIsDelimiter := isDelimiter(prevCh)
+	prevIsDelimiter := isDelimiter(s1[0])
 	for i, r := range s1[1:] {
-		isDelimiter := isDelimiter(r)
-		if prevIsDelimiter && !isDelimiter {
+		curIsDelimiter := isDelimiter(r)
+		if prevIsDelimiter && !curIsDelimiter {
 			bonus[i] = firstCharBonus
 		}
-		prevIsDelimiter = isDelimiter
+		prevIsDelimiter = curIsDelimiter
 	}
 
 	var maxScore int32
