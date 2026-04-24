@@ -7,6 +7,20 @@ import (
 	"github.com/lczyk/assert"
 )
 
+// CompletionCommand tests validate shell completion script generation.
+// Tests cover multiple shell types (bash, fish, zsh), custom and default command names,
+// and error handling for invalid shells. Output validation ensures the placeholder
+// is replaced with the actual command name in all cases.
+
+func executeCompletion(t *testing.T, cmdName, shell string) (string, error) {
+	t.Helper()
+	var buf strings.Builder
+	cmd := &CompletionCommand{out: &buf, cmdName: cmdName}
+	cmd.Args.Shell = shell
+	err := cmd.Execute(nil)
+	return buf.String(), err
+}
+
 func TestCompletionCommand_Execute(t *testing.T) {
 	testCases := []struct {
 		name    string
@@ -20,13 +34,8 @@ func TestCompletionCommand_Execute(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			var buf strings.Builder
-			cmd := &CompletionCommand{out: &buf, cmdName: tc.cmdName}
-			cmd.Args.Shell = tc.shell
+			output, err := executeCompletion(t, tc.cmdName, tc.shell)
 
-			err := cmd.Execute(nil)
-
-			output := buf.String()
 			assert.NoError(t, err)
 			assert.ContainsString(t, output, tc.cmdName)
 			assert.That(t, !strings.Contains(output, "__GITGUM_CMD__"), "placeholder should be replaced in output")
@@ -35,24 +44,14 @@ func TestCompletionCommand_Execute(t *testing.T) {
 }
 
 func TestCompletionCommand_InvalidShell(t *testing.T) {
-	cmd := &CompletionCommand{}
-	cmd.Args.Shell = "invalid"
-
-	err := cmd.Execute(nil)
+	_, err := executeCompletion(t, "", "invalid")
 	assert.Error(t, err, "invalid shell type 'invalid'")
 }
 
 func TestCompletionCommand_DefaultCmdName(t *testing.T) {
-	var buf strings.Builder
-	cmd := &CompletionCommand{out: &buf}
-	cmd.Args.Shell = "bash"
-	// Don't set cmdName; should use default derived from os.Args[0]
+	output, err := executeCompletion(t, "", "bash")
 
-	err := cmd.Execute(nil)
-
-	output := buf.String()
 	assert.NoError(t, err)
-	// Output should contain some completion script content
 	assert.That(t, len(output) > 0, "output should not be empty")
 	assert.That(t, !strings.Contains(output, "__GITGUM_CMD__"), "placeholder should be replaced")
 }
