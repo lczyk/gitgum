@@ -17,7 +17,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v2"
-	"github.com/ktr0731/go-ansisgr"
 	"github.com/lczyk/gitgum/src/fuzzyfinder/matching"
 	runewidth "github.com/mattn/go-runewidth"
 )
@@ -87,51 +86,19 @@ func (f *finder) initFinder(items []string, matched []matching.Matched, opt opt)
 	f.opt = &opt
 	f.state = state{}
 
-	var cursorPositioned bool
 	if f.multi {
 		f.state.selection = map[int]int{}
 		f.state.selectionIdx = 1
-
-		// Apply preselection
-		for i := range items {
-			if opt.preselected(i) {
-				f.state.selection[i] = f.state.selectionIdx
-				f.state.selectionIdx++
-			}
-		}
-	} else {
-		// In non-multi mode, set the cursor position to the first preselected item
-		for i := range items {
-			if opt.preselected(i) {
-				cursorPositioned = true
-				// Find the matched item index
-				for j, m := range matched {
-					if m.Idx == i {
-						f.state.y = j
-						f.state.cursorY = min(j, len(matched)-1)
-						break
-					}
-				}
-				break // Only use the first preselected item
-			}
-		}
 	}
 
 	f.state.items = items
 	f.state.matched = matched
 	f.state.allMatched = matched
 
-	// If no preselected item is found and beginAtTop is true, set the cursor to the last item
-	if !cursorPositioned && opt.beginAtTop {
-		f.state.cursorY = len(f.state.matched) - 1
-		f.state.y = len(f.state.matched) - 1
-	}
-
 	if !isInTesting() {
 		f.drawTimer = time.AfterFunc(0, func() {
 			f.stateMu.Lock()
 			f._draw()
-			f._drawPreview()
 			f.stateMu.Unlock()
 			f.term.Show()
 		})
@@ -154,18 +121,6 @@ func (f *finder) updateItems(items []string, matched []matching.Matched) {
 	f.state.items = items
 	f.state.matched = matched
 	f.state.allMatched = matched
-
-	// Apply preselection to any new items
-	if f.multi {
-		for i := 0; i < len(items); i++ {
-			// Check if this item is not already in the selection and should be preselected
-			if _, exists := f.state.selection[i]; !exists && f.opt.preselected(i) {
-				f.state.selection[i] = f.state.selectionIdx
-				f.state.selectionIdx++
-			}
-		}
-	}
-
 	f.stateMu.Unlock()
 	f.eventCh <- struct{}{}
 }
@@ -176,10 +131,6 @@ func (f *finder) _draw() {
 	f.term.Clear()
 
 	maxWidth := width
-	if f.opt.previewFunc != nil {
-		maxWidth = width/2 - 1
-	}
-
 	maxHeight := height
 
 	// prompt line
@@ -323,162 +274,6 @@ func (f *finder) _draw() {
 	}
 }
 
-func (f *finder) _drawPreview() {
-	if f.opt.previewFunc == nil {
-		return
-	}
-
-	width, height := f.term.Size()
-	var idx int
-	if len(f.state.matched) == 0 {
-		idx = -1
-	} else {
-		idx = f.state.matched[f.state.y].Idx
-	}
-
-	iter := ansisgr.NewIterator(f.opt.previewFunc(idx, width, height))
-
-	// top line
-	for i := width / 2; i < width; i++ {
-		var r rune
-		switch {
-		case i == width/2:
-			r = '┌'
-		case i == width-1:
-			r = '┐'
-		default:
-			r = '─'
-		}
-
-		style := tcell.StyleDefault.
-			Foreground(tcell.ColorBlack).
-			Background(tcell.ColorDefault)
-
-		f.term.SetContent(i, 0, r, nil, style)
-	}
-	// bottom line
-	for i := width / 2; i < width; i++ {
-		var r rune
-		switch {
-		case i == width/2:
-			r = '└'
-		case i == width-1:
-			r = '┘'
-		default:
-			r = '─'
-		}
-
-		style := tcell.StyleDefault.
-			Foreground(tcell.ColorBlack).
-			Background(tcell.ColorDefault)
-
-		f.term.SetContent(i, height-1, r, nil, style)
-	}
-	// Start with h=1 to exclude each corner rune.
-	const vline = '│'
-	var wvline = runewidth.RuneWidth(vline)
-	for h := 1; h < height-1; h++ {
-		// donePreviewLine indicates the preview string of the current line identified by h is already drawn.
-		var donePreviewLine bool
-		w := width / 2
-		for i := width / 2; i < width; i++ {
-			switch {
-			// Left vertical line.
-			case i == width/2:
-				style := tcell.StyleDefault.
-					Foreground(tcell.ColorBlack).
-					Background(tcell.ColorDefault)
-				f.term.SetContent(i, h, vline, nil, style)
-				w += wvline
-			// Right vertical line.
-			case i == width-1:
-				style := tcell.StyleDefault.
-					Foreground(tcell.ColorBlack).
-					Background(tcell.ColorDefault)
-				f.term.SetContent(i, h, vline, nil, style)
-				w += wvline
-			// Spaces between left and right vertical lines.
-			case w == width/2+wvline, w == width-1-wvline:
-				style := tcell.StyleDefault.
-					Foreground(tcell.ColorDefault).
-					Background(tcell.ColorDefault)
-
-				f.term.SetContent(w, h, ' ', nil, style)
-				w++
-			default: // Preview text
-				if donePreviewLine {
-					continue
-				}
-
-				r, rstyle, ok := iter.Next()
-				if !ok || r == '\n' {
-					// Consumed all preview characters.
-					donePreviewLine = true
-					continue
-				}
-
-				rw := runewidth.RuneWidth(r)
-				if w+rw > width-1-2 {
-					donePreviewLine = true
-
-					// discard the rest of the current line
-					for {
-						r, _, ok := iter.Next()
-						if !ok || r == '\n' {
-							break
-						}
-					}
-
-					style := tcell.StyleDefault.
-						Foreground(tcell.ColorDefault).
-						Background(tcell.ColorDefault)
-
-					f.term.SetContent(w, h, '.', nil, style)
-					f.term.SetContent(w+1, h, '.', nil, style)
-
-					w += 2
-					continue
-				}
-
-				style := tcell.StyleDefault
-				if color, ok := rstyle.Foreground(); ok {
-					switch color.Mode() {
-					case ansisgr.Mode16:
-						style = style.Foreground(tcell.PaletteColor(color.Value() - 30))
-					case ansisgr.Mode256:
-						style = style.Foreground(tcell.PaletteColor(color.Value()))
-					case ansisgr.ModeRGB:
-						r, g, b := color.RGB()
-						style = style.Foreground(tcell.NewRGBColor(int32(r), int32(g), int32(b)))
-					}
-				}
-				if color, valid := rstyle.Background(); valid {
-					switch color.Mode() {
-					case ansisgr.Mode16:
-						style = style.Background(tcell.PaletteColor(color.Value() - 40))
-					case ansisgr.Mode256:
-						style = style.Background(tcell.PaletteColor(color.Value()))
-					case ansisgr.ModeRGB:
-						r, g, b := color.RGB()
-						style = style.Background(tcell.NewRGBColor(int32(r), int32(g), int32(b)))
-					}
-				}
-
-				style = style.
-					Bold(rstyle.Bold()).
-					Dim(rstyle.Dim()).
-					Italic(rstyle.Italic()).
-					Underline(rstyle.Underline()).
-					Blink(rstyle.Blink()).
-					Reverse(rstyle.Reverse()).
-					StrikeThrough(rstyle.Strikethrough())
-				f.term.SetContent(w, h, r, nil, style)
-				w += rw
-			}
-		}
-	}
-}
-
 func (f *finder) draw(d time.Duration) {
 	f.stateMu.RLock()
 	defer f.stateMu.RUnlock()
@@ -486,7 +281,6 @@ func (f *finder) draw(d time.Duration) {
 	if isInTesting() {
 		// Don't use goroutine scheduling.
 		f._draw()
-		f._drawPreview()
 		f.term.Show()
 	} else {
 		f.drawTimer.Reset(d)
@@ -692,18 +486,6 @@ func (f *finder) filter() {
 		f.state.cursorY = 0
 		f.state.y = 0
 		return
-	}
-
-	// If we are in single-select mode, try to move cursor to the first preselected item
-	// that's still in the matched results
-	if !f.multi {
-		for i, m := range f.state.matched {
-			if f.opt.preselected(m.Idx) {
-				f.state.y = i
-				f.state.cursorY = min(i, len(f.state.matched)-1)
-				return
-			}
-		}
 	}
 
 	switch {

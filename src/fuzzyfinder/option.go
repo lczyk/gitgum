@@ -7,16 +7,13 @@ import (
 
 type opt struct {
 	mode          mode
-	previewFunc   func(i, width, height int) string
 	hotReload     bool
 	hotReloadLock sync.Locker
 	promptString  string
 	header        string
-	beginAtTop    bool
 	ctx           context.Context
 	query         string
 	selectOne     bool
-	preselected   func(i int) bool
 	matcher       func(query, item string) bool
 }
 
@@ -35,8 +32,7 @@ const (
 
 var defaultOption = opt{
 	promptString:  "> ",
-	hotReloadLock: &sync.Mutex{}, // this won't resolve the race condition but avoid nil panic
-	preselected:   func(i int) bool { return false },
+	hotReloadLock: &sync.Mutex{}, // avoid nil panic when hot reload is not used
 }
 
 // Option represents available fuzzy-finding options.
@@ -49,45 +45,14 @@ func WithMode(m mode) Option {
 	}
 }
 
-// WithPreviewWindow enables to display a preview for the selected item.
-// The argument f receives i, width and height. i is the same as Find's one.
-// width and height are the size of the terminal so that you can use these to adjust
-// a preview content. Note that width and height are calculated as a rune-based length.
-//
-// If there is no selected item, i is -1.
-//
-// If f is nil, the preview feature is disabled.
-func WithPreviewWindow(f func(i, width, height int) string) Option {
-	return func(o *opt) {
-		o.previewFunc = f
-	}
-}
-
 // WithHotReloadLock reloads the passed slice automatically when some entries are appended.
 // The caller must pass a pointer of the slice instead of the slice itself.
-// The caller must pass a RLock which is used to synchronize access to the slice.
+// The caller must pass a Locker which is used to synchronize access to the slice.
 // The caller MUST NOT lock in the itemFunc passed to Find / FindMulti because it will be locked by the fuzzyfinder.
-// If used together with WithPreviewWindow, the caller MUST use the RLock only in the previewFunc passed to WithPreviewWindow.
 func WithHotReloadLock(lock sync.Locker) Option {
 	return func(o *opt) {
 		o.hotReload = true
 		o.hotReloadLock = lock
-	}
-}
-
-type cursorPosition int
-
-const (
-	CursorPositionBottom cursorPosition = iota
-	CursorPositionTop
-)
-
-// WithCursorPosition sets the initial position of the cursor
-//
-// If Find is called with WithCursorPosition and WithPreselected, the cursor will be positioned at the first preselected item.
-func WithCursorPosition(position cursorPosition) Option {
-	return func(o *opt) {
-		o.beginAtTop = position == CursorPositionTop
 	}
 }
 
@@ -123,19 +88,6 @@ func WithQuery(s string) Option {
 func WithSelectOne() Option {
 	return func(o *opt) {
 		o.selectOne = true
-	}
-}
-
-// WithPreselected enables to specify which items should be preselected.
-// The argument f is a function that returns true for items that should be preselected.
-// i is the same index value passed to itemFunc in Find or FindMulti.
-// This option is effective in both Find and FindMulti, but in Find mode only
-// the first preselected item will be considered.
-//
-// If Find is called with WithCursorPosition and WithPreselected, the cursor will be positioned at the first preselected item.
-func WithPreselected(f func(i int) bool) Option {
-	return func(o *opt) {
-		o.preselected = f
 	}
 }
 

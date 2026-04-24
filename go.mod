@@ -7,7 +7,6 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/gofuzz v1.2.0
 	github.com/jessevdk/go-flags v1.6.1
-	github.com/ktr0731/go-ansisgr v0.1.0
 	github.com/lczyk/assert v0.2.4
 	github.com/mattn/go-runewidth v0.0.16
 )

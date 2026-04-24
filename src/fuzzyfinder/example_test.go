@@ -22,33 +22,6 @@ func ExampleFind() {
 	fmt.Println(slice[idx])
 }
 
-func ExampleFind_previewWindow() {
-	slice := []struct {
-		id   string
-		name string
-	}{
-		{"id1", "foo"},
-		{"id2", "bar"},
-		{"id3", "baz"},
-	}
-	idx, _ := fuzzyfinder.Find(
-		slice,
-		func(i int) string {
-			return fmt.Sprintf("[%s] %s", slice[i].id, slice[i].name)
-		},
-		fuzzyfinder.WithPreviewWindow(func(i, width, _ int) string {
-			if i == -1 {
-				return "no results"
-			}
-			s := fmt.Sprintf("%s is selected", slice[i].name)
-			if width < len([]rune(s)) {
-				return slice[i].name
-			}
-			return s
-		}))
-	fmt.Println(slice[idx])
-}
-
 func ExampleFindMulti() {
 	slice := []struct {
 		id   string

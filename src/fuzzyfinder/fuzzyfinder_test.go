@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/google/go-cmp/cmp"
@@ -105,12 +104,6 @@ func TestReal(t *testing.T) {
 		func(i int) string {
 			return tracks[i].Name
 		},
-		fuzzyfinder.WithPreviewWindow(func(i, width, height int) string {
-			if i == -1 {
-				return "not found"
-			}
-			return "Name: " + tracks[i].Name + "\nArtist: " + tracks[i].Artist
-		}),
 	)
 	if err != nil {
 		t.Fatalf("err is not nil: %s", err)
@@ -239,8 +232,7 @@ func TestFind(t *testing.T) {
 				{tcell.KeyCtrlF, 'F', tcell.ModCtrl},
 			}...)...),
 		},
-		"cursor begins at top":                    {opts: []fuzzyfinder.Option{fuzzyfinder.WithCursorPosition(fuzzyfinder.CursorPositionTop)}},
-		"header line":                             {opts: []fuzzyfinder.Option{fuzzyfinder.WithHeader("Search?")}},
+		"header line": {opts: []fuzzyfinder.Option{fuzzyfinder.WithHeader("Search?")}},
 		"header line which exceeds max charaters": {opts: []fuzzyfinder.Option{fuzzyfinder.WithHeader("Waht do you want to search for?")}},
 	}
 
@@ -256,12 +248,6 @@ func TestFind(t *testing.T) {
 
 			opts := append(
 				c.opts,
-				fuzzyfinder.WithPreviewWindow(func(i, width, height int) string {
-					if i == -1 {
-						return "not found"
-					}
-					return "Name: " + tracks[i].Name + "\nArtist: " + tracks[i].Artist
-				}),
 				fuzzyfinder.WithMode(fuzzyfinder.ModeCaseSensitive),
 			)
 
@@ -297,14 +283,6 @@ func TestFind_hotReload(t *testing.T) {
 			func(i int) string {
 				return tracks[i].Name
 			},
-			fuzzyfinder.WithPreviewWindow(func(i, width, height int) string {
-				// Hack, wait until updateItems is called.
-				time.Sleep(50 * time.Millisecond)
-				if i == -1 {
-					return "not found"
-				}
-				return "Name: " + tracks[i].Name + "\nArtist: " + tracks[i].Artist
-			}),
 			fuzzyfinder.WithMode(fuzzyfinder.ModeCaseSensitive),
 			fuzzyfinder.WithHotReloadLock(&sync.Mutex{}),
 		)
@@ -331,16 +309,6 @@ func TestFind_hotReloadLock(t *testing.T) {
 			func(i int) string {
 				return tracks[i].Name
 			},
-			fuzzyfinder.WithPreviewWindow(func(i, width, height int) string {
-				// Hack, wait until updateItems is called.
-				time.Sleep(50 * time.Millisecond)
-				mu.RLock()
-				defer mu.RUnlock()
-				if i == -1 {
-					return "not found"
-				}
-				return "Name: " + tracks[i].Name + "\nArtist: " + tracks[i].Artist
-			}),
 			fuzzyfinder.WithMode(fuzzyfinder.ModeCaseSensitive),
 			fuzzyfinder.WithHotReloadLock(mu.RLocker()),
 		)
@@ -387,49 +355,6 @@ func TestFind_enter(t *testing.T) {
 			if idx != c.expected {
 				t.Errorf("expected index: %d, but got %d", c.expected, idx)
 			}
-		})
-	}
-}
-
-func TestFind_WithPreviewWindow(t *testing.T) {
-	t.Parallel()
-
-	cases := map[string]struct {
-		previewString string
-	}{
-		"normal":                   {previewString: "foo"},
-		"multiline":                {previewString: "foo\nbar"},
-		"overflowed line":          {previewString: strings.Repeat("foo", 1000)},
-		"SGR":                      {previewString: "a\x1b[1mb\x1b[0;31mc\x1b[0;42md\x1b[0;38;5;139me\x1b[0;48;5;229mf\x1b[0;38;2;10;200;30mg\x1b[0;48;2;255;200;100mh"},
-		"SGR with overflowed line": {previewString: "a\x1b[1mb\x1b[0;31mc\x1b[0;42md\x1b[0;38;5;139me\x1b[0;48;5;229mf\x1b[0;38;2;10;200;30mg\x1b[0;48;2;255;200;100mh\x1b[m" + strings.Repeat("foo", 1000)},
-	}
-
-	for name, c := range cases {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			f, term := fuzzyfinder.NewWithMockedTerminal()
-			events := []tcell.Event{key(input{tcell.KeyEnter, rune(tcell.KeyEnter), tcell.ModNone})}
-			term.SetEvents(events...)
-
-			assertWithGolden(t, func(t *testing.T) string {
-				_, err := f.Find(
-					tracks,
-					func(i int) string {
-						return tracks[i].Name
-					},
-					fuzzyfinder.WithPreviewWindow(func(i, w, h int) string {
-						return c.previewString
-					}),
-				)
-
-				if err != nil {
-					t.Fatalf("Find must not return an error, but got '%s'", err)
-				}
-
-				res := term.GetResult()
-				return res
-			})
 		})
 	}
 }
@@ -633,12 +558,6 @@ func TestFindMulti(t *testing.T) {
 				func(i int) string {
 					return tracks[i].Name
 				},
-				fuzzyfinder.WithPreviewWindow(func(i, width, height int) string {
-					if i == -1 {
-						return "not found"
-					}
-					return "Name: " + tracks[i].Name + "\nArtist: " + tracks[i].Artist
-				}),
 			)
 			if c.abort {
 				if !errors.Is(err, fuzzyfinder.ErrAbort) {
@@ -671,12 +590,6 @@ func BenchmarkFind(b *testing.B) {
 				func(i int) string {
 					return tracks[i].Name
 				},
-				fuzzyfinder.WithPreviewWindow(func(i, width, height int) string {
-					if i == -1 {
-						return "not found"
-					}
-					return "Name: " + tracks[i].Name + "\nArtist: " + tracks[i].Artist
-				}),
 			)
 			if !errors.Is(err, fuzzyfinder.ErrAbort) {
 				b.Fatalf("expected ErrAbort, but got '%s'", err)
@@ -697,12 +610,6 @@ func BenchmarkFind(b *testing.B) {
 				func(i int) string {
 					return tracks[i].Name
 				},
-				fuzzyfinder.WithPreviewWindow(func(i, width, height int) string {
-					if i == -1 {
-						return "not found"
-					}
-					return "Name: " + tracks[i].Name + "\nArtist: " + tracks[i].Artist
-				}),
 				fuzzyfinder.WithHotReloadLock(&sync.Mutex{}),
 			)
 			if !errors.Is(err, fuzzyfinder.ErrAbort) {
