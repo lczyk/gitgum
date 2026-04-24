@@ -9,34 +9,38 @@ import (
 	"github.com/lczyk/assert"
 )
 
+// chdirs into a fresh temp dir for the duration of the test.
+func ChdirTempDir(t *testing.T) string {
+    t.Helper()
+    dir := t.TempDir()
+    origDir, err := os.Getwd()
+    if err != nil {
+        t.Fatalf("getwd: %v", err)
+    }
+    if err := os.Chdir(dir); err != nil {
+        t.Fatalf("chdir: %v", err)
+    }
+    t.Cleanup(func() { _ = os.Chdir(origDir) })
+    return dir
+}
+
 // also chdirs into the repo for the duration of the test.
 func InitTempRepo(t *testing.T) string {
     t.Helper()
-    dir := t.TempDir()
+    dir := ChdirTempDir(t)
 
-    // Ensure deterministic environment
     RunGit(t, dir, "init")
     RunGit(t, dir, "config", "user.name", "Test User")
     RunGit(t, dir, "config", "user.email", "test@example.com")
     RunGit(t, dir, "config", "commit.gpgsign", "false")
     RunGit(t, dir, "config", "tag.gpgsign", "false")
 
-    // Create initial file and commit
     fname := filepath.Join(dir, "README.md")
     err := os.WriteFile(fname, []byte("# test repo\n"), 0o644)
     assert.NoError(t, err, "write initial file")
     RunGit(t, dir, "add", "README.md")
     RunGit(t, dir, "commit", "-m", "initial commit")
 
-    // chdir into repo, restored on cleanup
-    origDir, err := os.Getwd()
-    if err != nil {
-        t.Fatalf("getwd: %v", err)
-    }
-    if err := os.Chdir(dir); err != nil {
-        t.Fatalf("chdir to temp repo: %v", err)
-    }
-    t.Cleanup(func() { _ = os.Chdir(origDir) })
     return dir
 }
 

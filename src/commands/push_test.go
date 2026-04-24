@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"os"
 	"testing"
 
 	"github.com/lczyk/assert"
@@ -9,10 +8,7 @@ import (
 )
 
 func TestPushCommand_NotInGitRepo(t *testing.T) {
-	dir := t.TempDir()
-	origDir, _ := os.Getwd()
-	_ = os.Chdir(dir)
-	t.Cleanup(func() { _ = os.Chdir(origDir) })
+	temp_repo.ChdirTempDir(t)
 
 	cmd := &PushCommand{}
 	err := cmd.Execute(nil)
