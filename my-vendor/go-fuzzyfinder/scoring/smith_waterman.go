@@ -2,7 +2,7 @@ package scoring
 
 import "unicode"
 
-// smithWaterman calculates a simularity score between s1 and s2
+// smithWaterman calculates a similarity score between s1 and s2
 // by smith-waterman algorithm. smith-waterman algorithm is one of
 // local alignment algorithms and it uses dynamic programming.
 //
@@ -29,18 +29,13 @@ func smithWaterman(s1, s2 []rune) (int, [2]int) {
 		firstCharBonus int32 = 3 // The first char of s1 is equal to s2's one.
 	)
 
-	// The scoring matrix.
+	// H is the scoring matrix; D tracks gap penalties for s2 (no s1 gap matrix
+	// needed because s1 contains all runes of s2 and is never gapped).
 	H := make([][]int32, len(s1)+1)
-	// A matrix that calculates gap penalties for s2 until each position (i, j).
-	// Note that, we don't need a matrix for s1 because s1 contains all runes
-	// of s2 so that s1 is not inserted gaps.
 	D := make([][]int32, len(s1)+1)
 	for i := 0; i <= len(s1); i++ {
 		H[i] = make([]int32, len(s2)+1)
 		D[i] = make([]int32, len(s2)+1)
-	}
-
-	for i := 0; i <= len(s1); i++ {
 		D[i][0] = -openGap - int32(i)*extGap
 	}
 
@@ -65,7 +60,7 @@ func smithWaterman(s1, s2 []rune) (int, [2]int) {
 			} else {
 				score = H[i-1][j-1] + matchScore + bonus[i-1]
 			}
-			H[i][j] += max(D[i-1][j], score, 0)
+			H[i][j] = max(D[i-1][j], score, 0)
 
 			D[i][j] = max(H[i-1][j]-openGap, D[i-1][j]-extGap)
 
