@@ -5,23 +5,27 @@ import "testing"
 func TestCalculate(t *testing.T) {
 	t.Parallel()
 
-	t.Run("no panic with equal-length strings", func(t *testing.T) {
+	t.Run("equal-length strings", func(t *testing.T) {
 		t.Parallel()
-		Calculate("foo", "foo")
+		_, _, err := Calculate("foo", "foo")
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
 	})
 
-	t.Run("no panic with empty strings", func(t *testing.T) {
+	t.Run("empty strings", func(t *testing.T) {
 		t.Parallel()
-		Calculate("", "")
+		_, _, err := Calculate("", "")
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
 	})
 
-	t.Run("panics when s2 longer than s1", func(t *testing.T) {
+	t.Run("error when s2 longer than s1", func(t *testing.T) {
 		t.Parallel()
-		defer func() {
-			if recover() == nil {
-				t.Error("Calculate must panic when len(s2) > len(s1)")
-			}
-		}()
-		Calculate("foo", "foobar")
+		_, _, err := Calculate("foo", "foobar")
+		if err == nil {
+			t.Error("Calculate must return error when s2 is longer than s1")
+		}
 	})
 }

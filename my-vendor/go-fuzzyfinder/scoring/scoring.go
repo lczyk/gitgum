@@ -1,12 +1,15 @@
 // Package scoring provides APIs that calculates similarity scores between two strings.
 package scoring
 
-// Calculate calculates a similarity score between s1 and s2.
-// The length of s1 must be greater or equal than the length of s2.
-func Calculate(s1, s2 string) (int, [2]int) {
-	if len(s1) < len(s2) {
-		panic("len(s1) must be greater than or equal to len(s2)")
-	}
+import "fmt"
 
-	return smithWaterman([]rune(s1), []rune(s2))
+// Calculate calculates a similarity score between s1 and s2.
+// s1 must have at least as many runes as s2.
+func Calculate(s1, s2 string) (int, [2]int, error) {
+	r1, r2 := []rune(s1), []rune(s2)
+	if len(r1) < len(r2) {
+		return 0, [2]int{}, fmt.Errorf("scoring: s1 must have at least as many runes as s2 (%d < %d)", len(r1), len(r2))
+	}
+	score, pos := smithWaterman(r1, r2)
+	return score, pos, nil
 }
