@@ -7,12 +7,14 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/lczyk/gitgum/src/fuzzyfinder"
 	"github.com/lczyk/gitgum/src/version"
@@ -52,22 +54,66 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 
-	items, err := readItems(stdin)
-	if err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var (
+		lock  sync.Mutex
+		items []string
+	)
+	readErrCh := make(chan error, 1)
+	go func() { readErrCh <- streamItems(ctx, stdin, &lock, &items) }()
+
+	opts := buildOptions(cfg)
+	opts = append(opts, fuzzyfinder.WithContext(ctx), fuzzyfinder.WithHotReloadLock(&lock))
+
+	itemAt := func(i int) string { return items[i] }
+
+	var (
+		idxs    []int
+		findErr error
+	)
+	if cfg.multi {
+		idxs, findErr = fuzzyfinder.FindMulti(&items, itemAt, opts...)
+	} else {
+		idx, err := fuzzyfinder.Find(&items, itemAt, opts...)
+		idxs, findErr = []int{idx}, err
+	}
+	cancel()
+
+	if err := <-readErrCh; err != nil {
 		fmt.Fprintf(stderr, "fuzzyfinder: read stdin: %v\n", err)
 		return exitUsage
 	}
+
+	lock.Lock()
+	defer lock.Unlock()
 	if len(items) == 0 {
 		return exitNoMatch
 	}
+	return writeResult(stdout, stderr, items, idxs, findErr)
+}
 
-	opts := buildOptions(cfg)
-	if cfg.multi {
-		idxs, err := fuzzyfinder.FindMulti(items, func(i int) string { return items[i] }, opts...)
-		return writeResult(stdout, stderr, items, idxs, err)
+// streamItems reads lines from r and appends them to *items under lock until
+// EOF or ctx is cancelled.
+func streamItems(ctx context.Context, r io.Reader, lock *sync.Mutex, items *[]string) error {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
+	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+		}
+		line := strings.TrimRight(scanner.Text(), "\r")
+		if line == "" {
+			continue
+		}
+		lock.Lock()
+		*items = append(*items, line)
+		lock.Unlock()
 	}
-	idx, err := fuzzyfinder.Find(items, func(i int) string { return items[i] }, opts...)
-	return writeResult(stdout, stderr, items, []int{idx}, err)
+	return scanner.Err()
 }
 
 func parseFlags(args []string, stderr io.Writer) (config, error) {
@@ -111,19 +157,6 @@ func buildOptions(cfg config) []fuzzyfinder.Option {
 		opts = append(opts, fuzzyfinder.WithSelectOne())
 	}
 	return opts
-}
-
-func readItems(r io.Reader) ([]string, error) {
-	var items []string
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
-	for scanner.Scan() {
-		line := strings.TrimRight(scanner.Text(), "\r")
-		if line != "" {
-			items = append(items, line)
-		}
-	}
-	return items, scanner.Err()
 }
 
 func writeResult(stdout, stderr io.Writer, items []string, idxs []int, err error) int {

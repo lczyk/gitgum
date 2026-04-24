@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -33,10 +35,13 @@ func TestParseFlags_BadFlag(t *testing.T) {
 	}
 }
 
-func TestReadItems(t *testing.T) {
-	items, err := readItems(strings.NewReader("a\nb\r\n\nc\n"))
-	if err != nil {
-		t.Fatalf("readItems: %v", err)
+func TestStreamItems(t *testing.T) {
+	var (
+		lock  sync.Mutex
+		items []string
+	)
+	if err := streamItems(context.Background(), strings.NewReader("a\nb\r\n\nc\n"), &lock, &items); err != nil {
+		t.Fatalf("streamItems: %v", err)
 	}
 	want := []string{"a", "b", "c"}
 	if len(items) != len(want) {
