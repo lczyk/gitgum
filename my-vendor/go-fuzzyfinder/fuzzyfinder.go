@@ -28,19 +28,6 @@ var (
 	errEntered = errors.New("entered")
 )
 
-// Finds the minimum value among the arguments
-func min(vars ...int) int {
-	min := vars[0]
-
-	for _, i := range vars {
-		if min > i {
-			min = i
-		}
-	}
-
-	return min
-}
-
 type state struct {
 	items      []string           // All item names.
 	allMatched []matching.Matched // All items.
