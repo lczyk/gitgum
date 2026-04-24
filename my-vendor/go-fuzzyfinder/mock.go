@@ -83,18 +83,6 @@ func (m *TerminalMock) GetResult() string {
 	return s
 }
 
-func (f *finder) UseMockedTerminal() *TerminalMock {
-	screen := tcell.NewSimulationScreen("UTF-8")
-	if err := screen.Init(); err != nil {
-		panic(err)
-	}
-	m := &TerminalMock{
-		simScreen: screen,
-	}
-	f.term = m
-	return m
-}
-
 // parseAttr parses color and attribute for testing.
 func parseAttr(fg, bg tcell.Color, attr tcell.AttrMask) string {
 	if attr == tcell.AttrInvalid {

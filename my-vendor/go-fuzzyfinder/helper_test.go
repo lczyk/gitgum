@@ -12,10 +12,14 @@ func NewWithMockedTerminal() (*finder, *TerminalMock) {
 	f := New()
 	f.termEventsChan = eventsChan
 
-	m := f.UseMockedTerminal()
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		panic(err)
+	}
+	m := &TerminalMock{simScreen: screen}
+	f.term = m
 	go m.ChannelEvents(eventsChan, nil)
 
-	w, h := 60, 10 // A normally value.
-	m.SetSize(w, h)
+	m.SetSize(60, 10)
 	return f, m
 }
