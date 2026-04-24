@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/lczyk/gitgum/src/internal"
 )
@@ -65,40 +66,37 @@ func (c *CleanCommand) Execute(args []string) error {
 		return nil
 	}
 
-	// Check if any .gitignore files are affected
 	gitignoreFiles := []string{}
 	for _, file := range affectedFiles {
-		if file == ".gitignore" || len(file) > 11 && file[len(file)-11:] == "/.gitignore" {
+		if filepath.Base(file) == ".gitignore" {
 			gitignoreFiles = append(gitignoreFiles, file)
 		}
 	}
 
-	// If .gitignore files are affected, we need a two-stage cleanup
+	// two-stage cleanup when .gitignore files are affected:
+	// clean them first to get accurate file list, then restore for confirmation
+	var gitignoreBackup []gitignoreState
 	if len(gitignoreFiles) > 0 {
-		// First, clean .gitignore files to get accurate list of what else will be affected
 		fmt.Println("Detected changes to .gitignore files. Applying .gitignore changes first to get accurate cleanup preview...")
-		
-		// Clean .gitignore files
-		if err := cleanGitignoreFiles(gitignoreFiles, changes, untracked); err != nil {
+
+		var err error
+		gitignoreBackup, err = cleanGitignoreFiles(gitignoreFiles, changes, untracked)
+		if err != nil {
 			return err
 		}
 
-		// Re-evaluate affected files after .gitignore changes
 		affectedFiles = getAffectedFiles(changes, untracked, ignored)
 
-		// Check if there's anything left to clean
 		if len(affectedFiles) == 0 {
 			fmt.Println("Clean complete")
 			return nil
 		}
 
-		// Restore .gitignore files before prompting
 		fmt.Println("Restoring .gitignore files for confirmation...")
-		if err := restoreGitignoreFiles(gitignoreFiles); err != nil {
+		if err := restoreGitignoreFiles(gitignoreBackup); err != nil {
 			return fmt.Errorf("failed to restore .gitignore files: %v", err)
 		}
 
-		// Add gitignore files back to the affected files list for display
 		affectedFiles = append(gitignoreFiles, affectedFiles...)
 	}
 
@@ -123,10 +121,9 @@ func (c *CleanCommand) Execute(args []string) error {
 			return nil
 		}
 
-		// User confirmed - clean .gitignore files again if needed
 		if len(gitignoreFiles) > 0 {
 			fmt.Println("Re-applying .gitignore cleanup...")
-			if err := cleanGitignoreFiles(gitignoreFiles, changes, untracked); err != nil {
+			if _, err := cleanGitignoreFiles(gitignoreFiles, changes, untracked); err != nil {
 				return err
 			}
 		}
@@ -209,71 +206,59 @@ type gitignoreState struct {
 	content    string // Content if untracked
 }
 
-var gitignoreBackup []gitignoreState
+// cleanGitignoreFiles handles cleaning only .gitignore files.
+// returns the backup so the caller can pass it to restoreGitignoreFiles.
+func cleanGitignoreFiles(gitignoreFiles []string, changes, untracked bool) ([]gitignoreState, error) {
+	var backup []gitignoreState
 
-// cleanGitignoreFiles handles cleaning only .gitignore files
-func cleanGitignoreFiles(gitignoreFiles []string, changes, untracked bool) error {
-	gitignoreBackup = []gitignoreState{}
-	
-	// For each .gitignore file, check if it's modified or untracked
 	for _, file := range gitignoreFiles {
 		status, err := internal.GetGitFileStatus(file)
 		if err != nil || status == internal.GitFileUnknown {
-			continue // File doesn't exist or no changes
+			continue
 		}
-		
-		// Backup the state
+
 		state := gitignoreState{
 			file:       file,
 			fileStatus: status,
 		}
-		
-		// Untracked file
+
 		if status == internal.GitFileUntracked {
 			if untracked {
-				// Read content before removing
 				content, _, _ := internal.RunCommand("cat", file)
 				state.content = content
-				gitignoreBackup = append(gitignoreBackup, state)
-				
+				backup = append(backup, state)
+
 				_, _, err := internal.RunCommand("rm", file)
 				if err != nil {
-					return fmt.Errorf("failed to remove %s: %v", file, err)
+					return nil, fmt.Errorf("failed to remove %s: %v", file, err)
 				}
 			}
 		} else if changes {
-			// Modified, staged, or deleted file - save state and reset it
-			gitignoreBackup = append(gitignoreBackup, state)
+			backup = append(backup, state)
 			_, _, err := internal.RunCommand("git", "checkout", "HEAD", "--", file)
 			if err != nil {
-				return fmt.Errorf("failed to reset %s: %v", file, err)
+				return nil, fmt.Errorf("failed to reset %s: %v", file, err)
 			}
 		}
 	}
-	
-	return nil
+
+	return backup, nil
 }
 
-// restoreGitignoreFiles restores .gitignore files to their state before cleaning
-func restoreGitignoreFiles(gitignoreFiles []string) error {
-	for _, state := range gitignoreBackup {
-		// Restore untracked files
+func restoreGitignoreFiles(backup []gitignoreState) error {
+	for _, state := range backup {
 		if state.fileStatus == internal.GitFileUntracked {
-			// Write content back
 			if err := internal.WriteFile(state.file, state.content); err != nil {
 				return fmt.Errorf("failed to restore %s: %v", state.file, err)
 			}
 		} else {
-			// For modified files, we need to restore them from the index/working tree
-			// This is tricky - we'll use git stash to restore
+			// stash round-trip restores the working-tree state
 			_, _, err := internal.RunCommand("git", "stash", "push", "-m", "gitgum-restore", "--", state.file)
 			if err != nil {
-				// If stash fails, the file might already be in the right state
 				continue
 			}
 			_, _, _ = internal.RunCommand("git", "stash", "pop")
 		}
 	}
-	gitignoreBackup = nil
 	return nil
 }
