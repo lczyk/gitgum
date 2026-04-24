@@ -2,9 +2,12 @@ package commands
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/lczyk/gitgum/src/internal"
 )
+
+const gitCleanDryRunPrefix = "Would remove "
 
 // CleanCommand handles discarding working tree changes and untracked files
 type CleanCommand struct {
@@ -155,8 +158,8 @@ func getAffectedFiles(changes, untracked, ignored bool) ([]string, error) {
 		}
 		if stdout != "" {
 			for _, line := range internal.SplitLines(stdout) {
-				if len(line) > 13 && line[:13] == "Would remove " {
-					affectedFiles = append(affectedFiles, line[13:])
+				if trimmed, ok := strings.CutPrefix(line, gitCleanDryRunPrefix); ok {
+					affectedFiles = append(affectedFiles, trimmed)
 				}
 			}
 		}
