@@ -142,7 +142,7 @@ func findProjectRoot() (string, error) {
 
 	for {
 		versionFile := filepath.Join(dir, "VERSION")
-		if _, err := os.Stat(versionFile); err == nil {
+		if info, err := os.Stat(versionFile); err == nil && !info.IsDir() {
 			return dir, nil
 		}
 

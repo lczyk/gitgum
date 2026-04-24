@@ -1,42 +1,66 @@
+.SUFFIXES:
 
-.DEFAULT_GOAL := du
+SRCS := $(shell find ./cmd ./src -name '*.go' ! -name 'generated.go' ! -name 'version.go')
+
+help:  ## Show this help
+	@echo "Available targets:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: build
-build: ./bin/gitgum
+build: ./bin/gitgum  ## Build the gitgum binary (compressed with upx if available)
 
-SRCS := $(shell find . -name '*.go')
-
-./bin/gitgum: $(SRCS) ./cmd/gitgum/main.go Makefile go.mod go.sum ./src/completions/generated.go ./src/version/version.go
+./bin/gitgum: $(SRCS) ./src/completions/generated.go ./src/version/version.go Makefile go.mod go.sum
 	mkdir -p ./bin
 	go build -o ./bin/gitgum ./cmd/gitgum
-	# If we have upx installed, compress the binary
-	if command -v upx >/dev/null 2>&1; then \
-		upx ./bin/gitgum; \
+	@if command -v upx >/dev/null 2>&1; then \
+		upx ./bin/gitgum || echo "upx failed, skipping compression"; \
 	fi
 
-./src/completions/generated.go: ./src/completions/generate.go $(SRCS) Makefile go.mod go.sum
+./src/completions/generated.go: ./src/completions/gitgum.bash ./src/completions/gitgum.fish ./src/completions/gitgum.zsh ./src/completions/generate.go ./src/completions/cmd/generate-completions/main.go Makefile
 	go generate ./src/completions
 
-./src/version/version.go: ./src/version/generate.go VERSION Makefile
+./src/version/version.go: VERSION ./src/version/generate.go ./src/version/cmd/generate-version/main.go Makefile
 	go generate ./src/version
 
 .PHONY: du
-du: ./bin/gitgum
+du: ./bin/gitgum  ## Show the binary size
 	du -h ./bin/gitgum
 
+.PHONY: install
+install: ./bin/gitgum  ## Symlink the binary into ~/.local/bin/gitgum
+	mkdir -p $(HOME)/.local/bin
+	ln -sf "$(PWD)/bin/gitgum" "$(HOME)/.local/bin/gitgum"
+
 .PHONY: test
-test:
+test:  ## Run the test suite (and the vendored go-fuzzyfinder tests)
 	@if command -v gotest >/dev/null 2>&1; then \
 		gotest ./...; \
 	else \
 		go test ./...; \
 	fi
-
-	# Run make test in go-fuzzyfinder to ensure it works with the latest changes
 	$(MAKE) -C my-vendor/go-fuzzyfinder unit-test
 
+.PHONY: check
+check:  ## go vet across the module
+	go vet ./...
+
+.PHONY: fmt
+fmt:  ## gofmt the tree in place
+	gofmt -s -w ./cmd ./src
+
+.PHONY: fmt-check
+fmt-check:  ## Verify gofmt without modifying files
+	@out=$$(gofmt -s -l ./cmd ./src); \
+	if [ -n "$$out" ]; then \
+		echo "Unformatted files:"; echo "$$out"; exit 1; \
+	fi
+
+.PHONY: verify
+verify: fmt-check check test  ## Pre-commit gate: fmt-check, vet, test
+	@echo "All checks passed."
+
 .PHONY: clean
-clean:
-	rm -rf ./bin/gitgum
-	rm -rf ./src/completions/generated.go
-	rm -rf ./src/version/version.go
+clean:  ## Remove build artifacts and generated files
+	rm -f ./bin/gitgum
+	rm -f ./src/completions/generated.go
+	rm -f ./src/version/version.go

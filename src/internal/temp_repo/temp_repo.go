@@ -20,6 +20,8 @@ func InitTempRepo(t *testing.T) string {
     RunGit(t, dir, "init")
     RunGit(t, dir, "config", "user.name", "Test User")
     RunGit(t, dir, "config", "user.email", "test@example.com")
+    RunGit(t, dir, "config", "commit.gpgsign", "false")
+    RunGit(t, dir, "config", "tag.gpgsign", "false")
 
     // Create initial file and commit
     fname := filepath.Join(dir, "README.md")
