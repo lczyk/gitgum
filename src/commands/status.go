@@ -8,10 +8,8 @@ import (
 	"github.com/lczyk/gitgum/src/internal"
 )
 
-// StatusCommand handles showing the status of the git repository
 type StatusCommand struct{}
 
-// Execute runs the status command
 func (s *StatusCommand) Execute(args []string) error {
 	// Check if we're in a git repository
 	if err := internal.CheckInGitRepo(); err != nil {
@@ -78,7 +76,6 @@ func (s *StatusCommand) Execute(args []string) error {
 	return nil
 }
 
-// parseRemotes parses the output of 'git remote -v' and returns unique remote entries
 func parseRemotes(remoteOutput string) []string {
 	lines := strings.Split(remoteOutput, "\n")
 	seen := make(map[string]bool)
@@ -103,7 +100,6 @@ func parseRemotes(remoteOutput string) []string {
 	return remotes
 }
 
-// isCommandAvailable checks if a command is available in PATH
 func isCommandAvailable(command string) bool {
 	_, err := exec.LookPath(command)
 	return err == nil

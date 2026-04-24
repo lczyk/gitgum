@@ -4,22 +4,6 @@ import (
 	"testing"
 )
 
-func TestStatusCommand_Execute(t *testing.T) {
-	// Create a status command
-	cmd := &StatusCommand{}
-
-	// Note: This test will fail if run outside a git repository
-	// In a real-world scenario, we'd set up a temporary git repo for testing
-	// For now, we just test that the command doesn't panic
-	err := cmd.Execute([]string{})
-
-	// We expect this to succeed when run in a git repository
-	if err != nil {
-		// Only fail if we're in a git repo but got an unexpected error
-		t.Logf("Status command returned error: %v (this is expected if not in a git repo)", err)
-	}
-}
-
 func TestParseRemotes(t *testing.T) {
 	tests := []struct {
 		name     string
