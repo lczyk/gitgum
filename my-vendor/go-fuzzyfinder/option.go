@@ -64,16 +64,6 @@ func WithPreviewWindow(f func(i, width, height int) string) Option {
 	}
 }
 
-// WithHotReload reloads the passed slice automatically when some entries are appended.
-// The caller must pass a pointer of the slice instead of the slice itself.
-//
-// Deprecated: use WithHotReloadLock instead.
-func WithHotReload() Option {
-	return func(o *opt) {
-		o.hotReload = true
-	}
-}
-
 // WithHotReloadLock reloads the passed slice automatically when some entries are appended.
 // The caller must pass a pointer of the slice instead of the slice itself.
 // The caller must pass a RLock which is used to synchronize access to the slice.
@@ -142,7 +132,7 @@ func WithQuery(s string) Option {
 	}
 }
 
-// WithQuery enables to set the initial query.
+// WithSelectOne automatically selects the item if there is only one match.
 func WithSelectOne() Option {
 	return func(o *opt) {
 		o.selectOne = true

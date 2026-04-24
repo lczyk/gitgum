@@ -146,7 +146,7 @@ func TestFuzz(t *testing.T) {
 			}
 			if *hotReload {
 				iface = &tracks
-				opts = append(opts, fuzzyfinder.WithHotReload())
+				opts = append(opts, fuzzyfinder.WithHotReloadLock(&sync.Mutex{}))
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
 				go func() {

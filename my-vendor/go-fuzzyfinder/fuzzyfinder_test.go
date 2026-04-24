@@ -311,7 +311,7 @@ func TestFind_hotReload(t *testing.T) {
 				return "Name: " + tracks[i].Name + "\nArtist: " + tracks[i].Artist
 			}),
 			fuzzyfinder.WithMode(fuzzyfinder.ModeCaseSensitive),
-			fuzzyfinder.WithHotReload(),
+			fuzzyfinder.WithHotReloadLock(&sync.Mutex{}),
 		)
 		if !errors.Is(err, fuzzyfinder.ErrAbort) {
 			t.Fatalf("Find must return ErrAbort, but got '%s'", err)
@@ -708,7 +708,7 @@ func BenchmarkFind(b *testing.B) {
 					}
 					return "Name: " + tracks[i].Name + "\nArtist: " + tracks[i].Artist
 				}),
-				fuzzyfinder.WithHotReload(),
+				fuzzyfinder.WithHotReloadLock(&sync.Mutex{}),
 			)
 			if err != nil {
 				b.Fatalf("should not return an error, but got '%s'", err)
