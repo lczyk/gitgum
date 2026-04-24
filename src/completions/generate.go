@@ -11,9 +11,13 @@ var fishCompletion string
 //go:embed gitgum.zsh
 var zshCompletion string
 
-// CompletionTemplates contains the embedded shell completion scripts
-var CompletionTemplates = map[string]string{
+var templates = map[string]string{
 	"bash": bashCompletion,
 	"fish": fishCompletion,
 	"zsh":  zshCompletion,
+}
+
+func Get(shell string) (string, bool) {
+	content, ok := templates[shell]
+	return content, ok
 }
