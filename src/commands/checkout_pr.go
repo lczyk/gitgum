@@ -10,6 +10,11 @@ import (
 	"github.com/lczyk/gitgum/src/internal"
 )
 
+var (
+	prRegex        = regexp.MustCompile(`^[a-f0-9]+\s+refs/pull/(\d+)/(head|merge)$`)
+	prSelectionRex = regexp.MustCompile(`^PR #(\d+) \((\w+)\)$`)
+)
+
 type CheckoutPRCommand struct{}
 
 type PRRef struct {
@@ -77,7 +82,6 @@ func getPRRefs(remote string) ([]PRRef, error) {
 // parsePRRefs extracts PR refs from `git ls-remote` output.
 // when both head and merge exist for a PR, head wins.
 func parsePRRefs(lsRemoteOutput string) []PRRef {
-	prRegex := regexp.MustCompile(`^[a-f0-9]+\s+refs/pull/(\d+)/(head|merge)$`)
 	prMap := make(map[int]PRRef)
 
 	for _, line := range internal.SplitLines(lsRemoteOutput) {
@@ -117,8 +121,7 @@ func formatPROptions(prRefs []PRRef) []string {
 }
 
 func parsePRSelection(selection string) (int, string, error) {
-	re := regexp.MustCompile(`^PR #(\d+) \((\w+)\)$`)
-	matches := re.FindStringSubmatch(selection)
+	matches := prSelectionRex.FindStringSubmatch(selection)
 	if len(matches) != 3 {
 		return 0, "", fmt.Errorf("invalid PR selection format: %s", selection)
 	}
