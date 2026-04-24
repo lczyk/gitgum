@@ -7,7 +7,10 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/lczyk/gitgum/src/internal"
+	"github.com/lczyk/gitgum/internal/cmdrun"
+	"github.com/lczyk/gitgum/internal/git"
+	"github.com/lczyk/gitgum/internal/strutil"
+	"github.com/lczyk/gitgum/internal/ui"
 )
 
 var (
@@ -23,11 +26,11 @@ type PRRef struct {
 }
 
 func (c *CheckoutPRCommand) Execute(args []string) error {
-	if err := internal.CheckInGitRepo(); err != nil {
+	if err := git.CheckInRepo(); err != nil {
 		return err
 	}
 
-	remotes, err := internal.GetRemotes()
+	remotes, err := git.GetRemotes()
 	if err != nil {
 		return fmt.Errorf("getting remotes: %w", err)
 	}
@@ -37,7 +40,7 @@ func (c *CheckoutPRCommand) Execute(args []string) error {
 		return fmt.Errorf("no remotes")
 	}
 
-	remote, err := internal.FzfSelect("Select a remote to fetch PR from", remotes)
+	remote, err := ui.FzfSelect("Select a remote to fetch PR from", remotes)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "No remote selected. Aborting checkout-pr.")
 		return err
@@ -55,7 +58,7 @@ func (c *CheckoutPRCommand) Execute(args []string) error {
 
 	prOptions := formatPROptions(prRefs)
 
-	selected, err := internal.FzfSelect("Select a pull request to checkout", prOptions)
+	selected, err := ui.FzfSelect("Select a pull request to checkout", prOptions)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "No PR selected. Aborting checkout-pr.")
 		return err
@@ -71,7 +74,7 @@ func (c *CheckoutPRCommand) Execute(args []string) error {
 
 func getPRRefs(remote string) ([]PRRef, error) {
 	fmt.Println("Fetching pull request references from remote:", remote)
-	stdout, _, err := internal.RunCommand("git", "ls-remote", remote)
+	stdout, _, err := cmdrun.Run("git", "ls-remote", remote)
 	if err != nil {
 		return nil, fmt.Errorf("listing remote refs: %w", err)
 	}
@@ -84,7 +87,7 @@ func getPRRefs(remote string) ([]PRRef, error) {
 func parsePRRefs(lsRemoteOutput string) []PRRef {
 	prMap := make(map[int]PRRef)
 
-	for _, line := range internal.SplitLines(lsRemoteOutput) {
+	for _, line := range strutil.SplitLines(lsRemoteOutput) {
 		matches := prRegex.FindStringSubmatch(line)
 		if len(matches) != 3 {
 			continue
@@ -140,8 +143,8 @@ func checkoutPR(remote string, prNumber int, prType string) error {
 	branchName := fmt.Sprintf("pr-%d", prNumber)
 	prRef := fmt.Sprintf("refs/pull/%d/%s", prNumber, prType)
 
-	if internal.BranchExists(branchName) {
-		confirmed, err := internal.FzfConfirm(
+	if git.BranchExists(branchName) {
+		confirmed, err := ui.FzfConfirm(
 			fmt.Sprintf("Branch '%s' already exists. Reset it to the latest PR state?", branchName),
 			false,
 		)
@@ -149,7 +152,7 @@ func checkoutPR(remote string, prNumber int, prType string) error {
 			return err
 		}
 		if !confirmed {
-			if err := internal.RunCommandWithOutput("git", "checkout", branchName); err != nil {
+			if err := cmdrun.RunWithOutput("git", "checkout", branchName); err != nil {
 				return fmt.Errorf("checking out existing branch '%s': %w", branchName, err)
 			}
 			fmt.Printf("Switched to existing branch '%s'.\n", branchName)
@@ -157,15 +160,15 @@ func checkoutPR(remote string, prNumber int, prType string) error {
 		}
 
 		fmt.Printf("Fetching PR #%d from %s...\n", prNumber, remote)
-		if err := internal.RunCommandWithOutput("git", "fetch", remote, prRef); err != nil {
+		if err := cmdrun.RunWithOutput("git", "fetch", remote, prRef); err != nil {
 			return fmt.Errorf("fetching PR: %w", err)
 		}
 
-		if err := internal.RunCommandWithOutput("git", "checkout", branchName); err != nil {
+		if err := cmdrun.RunWithOutput("git", "checkout", branchName); err != nil {
 			return fmt.Errorf("checking out branch '%s': %w", branchName, err)
 		}
 
-		if err := internal.RunCommandWithOutput("git", "reset", "--hard", "FETCH_HEAD"); err != nil {
+		if err := cmdrun.RunWithOutput("git", "reset", "--hard", "FETCH_HEAD"); err != nil {
 			return fmt.Errorf("resetting branch: %w", err)
 		}
 
@@ -173,7 +176,7 @@ func checkoutPR(remote string, prNumber int, prType string) error {
 		return nil
 	}
 
-	dirty, err := internal.IsGitDirty(".")
+	dirty, err := git.IsDirty(".")
 	if err != nil {
 		return fmt.Errorf("checking git status: %w", err)
 	}
@@ -183,11 +186,11 @@ func checkoutPR(remote string, prNumber int, prType string) error {
 	}
 
 	fmt.Printf("Fetching PR #%d from %s...\n", prNumber, remote)
-	if err := internal.RunCommandWithOutput("git", "fetch", remote, prRef); err != nil {
+	if err := cmdrun.RunWithOutput("git", "fetch", remote, prRef); err != nil {
 		return fmt.Errorf("fetching PR: %w", err)
 	}
 
-	if err := internal.RunCommandWithOutput("git", "checkout", "-b", branchName, "FETCH_HEAD"); err != nil {
+	if err := cmdrun.RunWithOutput("git", "checkout", "-b", branchName, "FETCH_HEAD"); err != nil {
 		return fmt.Errorf("creating and checking out branch: %w", err)
 	}
 

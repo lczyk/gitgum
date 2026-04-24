@@ -1,6 +1,6 @@
 .SUFFIXES:
 
-SRCS := $(shell find ./cmd ./src -name '*.go' ! -name 'version.go')
+SRCS := $(shell find ./cmd ./internal ./src -name '*.go' ! -name 'version.go')
 
 help:  ## Show this help
 	@echo "Available targets:"
@@ -44,11 +44,11 @@ check:  ## go vet across the module
 
 .PHONY: fmt
 fmt:  ## gofmt the tree in place
-	gofmt -s -w ./cmd ./src
+	gofmt -s -w ./cmd ./internal ./src
 
 .PHONY: fmt-check
 fmt-check:  ## Verify gofmt without modifying files
-	@out=$$(gofmt -s -l ./cmd ./src); \
+	@out=$$(gofmt -s -l ./cmd ./internal ./src); \
 	if [ -n "$$out" ]; then \
 		echo "Unformatted files:"; echo "$$out"; exit 1; \
 	fi

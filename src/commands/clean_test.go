@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
-	"github.com/lczyk/gitgum/src/internal/temp_repo"
+	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
 
 func boolPtr(b bool) *bool { return &b }
