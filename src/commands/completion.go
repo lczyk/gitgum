@@ -27,7 +27,7 @@ func (c *CompletionCommand) Execute(args []string) error {
 
 	result, err := completions.Render(c.Args.Shell, cmdName)
 	if err != nil {
-		return err
+		return fmt.Errorf("rendering completion: %w", err)
 	}
 
 	w := c.out
