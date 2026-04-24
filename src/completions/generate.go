@@ -15,7 +15,7 @@ var fishCompletion string
 //go:embed gitgum.zsh
 var zshCompletion string
 
-const placeholder = "__GITGUM_CMD__"
+const Placeholder = "__GITGUM_CMD__"
 
 var templates = map[string]string{
 	"bash": bashCompletion,
@@ -32,5 +32,5 @@ func Render(shell, cmdName string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("invalid shell type '%s', must be one of: %s", shell, strings.Join(validShells, ", "))
 	}
-	return strings.ReplaceAll(content, placeholder, cmdName), nil
+	return strings.ReplaceAll(content, Placeholder, cmdName), nil
 }

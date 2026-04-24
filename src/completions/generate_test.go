@@ -20,8 +20,8 @@ func TestRender(t *testing.T) {
 				if !strings.Contains(result, "myapp") {
 					t.Error("result missing command name substitution")
 				}
-				if strings.Contains(result, placeholder) {
-					t.Error("result still contains placeholder")
+				if strings.Contains(result, Placeholder) {
+					t.Error("result still contains Placeholder")
 				}
 			},
 		},
@@ -33,8 +33,8 @@ func TestRender(t *testing.T) {
 				if !strings.Contains(result, "gg") {
 					t.Error("result missing command name substitution")
 				}
-				if strings.Contains(result, placeholder) {
-					t.Error("result still contains placeholder")
+				if strings.Contains(result, Placeholder) {
+					t.Error("result still contains Placeholder")
 				}
 			},
 		},
@@ -46,8 +46,8 @@ func TestRender(t *testing.T) {
 				if !strings.Contains(result, "gitgum") {
 					t.Error("result missing command name substitution")
 				}
-				if strings.Contains(result, placeholder) {
-					t.Error("result still contains placeholder")
+				if strings.Contains(result, Placeholder) {
+					t.Error("result still contains Placeholder")
 				}
 			},
 		},
@@ -82,8 +82,8 @@ func TestRenderEmptyCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Render with empty command: %v", err)
 	}
-	// should replace placeholder with empty string, leaving valid bash but degenerate
-	if strings.Contains(result, placeholder) {
-		t.Error("placeholder not replaced with empty string")
+	// should replace Placeholder with empty string, leaving valid bash but degenerate
+	if strings.Contains(result, Placeholder) {
+		t.Error("Placeholder not replaced with empty string")
 	}
 }

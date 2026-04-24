@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/gitgum/src/completions"
 )
 
 func TestCompletionCommand_Execute(t *testing.T) {
@@ -58,7 +59,7 @@ func TestCompletionCommand_Execute(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				assert.That(t, len(output) > 0, "output should not be empty")
-				assert.That(t, !strings.Contains(output, "__GITGUM_CMD__"), "placeholder should be replaced")
+				assert.That(t, !strings.Contains(output, completions.Placeholder), "placeholder should be replaced")
 				if tt.cmdName != "" {
 					assert.ContainsString(t, output, tt.cmdName)
 				}
