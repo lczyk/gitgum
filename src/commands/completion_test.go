@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -35,10 +37,11 @@ func TestCompletionCommand_Execute(t *testing.T) {
 				assert.Error(t, err, tt.errMessage)
 			} else {
 				assert.NoError(t, err)
-				assert.That(t, len(output) > 0, "output should not be empty")
 				assert.That(t, !strings.Contains(output, completions.Placeholder), "placeholder should be replaced")
 				if tt.cmdName != "" {
 					assert.ContainsString(t, output, tt.cmdName)
+				} else {
+					assert.ContainsString(t, output, filepath.Base(os.Args[0]))
 				}
 			}
 		})
