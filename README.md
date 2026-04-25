@@ -110,7 +110,7 @@ Flags: `-m`/`--multi`, `-q`/`--query`, `-p`/`--prompt`, `--header`, `-1`/`--sele
 - [`cmd/fuzzyfinder`](cmd/fuzzyfinder) — `ff` binary entry point
 - [`src/commands`](src/commands) — one file per subcommand, each implements `flags.Commander`
 - [`src/fuzzyfinder`](src/fuzzyfinder) — picker library (originally a fork of `ktr0731/go-fuzzyfinder`, now substring-only matching and a custom renderer)
-- [`src/fuzzyfinder/litescreen`](src/fuzzyfinder/litescreen) — standalone tcell-free ANSI renderer; powers inline (`--height`) mode
+- [`src/litescreen`](src/litescreen) — standalone tcell-free ANSI renderer; powers inline (`--height`) mode
 - [`internal/git`](internal/git) — git operations (the `Repo` type for parallel-safe tests, plus CWD-based free functions)
 - [`internal/cmdrun`](internal/cmdrun) — small `exec.Command` wrappers
 - [`internal/ui`](internal/ui) — picker helpers (`Select`, `Confirm`, `ErrCancelled`)
@@ -120,7 +120,7 @@ Flags: `-m`/`--multi`, `-q`/`--query`, `-p`/`--prompt`, `--header`, `-1`/`--sele
 ## Vendored licences
 
 - [`src/fuzzyfinder/`](src/fuzzyfinder) derives from a vendored copy of `github.com/ktr0731/go-fuzzyfinder` (MIT). Original licence at [LICENSE-go-fuzzyfinder](LICENSE-go-fuzzyfinder).
-- [`src/fuzzyfinder/litescreen/`](src/fuzzyfinder/litescreen) was developed based on `junegunn/fzf`'s `LightRenderer` (MIT). Code is freshly written, not copied; credit at [LICENSE-fzf](LICENSE-fzf).
+- [`src/litescreen/`](src/litescreen) was developed based on `junegunn/fzf`'s `LightRenderer` (MIT). Code is freshly written, not copied; credit at [LICENSE-fzf](LICENSE-fzf).
 
 ## ToDo's
 

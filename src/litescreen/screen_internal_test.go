@@ -548,8 +548,8 @@ func TestInitSequence_Inline(t *testing.T) {
 func TestInitSequence_NegativeHeight(t *testing.T) {
 	out, yOrigin, fb := initSequence(-2, 80, 24)
 	got := string(out)
-	assert.Equal(t, fb.height, 22)         // termH + height = 24 + (-2)
-	assert.Equal(t, yOrigin, 2)            // termH - rows = 24 - 22
+	assert.Equal(t, fb.height, 22) // termH + height = 24 + (-2)
+	assert.Equal(t, yOrigin, 2)    // termH - rows = 24 - 22
 	assert.That(t, strings.Contains(got, "\x1b[3;1H\x1b[J"), "expected region clear at row 3; got %q", got)
 }
 

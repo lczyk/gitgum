@@ -17,8 +17,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v2"
-	"github.com/lczyk/gitgum/src/fuzzyfinder/litescreen"
 	"github.com/lczyk/gitgum/src/fuzzyfinder/matching"
+	"github.com/lczyk/gitgum/src/litescreen"
 	runewidth "github.com/mattn/go-runewidth"
 )
 

@@ -19,7 +19,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/lczyk/assert"
-	"github.com/lczyk/gitgum/src/fuzzyfinder/litescreen"
+	"github.com/lczyk/gitgum/src/litescreen"
 )
 
 // TestNew_OpensTty smoke-tests construction. Skips if /dev/tty isn't
