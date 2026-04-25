@@ -3,7 +3,6 @@ package commands
 import (
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/git"
@@ -117,8 +116,6 @@ func (d *DeleteCommand) Execute(args []string) error {
 	// try safe delete first, fall back to force delete with confirmation
 	_, _, err = cmdrun.Run("git", "branch", "-d", branch)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Could not delete branch '%s'. It may not be fully merged.\n", branch)
-
 		var confirmMsg string
 		if needsToDeleteRemote {
 			confirmMsg = fmt.Sprintf("Branch '%s' is not fully merged. Do you want to force delete the local branch and the remote branch?", branch)
@@ -145,7 +142,6 @@ func (d *DeleteCommand) Execute(args []string) error {
 
 	if needsToDeleteRemote {
 		if err := cmdrun.RunWithOutput("git", "push", "--delete", remoteName, remoteBranchName); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: Could not delete remote branch '%s/%s'.\n", remoteName, remoteBranchName)
 			return fmt.Errorf("deleting remote branch: %w", err)
 		}
 		fmt.Printf("Deleted remote branch '%s/%s'.\n", remoteName, remoteBranchName)
