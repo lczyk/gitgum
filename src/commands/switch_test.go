@@ -37,6 +37,13 @@ func TestApplySelection_Local(t *testing.T) {
 	assert.Equal(t, currentBranchIn(t, dir), "feature")
 }
 
+func TestApplySelection_RemoteInvalidFormat(t *testing.T) {
+	s := &SwitchCommand{}
+	err := s.applySelection("remote: noslash")
+	assert.Error(t, err, assert.AnyError)
+	assert.ContainsString(t, err.Error(), "invalid remote branch format")
+}
+
 // "local/remote" entries appear when a local branch already has a tracking
 // remote — selecting such an entry must check out the local branch, not error.
 func TestApplySelection_LocalRemote(t *testing.T) {
