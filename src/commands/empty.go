@@ -22,7 +22,7 @@ func (e *EmptyCommand) Execute(args []string) error {
 
 	upstream, err := git.GetCurrentBranchUpstream()
 	if err != nil {
-		return err
+		return fmt.Errorf("getting current branch upstream: %w", err)
 	}
 
 	hasUpstream := upstream != ""
@@ -72,7 +72,7 @@ func (e *EmptyCommand) Execute(args []string) error {
 			if err := cmdrun.RunWithOutput("git", "push"); err != nil {
 				return fmt.Errorf("pushing: %w", err)
 			}
-			fmt.Printf("Pushed to remote.\n")
+			fmt.Println("Pushed to remote.")
 		} else {
 			fmt.Println("Not pushing.")
 		}
