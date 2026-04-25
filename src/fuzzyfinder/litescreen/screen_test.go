@@ -286,7 +286,7 @@ func TestFramebuf_FirstFlushEmitsBlanks(t *testing.T) {
 	// 3x2 buffer, no SetContent calls. First flush should still emit every
 	// cell as a space because front is sentinel-initialized.
 	fb := newFramebuf(3, 2)
-	out := string(fb.flush(0, 0, false))
+	out := string(fb.flush(0, 0, 0, false))
 	// 3*2 = 6 cells, all spaces. Cursor stays hidden (cursorVisible=false).
 	spaces := strings.Count(out, " ")
 	assert.Equal(t, spaces, 6)
@@ -297,17 +297,17 @@ func TestFramebuf_NoChangeNoOutput(t *testing.T) {
 	// Second flush with no SetContent calls should emit only framing
 	// (cursor-hide + reset SGR + optional cursor-show), no cell repositioning.
 	fb := newFramebuf(3, 2)
-	_ = fb.flush(0, 0, false)
-	out := string(fb.flush(0, 0, false))
+	_ = fb.flush(0, 0, 0, false)
+	out := string(fb.flush(0, 0, 0, false))
 	assert.That(t, !strings.Contains(out, "\x1b[1;1H"), "should not reposition cursor when no cells changed")
 }
 
 func TestFramebuf_SetContentEmitsCell(t *testing.T) {
 	fb := newFramebuf(5, 1)
-	_ = fb.flush(0, 0, false) // sync front
+	_ = fb.flush(0, 0, 0, false) // sync front
 
 	fb.set(2, 0, liteCell{mainc: 'X'})
-	out := string(fb.flush(0, 0, false))
+	out := string(fb.flush(0, 0, 0, false))
 	// Should reposition to row 1, col 3 (1-indexed) and emit 'X'.
 	assert.That(t, strings.Contains(out, "\x1b[1;3H"), "expected cursor move to (1,3); got %q", out)
 	assert.That(t, strings.Contains(out, "X"), "expected 'X' in output; got %q", out)
@@ -324,12 +324,12 @@ func TestFramebuf_OutOfRangeIgnored(t *testing.T) {
 
 func TestFramebuf_StyleTransition(t *testing.T) {
 	fb := newFramebuf(4, 1)
-	_ = fb.flush(0, 0, false)
+	_ = fb.flush(0, 0, 0, false)
 
 	fb.set(0, 0, liteCell{mainc: 'A', style: tcell.StyleDefault.Bold(true)})
 	fb.set(1, 0, liteCell{mainc: 'B', style: tcell.StyleDefault.Bold(true)})
 	fb.set(2, 0, liteCell{mainc: 'C', style: tcell.StyleDefault}) // style change
-	out := string(fb.flush(0, 0, false))
+	out := string(fb.flush(0, 0, 0, false))
 
 	// Bold SGR appears (it's `\x1b[1m`).
 	assert.That(t, strings.Contains(out, "\x1b[1m"), "expected bold SGR; got %q", out)
@@ -342,54 +342,95 @@ func TestFramebuf_WideRunePhantomSlot(t *testing.T) {
 	// Wide runes occupy two cells. After drawing a wide rune at x=0, the
 	// next flush with no changes should NOT re-emit the phantom at x=1.
 	fb := newFramebuf(4, 1)
-	_ = fb.flush(0, 0, false)
+	_ = fb.flush(0, 0, 0, false)
 
 	fb.set(0, 0, liteCell{mainc: '日'}) // width 2
-	out1 := string(fb.flush(0, 0, false))
+	out1 := string(fb.flush(0, 0, 0, false))
 	assert.That(t, strings.Contains(out1, "日"), "wide rune should be emitted")
 
 	// Second flush, nothing changed. Should not contain another '日' or
 	// reposition the cursor over the phantom slot.
-	out2 := string(fb.flush(0, 0, false))
+	out2 := string(fb.flush(0, 0, 0, false))
 	assert.That(t, !strings.Contains(out2, "日"), "wide rune should not re-emit on no-change flush; got %q", out2)
 }
 
 func TestFramebuf_CursorVisibility(t *testing.T) {
 	fb := newFramebuf(3, 1)
-	out := string(fb.flush(2, 0, true))
+	out := string(fb.flush(0, 2, 0, true))
 	assert.That(t, strings.Contains(out, "\x1b[?25h"), "cursor-show expected when visible; got %q", out)
 	assert.That(t, strings.Contains(out, "\x1b[1;3H"), "expected cursor positioned at 1;3; got %q", out)
 
-	out = string(fb.flush(0, 0, false))
+	out = string(fb.flush(0, 0, 0, false))
 	assert.That(t, !strings.Contains(out, "\x1b[?25h"), "no cursor-show when invisible")
 }
 
 func TestFramebuf_Clear(t *testing.T) {
 	fb := newFramebuf(3, 1)
-	_ = fb.flush(0, 0, false)
+	_ = fb.flush(0, 0, 0, false)
 	fb.set(0, 0, liteCell{mainc: 'X'})
-	_ = fb.flush(0, 0, false)
+	_ = fb.flush(0, 0, 0, false)
 
 	// After clear, the next flush should overwrite 'X' with a space.
 	fb.clear()
-	out := string(fb.flush(0, 0, false))
+	out := string(fb.flush(0, 0, 0, false))
 	// Cursor should have moved to col 1 to overwrite 'X'.
 	assert.That(t, strings.Contains(out, "\x1b[1;1H"), "expected cursor move to (1,1) after clear; got %q", out)
 }
 
 func TestFramebuf_Resize(t *testing.T) {
 	fb := newFramebuf(3, 2)
-	_ = fb.flush(0, 0, false)
+	_ = fb.flush(0, 0, 0, false)
 	fb.set(0, 0, liteCell{mainc: 'X'})
-	_ = fb.flush(0, 0, false)
+	_ = fb.flush(0, 0, 0, false)
 
 	// resize wipes both buffers; next flush re-emits everything as blanks.
 	fb.resize(5, 1)
 	assert.Equal(t, fb.width, 5)
 	assert.Equal(t, fb.height, 1)
-	out := string(fb.flush(0, 0, false))
+	out := string(fb.flush(0, 0, 0, false))
 	// After resize, front is sentinel; back is blanks; flush emits 5 spaces.
 	assert.Equal(t, strings.Count(out, " "), 5)
+}
+
+// --- height resolution -----------------------------------------------------
+
+func TestResolveHeight(t *testing.T) {
+	tests := []struct {
+		name     string
+		h        int
+		termH    int
+		wantRows int
+		wantFull bool
+	}{
+		{"0 → fullscreen", 0, 24, 24, true},
+		{"absolute fits", 10, 24, 10, false},
+		{"absolute equals → full", 24, 24, 24, true},
+		{"absolute exceeds → full", 100, 24, 24, true},
+		{"negative", -2, 24, 22, false},
+		{"negative leaves 1", -23, 24, 1, false},
+		{"negative cap at 1", -100, 24, 1, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rows, full := resolveHeight(tt.h, tt.termH)
+			assert.Equal(t, rows, tt.wantRows)
+			assert.Equal(t, full, tt.wantFull)
+		})
+	}
+}
+
+// --- framebuf yOrigin ------------------------------------------------------
+
+func TestFramebuf_FlushWithYOrigin(t *testing.T) {
+	// In inline mode the framebuf row 0 maps to absolute terminal row
+	// yOrigin. Cell at (0,0) with yOrigin=20 must emit cursor positioning
+	// to row 21 (1-indexed).
+	fb := newFramebuf(3, 1)
+	_ = fb.flush(20, 0, 0, false) // sync front
+
+	fb.set(0, 0, liteCell{mainc: 'X'})
+	out := string(fb.flush(20, 0, 0, false))
+	assert.That(t, strings.Contains(out, "\x1b[21;1H"), "expected cursor at row 21; got %q", out)
 }
 
 func TestUTF8ContinuationCount(t *testing.T) {

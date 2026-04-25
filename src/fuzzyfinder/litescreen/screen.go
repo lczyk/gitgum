@@ -35,13 +35,22 @@ import (
 // sequences. Input is parsed off /dev/tty in a goroutine, with a short
 // timeout to disambiguate bare ESC from the start of an escape sequence.
 //
-// Currently fullscreen-only (alt-screen via smcup/rmcup); inline mode for
-// --height is the next milestone.
+// Two modes selected by the height parameter to New:
+//   - fullscreen (height == 0 or rows == termH): alt-screen entered with
+//     \e[?1049h, restored on Fini
+//   - inline (height nonzero, less than termH): occupies last N rows of
+//     the main screen, preserving prior terminal output above
+//
+// The current mode is encoded in yOrigin: yOrigin == 0 means fullscreen,
+// yOrigin > 0 means inline.
 type Screen struct {
 	in  *os.File
 	out *os.File
 
 	rawState *term.State
+
+	height  int // raw height arg to New; see resolveHeight
+	yOrigin int // first row of region (0-indexed); 0 in fullscreen
 
 	mu               sync.Mutex
 	fb               *framebuf
@@ -49,6 +58,38 @@ type Screen struct {
 	cursorVisible    bool
 
 	winch chan os.Signal
+
+	// signal-driven cleanup. SIGINT/SIGTERM mid-picker leaves terminal in
+	// raw mode + alt-screen + cursor hidden if we don't intercept. cleanup
+	// runs at most once, from either Fini or the signal goroutine.
+	sigCh       chan os.Signal
+	cleanupOnce sync.Once
+}
+
+// resolveHeight turns the user-supplied Height value into an actual row
+// count given the current terminal height. Returns (rows, fullscreen).
+//
+//	h == 0           fullscreen
+//	h > 0            exactly h rows
+//	h < 0            termH + h (e.g. -2 → leave 2 rows visible above)
+//
+// Clamps to [1, termH]; if the request meets or exceeds termH, returns
+// fullscreen.
+func resolveHeight(h, termH int) (int, bool) {
+	if h == 0 {
+		return termH, true
+	}
+	rows := h
+	if rows < 0 {
+		rows = termH + rows
+	}
+	if rows < 1 {
+		rows = 1
+	}
+	if rows >= termH {
+		return termH, true
+	}
+	return rows, false
 }
 
 type liteCell struct {
@@ -107,14 +148,22 @@ func (f *framebuf) set(x, y int, c liteCell) {
 }
 
 // flush returns the byte stream that updates the terminal from front to
-// back, optionally repositioning the cursor afterwards. As a side effect,
-// front is updated to match back so a subsequent flush with no intervening
-// changes emits an empty payload (modulo the cursor-hide/show framing).
-func (f *framebuf) flush(cx, cy int, cursorVisible bool) []byte {
+// back, optionally repositioning the cursor afterwards. yOrigin is the row
+// (0-indexed in the absolute terminal) where row 0 of the framebuf lives.
+// Pass 0 for fullscreen mode; pass termH-rows for inline mode.
+//
+// As a side effect, front is updated to match back so a subsequent flush
+// with no intervening changes emits an empty payload (modulo the
+// cursor-hide/show framing).
+func (f *framebuf) flush(yOrigin, cx, cy int, cursorVisible bool) []byte {
 	var buf bytes.Buffer
 
-	// Hide cursor while drawing to avoid flicker; restore at the end.
-	buf.WriteString("\x1b[?25l")
+	// Hide cursor + disable auto-wrap (DECAWM) while drawing. Without ?7l,
+	// emitting a cell in the bottom-right corner advances the cursor to a
+	// new line — at the bottom of the terminal that triggers a scroll,
+	// which moves our region under us and corrupts subsequent renders.
+	// Restored at end of flush.
+	buf.WriteString("\x1b[?25l\x1b[?7l")
 
 	var prevStyle tcell.Style
 	var styleSet bool
@@ -132,8 +181,9 @@ func (f *framebuf) flush(cx, cy int, cursorVisible bool) []byte {
 				continue
 			}
 
-			// Move cursor to (y, x). 1-based.
-			fmt.Fprintf(&buf, "\x1b[%d;%dH", y+1, x+1)
+			// Cursor positioning is 1-indexed and absolute. Add yOrigin to
+			// shift fb row 0 to the region's first terminal row.
+			fmt.Fprintf(&buf, "\x1b[%d;%dH", yOrigin+y+1, x+1)
 
 			if !styleSet || c.style != prevStyle {
 				buf.WriteString("\x1b[m")
@@ -164,14 +214,19 @@ func (f *framebuf) flush(cx, cy int, cursorVisible bool) []byte {
 		}
 	}
 
-	buf.WriteString("\x1b[m")
+	buf.WriteString("\x1b[m\x1b[?7h") // restore auto-wrap
 	if cursorVisible {
-		fmt.Fprintf(&buf, "\x1b[%d;%dH\x1b[?25h", cy+1, cx+1)
+		fmt.Fprintf(&buf, "\x1b[%d;%dH\x1b[?25h", yOrigin+cy+1, cx+1)
 	}
 	return buf.Bytes()
 }
 
-func New() (*Screen, error) {
+// New constructs a Screen with the given height policy:
+//
+//	0   fullscreen (alt-screen, preserves nothing above)
+//	N>0 exactly N rows at the bottom; prior output preserved above
+//	N<0 terminal_rows + N (e.g. -2 leaves 2 rows visible above)
+func New(height int) (*Screen, error) {
 	in, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
 	if err != nil {
 		return nil, fmt.Errorf("open /dev/tty for read: %w", err)
@@ -181,7 +236,7 @@ func New() (*Screen, error) {
 		in.Close()
 		return nil, fmt.Errorf("open /dev/tty for write: %w", err)
 	}
-	return &Screen{in: in, out: out}, nil
+	return &Screen{in: in, out: out, height: height}, nil
 }
 
 func (s *Screen) Init() error {
@@ -191,30 +246,82 @@ func (s *Screen) Init() error {
 	}
 	s.rawState = st
 
-	w, h := s.terminalSize()
-	s.fb = newFramebuf(w, h)
+	w, termH := s.terminalSize()
+	rows, fullscreen := resolveHeight(s.height, termH)
+	s.fb = newFramebuf(w, rows)
 
-	// Enter alt-screen, clear, home cursor, hide cursor.
-	io.WriteString(s.out, "\x1b[?1049h\x1b[2J\x1b[H\x1b[?25l")
+	if fullscreen {
+		// Enter alt-screen, clear, home cursor, hide cursor.
+		io.WriteString(s.out, "\x1b[?1049h\x1b[2J\x1b[H\x1b[?25l")
+		s.yOrigin = 0
+	} else {
+		// Inline mode: scroll content up by emitting (rows-1) newlines so
+		// we have N free lines at the bottom of the terminal. After the
+		// LFs the cursor is clamped to the last row, so the region's first
+		// row is termH-rows.
+		io.WriteString(s.out, "\x1b[?25l")
+		for i := 0; i < rows-1; i++ {
+			io.WriteString(s.out, "\n")
+		}
+		s.yOrigin = termH - rows
+		// Clear the region in case prior content overlaps.
+		fmt.Fprintf(s.out, "\x1b[%d;1H\x1b[J", s.yOrigin+1)
+	}
 	s.cursorVisible = false
 
 	s.winch = make(chan os.Signal, 1)
 	signal.Notify(s.winch, syscall.SIGWINCH)
+
+	s.sigCh = make(chan os.Signal, 1)
+	signal.Notify(s.sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go s.signalLoop()
 	return nil
 }
 
+// signalLoop catches SIGINT/SIGTERM, restores the terminal, and re-raises
+// the signal so the default handler runs (process exit with the correct
+// status). Without this, a Ctrl-C delivered while the picker is up leaves
+// the terminal in raw mode + cursor hidden.
+func (s *Screen) signalLoop() {
+	sig, ok := <-s.sigCh
+	if !ok {
+		return
+	}
+	s.cleanup()
+	signal.Reset(sig.(syscall.Signal))
+	syscall.Kill(syscall.Getpid(), sig.(syscall.Signal))
+}
+
+// cleanup restores the terminal to its pre-Init state. Idempotent: safe to
+// call from both Fini and the signal goroutine. Mode is derived from
+// yOrigin: 0 means fullscreen (alt-screen needs rmcup), nonzero means
+// inline (clear region).
+func (s *Screen) cleanup() {
+	s.cleanupOnce.Do(func() {
+		if s.yOrigin == 0 {
+			io.WriteString(s.out, "\x1b[m\x1b[?25h\x1b[?1049l")
+		} else {
+			fmt.Fprintf(s.out, "\x1b[m\x1b[%d;1H\x1b[J\x1b[?25h", s.yOrigin+1)
+		}
+		if s.rawState != nil {
+			term.Restore(int(s.in.Fd()), s.rawState)
+			s.rawState = nil
+		}
+	})
+}
+
 func (s *Screen) Fini() {
-	// Leave alt-screen, show cursor, reset SGR.
-	io.WriteString(s.out, "\x1b[m\x1b[?25h\x1b[?1049l")
+	s.cleanup()
 
 	if s.winch != nil {
 		signal.Stop(s.winch)
 		close(s.winch)
 		s.winch = nil
 	}
-	if s.rawState != nil {
-		term.Restore(int(s.in.Fd()), s.rawState)
-		s.rawState = nil
+	if s.sigCh != nil {
+		signal.Stop(s.sigCh)
+		close(s.sigCh)
+		s.sigCh = nil
 	}
 	s.in.Close()
 	s.out.Close()
@@ -248,7 +355,7 @@ func (s *Screen) ShowCursor(x, y int) {
 func (s *Screen) Show() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.out.Write(s.fb.flush(s.cursorX, s.cursorY, s.cursorVisible))
+	s.out.Write(s.fb.flush(s.yOrigin, s.cursorX, s.cursorY, s.cursorVisible))
 }
 
 func cellEqual(a, b liteCell) bool {
@@ -379,9 +486,29 @@ func (s *Screen) readLoop(out chan<- byte, errCh chan<- error) {
 func (s *Screen) handleResize() (int, int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	w, h := s.terminalSize()
-	s.fb.resize(w, h)
-	return w, h
+	w, termH := s.terminalSize()
+	rows, fullscreen := resolveHeight(s.height, termH)
+
+	prevWidth := s.fb.width
+	if fullscreen {
+		s.yOrigin = 0
+		io.WriteString(s.out, "\x1b[2J\x1b[H")
+	} else {
+		s.yOrigin = termH - rows
+		if w < prevWidth {
+			// Narrowing reflows previous picker rows into more visual lines
+			// that scroll up past yOrigin, leaving wrapped tails above it.
+			// We can't clear them precisely without knowing how much wrap
+			// happened, so wipe the entire visible viewport. Scrollback is
+			// untouched — pre-picker output is still scrollable up.
+			// Its not the best thing to do here, but i cant think of anythig
+			// better atm..
+			io.WriteString(s.out, "\x1b[2J")
+		}
+		fmt.Fprintf(s.out, "\x1b[%d;1H\x1b[J", s.yOrigin+1)
+	}
+	s.fb.resize(w, rows)
+	return w, rows
 }
 
 const escTimeout = 50 * time.Millisecond

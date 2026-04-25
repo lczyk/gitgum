@@ -17,6 +17,14 @@ type Opt struct {
 	// Multi lets the user select multiple items via Tab. When false, the
 	// returned slice always has exactly one element.
 	Multi bool
+	// Height controls inline rendering.
+	//   0   fullscreen (alt-screen)
+	//   N>0 exactly N rows at the bottom; prior output preserved above
+	//   N<0 terminal_rows + N
+	// Honored only by the default litescreen renderer; ignored when the
+	// FF_RENDERER=legacy escape hatch is set (tcell can't preserve
+	// terminal scrollback).
+	Height int
 }
 
 func (o Opt) withDefaults() Opt {

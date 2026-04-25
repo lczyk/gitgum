@@ -22,15 +22,16 @@ import (
 	runewidth "github.com/mattn/go-runewidth"
 )
 
-// newScreen returns the screen backend selected by the FF_RENDERER env var.
-// Default is tcell (existing alt-screen behavior). FF_RENDERER=lite uses our
-// own ANSI renderer — currently fullscreen-only, the foundation for inline
-// (--height) mode.
-func newScreen() (screen, error) {
-	if os.Getenv("FF_RENDERER") == "lite" {
-		return litescreen.New()
+// newScreen returns the screen backend. Default is litescreen (our own
+// ANSI renderer) which supports both fullscreen and inline (Opt.Height)
+// modes. Set FF_RENDERER=legacy to fall back to tcell's alt-screen
+// renderer; tcell can't preserve scrollback so Opt.Height is ignored in
+// that case.
+func newScreen(height int) (screen, error) {
+	if os.Getenv("FF_RENDERER") == "legacy" {
+		return tcell.NewScreen()
 	}
-	return tcell.NewScreen()
+	return litescreen.New(height)
 }
 
 var (
@@ -97,7 +98,7 @@ type finder struct {
 
 func (f *finder) initFinder(items []string, matched []matching.Matched, opt Opt) error {
 	if f.term == nil {
-		s, err := newScreen()
+		s, err := newScreen(opt.Height)
 		if err != nil {
 			return fmt.Errorf("failed to new screen: %w", err)
 		}

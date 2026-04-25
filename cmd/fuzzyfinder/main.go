@@ -191,6 +191,7 @@ func parseFlags(args []string, stderr io.Writer) (config, error) {
 	fs.BoolVar(&cfg.opt.SelectOne, "select-1", false, "auto-select if exactly one item")
 	fs.BoolVar(&cfg.fast, "fast", false, "disable streaming delay (append items as fast as stdin produces them)")
 	fs.BoolVar(&cfg.opt.Reverse, "reverse", false, "render prompt at the top with items growing downward")
+	fs.IntVar(&cfg.opt.Height, "height", 0, "occupy only N rows of the terminal instead of fullscreen; preserves prior terminal output above the picker. 0 = fullscreen, N>0 = exact rows, N<0 = terminal_rows + N")
 
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
@@ -211,8 +212,9 @@ Description:
   produce all their output (find, fd, ripgrep, ...) are usable immediately,
   and you can begin typing a query before the producer has finished.
 
-  Matching is fuzzy and case-insensitive; results are ranked by score with
-  matched characters highlighted. Empty lines from stdin are skipped.
+  Matching is substring-based and case-insensitive: whitespace-split queries
+  require every word to appear in the item (in any order). Matched characters
+  are highlighted. Empty lines from stdin are skipped.
 
 Options:
   -m, --multi          Allow selecting multiple items. Tab toggles the item
@@ -232,6 +234,12 @@ Options:
                        the gg switch animation cadence.
       --reverse        Render the prompt at the top with items growing
                        downward. Default is bottom-up (prompt at the bottom).
+      --height=N       Occupy only N rows of the terminal instead of going
+                       fullscreen. Prior terminal output remains visible
+                       above the picker.
+                         0     fullscreen (default)
+                         N>0   exactly N rows
+                         N<0   terminal_rows + N
   -v, --version        Print version and exit.
   -h, --help           Show this help message.
 

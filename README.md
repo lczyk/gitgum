@@ -100,24 +100,27 @@ find . -type f | ff
 git branch --format='%(refname:short)' | ff -p 'branch> ' | xargs git checkout
 ```
 
-Flags: `-m`/`--multi`, `-q`/`--query`, `-p`/`--prompt`, `--header`, `-1`/`--select-1`, `-v`/`--version`. Exit codes match `fzf` where reasonable: 0 success, 1 no match, 130 cancelled, 2 IO/flag error.
+Flags: `-m`/`--multi`, `-q`/`--query`, `-p`/`--prompt`, `--header`, `-1`/`--select-1`, `--reverse`, `--fast`, `--height=N`, `-v`/`--version`. Exit codes match `fzf` where reasonable: 0 success, 1 no match, 130 cancelled, 2 IO/flag error.
+
+`--height=N` renders the picker inline at the bottom N rows of the terminal (preserves prior output above) instead of taking over the full screen. `0` (default) is fullscreen; positive N is exact rows; negative N is `terminal_rows + N`.
 
 ## Layout
 
 - [`cmd/gitgum`](cmd/gitgum) — gitgum binary entry point
 - [`cmd/fuzzyfinder`](cmd/fuzzyfinder) — `ff` binary entry point
-- [`cmd/generate-version`](cmd/generate-version) — build-time tool that writes `src/version/version.go`
 - [`src/commands`](src/commands) — one file per subcommand, each implements `flags.Commander`
-- [`src/fuzzyfinder`](src/fuzzyfinder) — fork of `ktr0731/go-fuzzyfinder`; library kept independent of gitgum-specific code
+- [`src/fuzzyfinder`](src/fuzzyfinder) — picker library (originally a fork of `ktr0731/go-fuzzyfinder`, now substring-only matching and a custom renderer)
+- [`src/fuzzyfinder/litescreen`](src/fuzzyfinder/litescreen) — standalone tcell-free ANSI renderer; powers inline (`--height`) mode
 - [`internal/git`](internal/git) — git operations (the `Repo` type for parallel-safe tests, plus CWD-based free functions)
 - [`internal/cmdrun`](internal/cmdrun) — small `exec.Command` wrappers
 - [`internal/ui`](internal/ui) — picker helpers (`Select`, `Confirm`, `ErrCancelled`)
 - [`internal/strutil`](internal/strutil) — string helpers
 - [`internal/testutil/temp_repo`](internal/testutil/temp_repo) — test fixtures
 
-## Vendored licence
+## Vendored licences
 
-`src/fuzzyfinder/` derives from a vendored copy of `github.com/ktr0731/go-fuzzyfinder` under the MIT License. The original licence is preserved at [LICENSE-go-fuzzyfinder](LICENSE-go-fuzzyfinder).
+- [`src/fuzzyfinder/`](src/fuzzyfinder) derives from a vendored copy of `github.com/ktr0731/go-fuzzyfinder` (MIT). Original licence at [LICENSE-go-fuzzyfinder](LICENSE-go-fuzzyfinder).
+- [`src/fuzzyfinder/litescreen/`](src/fuzzyfinder/litescreen) was developed based on `junegunn/fzf`'s `LightRenderer` (MIT). Code is freshly written, not copied; credit at [LICENSE-fzf](LICENSE-fzf).
 
 ## ToDo's
 
