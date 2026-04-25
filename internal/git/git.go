@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/lczyk/gitgum/internal/cmdrun"
+	"github.com/lczyk/gitgum/internal/strutil"
 )
 
 // Repo is a git repository identified by an absolute path. The zero value
@@ -101,14 +102,7 @@ func (r Repo) GetRemotes() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	var remotes []string
-	for _, line := range strings.Split(stdout, "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			remotes = append(remotes, line)
-		}
-	}
-	return remotes, nil
+	return strutil.SplitLines(stdout), nil
 }
 
 // GetRemoteBranches returns branches for a specific remote.
