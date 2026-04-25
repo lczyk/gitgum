@@ -117,17 +117,13 @@ func getAffectedFiles(changes, untracked, ignored bool) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("listing modified files: %w", err)
 		}
-		if stdout != "" {
-			affectedFiles = append(affectedFiles, strutil.SplitLines(stdout)...)
-		}
+		affectedFiles = append(affectedFiles, strutil.SplitLines(stdout)...)
 
 		stdout, _, err = cmdrun.Run("git", "diff", "--cached", "--name-only")
 		if err != nil {
 			return nil, fmt.Errorf("listing staged files: %w", err)
 		}
-		if stdout != "" {
-			affectedFiles = append(affectedFiles, strutil.SplitLines(stdout)...)
-		}
+		affectedFiles = append(affectedFiles, strutil.SplitLines(stdout)...)
 	}
 
 	if untracked {
@@ -139,11 +135,9 @@ func getAffectedFiles(changes, untracked, ignored bool) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("listing untracked files: %w", err)
 		}
-		if stdout != "" {
-			for _, line := range strutil.SplitLines(stdout) {
-				if trimmed, ok := strings.CutPrefix(line, gitCleanDryRunPrefix); ok {
-					affectedFiles = append(affectedFiles, trimmed)
-				}
+		for _, line := range strutil.SplitLines(stdout) {
+			if trimmed, ok := strings.CutPrefix(line, gitCleanDryRunPrefix); ok {
+				affectedFiles = append(affectedFiles, trimmed)
 			}
 		}
 	}
