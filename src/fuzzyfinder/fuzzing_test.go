@@ -5,7 +5,6 @@ package fuzzyfinder_test
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -58,9 +57,9 @@ func TestFuzz(t *testing.T) {
 		events := make([]tcell.Event, n)
 		for j := 0; j < n; j++ {
 			if rand.Intn(10) > 3 {
-				events[j] = ch(letters[rand.Intn(len(letters)-1)])
+				events[j] = ch(letters[rand.Intn(len(letters))])
 			} else {
-				k := tbkeys[rand.Intn(len(tbkeys)-1)]
+				k := tbkeys[rand.Intn(len(tbkeys))]
 				events[j] = key(input{k, rune(k), tcell.ModNone})
 			}
 		}
