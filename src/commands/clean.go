@@ -21,43 +21,36 @@ type CleanCommand struct {
 	Yes       bool  `short:"y" long:"yes" description:"Skip confirmation prompt"`
 }
 
-// Execute runs the clean command
 func (c *CleanCommand) Execute(args []string) error {
-	// Check if we're in a git repository
 	if err := git.CheckInRepo(); err != nil {
 		return err
 	}
 
-	// Apply defaults
-	changes := boolValue(c.Changes, true)
-	untracked := boolValue(c.Untracked, true)
-	ignored := boolValue(c.Ignored, false)
+	changes := c.Changes == nil || *c.Changes
+	untracked := c.Untracked == nil || *c.Untracked
+	ignored := c.Ignored != nil && *c.Ignored
 
-	// If --all is specified, enable all cleanup options
 	if c.All {
 		changes = true
 		untracked = true
 		ignored = true
 	}
 
-	// If --ignored is specified, it implies --untracked
+	// --ignored implies --untracked
 	if ignored {
 		untracked = true
 	}
 
-	// If nothing is enabled, nothing to do
 	if !changes && !untracked {
 		fmt.Println("Nothing to clean (all options disabled)")
 		return nil
 	}
 
-	// Build summary of what will be affected
 	affectedFiles, err := getAffectedFiles(changes, untracked, ignored)
 	if err != nil {
 		return err
 	}
 
-	// Show summary
 	if len(affectedFiles) == 0 {
 		fmt.Println("Nothing to clean (working tree is clean)")
 		return nil
@@ -85,7 +78,6 @@ func (c *CleanCommand) Execute(args []string) error {
 		}
 	}
 
-	// Execute git reset --hard if changes should be discarded
 	if changes {
 		fmt.Println("Discarding changes...")
 		stdout, stderr, err := cmdrun.Run("git", "reset", "--hard")
@@ -97,7 +89,6 @@ func (c *CleanCommand) Execute(args []string) error {
 		}
 	}
 
-	// Execute git clean if untracked files should be removed
 	if untracked {
 		cleanArgs := []string{"clean", "-fd"}
 		if ignored {
@@ -116,14 +107,6 @@ func (c *CleanCommand) Execute(args []string) error {
 
 	fmt.Println("Clean complete")
 	return nil
-}
-
-// boolValue returns the dereferenced bool pointer value, or the default if nil.
-func boolValue(ptr *bool, defaultVal bool) bool {
-	if ptr != nil {
-		return *ptr
-	}
-	return defaultVal
 }
 
 func getAffectedFiles(changes, untracked, ignored bool) ([]string, error) {
