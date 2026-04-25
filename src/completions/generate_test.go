@@ -14,6 +14,7 @@ func TestRender(t *testing.T) {
 		{shell: "bash", cmdName: "myapp"},
 		{shell: "fish", cmdName: "gg"},
 		{shell: "zsh", cmdName: "gitgum"},
+		{shell: "bash", cmdName: ""},
 		{shell: "invalid", cmdName: "test", wantErr: true},
 	}
 
@@ -37,15 +38,5 @@ func TestRender(t *testing.T) {
 		if strings.Contains(result, Placeholder) {
 			t.Errorf("Render(%q, %q): placeholder not replaced", tt.shell, tt.cmdName)
 		}
-	}
-}
-
-func TestRenderEmptyCommand(t *testing.T) {
-	result, err := Render("bash", "")
-	if err != nil {
-		t.Fatalf("Render with empty command: %v", err)
-	}
-	if strings.Contains(result, Placeholder) {
-		t.Error("Placeholder not replaced with empty string")
 	}
 }

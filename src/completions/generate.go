@@ -23,8 +23,6 @@ var templates = map[string]string{
 	"zsh":  zshCompletion,
 }
 
-// Render returns the completion script for the given shell with the command
-// name substituted in.
 func Render(shell, cmdName string) (string, error) {
 	content, ok := templates[shell]
 	if !ok {
