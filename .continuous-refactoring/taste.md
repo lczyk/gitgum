@@ -1,15 +1,24 @@
 taste-scoping-version: 1
 
-- Return errors as values, always wrap with `fmt.Errorf("context: %w", err)`. Never panic.
+- Return errors as values, wrap with `fmt.Errorf("context: %w", err)` when context adds info. Bare return fine when it doesn't. Never panic.
 - Prefer longer functions with section-header comments over splitting into many small functions. Comments delimit logical sections, not every step.
 - Write comments for non-obvious invariants, subtle state, or tricky conditions. Enforce at compile-time if possible; cheap runtime check + comment if not; heavy test coverage as a last resort.
-- Comments written in casual style -- matching how i'd write them, colloquialisms and all. no forced capitalisation. sentences don't need to start with a capital. acronyms lowercase too (http, url, grpc) -- only capitalise if it looks genuinely weird lowercase.
+- Keep compile-time interface compliance assertions like `var _ SomeInterface = (*Impl)(nil)`. They cost nothing and surface drift instantly. Don't refactor them out.
+- Inline comments (inside function bodies, alongside fields, etc.) are casual -- matching how i'd write them, colloquialisms and all. no forced capitalisation. sentences don't need to start with a capital. acronyms lowercase too (http, url, grpc) -- only capitalise if it looks genuinely weird lowercase.
+- Doc comments on exported decls (the ones godoc picks up) follow standard Go convention: capitalised, full sentences, leading with the identifier name (`// Foo does X.`). The casual rule applies only to inline comments, not doc comments.
+- Replacing a comment with self-describing names is fine for *what*, but if the comment carried *why* (intent, rationale), keep the comment too. Names describe; comments justify.
+- Before refactoring a file, scan its recent git history (`git log -p -- <file>`, last ~10 commits) to see what's already been tried. If a prior commit moved code one way for a stated reason, don't silently move it back. If you do reverse a prior decision, reference it in the commit message.
 - Extract helpers only if genuinely called from multiple places, or if the abstraction makes things more testable / encapsulates a meaningful higher-level concept. Don't split just to hit low LOC counts.
-- Use interfaces + DI to make things testable. Prefer DI over mocks.
-- Unit tests first. Example-based unless it takes excessive code yoga. Table-driven where it fits naturally.
+- Don't oscillate on extract-vs-inline. If a helper exists at function or package level, leave it there unless there's a concrete reason to move it.
+- Use interfaces + DI to make things testable. Prefer DI over mocks. Add DI on demand -- only when a test actually needs it, or when a unit is being prepared for extraction as a reusable lib (then over-DI for testability is fine). **Don't remove existing DI.** Only consider adding it. If a unit is already DI'd more than its current callers need, that's deliberate -- leave it.
+- Tests: readability beats compactness. Verbose is fine -- intermediate named vars, repeated setup, obvious-looking lines. Don't inline expressions or collapse locals just to shave lines. e.g. keep `events := c.events; events = append(events, esc); term.SetEvents(events...)` over a nested `term.SetEvents(append(c.events, esc)...)`.
+- Don't flip test shape without a real reason. Once tests are split into their own funcs, leave them split. Once collapsed into a table, leave them collapsed. No rewriting between styles for cosmetic reasons.
+- Unit tests preferred level. Example-based unless it takes excessive code yoga. Table-driven where it fits naturally.
 - Delete dead code, compat shims, and legacy fallbacks freely. Personal project, no external users.
 - Truthful names. Find abstractions that keep names short -- complex things earn abstract names (e.g. `State`), detail lives in the code.
+- Names within a file should follow a consistent abbreviation pattern. e.g. don't mix `prRegex` with `prSelectionRex` -- pick one shortening (`Re`, `Regex`, etc.) and use it everywhere in that file.
 - Compact public API. Internals can sprawl. 2k line files fine if cohesive.
+- For types with methods, prefer value-receiver methods over package-level free-function shims that forward to a default-constructed value. One way to do something beats two.
 - Split modules at responsibility boundaries: things that change for different reasons, have different callers, or require different mental models to understand each side.
 - No strong opinion on when to introduce or collapse interfaces -- use judgment case by case.
 - Extract cross-cutting concerns (retry, logging helpers, etc.) to a shared package by default. Inline duplication only with a specific reason.
