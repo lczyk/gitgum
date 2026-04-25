@@ -1,7 +1,6 @@
 package matching_test
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/lczyk/assert"
@@ -88,12 +87,7 @@ func TestFindAllWithMatcher(t *testing.T) {
 
 	slice := []string{"foo", "bar", "baz", "foobar"}
 
-	// matcher that matches items containing query as a substring
-	substringMatcher := func(query, item string) bool {
-		return len(query) > 0 && strings.Contains(item, query)
-	}
-
-	matched := matching.FindAll("foo", slice, matching.WithMatcher(substringMatcher))
+	matched := matching.FindAll("foo", slice, matching.WithMatcher(matching.SubstringMatcher))
 
 	wantIdxs := map[int]bool{0: true, 3: true}
 	assert.Len(t, matched, len(wantIdxs))
