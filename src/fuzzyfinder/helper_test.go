@@ -2,10 +2,6 @@ package fuzzyfinder
 
 import "github.com/gdamore/tcell/v2"
 
-func New() *finder {
-	return &finder{}
-}
-
 func NewWithMockedTerminal() (*finder, *TerminalMock) {
 	eventsChan := make(chan tcell.Event, 10)
 
