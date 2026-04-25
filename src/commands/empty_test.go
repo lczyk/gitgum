@@ -8,7 +8,7 @@ import (
 )
 
 // EmptyCommand tests validate basic command structure.
-// Full E2E testing requires mocking fzf interactions (user input).
+// Full E2E testing requires mocking the fuzzyfinder picker (user input).
 
 func TestEmptyCommand_NotInGitRepo(t *testing.T) {
 	temp_repo.ChdirTempDir(t)

@@ -23,9 +23,9 @@ func (p *PushCommand) Execute(args []string) error {
 	}
 	if remoteBranch != "" {
 		fmt.Printf("Current branch already has a remote tracking branch: %s\n", remoteBranch)
-		confirmed, err := ui.FzfConfirm("Do you want to push to the remote tracking branch?", true)
+		confirmed, err := ui.Confirm("Do you want to push to the remote tracking branch?", true)
 		if err != nil {
-			if errors.Is(err, ui.ErrFzfCancelled) {
+			if errors.Is(err, ui.ErrCancelled) {
 				return nil
 			}
 			return err
@@ -65,9 +65,9 @@ func (p *PushCommand) Execute(args []string) error {
 			}
 		}
 		if selectedRemote == "" {
-			remote, err := ui.FzfSelect(fmt.Sprintf("Push '%s' to", currentBranch), remotes, providedRemote)
+			remote, err := ui.Select(fmt.Sprintf("Push '%s' to", currentBranch), remotes, providedRemote)
 			if err != nil {
-				if errors.Is(err, ui.ErrFzfCancelled) {
+				if errors.Is(err, ui.ErrCancelled) {
 					return nil
 				}
 				return fmt.Errorf("selecting remote: %w", err)
@@ -75,9 +75,9 @@ func (p *PushCommand) Execute(args []string) error {
 			selectedRemote = remote
 		}
 	} else {
-		remote, err := ui.FzfSelect(fmt.Sprintf("Push '%s' to", currentBranch), remotes)
+		remote, err := ui.Select(fmt.Sprintf("Push '%s' to", currentBranch), remotes)
 		if err != nil {
-			if errors.Is(err, ui.ErrFzfCancelled) {
+			if errors.Is(err, ui.ErrCancelled) {
 				return nil
 			}
 			return fmt.Errorf("selecting remote: %w", err)
@@ -114,10 +114,10 @@ func (p *PushCommand) Execute(args []string) error {
 			return nil
 		}
 
-		confirmed, err := ui.FzfConfirm(fmt.Sprintf("Remote branch '%s' already exists. Do you want to push to it?",
+		confirmed, err := ui.Confirm(fmt.Sprintf("Remote branch '%s' already exists. Do you want to push to it?",
 			expectedRemoteBranchName), true)
 		if err != nil {
-			if errors.Is(err, ui.ErrFzfCancelled) {
+			if errors.Is(err, ui.ErrCancelled) {
 				return nil
 			}
 			return err
@@ -131,10 +131,10 @@ func (p *PushCommand) Execute(args []string) error {
 		}
 		fmt.Printf("Pushed to remote branch '%s'.\n", expectedRemoteBranchName)
 	} else {
-		confirmed, err := ui.FzfConfirm(fmt.Sprintf("No remote branch '%s' found. Do you want to create it?",
+		confirmed, err := ui.Confirm(fmt.Sprintf("No remote branch '%s' found. Do you want to create it?",
 			expectedRemoteBranchName), false)
 		if err != nil {
-			if errors.Is(err, ui.ErrFzfCancelled) {
+			if errors.Is(err, ui.ErrCancelled) {
 				return nil
 			}
 			return err

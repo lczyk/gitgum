@@ -85,7 +85,7 @@ func pickBranch(ctx context.Context, branches *[]string, lock *sync.Mutex) (stri
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "No branch selected. Aborting switch.")
 		if errors.Is(err, fuzzyfinder.ErrAbort) {
-			return "", ui.ErrFzfCancelled
+			return "", ui.ErrCancelled
 		}
 		return "", err
 	}

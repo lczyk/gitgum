@@ -7,11 +7,11 @@ import (
 	"github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
-// ErrFzfCancelled is returned when the user cancels an fzf operation (Ctrl+C or ESC).
-var ErrFzfCancelled = errors.New("fzf operation cancelled")
+// ErrCancelled is returned when the user cancels a picker operation (Ctrl+C or ESC).
+var ErrCancelled = errors.New("picker operation cancelled")
 
-// FzfSelect presents options via fzf and returns the selected item.
-func FzfSelect(prompt string, options []string, initialQuery ...string) (string, error) {
+// Select presents options via the fuzzyfinder library and returns the selected item.
+func Select(prompt string, options []string, initialQuery ...string) (string, error) {
 	if len(options) == 0 {
 		return "", fmt.Errorf("no options provided")
 	}
@@ -27,20 +27,20 @@ func FzfSelect(prompt string, options []string, initialQuery ...string) (string,
 	idx, err := fuzzyfinder.Find(options, opts...)
 	if err != nil {
 		if err == fuzzyfinder.ErrAbort {
-			return "", ErrFzfCancelled
+			return "", ErrCancelled
 		}
 		return "", err
 	}
 	return options[idx], nil
 }
 
-// FzfConfirm asks a yes/no question via fzf.
-func FzfConfirm(prompt string, defaultYes bool) (bool, error) {
+// Confirm asks a yes/no question via the fuzzyfinder library.
+func Confirm(prompt string, defaultYes bool) (bool, error) {
 	options := []string{"yes", "no"}
 	if !defaultYes {
 		options = []string{"no", "yes"}
 	}
-	selected, err := FzfSelect(prompt, options)
+	selected, err := Select(prompt, options)
 	if err != nil {
 		return false, err
 	}

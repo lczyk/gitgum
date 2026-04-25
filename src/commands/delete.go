@@ -24,7 +24,7 @@ func switchCurrentBranchIfNeeded(branch string, allBranches []string) error {
 		return nil
 	}
 
-	confirmed, err := ui.FzfConfirm(
+	confirmed, err := ui.Confirm(
 		fmt.Sprintf("You are currently on branch '%s'. Do you want to switch to another branch before deleting it?", branch),
 		true,
 	)
@@ -48,9 +48,9 @@ func switchCurrentBranchIfNeeded(branch string, allBranches []string) error {
 		return fmt.Errorf("no other branches")
 	}
 
-	otherBranch, err := ui.FzfSelect("Select a branch to switch to", otherBranches)
+	otherBranch, err := ui.Select("Select a branch to switch to", otherBranches)
 	if err != nil {
-		if err == ui.ErrFzfCancelled {
+		if err == ui.ErrCancelled {
 			fmt.Fprintln(os.Stderr, "No branch selected. Aborting delete.")
 		}
 		return err
@@ -78,9 +78,9 @@ func (d *DeleteCommand) Execute(args []string) error {
 		return fmt.Errorf("no branches")
 	}
 
-	branch, err := ui.FzfSelect("Select a branch to delete", branches)
+	branch, err := ui.Select("Select a branch to delete", branches)
 	if err != nil {
-		if err == ui.ErrFzfCancelled {
+		if err == ui.ErrCancelled {
 			fmt.Fprintln(os.Stderr, "No branch selected. Aborting delete.")
 		}
 		return err
@@ -88,7 +88,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 
 	// main/master deletion is dangerous enough to warrant a confirmation
 	if branch == "main" || branch == "master" {
-		confirmed, err := ui.FzfConfirm(
+		confirmed, err := ui.Confirm(
 			fmt.Sprintf("You are about to delete the '%s' branch. This is usually the main branch of the repository. Are you sure you want to proceed?", branch),
 			false,
 		)
@@ -114,7 +114,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 	needsToDeleteRemote := false
 
 	if remoteName != "" && remoteBranchName != "" {
-		confirmed, err := ui.FzfConfirm(
+		confirmed, err := ui.Confirm(
 			fmt.Sprintf("Branch '%s' is tracking remote branch '%s/%s'. Do you want to delete the remote branch as well?", branch, remoteName, remoteBranchName),
 			false,
 		)
@@ -136,7 +136,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 			confirmMsg = fmt.Sprintf("Branch '%s' is not fully merged. Do you want to force delete the local branch?", branch)
 		}
 
-		confirmed, err := ui.FzfConfirm(confirmMsg, false)
+		confirmed, err := ui.Confirm(confirmMsg, false)
 		if err != nil {
 			return err
 		}

@@ -35,7 +35,7 @@ func (r *ReleaseCommand) Execute(args []string) error {
 		return fmt.Errorf("get current branch: %w", err)
 	}
 	if branch != "main" {
-		confirmed, err := ui.FzfConfirm(fmt.Sprintf("Not on main (current: %s). Release anyway?", branch), false)
+		confirmed, err := ui.Confirm(fmt.Sprintf("Not on main (current: %s). Release anyway?", branch), false)
 		if err != nil {
 			return err
 		}

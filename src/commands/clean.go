@@ -75,7 +75,7 @@ func (c *CleanCommand) Execute(args []string) error {
 	fmt.Println()
 
 	if !c.Yes {
-		confirmed, err := ui.FzfConfirm("Proceed with cleanup? This cannot be undone", false)
+		confirmed, err := ui.Confirm("Proceed with cleanup? This cannot be undone", false)
 		if err != nil {
 			return err
 		}

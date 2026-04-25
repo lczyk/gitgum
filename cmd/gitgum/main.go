@@ -25,11 +25,11 @@ type Options struct {
 	Release    commands.ReleaseCommand    `command:"release" description:"Bump VERSION (or latest tag), commit, and tag"`
 }
 
-// ErrFzfCancelled is returned when the user cancels an fzf operation (Ctrl+C or ESC)
-var ErrFzfCancelled = errors.New("fzf operation cancelled")
+// ErrCancelled is returned when the user cancels a picker operation (Ctrl+C or ESC)
+var ErrCancelled = errors.New("picker operation cancelled")
 
-// FzfSelect presents options via fzf and returns the selected item
-func FzfSelect(prompt string, options []string) (string, error) {
+// Select presents options via the fuzzyfinder library and returns the selected item
+func Select(prompt string, options []string) (string, error) {
 	if len(options) == 0 {
 		return "", fmt.Errorf("no options provided")
 	}
@@ -41,7 +41,7 @@ func FzfSelect(prompt string, options []string) (string, error) {
 	)
 	if err != nil {
 		if err == fuzzyfinder.ErrAbort {
-			return "", ErrFzfCancelled
+			return "", ErrCancelled
 		}
 		return "", err
 	}
@@ -61,9 +61,9 @@ func main() {
 	// If no command provided, use fuzzyfinder to select one
 	if len(os.Args) == 1 {
 		commands := []string{"switch", "status", "push", "clean", "empty"}
-		selected, err := FzfSelect("Select command", commands)
+		selected, err := Select("Select command", commands)
 		if err != nil {
-			if err == ErrFzfCancelled {
+			if err == ErrCancelled {
 				os.Exit(0)
 			}
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)

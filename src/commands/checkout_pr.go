@@ -40,7 +40,7 @@ func (c *CheckoutPRCommand) Execute(args []string) error {
 		return fmt.Errorf("no remotes")
 	}
 
-	remote, err := ui.FzfSelect("Select a remote to fetch PR from", remotes)
+	remote, err := ui.Select("Select a remote to fetch PR from", remotes)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "No remote selected. Aborting checkout-pr.")
 		return err
@@ -58,7 +58,7 @@ func (c *CheckoutPRCommand) Execute(args []string) error {
 
 	prOptions := formatPROptions(prRefs)
 
-	selected, err := ui.FzfSelect("Select a pull request to checkout", prOptions)
+	selected, err := ui.Select("Select a pull request to checkout", prOptions)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "No PR selected. Aborting checkout-pr.")
 		return err
@@ -144,7 +144,7 @@ func checkoutPR(remote string, prNumber int, prType string) error {
 	prRef := fmt.Sprintf("refs/pull/%d/%s", prNumber, prType)
 
 	if git.BranchExists(branchName) {
-		confirmed, err := ui.FzfConfirm(
+		confirmed, err := ui.Confirm(
 			fmt.Sprintf("Branch '%s' already exists. Reset it to the latest PR state?", branchName),
 			false,
 		)
