@@ -26,25 +26,31 @@ func Select(prompt string, options []string, initialQuery ...string) (string, er
 
 	idx, err := fuzzyfinder.Find(options, opts...)
 	if err != nil {
-		if err == fuzzyfinder.ErrAbort {
+		if errors.Is(err, fuzzyfinder.ErrAbort) {
 			return "", ErrCancelled
 		}
-		return "", err
+		return "", fmt.Errorf("running picker: %w", err)
 	}
 	return options[idx], nil
 }
 
-// Confirm asks a yes/no question via the fuzzyfinder library.
-func Confirm(prompt string, defaultYes bool) (bool, error) {
+// confirmWith is the testable core of Confirm — selector is injected so tests
+// can drive it without terminal i/o.
+func confirmWith(selector func(string, []string, ...string) (string, error), prompt string, defaultYes bool) (bool, error) {
 	options := []string{"yes", "no"}
 	if !defaultYes {
 		options = []string{"no", "yes"}
 	}
-	selected, err := Select(prompt, options)
+	selected, err := selector(prompt, options)
 	if err != nil {
 		return false, err
 	}
 	return selected == "yes", nil
+}
+
+// Confirm asks a yes/no question via the fuzzyfinder library.
+func Confirm(prompt string, defaultYes bool) (bool, error) {
+	return confirmWith(Select, prompt, defaultYes)
 }
 
 // PrintHeader prints a dim header line.
