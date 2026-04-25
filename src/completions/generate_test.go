@@ -9,71 +9,34 @@ func TestRender(t *testing.T) {
 	tests := []struct {
 		shell   string
 		cmdName string
-		ok      bool
-		check   func(t *testing.T, result string)
+		wantErr bool
 	}{
-		{
-			shell:   "bash",
-			cmdName: "myapp",
-			ok:      true,
-			check: func(t *testing.T, result string) {
-				if !strings.Contains(result, "myapp") {
-					t.Error("result missing command name substitution")
-				}
-				if strings.Contains(result, Placeholder) {
-					t.Error("result still contains Placeholder")
-				}
-			},
-		},
-		{
-			shell:   "fish",
-			cmdName: "gg",
-			ok:      true,
-			check: func(t *testing.T, result string) {
-				if !strings.Contains(result, "gg") {
-					t.Error("result missing command name substitution")
-				}
-				if strings.Contains(result, Placeholder) {
-					t.Error("result still contains Placeholder")
-				}
-			},
-		},
-		{
-			shell:   "zsh",
-			cmdName: "gitgum",
-			ok:      true,
-			check: func(t *testing.T, result string) {
-				if !strings.Contains(result, "gitgum") {
-					t.Error("result missing command name substitution")
-				}
-				if strings.Contains(result, Placeholder) {
-					t.Error("result still contains Placeholder")
-				}
-			},
-		},
-		{
-			shell:   "invalid",
-			cmdName: "test",
-			ok:      false,
-			check: func(t *testing.T, result string) {
-				if result != "" {
-					t.Error("error case should return empty string")
-				}
-			},
-		},
+		{shell: "bash", cmdName: "myapp"},
+		{shell: "fish", cmdName: "gg"},
+		{shell: "zsh", cmdName: "gitgum"},
+		{shell: "invalid", cmdName: "test", wantErr: true},
 	}
 
-	for _, test := range tests {
-		result, err := Render(test.shell, test.cmdName)
-		if test.ok && err != nil {
-			t.Errorf("Render(%q, %q): unexpected error: %v", test.shell, test.cmdName, err)
+	for _, tt := range tests {
+		result, err := Render(tt.shell, tt.cmdName)
+		if tt.wantErr {
+			if err == nil {
+				t.Errorf("Render(%q, %q): expected error", tt.shell, tt.cmdName)
+			}
+			if result != "" {
+				t.Errorf("Render(%q, %q): error case should return empty string", tt.shell, tt.cmdName)
+			}
 			continue
 		}
-		if !test.ok && err == nil {
-			t.Errorf("Render(%q, %q): expected error but got none", test.shell, test.cmdName)
-			continue
+		if err != nil {
+			t.Fatalf("Render(%q, %q): %v", tt.shell, tt.cmdName, err)
 		}
-		test.check(t, result)
+		if !strings.Contains(result, tt.cmdName) {
+			t.Errorf("Render(%q, %q): result missing command name", tt.shell, tt.cmdName)
+		}
+		if strings.Contains(result, Placeholder) {
+			t.Errorf("Render(%q, %q): placeholder not replaced", tt.shell, tt.cmdName)
+		}
 	}
 }
 
@@ -82,7 +45,6 @@ func TestRenderEmptyCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Render with empty command: %v", err)
 	}
-	// should replace Placeholder with empty string, leaving valid bash but degenerate
 	if strings.Contains(result, Placeholder) {
 		t.Error("Placeholder not replaced with empty string")
 	}
