@@ -22,7 +22,7 @@ func Calculate(s1, s2 string) (int, [2]int, error) {
 // Uses Gotoh's DP to stay O(MN) instead of O(M²N).
 func smithWaterman(s1, s2 []rune) (int, [2]int) {
 	if len(s1) == 0 {
-		// If the length of s1 is 0, also the length of s2 is 0.
+		// s2 is also empty — caller enforces len(s1) >= len(s2)
 		return 0, [2]int{-1, -1}
 	}
 
@@ -103,7 +103,8 @@ func smithWaterman(s1, s2 []rune) (int, [2]int) {
 	}
 
 	// scan left from maxI-1 matching s2[maxJ-1] down to s2[0].
-	// from defaults to 0 when s1[0] itself is the last needed char.
+	// from stays 0 (default) when s1[0] is the final match: the loop exits
+	// without a subsequent iteration to detect nextS2 < 0.
 	nextS2 := maxJ - 1
 	for i := maxI - 1; i >= 0; i-- {
 		if nextS2 < 0 {
@@ -115,8 +116,9 @@ func smithWaterman(s1, s2 []rune) (int, [2]int) {
 		}
 	}
 
-	// We adjust scores by the weight per one rune.
-	return int(float32(maxScore) * (float32(maxScore) / float32(len(s1)))), [2]int{from, to}
+	// normalise: longer corpus penalises same raw alignment — effective score = maxScore² / len(s1)
+	adjusted := float32(maxScore) * (float32(maxScore) / float32(len(s1)))
+	return int(adjusted), [2]int{from, to}
 }
 
 func isDelimiter(r rune) bool {
