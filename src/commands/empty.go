@@ -40,7 +40,7 @@ func (e *EmptyCommand) Execute(args []string) error {
 		}
 	}
 
-	dirty, err := git.IsDirty(".")
+	dirty, err := git.IsDirty()
 	if err != nil {
 		return fmt.Errorf("checking if working tree is dirty: %w", err)
 	}

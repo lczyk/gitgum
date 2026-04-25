@@ -45,7 +45,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 	}
 	fmt.Println("Current branch is:", branchDisplay)
 
-	dirty, err := git.IsDirty(".")
+	dirty, err := git.IsDirty()
 	if err != nil {
 		return fmt.Errorf("checking git status: %w", err)
 	}

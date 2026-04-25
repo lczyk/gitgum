@@ -219,13 +219,11 @@ func (r Repo) IsBranchAheadOfRemote(localBranch, remoteBranch string) (bool, err
 
 // IsDirty reports whether the repo has tracked changes (ignoring untracked files).
 func (r Repo) IsDirty() (bool, error) {
-	cmd := exec.Command("git", "status", "--porcelain=v1")
-	cmd.Dir = r.Dir
-	output, err := cmd.Output()
+	stdout, _, err := r.run("status", "--porcelain=v1")
 	if err != nil {
 		return false, err
 	}
-	for _, file := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+	for _, file := range strings.Split(stdout, "\n") {
 		if strings.HasPrefix(file, "??") {
 			continue
 		}
@@ -266,4 +264,4 @@ func RemoteBranchExists(remote, branch string) (bool, error) {
 func IsBranchAheadOfRemote(local, remote string) (bool, error) {
 	return CWD().IsBranchAheadOfRemote(local, remote)
 }
-func IsDirty(dir string) (bool, error) { return Repo{Dir: dir}.IsDirty() }
+func IsDirty() (bool, error) { return CWD().IsDirty() }

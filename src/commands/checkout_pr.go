@@ -172,7 +172,7 @@ func checkoutPR(remote string, prNumber int, prType string) error {
 		return nil
 	}
 
-	dirty, err := git.IsDirty(".")
+	dirty, err := git.IsDirty()
 	if err != nil {
 		return fmt.Errorf("checking git status: %w", err)
 	}
