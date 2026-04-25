@@ -12,6 +12,7 @@ import (
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/ui"
 	"github.com/lczyk/gitgum/src/fuzzyfinder"
+	"github.com/lczyk/gitgum/src/fuzzyfinder/matching"
 )
 
 type SwitchCommand struct{}
@@ -79,7 +80,7 @@ func pickBranch(ctx context.Context, branches *[]string, lock *sync.Mutex) (stri
 		branches,
 		lock,
 		fuzzyfinder.WithPromptString(prompt+": "),
-		fuzzyfinder.WithMatcher(fuzzyfinder.SubstringMatcher),
+		fuzzyfinder.WithMatcher(matching.SubstringMatcher),
 		fuzzyfinder.WithContext(ctx),
 	)
 	if err != nil {

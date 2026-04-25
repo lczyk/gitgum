@@ -472,7 +472,7 @@ func (f *finder) filter() {
 	}
 
 	// FindAll may take a lot of time, so it is desired to use RLock to avoid goroutine blocking.
-	opts := []matching.Option{matching.WithMode(matching.Mode(f.opt.mode))}
+	opts := []matching.Option{matching.WithMode(f.opt.mode)}
 	if f.opt.matcher != nil {
 		opts = append(opts, matching.WithMatcher(f.opt.matcher))
 	}

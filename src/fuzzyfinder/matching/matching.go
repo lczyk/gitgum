@@ -55,6 +55,19 @@ func WithMatcher(matcher func(query, item string) bool) Option {
 	}
 }
 
+// SubstringMatcher is a case-insensitive, whitespace-split substring matcher:
+// the item matches if it contains every whitespace-delimited word from the query
+// (case-insensitive). Suitable for fzf-style filtering of free-form input.
+func SubstringMatcher(query, item string) bool {
+	itemLower := strings.ToLower(item)
+	for _, word := range strings.Fields(query) {
+		if !strings.Contains(itemLower, strings.ToLower(word)) {
+			return false
+		}
+	}
+	return true
+}
+
 // FindAll tries to find out sub-strings from slice that match the passed argument in.
 // The returned slice is sorted by similarity scores in descending order.
 func FindAll(in string, slice []string, opts ...Option) []Matched {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/lczyk/gitgum/src/fuzzyfinder"
+	"github.com/lczyk/gitgum/src/fuzzyfinder/matching"
 )
 
 // ErrCancelled is returned when the user cancels a picker operation (Ctrl+C or ESC).
@@ -22,7 +23,7 @@ func Select(prompt string, options []string, initialQuery ...string) (string, er
 	if len(initialQuery) > 0 {
 		opts = append(opts, fuzzyfinder.WithQuery(initialQuery[0]))
 	}
-	opts = append(opts, fuzzyfinder.WithMatcher(fuzzyfinder.SubstringMatcher))
+	opts = append(opts, fuzzyfinder.WithMatcher(matching.SubstringMatcher))
 
 	idx, err := fuzzyfinder.Find(options, opts...)
 	if err != nil {
