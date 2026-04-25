@@ -14,7 +14,7 @@ func boolPtr(b bool) *bool { return &b }
 func fileNotExists(t *testing.T, dir, filename string) {
 	t.Helper()
 	_, err := os.Stat(filepath.Join(dir, filename))
-	assert.That(t, os.IsNotExist(err), filename+" should be removed")
+	assert.That(t, os.IsNotExist(err), "%s should not exist (stat err: %v)", filename, err)
 }
 
 func fileExists(t *testing.T, dir, filename string) {
@@ -27,7 +27,7 @@ func fileContent(t *testing.T, dir, filename, expected string) {
 	t.Helper()
 	content, err := os.ReadFile(filepath.Join(dir, filename))
 	assert.NoError(t, err, "read "+filename)
-	assert.That(t, string(content) == expected, filename+" content mismatch")
+	assert.That(t, string(content) == expected, "%s: got %q, want %q", filename, string(content), expected)
 }
 
 func TestCleanCommand_NotInGitRepo(t *testing.T) {

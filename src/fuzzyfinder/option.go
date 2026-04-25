@@ -2,24 +2,12 @@ package fuzzyfinder
 
 import (
 	"context"
-	"strings"
+
+	"github.com/lczyk/gitgum/src/fuzzyfinder/matching"
 )
 
-// SubstringMatcher is a case-insensitive, whitespace-split substring matcher:
-// the item matches if it contains every whitespace-delimited word from the query
-// (case-insensitive). Suitable for fzf-style filtering of free-form input.
-func SubstringMatcher(query, item string) bool {
-	itemLower := strings.ToLower(item)
-	for _, word := range strings.Fields(query) {
-		if !strings.Contains(itemLower, strings.ToLower(word)) {
-			return false
-		}
-	}
-	return true
-}
-
 type opt struct {
-	mode         mode
+	mode         matching.Mode
 	promptString string
 	header       string
 	ctx          context.Context
@@ -28,17 +16,15 @@ type opt struct {
 	matcher      func(query, item string) bool
 }
 
-type mode int
-
 const (
 	// ModeSmart enables a smart matching. It is the default matching mode.
 	// At the beginning, matching mode is ModeCaseInsensitive, but it switches
 	// over to ModeCaseSensitive if an upper case character is inputted.
-	ModeSmart mode = iota
+	ModeSmart = matching.ModeSmart
 	// ModeCaseSensitive enables a case-sensitive matching.
-	ModeCaseSensitive
+	ModeCaseSensitive = matching.ModeCaseSensitive
 	// ModeCaseInsensitive enables a case-insensitive matching.
-	ModeCaseInsensitive
+	ModeCaseInsensitive = matching.ModeCaseInsensitive
 )
 
 var defaultOption = opt{
@@ -49,7 +35,7 @@ var defaultOption = opt{
 type Option func(*opt)
 
 // WithMode specifies a matching mode. The default mode is ModeSmart.
-func WithMode(m mode) Option {
+func WithMode(m matching.Mode) Option {
 	return func(o *opt) {
 		o.mode = m
 	}

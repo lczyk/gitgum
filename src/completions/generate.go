@@ -23,14 +23,10 @@ var templates = map[string]string{
 	"zsh":  zshCompletion,
 }
 
-var validShells = []string{"bash", "fish", "zsh"}
-
-// Render returns the completion script for the given shell with the command
-// name substituted in.
 func Render(shell, cmdName string) (string, error) {
 	content, ok := templates[shell]
 	if !ok {
-		return "", fmt.Errorf("invalid shell type '%s', must be one of: %s", shell, strings.Join(validShells, ", "))
+		return "", fmt.Errorf("invalid shell type '%s', must be one of: bash, fish, zsh", shell)
 	}
 	return strings.ReplaceAll(content, Placeholder, cmdName), nil
 }

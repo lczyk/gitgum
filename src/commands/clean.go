@@ -21,43 +21,36 @@ type CleanCommand struct {
 	Yes       bool  `short:"y" long:"yes" description:"Skip confirmation prompt"`
 }
 
-// Execute runs the clean command
 func (c *CleanCommand) Execute(args []string) error {
-	// Check if we're in a git repository
 	if err := git.CheckInRepo(); err != nil {
 		return err
 	}
 
-	// Apply defaults
-	changes := boolValue(c.Changes, true)
-	untracked := boolValue(c.Untracked, true)
-	ignored := boolValue(c.Ignored, false)
+	changes := c.Changes == nil || *c.Changes
+	untracked := c.Untracked == nil || *c.Untracked
+	ignored := c.Ignored != nil && *c.Ignored
 
-	// If --all is specified, enable all cleanup options
 	if c.All {
 		changes = true
 		untracked = true
 		ignored = true
 	}
 
-	// If --ignored is specified, it implies --untracked
+	// --ignored implies --untracked
 	if ignored {
 		untracked = true
 	}
 
-	// If nothing is enabled, nothing to do
 	if !changes && !untracked {
 		fmt.Println("Nothing to clean (all options disabled)")
 		return nil
 	}
 
-	// Build summary of what will be affected
 	affectedFiles, err := getAffectedFiles(changes, untracked, ignored)
 	if err != nil {
 		return err
 	}
 
-	// Show summary
 	if len(affectedFiles) == 0 {
 		fmt.Println("Nothing to clean (working tree is clean)")
 		return nil
@@ -85,19 +78,13 @@ func (c *CleanCommand) Execute(args []string) error {
 		}
 	}
 
-	// Execute git reset --hard if changes should be discarded
 	if changes {
 		fmt.Println("Discarding changes...")
-		stdout, stderr, err := cmdrun.Run("git", "reset", "--hard")
-		if err != nil {
-			return fmt.Errorf("failed to reset changes: %w\nStdout: %s\nStderr: %s", err, stdout, stderr)
-		}
-		if stdout != "" {
-			fmt.Println(stdout)
+		if err := cmdrun.RunWithOutput("git", "reset", "--hard"); err != nil {
+			return fmt.Errorf("failed to reset changes: %w", err)
 		}
 	}
 
-	// Execute git clean if untracked files should be removed
 	if untracked {
 		cleanArgs := []string{"clean", "-fd"}
 		if ignored {
@@ -105,25 +92,13 @@ func (c *CleanCommand) Execute(args []string) error {
 		}
 
 		fmt.Println("Removing untracked files...")
-		stdout, stderr, err := cmdrun.Run("git", cleanArgs...)
-		if err != nil {
-			return fmt.Errorf("failed to clean untracked files: %w\nStdout: %s\nStderr: %s", err, stdout, stderr)
-		}
-		if stdout != "" {
-			fmt.Println(stdout)
+		if err := cmdrun.RunWithOutput("git", cleanArgs...); err != nil {
+			return fmt.Errorf("failed to clean untracked files: %w", err)
 		}
 	}
 
 	fmt.Println("Clean complete")
 	return nil
-}
-
-// boolValue returns the dereferenced bool pointer value, or the default if nil.
-func boolValue(ptr *bool, defaultVal bool) bool {
-	if ptr != nil {
-		return *ptr
-	}
-	return defaultVal
 }
 
 func getAffectedFiles(changes, untracked, ignored bool) ([]string, error) {
@@ -134,17 +109,13 @@ func getAffectedFiles(changes, untracked, ignored bool) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("listing modified files: %w", err)
 		}
-		if stdout != "" {
-			affectedFiles = append(affectedFiles, strutil.SplitLines(stdout)...)
-		}
+		affectedFiles = append(affectedFiles, strutil.SplitLines(stdout)...)
 
 		stdout, _, err = cmdrun.Run("git", "diff", "--cached", "--name-only")
 		if err != nil {
 			return nil, fmt.Errorf("listing staged files: %w", err)
 		}
-		if stdout != "" {
-			affectedFiles = append(affectedFiles, strutil.SplitLines(stdout)...)
-		}
+		affectedFiles = append(affectedFiles, strutil.SplitLines(stdout)...)
 	}
 
 	if untracked {
@@ -156,11 +127,9 @@ func getAffectedFiles(changes, untracked, ignored bool) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("listing untracked files: %w", err)
 		}
-		if stdout != "" {
-			for _, line := range strutil.SplitLines(stdout) {
-				if trimmed, ok := strings.CutPrefix(line, gitCleanDryRunPrefix); ok {
-					affectedFiles = append(affectedFiles, trimmed)
-				}
+		for _, line := range strutil.SplitLines(stdout) {
+			if trimmed, ok := strings.CutPrefix(line, gitCleanDryRunPrefix); ok {
+				affectedFiles = append(affectedFiles, trimmed)
 			}
 		}
 	}

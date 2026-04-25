@@ -25,9 +25,10 @@ func RunIn(dir, name string, args ...string) (string, string, error) {
 	return strings.TrimSpace(stdout.String()), strings.TrimSpace(stderr.String()), err
 }
 
-// RunQuiet executes a command and returns only the error.
+// RunQuiet executes a command, discards all output, and returns only the error.
 func RunQuiet(name string, args ...string) error {
-	return exec.Command(name, args...).Run()
+	_, _, err := RunIn("", name, args...)
+	return err
 }
 
 // RunWithOutput executes a command and pipes output directly to stdout/stderr.

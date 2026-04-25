@@ -92,14 +92,10 @@ func parsePRRefs(lsRemoteOutput string) []PRRef {
 		if len(matches) != 3 {
 			continue
 		}
-		prNumber, err := strconv.Atoi(matches[1])
-		if err != nil {
-			continue
-		}
+		prNumber, _ := strconv.Atoi(matches[1]) // regex guarantees \d+
 		prType := matches[2]
 
 		existing, found := prMap[prNumber]
-		// head takes precedence over merge for the same PR number
 		if !found || (existing.Type == "merge" && prType == "head") {
 			prMap[prNumber] = PRRef{Number: prNumber, Type: prType}
 		}
@@ -130,11 +126,7 @@ func parsePRSelection(selection string) (int, string, error) {
 		return 0, "", fmt.Errorf("invalid PR selection format: %s", selection)
 	}
 
-	prNumber, err := strconv.Atoi(matches[1])
-	if err != nil {
-		return 0, "", fmt.Errorf("invalid PR number: %s", matches[1])
-	}
-
+	prNumber, _ := strconv.Atoi(matches[1]) // regex guarantees \d+
 	prType := matches[2]
 	return prNumber, prType, nil
 }
@@ -176,7 +168,7 @@ func checkoutPR(remote string, prNumber int, prType string) error {
 		return nil
 	}
 
-	dirty, err := git.IsDirty(".")
+	dirty, err := git.IsDirty()
 	if err != nil {
 		return fmt.Errorf("checking git status: %w", err)
 	}

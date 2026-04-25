@@ -35,7 +35,7 @@ func init() {
 	}
 }
 
-func assertWithGolden(t *testing.T, f func(t *testing.T) string) {
+func assertWithGolden(t *testing.T, f func() string) {
 	name := t.Name()
 	r := strings.NewReplacer(
 		"/", "-",
@@ -50,7 +50,7 @@ func assertWithGolden(t *testing.T, f func(t *testing.T) string) {
 		return filepath.Join("testdata", "fixtures", fname)
 	}
 
-	actual := f(t)
+	actual := f()
 
 	fname := normalizeFilename(name)
 
@@ -247,7 +247,7 @@ func TestFind(t *testing.T) {
 				fuzzyfinder.WithMode(fuzzyfinder.ModeCaseSensitive),
 			)
 
-			assertWithGolden(t, func(t *testing.T) string {
+			assertWithGolden(t, func() string {
 				_, err := f.Find(trackNames(), opts...)
 				assert.Error(t, err, fuzzyfinder.ErrAbort)
 
@@ -266,7 +266,7 @@ func TestFind_hotReload(t *testing.T) {
 	term.SetEvents(events...)
 
 	names := trackNames()
-	assertWithGolden(t, func(t *testing.T) string {
+	assertWithGolden(t, func() string {
 		_, err := f.FindLive(
 			&names,
 			&sync.Mutex{},
@@ -288,7 +288,7 @@ func TestFind_hotReloadLock(t *testing.T) {
 
 	var mu sync.RWMutex
 	names := trackNames()
-	assertWithGolden(t, func(t *testing.T) string {
+	assertWithGolden(t, func() string {
 		_, err := f.FindLive(
 			&names,
 			mu.RLocker(),
@@ -339,7 +339,7 @@ func TestFind_withContext(t *testing.T) {
 	cancelledCtx, cancelFunc := context.WithCancel(context.Background())
 	cancelFunc()
 
-	assertWithGolden(t, func(t *testing.T) string {
+	assertWithGolden(t, func() string {
 		_, err := f.Find(trackNames(), fuzzyfinder.WithContext(cancelledCtx))
 		assert.Error(t, err, context.Canceled)
 
@@ -359,7 +359,7 @@ func TestFind_WithQuery(t *testing.T) {
 		f, term := fuzzyfinder.NewWithMockedTerminal()
 		term.SetEvents(events...)
 
-		assertWithGolden(t, func(t *testing.T) string {
+		assertWithGolden(t, func() string {
 			idx, err := f.Find(things)
 			assert.NoError(t, err)
 			assert.Equal(t, 0, idx)
@@ -371,7 +371,7 @@ func TestFind_WithQuery(t *testing.T) {
 		f, term := fuzzyfinder.NewWithMockedTerminal()
 		term.SetEvents(events...)
 
-		assertWithGolden(t, func(t *testing.T) string {
+		assertWithGolden(t, func() string {
 			idx, err := f.Find(things, fuzzyfinder.WithQuery("three2"))
 			assert.NoError(t, err)
 			assert.Equal(t, 1, idx)
@@ -412,7 +412,7 @@ func TestFind_WithSelectOne(t *testing.T) {
 			f, term := fuzzyfinder.NewWithMockedTerminal()
 			term.SetEvents(key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 
-			assertWithGolden(t, func(t *testing.T) string {
+			assertWithGolden(t, func() string {
 				idx, err := f.Find(c.things, append(c.moreOpts, fuzzyfinder.WithSelectOne())...)
 				if c.abort {
 					assert.Error(t, err, fuzzyfinder.ErrAbort)
@@ -434,7 +434,7 @@ func TestFindMulti(t *testing.T) {
 		expected []int
 		abort    bool
 	}{
-		"input glow": {events: runes("glow"), expected: []int{0}},
+		"input glow": {events: runes("glow"), expected: []int{5}},
 		"select two items": {events: keys([]input{
 			{tcell.KeyTab, rune(tcell.KeyTab), tcell.ModNone},
 			{tcell.KeyUp, rune(tcell.KeyUp), tcell.ModNone},
@@ -470,7 +470,7 @@ func TestFindMulti(t *testing.T) {
 				return
 			}
 			assert.NoError(t, err)
-			assert.Len(t, idxs, len(c.expected))
+			assert.EqualArrays(t, c.expected, idxs)
 		})
 	}
 }

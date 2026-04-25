@@ -1,38 +1,49 @@
 package fuzzyfinder_test
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/gdamore/tcell/v2"
 	"github.com/lczyk/assert"
 	fuzzyfinder "github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
-func TestSubstringMatcher(t *testing.T) {
+func TestFind_WithMatcher(t *testing.T) {
 	t.Parallel()
 
-	cases := map[string]struct {
-		query string
-		item  string
-		want  bool
-	}{
-		"empty query matches anything":    {"", "anything", true},
-		"single word substring":           {"foo", "foobar", true},
-		"single word missing":             {"baz", "foobar", false},
-		"case insensitive":                {"FOO", "foobar", true},
-		"item case insensitive":           {"foo", "FOOBAR", true},
-		"all words present in any order":  {"bar foo", "foobar", true},
-		"some word missing":               {"foo qux", "foobar", false},
-		"whitespace ignored":              {"  foo   bar  ", "foobar", true},
-		"unicode case insensitive":        {"Ä", "fußÄnger", true},
-		"empty item with non-empty query": {"foo", "", false},
-		"empty item with empty query":     {"", "", true},
-		"multibyte words":                 {"日本", "日本語の本", true},
-	}
+	t.Run("rejects all returns abort", func(t *testing.T) {
+		t.Parallel()
+		// "a" fuzzy-matches "apple" and "banana"; custom matcher rejects all → abort
+		f, term := fuzzyfinder.NewWithMockedTerminal()
+		term.SetEvents(append(
+			runes("a"),
+			key(input{tcell.KeyEnter, rune(tcell.KeyEnter), tcell.ModNone}),
+		)...)
 
-	for name, c := range cases {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			assert.Equal(t, c.want, fuzzyfinder.SubstringMatcher(c.query, c.item))
-		})
-	}
+		_, err := f.Find(
+			[]string{"apple", "banana", "cherry"},
+			fuzzyfinder.WithMatcher(func(_, _ string) bool { return false }),
+		)
+		assert.Error(t, err, fuzzyfinder.ErrAbort)
+	})
+
+	t.Run("selects matched item", func(t *testing.T) {
+		t.Parallel()
+		// HasPrefix "apple" matches only "apple" (idx 0), not "pineapple" or "apricot"
+		f, term := fuzzyfinder.NewWithMockedTerminal()
+		term.SetEvents(append(
+			runes("apple"),
+			key(input{tcell.KeyEnter, rune(tcell.KeyEnter), tcell.ModNone}),
+		)...)
+
+		idx, err := f.Find(
+			[]string{"apple", "pineapple", "apricot"},
+			fuzzyfinder.WithMatcher(func(query, item string) bool {
+				return strings.HasPrefix(item, query)
+			}),
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, idx)
+	})
 }

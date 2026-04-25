@@ -2,34 +2,49 @@ package commands
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"strings"
 
 	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/git"
-	"github.com/lczyk/gitgum/internal/ui"
 )
 
-type StatusCommand struct{}
+type StatusCommand struct {
+	// injectable for testing; nil falls back to os.Stdout
+	out io.Writer
+}
 
 func (s *StatusCommand) Execute(args []string) error {
-	if err := git.CheckInRepo(); err != nil {
-		return fmt.Errorf("checking git repo: %w", err)
+	out := s.out
+	if out == nil {
+		out = os.Stdout
 	}
 
-	ui.PrintHeader("--- BRANCHES ---------------------------")
-	if err := cmdrun.RunWithOutput("git", "--no-pager", "branch", "-vv"); err != nil {
+	printHeader := func(msg string) {
+		fmt.Fprintf(out, "\033[0;30m%s\033[0m\n", msg)
+	}
+
+	if err := git.CheckInRepo(); err != nil {
+		return err
+	}
+
+	printHeader("--- BRANCHES ---------------------------")
+	stdout, _, err := cmdrun.Run("git", "--no-pager", "branch", "-vv")
+	if err != nil {
 		return fmt.Errorf("error getting branches: %w", err)
 	}
+	fmt.Fprintln(out, stdout)
 
-	stdout, _, err := cmdrun.Run("git", "remote", "-v")
+	stdout, _, err = cmdrun.Run("git", "remote", "-v")
 	if err != nil {
 		return fmt.Errorf("error getting remotes: %w", err)
 	}
 	remotes := parseRemotes(stdout)
 	if len(remotes) > 0 {
-		ui.PrintHeader("--- REMOTES ----------------------------")
+		printHeader("--- REMOTES ----------------------------")
 		for _, remote := range remotes {
-			fmt.Println(remote)
+			fmt.Fprintln(out, remote)
 		}
 	}
 
@@ -41,12 +56,12 @@ func (s *StatusCommand) Execute(args []string) error {
 	lines := strings.Split(stdout, "\n")
 
 	if len(lines) > 1 {
-		ui.PrintHeader("--- CHANGES ----------------------------")
-		fmt.Println(strings.Join(lines[1:], "\n"))
+		printHeader("--- CHANGES ----------------------------")
+		fmt.Fprintln(out, strings.Join(lines[1:], "\n"))
 	}
 
-	ui.PrintHeader("--- STATUS -----------------------------")
-	fmt.Println(lines[0])
+	printHeader("--- STATUS -----------------------------")
+	fmt.Fprintln(out, lines[0])
 
 	return nil
 }

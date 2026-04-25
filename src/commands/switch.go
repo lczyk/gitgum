@@ -12,6 +12,7 @@ import (
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/ui"
 	"github.com/lczyk/gitgum/src/fuzzyfinder"
+	"github.com/lczyk/gitgum/src/fuzzyfinder/matching"
 )
 
 type SwitchCommand struct{}
@@ -45,7 +46,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 	}
 	fmt.Println("Current branch is:", branchDisplay)
 
-	dirty, err := git.IsDirty(".")
+	dirty, err := git.IsDirty()
 	if err != nil {
 		return fmt.Errorf("checking git status: %w", err)
 	}
@@ -79,7 +80,7 @@ func pickBranch(ctx context.Context, branches *[]string, lock *sync.Mutex) (stri
 		branches,
 		lock,
 		fuzzyfinder.WithPromptString(prompt+": "),
-		fuzzyfinder.WithMatcher(fuzzyfinder.SubstringMatcher),
+		fuzzyfinder.WithMatcher(matching.SubstringMatcher),
 		fuzzyfinder.WithContext(ctx),
 	)
 	if err != nil {
@@ -106,7 +107,7 @@ func (s *SwitchCommand) applySelection(selected string) error {
 	typ, name := parts[0], parts[1]
 
 	switch typ {
-	case "local":
+	case "local", "local/remote":
 		if err := s.checkoutBranch(name); err != nil {
 			return err
 		}

@@ -102,8 +102,7 @@ func TestParsePRSelection(t *testing.T) {
 			num, prType, err := parsePRSelection(tt.selection)
 
 			if tt.expectedError {
-				assert.Error(t, err, assert.AnyError, "expected error for ", tt.selection)
-				assert.ContainsString(t, err.Error(), tt.expectedErrMsg)
+				assert.Error(t, err, tt.expectedErrMsg, "expected error for %s", tt.selection)
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expectedNum, num)

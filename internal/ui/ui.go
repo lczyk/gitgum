@@ -5,13 +5,13 @@ import (
 	"fmt"
 
 	"github.com/lczyk/gitgum/src/fuzzyfinder"
+	"github.com/lczyk/gitgum/src/fuzzyfinder/matching"
 )
 
-// ErrCancelled is returned when the user cancels a picker operation (Ctrl+C or ESC).
-var ErrCancelled = errors.New("picker operation cancelled")
+// ErrCancelled is returned when the user cancels a selection or confirmation (Ctrl+C or ESC).
+var ErrCancelled = errors.New("cancelled")
 
-// Select presents options via the fuzzyfinder library and returns the selected item.
-func Select(prompt string, options []string, initialQuery ...string) (string, error) {
+func selectWith(finder func([]string, ...fuzzyfinder.Option) (int, error), prompt string, options []string, initialQuery ...string) (string, error) {
 	if len(options) == 0 {
 		return "", fmt.Errorf("no options provided")
 	}
@@ -22,29 +22,38 @@ func Select(prompt string, options []string, initialQuery ...string) (string, er
 	if len(initialQuery) > 0 {
 		opts = append(opts, fuzzyfinder.WithQuery(initialQuery[0]))
 	}
-	opts = append(opts, fuzzyfinder.WithMatcher(fuzzyfinder.SubstringMatcher))
+	opts = append(opts, fuzzyfinder.WithMatcher(matching.SubstringMatcher))
 
-	idx, err := fuzzyfinder.Find(options, opts...)
+	idx, err := finder(options, opts...)
 	if err != nil {
-		if err == fuzzyfinder.ErrAbort {
+		if errors.Is(err, fuzzyfinder.ErrAbort) {
 			return "", ErrCancelled
 		}
-		return "", err
+		return "", fmt.Errorf("running picker: %w", err)
 	}
 	return options[idx], nil
 }
 
-// Confirm asks a yes/no question via the fuzzyfinder library.
-func Confirm(prompt string, defaultYes bool) (bool, error) {
+// Select presents options via the fuzzyfinder library and returns the selected item.
+func Select(prompt string, options []string, initialQuery ...string) (string, error) {
+	return selectWith(fuzzyfinder.Find, prompt, options, initialQuery...)
+}
+
+func confirmWith(selector func(string, []string, ...string) (string, error), prompt string, defaultYes bool) (bool, error) {
 	options := []string{"yes", "no"}
 	if !defaultYes {
 		options = []string{"no", "yes"}
 	}
-	selected, err := Select(prompt, options)
+	selected, err := selector(prompt, options)
 	if err != nil {
 		return false, err
 	}
 	return selected == "yes", nil
+}
+
+// Confirm asks a yes/no question via the fuzzyfinder library.
+func Confirm(prompt string, defaultYes bool) (bool, error) {
+	return confirmWith(Select, prompt, defaultYes)
 }
 
 // PrintHeader prints a dim header line.

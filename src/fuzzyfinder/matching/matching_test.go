@@ -1,7 +1,6 @@
 package matching_test
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/lczyk/assert"
@@ -46,17 +45,49 @@ func TestMatch(t *testing.T) {
 	}
 }
 
+func TestSubstringMatcher(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		query string
+		item  string
+		want  bool
+	}{
+		"empty query matches anything":    {"", "anything", true},
+		"single word substring":           {"foo", "foobar", true},
+		"single word missing":             {"baz", "foobar", false},
+		"case insensitive":                {"FOO", "foobar", true},
+		"item case insensitive":           {"foo", "FOOBAR", true},
+		"all words present in any order":  {"bar foo", "foobar", true},
+		"some word missing":               {"foo qux", "foobar", false},
+		"whitespace ignored":              {"  foo   bar  ", "foobar", true},
+		"unicode case insensitive":        {"Ä", "fußÄnger", true},
+		"empty item with non-empty query": {"foo", "", false},
+		"empty item with empty query":     {"", "", true},
+		"multibyte words":                 {"日本", "日本語の本", true},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, c.want, matching.SubstringMatcher(c.query, c.item))
+		})
+	}
+}
+
+func TestFindAllEmptyQuery(t *testing.T) {
+	t.Parallel()
+	slice := []string{"foo", "bar", "baz"}
+	matched := matching.FindAll("", slice)
+	assert.Len(t, matched, len(slice))
+}
+
 func TestFindAllWithMatcher(t *testing.T) {
 	t.Parallel()
 
 	slice := []string{"foo", "bar", "baz", "foobar"}
 
-	// matcher that matches items containing query as a substring
-	substringMatcher := func(query, item string) bool {
-		return len(query) > 0 && strings.Contains(item, query)
-	}
-
-	matched := matching.FindAll("foo", slice, matching.WithMatcher(substringMatcher))
+	matched := matching.FindAll("foo", slice, matching.WithMatcher(matching.SubstringMatcher))
 
 	wantIdxs := map[int]bool{0: true, 3: true}
 	assert.Len(t, matched, len(wantIdxs))

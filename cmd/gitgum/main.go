@@ -6,8 +6,8 @@ import (
 	"os"
 
 	flags "github.com/jessevdk/go-flags"
+	"github.com/lczyk/gitgum/internal/ui"
 	"github.com/lczyk/gitgum/src/commands"
-	"github.com/lczyk/gitgum/src/fuzzyfinder"
 	"github.com/lczyk/gitgum/src/version"
 )
 
@@ -25,30 +25,6 @@ type Options struct {
 	Release    commands.ReleaseCommand    `command:"release" description:"Bump VERSION (or latest tag), commit, and tag"`
 }
 
-// ErrCancelled is returned when the user cancels a picker operation (Ctrl+C or ESC)
-var ErrCancelled = errors.New("picker operation cancelled")
-
-// Select presents options via the fuzzyfinder library and returns the selected item
-func Select(prompt string, options []string) (string, error) {
-	if len(options) == 0 {
-		return "", fmt.Errorf("no options provided")
-	}
-
-	idx, err := fuzzyfinder.Find(
-		options,
-		fuzzyfinder.WithPromptString(prompt+": "),
-		fuzzyfinder.WithMatcher(fuzzyfinder.SubstringMatcher),
-	)
-	if err != nil {
-		if err == fuzzyfinder.ErrAbort {
-			return "", ErrCancelled
-		}
-		return "", err
-	}
-
-	return options[idx], nil
-}
-
 func main() {
 	// Check for version flag before parsing to avoid command requirement
 	for _, arg := range os.Args[1:] {
@@ -60,10 +36,10 @@ func main() {
 
 	// If no command provided, use fuzzyfinder to select one
 	if len(os.Args) == 1 {
-		commands := []string{"switch", "status", "push", "clean", "empty"}
-		selected, err := Select("Select command", commands)
+		cmds := []string{"switch", "status", "push", "clean", "empty"}
+		selected, err := ui.Select("Select command", cmds)
 		if err != nil {
-			if err == ErrCancelled {
+			if errors.Is(err, ui.ErrCancelled) {
 				os.Exit(0)
 			}
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -80,10 +56,9 @@ func main() {
 	_, err := parser.Parse()
 	if err != nil {
 		// go-flags already prints the error
-		if flagsErr, ok := err.(*flags.Error); ok {
-			if flagsErr.Type == flags.ErrHelp {
-				os.Exit(0)
-			}
+		var flagsErr *flags.Error
+		if errors.As(err, &flagsErr) && flagsErr.Type == flags.ErrHelp {
+			os.Exit(0)
 		}
 		os.Exit(1)
 	}

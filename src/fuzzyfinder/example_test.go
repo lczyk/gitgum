@@ -3,8 +3,7 @@ package fuzzyfinder_test
 import (
 	"fmt"
 
-	"github.com/gdamore/tcell/v2"
-	fuzzyfinder "github.com/lczyk/gitgum/src/fuzzyfinder"
+	"github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
 func ExampleFind() {
@@ -19,18 +18,4 @@ func ExampleFindMulti() {
 	for _, idx := range idxs {
 		fmt.Println(items[idx])
 	}
-}
-
-func ExampleTerminalMock() {
-	f, term := fuzzyfinder.NewWithMockedTerminal()
-	term.SetEvents(
-		tcell.NewEventKey(tcell.KeyRune, 'f', tcell.ModNone),
-		tcell.NewEventKey(tcell.KeyRune, 'o', tcell.ModNone),
-		tcell.NewEventKey(tcell.KeyRune, 'o', tcell.ModNone),
-		tcell.NewEventKey(tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone),
-	)
-
-	f.Find([]string{"foo", "bar", "baz"})
-
-	term.GetResult()
 }

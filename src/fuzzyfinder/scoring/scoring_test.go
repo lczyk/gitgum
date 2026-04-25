@@ -18,7 +18,6 @@ func TestCalculate(t *testing.T) {
 	}{
 		{"empty strings", "", "", false, 0, [2]int{-1, -1}},
 		{"equal length", "foo", "foo", false, 108, [2]int{0, 2}},
-		// normal usage: s1 is the corpus, s2 the query — same inputs as smith_waterman_test.go
 		{"s1 longer than s2", "TACGGGCCCGCTA", "TAGCCCTA", false, 78, [2]int{0, 12}},
 		{"s2 longer than s1", "foo", "foobar", true, 0, [2]int{}},
 	}
@@ -29,6 +28,8 @@ func TestCalculate(t *testing.T) {
 			score, pos, err := Calculate(c.s1, c.s2)
 			if c.wantErr {
 				assert.Error(t, err, assert.AnyError, "expected error, got nil")
+				assert.Equal(t, c.wantScore, score)
+				assert.Equal(t, c.wantPos, pos)
 				return
 			}
 			assert.NoError(t, err)

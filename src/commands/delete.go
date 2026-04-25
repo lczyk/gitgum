@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -10,58 +11,6 @@ import (
 )
 
 type DeleteCommand struct{}
-
-// switchCurrentBranchIfNeeded handles the case where user tries to delete current branch.
-// returns error if something goes wrong; nil if no switch was needed or switch succeeded.
-// user cancellation at the confirmation prompt is non-fatal and returns nil.
-func switchCurrentBranchIfNeeded(branch string, allBranches []string) error {
-	currentBranch, err := git.GetCurrentBranch()
-	if err != nil {
-		return fmt.Errorf("getting current branch: %w", err)
-	}
-
-	if branch != currentBranch {
-		return nil
-	}
-
-	confirmed, err := ui.Confirm(
-		fmt.Sprintf("You are currently on branch '%s'. Do you want to switch to another branch before deleting it?", branch),
-		true,
-	)
-	if err != nil {
-		return err
-	}
-	if !confirmed {
-		fmt.Println("Aborting delete.")
-		return nil
-	}
-
-	var otherBranches []string
-	for _, b := range allBranches {
-		if b != branch {
-			otherBranches = append(otherBranches, b)
-		}
-	}
-
-	if len(otherBranches) == 0 {
-		fmt.Fprintln(os.Stderr, "No other branches found to switch to. Aborting delete.")
-		return fmt.Errorf("no other branches")
-	}
-
-	otherBranch, err := ui.Select("Select a branch to switch to", otherBranches)
-	if err != nil {
-		if err == ui.ErrCancelled {
-			fmt.Fprintln(os.Stderr, "No branch selected. Aborting delete.")
-		}
-		return err
-	}
-
-	if err := cmdrun.RunWithOutput("git", "checkout", otherBranch); err != nil {
-		return fmt.Errorf("switching to branch '%s': %w", otherBranch, err)
-	}
-	fmt.Printf("Switched to branch '%s'.\n", otherBranch)
-	return nil
-}
 
 func (d *DeleteCommand) Execute(args []string) error {
 	if err := git.CheckInRepo(); err != nil {
@@ -74,14 +23,14 @@ func (d *DeleteCommand) Execute(args []string) error {
 	}
 
 	if len(branches) == 0 {
-		fmt.Fprintln(os.Stderr, "No local branches found.")
-		return fmt.Errorf("no branches")
+		return fmt.Errorf("no local branches found")
 	}
 
 	branch, err := ui.Select("Select a branch to delete", branches)
 	if err != nil {
-		if err == ui.ErrCancelled {
-			fmt.Fprintln(os.Stderr, "No branch selected. Aborting delete.")
+		if errors.Is(err, ui.ErrCancelled) {
+			fmt.Println("Aborting delete.")
+			return nil
 		}
 		return err
 	}
@@ -101,8 +50,49 @@ func (d *DeleteCommand) Execute(args []string) error {
 		}
 	}
 
-	if err := switchCurrentBranchIfNeeded(branch, branches); err != nil {
-		return err
+	// if user wants to delete their current branch, offer to switch first
+	currentBranch, err := git.GetCurrentBranch()
+	if err != nil {
+		return fmt.Errorf("getting current branch: %w", err)
+	}
+
+	if branch == currentBranch {
+		confirmed, err := ui.Confirm(
+			fmt.Sprintf("You are currently on branch '%s'. Do you want to switch to another branch before deleting it?", branch),
+			true,
+		)
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			fmt.Println("Aborting delete.")
+			return nil
+		}
+
+		var otherBranches []string
+		for _, b := range branches {
+			if b != branch {
+				otherBranches = append(otherBranches, b)
+			}
+		}
+
+		if len(otherBranches) == 0 {
+			return fmt.Errorf("no other branches to switch to")
+		}
+
+		otherBranch, err := ui.Select("Select a branch to switch to", otherBranches)
+		if err != nil {
+			if errors.Is(err, ui.ErrCancelled) {
+				fmt.Println("Aborting delete.")
+				return nil
+			}
+			return err
+		}
+
+		if err := cmdrun.RunWithOutput("git", "checkout", otherBranch); err != nil {
+			return fmt.Errorf("switching to branch '%s': %w", otherBranch, err)
+		}
+		fmt.Printf("Switched to branch '%s'.\n", otherBranch)
 	}
 
 	// non-fatal: if we can't determine upstream, just skip remote deletion

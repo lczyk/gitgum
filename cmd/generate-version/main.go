@@ -41,19 +41,19 @@ func run() error {
 		return fmt.Errorf("no version found in VERSION file")
 	}
 
-	commitSHA, err := getGitCommitSHA(projectRoot)
+	commitSHA, err := runGit(projectRoot, "rev-parse", "HEAD")
 	if err != nil {
 		return fmt.Errorf("failed to get git commit SHA: %w", err)
 	}
 
 	buildDate := time.Now().UTC().Format(time.RFC3339)
 
-	buildInfo := ""
-	isDirty, err := isGitDirty(projectRoot)
+	dirtyOut, err := runGit(projectRoot, "status", "--porcelain")
 	if err != nil {
 		return fmt.Errorf("failed to check git status: %w", err)
 	}
-	if isDirty {
+	buildInfo := ""
+	if dirtyOut != "" {
 		buildInfo = "dirty"
 	}
 
@@ -79,7 +79,7 @@ var (
 }
 
 func findProjectRoot() (string, error) {
-	// Start from current directory and walk up until we find VERSION file
+	// walk up from cwd until we find a VERSION file
 	dir, err := os.Getwd()
 	if err != nil {
 		return "", err
@@ -99,22 +99,12 @@ func findProjectRoot() (string, error) {
 	}
 }
 
-func getGitCommitSHA(dir string) (string, error) {
-	cmd := exec.Command("git", "rev-parse", "HEAD")
+func runGit(dir string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
-	output, err := cmd.Output()
+	out, err := cmd.Output()
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(string(output)), nil
-}
-
-func isGitDirty(dir string) (bool, error) {
-	cmd := exec.Command("git", "status", "--porcelain")
-	cmd.Dir = dir
-	output, err := cmd.Output()
-	if err != nil {
-		return false, err
-	}
-	return len(strings.TrimSpace(string(output))) > 0, nil
+	return strings.TrimSpace(string(out)), nil
 }

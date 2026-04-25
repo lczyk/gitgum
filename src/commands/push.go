@@ -3,7 +3,6 @@ package commands
 import (
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/git"
@@ -28,15 +27,15 @@ func (p *PushCommand) Execute(args []string) error {
 			if errors.Is(err, ui.ErrCancelled) {
 				return nil
 			}
-			return err
+			return fmt.Errorf("confirming push to upstream: %w", err)
 		}
-		if confirmed {
-			if err := cmdrun.RunWithOutput("git", "push"); err != nil {
-				return fmt.Errorf("failed to push: %w", err)
-			}
-			fmt.Printf("Pushed to remote tracking branch '%s'.\n", remoteBranch)
+		if !confirmed {
 			return nil
 		}
+		if err := cmdrun.RunWithOutput("git", "push"); err != nil {
+			return fmt.Errorf("failed to push: %w", err)
+		}
+		fmt.Printf("Pushed to remote tracking branch '%s'.\n", remoteBranch)
 		return nil
 	}
 
@@ -51,31 +50,24 @@ func (p *PushCommand) Execute(args []string) error {
 	}
 
 	if len(remotes) == 0 {
-		fmt.Fprintln(os.Stderr, "No remotes found. Aborting push.")
 		return fmt.Errorf("no remotes")
 	}
 
 	var selectedRemote string
 	if len(args) > 0 {
-		providedRemote := args[0]
 		for _, r := range remotes {
-			if r == providedRemote {
+			if r == args[0] {
 				selectedRemote = r
 				break
 			}
 		}
-		if selectedRemote == "" {
-			remote, err := ui.Select(fmt.Sprintf("Push '%s' to", currentBranch), remotes, providedRemote)
-			if err != nil {
-				if errors.Is(err, ui.ErrCancelled) {
-					return nil
-				}
-				return fmt.Errorf("selecting remote: %w", err)
-			}
-			selectedRemote = remote
+	}
+	if selectedRemote == "" {
+		var query []string
+		if len(args) > 0 {
+			query = args[:1]
 		}
-	} else {
-		remote, err := ui.Select(fmt.Sprintf("Push '%s' to", currentBranch), remotes)
+		remote, err := ui.Select(fmt.Sprintf("Push '%s' to", currentBranch), remotes, query...)
 		if err != nil {
 			if errors.Is(err, ui.ErrCancelled) {
 				return nil
@@ -120,7 +112,7 @@ func (p *PushCommand) Execute(args []string) error {
 			if errors.Is(err, ui.ErrCancelled) {
 				return nil
 			}
-			return err
+			return fmt.Errorf("confirming push to remote: %w", err)
 		}
 		if !confirmed {
 			return nil
@@ -137,7 +129,7 @@ func (p *PushCommand) Execute(args []string) error {
 			if errors.Is(err, ui.ErrCancelled) {
 				return nil
 			}
-			return err
+			return fmt.Errorf("confirming create remote branch: %w", err)
 		}
 		if !confirmed {
 			return nil

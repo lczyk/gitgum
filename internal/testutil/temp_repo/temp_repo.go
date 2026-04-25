@@ -47,14 +47,30 @@ func NewRepo(t *testing.T) string {
 	return dir
 }
 
-func initRepoAt(t testing.TB, dir string) {
+// InitEmptyTempRepo creates a temp git repo without any commits (no branches),
+// chdirs into it, and returns the path. Like InitTempRepo but stops before the
+// initial commit — useful for testing "no branches" error paths.
+//
+// Same cwd-sharing caveat as InitTempRepo; cannot run in parallel.
+func InitEmptyTempRepo(t *testing.T) string {
+	t.Helper()
+	dir := ChdirTempDir(t)
+	initEmptyAt(t, dir)
+	return dir
+}
+
+func initEmptyAt(t testing.TB, dir string) {
 	t.Helper()
 	RunGit(t, dir, "init")
 	RunGit(t, dir, "config", "user.name", "Test User")
 	RunGit(t, dir, "config", "user.email", "test@example.com")
 	RunGit(t, dir, "config", "commit.gpgsign", "false")
 	RunGit(t, dir, "config", "tag.gpgsign", "false")
+}
 
+func initRepoAt(t testing.TB, dir string) {
+	t.Helper()
+	initEmptyAt(t, dir)
 	WriteFile(t, dir, "README.md", "# test repo\n")
 	RunGit(t, dir, "add", "README.md")
 	RunGit(t, dir, "commit", "-m", "initial commit")

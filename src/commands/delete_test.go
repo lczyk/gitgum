@@ -18,16 +18,11 @@ func TestDeleteCommand_NotInGitRepo(t *testing.T) {
 }
 
 func TestDeleteCommand_NoBranches(t *testing.T) {
-	// Initialize a repo without any branches (just init, no commits)
-	dir := temp_repo.ChdirTempDir(t)
-
-	temp_repo.RunGit(t, dir, "init")
-	temp_repo.RunGit(t, dir, "config", "user.name", "Test User")
-	temp_repo.RunGit(t, dir, "config", "user.email", "test@example.com")
+	temp_repo.InitEmptyTempRepo(t)
 
 	cmd := &DeleteCommand{}
 	err := cmd.Execute(nil)
 
 	assert.Error(t, err, assert.AnyError, "should error when no branches exist")
-	assert.ContainsString(t, err.Error(), "no branches")
+	assert.ContainsString(t, err.Error(), "no local branches")
 }

@@ -5,7 +5,6 @@ package fuzzyfinder_test
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -54,13 +53,13 @@ func TestFuzz(t *testing.T) {
 	fuzzer := fuzz.New()
 
 	for i := 0; i < rand.Intn(*numCases)+10; i++ {
-		n := rand.Intn(min(*numEvents, 10))
+		n := rand.Intn(*numEvents)
 		events := make([]tcell.Event, n)
 		for j := 0; j < n; j++ {
 			if rand.Intn(10) > 3 {
-				events[j] = ch(letters[rand.Intn(len(letters)-1)])
+				events[j] = ch(letters[rand.Intn(len(letters))])
 			} else {
-				k := tbkeys[rand.Intn(len(tbkeys)-1)]
+				k := tbkeys[rand.Intn(len(tbkeys))]
 				events[j] = key(input{k, rune(k), tcell.ModNone})
 			}
 		}
@@ -87,8 +86,7 @@ func TestFuzz(t *testing.T) {
 			items := trackNames()
 
 			finder, term := fuzzyfinder.NewWithMockedTerminal()
-			events = append(events, key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
-			term.SetEvents(events...)
+			term.SetEvents(append(events, key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))...)
 
 			var promptStr, header string
 			fuzzer.Fuzz(&promptStr)

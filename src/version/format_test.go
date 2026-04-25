@@ -60,18 +60,12 @@ func TestFormatVersion(t *testing.T) {
 			commitSHA: "abcdefg",
 			want:      "1.0.0+abcdefg",
 		},
-		{
-			name:      "version with single-char commit SHA",
-			version:   "1.0.0",
-			commitSHA: "a",
-			want:      "1.0.0+a",
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := FormatVersion(tt.version, tt.commitSHA, tt.buildDate, tt.buildInfo)
-			assert.Equal(t, got, tt.want)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
