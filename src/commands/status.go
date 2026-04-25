@@ -21,11 +21,15 @@ func (s *StatusCommand) Execute(args []string) error {
 		out = os.Stdout
 	}
 
+	printHeader := func(msg string) {
+		fmt.Fprintf(out, "\033[0;30m%s\033[0m\n", msg)
+	}
+
 	if err := git.CheckInRepo(); err != nil {
 		return fmt.Errorf("checking git repo: %w", err)
 	}
 
-	printHeader(out, "--- BRANCHES ---------------------------")
+	printHeader("--- BRANCHES ---------------------------")
 	stdout, _, err := cmdrun.Run("git", "--no-pager", "branch", "-vv")
 	if err != nil {
 		return fmt.Errorf("error getting branches: %w", err)
@@ -38,7 +42,7 @@ func (s *StatusCommand) Execute(args []string) error {
 	}
 	remotes := parseRemotes(stdout)
 	if len(remotes) > 0 {
-		printHeader(out, "--- REMOTES ----------------------------")
+		printHeader("--- REMOTES ----------------------------")
 		for _, remote := range remotes {
 			fmt.Fprintln(out, remote)
 		}
@@ -52,18 +56,14 @@ func (s *StatusCommand) Execute(args []string) error {
 	lines := strings.Split(stdout, "\n")
 
 	if len(lines) > 1 {
-		printHeader(out, "--- CHANGES ----------------------------")
+		printHeader("--- CHANGES ----------------------------")
 		fmt.Fprintln(out, strings.Join(lines[1:], "\n"))
 	}
 
-	printHeader(out, "--- STATUS -----------------------------")
+	printHeader("--- STATUS -----------------------------")
 	fmt.Fprintln(out, lines[0])
 
 	return nil
-}
-
-func printHeader(w io.Writer, msg string) {
-	fmt.Fprintf(w, "\033[0;30m%s\033[0m\n", msg)
 }
 
 func parseRemotes(remoteOutput string) []string {
