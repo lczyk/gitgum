@@ -8,7 +8,18 @@ import (
 )
 
 func TestSplitLines(t *testing.T) {
-	out := strutil.SplitLines("a\n\n b \n c  ")
-	assert.Len(t, out, 3, "three non-empty lines")
-	assert.That(t, out[1] == "b", "second line trimmed")
+	tests := []struct {
+		input string
+		want  []string
+	}{
+		{"", nil},
+		{"   \n\n   ", nil},
+		{"hello", []string{"hello"}},
+		{"a\n\n b \n c  ", []string{"a", "b", "c"}},
+		{" \t padded \t ", []string{"padded"}},
+	}
+	for _, tc := range tests {
+		got := strutil.SplitLines(tc.input)
+		assert.EqualArrays(t, got, tc.want)
+	}
 }
