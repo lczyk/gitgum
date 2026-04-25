@@ -185,6 +185,7 @@ func (f *finder) _draw() {
 	itemAreaHeight := maxHeight - 1
 	// slice from the bottom-most visible item upward
 	matched := f.state.matched[f.state.y-f.state.cursorY:]
+	words := strings.Fields(string(f.state.input))
 
 	for i, m := range matched {
 		if i > itemAreaHeight {
@@ -210,8 +211,7 @@ func (f *finder) _draw() {
 		}
 
 		// Compute positions to highlight for multi-word matching
-		highlightPositions := make(map[int]bool)
-		words := strings.Fields(string(f.state.input))
+		var highlightPositions map[int]bool
 		itemRunes := []rune(f.state.items[m.Idx])
 		lowerItemRunes := []rune(strings.ToLower(f.state.items[m.Idx]))
 		for _, word := range words {
@@ -226,6 +226,9 @@ func (f *finder) _draw() {
 					}
 				}
 				if match {
+					if highlightPositions == nil {
+						highlightPositions = make(map[int]bool)
+					}
 					for k := 0; k < len(wordRunes); k++ {
 						highlightPositions[i+k] = true
 					}
@@ -468,8 +471,6 @@ func (f *finder) filter() {
 		return
 	}
 
-	// TODO: If input is not delete operation, it is able to
-	// reduce total iteration.
 	// FindAll may take a lot of time, so it is desired to use RLock to avoid goroutine blocking.
 	opts := []matching.Option{matching.WithMode(matching.Mode(f.opt.mode))}
 	if f.opt.matcher != nil {
