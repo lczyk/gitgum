@@ -3,6 +3,8 @@ package ui
 import (
 	"errors"
 	"testing"
+
+	"github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
 func TestConfirmWith(t *testing.T) {
@@ -52,5 +54,24 @@ func TestSelectEmptyOptions(t *testing.T) {
 	_, err := Select("test", nil)
 	if err == nil {
 		t.Fatal("expected error for empty options, got nil")
+	}
+}
+
+func TestSelectAbortMapsToErrCancelled(t *testing.T) {
+	_, err := selectWith(func(_ []string, _ ...fuzzyfinder.Option) (int, error) {
+		return 0, fuzzyfinder.ErrAbort
+	}, "test", []string{"a"})
+	if !errors.Is(err, ErrCancelled) {
+		t.Errorf("expected ErrCancelled, got %v", err)
+	}
+}
+
+func TestSelectFinderError(t *testing.T) {
+	sentinel := errors.New("boom")
+	_, err := selectWith(func(_ []string, _ ...fuzzyfinder.Option) (int, error) {
+		return 0, sentinel
+	}, "test", []string{"a"})
+	if !errors.Is(err, sentinel) {
+		t.Errorf("expected sentinel wrapped in finder error, got %v", err)
 	}
 }

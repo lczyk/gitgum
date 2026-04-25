@@ -11,8 +11,9 @@ import (
 // ErrCancelled is returned when the user cancels a picker operation (Ctrl+C or ESC).
 var ErrCancelled = errors.New("picker operation cancelled")
 
-// Select presents options via the fuzzyfinder library and returns the selected item.
-func Select(prompt string, options []string, initialQuery ...string) (string, error) {
+// selectWith is the testable core of Select — finder is injected so tests
+// can drive it without terminal i/o.
+func selectWith(finder func([]string, ...fuzzyfinder.Option) (int, error), prompt string, options []string, initialQuery ...string) (string, error) {
 	if len(options) == 0 {
 		return "", fmt.Errorf("no options provided")
 	}
@@ -25,7 +26,7 @@ func Select(prompt string, options []string, initialQuery ...string) (string, er
 	}
 	opts = append(opts, fuzzyfinder.WithMatcher(matching.SubstringMatcher))
 
-	idx, err := fuzzyfinder.Find(options, opts...)
+	idx, err := finder(options, opts...)
 	if err != nil {
 		if errors.Is(err, fuzzyfinder.ErrAbort) {
 			return "", ErrCancelled
@@ -33,6 +34,11 @@ func Select(prompt string, options []string, initialQuery ...string) (string, er
 		return "", fmt.Errorf("running picker: %w", err)
 	}
 	return options[idx], nil
+}
+
+// Select presents options via the fuzzyfinder library and returns the selected item.
+func Select(prompt string, options []string, initialQuery ...string) (string, error) {
+	return selectWith(fuzzyfinder.Find, prompt, options, initialQuery...)
 }
 
 // confirmWith is the testable core of Confirm — selector is injected so tests
