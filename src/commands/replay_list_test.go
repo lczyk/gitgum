@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/lczyk/assert"
@@ -9,12 +10,14 @@ import (
 )
 
 func TestListCommits(t *testing.T) {
-	cases := map[string]struct {
+	type testCase struct {
 		setup         func(t *testing.T, dir string) (branchA, branchB string)
 		expectError   bool
 		errorContains string
 		verifyCommits func(t *testing.T, commits []string)
-	}{
+	}
+
+	cases := map[string]testCase{
 		"list commits on feature branch since trunk": {
 			setup: func(t *testing.T, dir string) (string, string) {
 				temp_repo.RunGit(t, dir, "checkout", "-b", "feature")
@@ -57,21 +60,24 @@ func TestListCommits(t *testing.T) {
 			expectError:   true,
 			errorContains: "merge base",
 		},
-		"list commits in chronological order": {
-			setup: func(t *testing.T, dir string) (string, string) {
-				temp_repo.RunGit(t, dir, "checkout", "-b", "feature3")
+	}
 
-				for i := range 3 {
-					temp_repo.CreateCommit(t, dir,
-						fmt.Sprintf("ordered%c.txt", 'a'+i), "content\n",
-						fmt.Sprintf("Ordered commit %c", 'A'+i))
-				}
-
-				return "feature3", "main"
-			},
-			verifyCommits: func(t *testing.T, commits []string) {
-				assert.Len(t, commits, 3, "should have 3 commits in chronological order")
-			},
+	// needs a closure so setup can capture SHA order for verifyCommits to check
+	var wantSHAs []string
+	cases["list commits in chronological order"] = testCase{
+		setup: func(t *testing.T, dir string) (string, string) {
+			temp_repo.RunGit(t, dir, "checkout", "-b", "feature3")
+			for i := range 3 {
+				temp_repo.CreateCommit(t, dir,
+					fmt.Sprintf("ordered%c.txt", 'a'+i), "content\n",
+					fmt.Sprintf("Ordered commit %c", 'A'+i))
+				sha := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "HEAD"))
+				wantSHAs = append(wantSHAs, sha)
+			}
+			return "feature3", "main"
+		},
+		verifyCommits: func(t *testing.T, commits []string) {
+			assert.EqualArrays(t, commits, wantSHAs)
 		},
 	}
 
