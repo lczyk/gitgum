@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/lczyk/assert"
@@ -20,10 +21,14 @@ func TestStatusCommand_NotInGitRepo(t *testing.T) {
 func TestStatusCommand_InGitRepo(t *testing.T) {
 	temp_repo.InitTempRepo(t)
 
-	cmd := &StatusCommand{}
+	var buf strings.Builder
+	cmd := &StatusCommand{out: &buf}
 	err := cmd.Execute(nil)
 
 	assert.NoError(t, err, "should succeed in git repo")
+	output := buf.String()
+	assert.ContainsString(t, output, "BRANCHES")
+	assert.ContainsString(t, output, "STATUS")
 }
 
 func TestParseRemotes(t *testing.T) {
