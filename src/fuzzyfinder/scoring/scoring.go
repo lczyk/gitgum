@@ -7,7 +7,7 @@ import (
 )
 
 // Calculate returns a similarity score for s1 against s2.
-// s1 must have at least as many runes as s2.
+// s1 is the corpus, s2 is the query; s1 must have at least as many runes as s2.
 func Calculate(s1, s2 string) (int, [2]int, error) {
 	r1, r2 := []rune(s1), []rune(s2)
 	if len(r1) < len(r2) {
