@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -13,8 +14,20 @@ func TestParseFlags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseFlags: %v", err)
 	}
-	if !cfg.multi || cfg.query != "foo" || cfg.prompt != "$ " || cfg.header != "h" || !cfg.selectOne {
-		t.Fatalf("flags not applied: %+v", cfg)
+	if !cfg.multi {
+		t.Errorf("multi = false, want true")
+	}
+	if cfg.query != "foo" {
+		t.Errorf("query = %q, want %q", cfg.query, "foo")
+	}
+	if cfg.prompt != "$ " {
+		t.Errorf("prompt = %q, want %q", cfg.prompt, "$ ")
+	}
+	if cfg.header != "h" {
+		t.Errorf("header = %q, want %q", cfg.header, "h")
+	}
+	if !cfg.selectOne {
+		t.Errorf("selectOne = false, want true")
 	}
 }
 
@@ -44,13 +57,8 @@ func TestStreamItems(t *testing.T) {
 		t.Fatalf("streamItems: %v", err)
 	}
 	want := []string{"a", "b", "c"}
-	if len(items) != len(want) {
+	if !slices.Equal(items, want) {
 		t.Fatalf("items = %v, want %v", items, want)
-	}
-	for i, v := range want {
-		if items[i] != v {
-			t.Fatalf("items[%d] = %q, want %q", i, items[i], v)
-		}
 	}
 }
 
