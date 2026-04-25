@@ -15,6 +15,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/lczyk/gitgum/src/fuzzyfinder"
 	"github.com/lczyk/gitgum/src/version"
@@ -27,10 +28,18 @@ const (
 	exitCancelled = 130
 )
 
+// streamDelay matches gg switch's per-item throttle so the picker animates
+// items in at the same cadence regardless of producer.
+const streamDelay = 3 * time.Millisecond
+
 func main() {
 	for _, arg := range os.Args[1:] {
 		if arg == "--version" || arg == "-v" {
 			fmt.Println(version.FormatVersion(version.Version, version.CommitSHA, version.BuildDate, version.BuildInfo))
+			os.Exit(exitOK)
+		}
+		if arg == "--help" || arg == "-h" {
+			printUsage(os.Stdout)
 			os.Exit(exitOK)
 		}
 	}
@@ -56,6 +65,7 @@ type config struct {
 	prompt    string
 	header    string
 	selectOne bool
+	fast      bool
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -87,7 +97,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		items = []string{first}
 	)
 	readErrCh := make(chan error, 1)
-	go func() { readErrCh <- streamItems(ctx, br, &lock, &items) }()
+	delay := streamDelay
+	if cfg.fast {
+		delay = 0
+	}
+	go func() { readErrCh <- streamItems(ctx, br, &lock, &items, delay) }()
 
 	// build picker options
 	opts := []fuzzyfinder.Option{fuzzyfinder.WithPromptString(cfg.prompt)}
@@ -162,7 +176,7 @@ func readFirstLine(r *bufio.Reader) (string, error) {
 
 // streamItems reads lines from r and appends them to *items under lock until
 // EOF or ctx is cancelled.
-func streamItems(ctx context.Context, r io.Reader, lock *sync.Mutex, items *[]string) error {
+func streamItems(ctx context.Context, r io.Reader, lock *sync.Mutex, items *[]string, delay time.Duration) error {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	for scanner.Scan() {
@@ -175,6 +189,9 @@ func streamItems(ctx context.Context, r io.Reader, lock *sync.Mutex, items *[]st
 		if line == "" {
 			continue
 		}
+		if delay > 0 {
+			time.Sleep(delay)
+		}
 		lock.Lock()
 		*items = append(*items, line)
 		lock.Unlock()
@@ -185,12 +202,7 @@ func streamItems(ctx context.Context, r io.Reader, lock *sync.Mutex, items *[]st
 func parseFlags(args []string, stderr io.Writer) (config, error) {
 	fs := flag.NewFlagSet("fuzzyfinder", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fs.Usage = func() {
-		fmt.Fprintln(stderr, "Usage: fuzzyfinder [flags]")
-		fmt.Fprintln(stderr, "Reads items from stdin (one per line), writes selection to stdout.")
-		fmt.Fprintln(stderr)
-		fs.PrintDefaults()
-	}
+	fs.Usage = func() { printUsage(stderr) }
 
 	var cfg config
 	fs.BoolVar(&cfg.multi, "m", false, "multi-select (shorthand)")
@@ -202,6 +214,7 @@ func parseFlags(args []string, stderr io.Writer) (config, error) {
 	fs.StringVar(&cfg.header, "header", "", "static header line")
 	fs.BoolVar(&cfg.selectOne, "1", false, "auto-select if exactly one item (shorthand)")
 	fs.BoolVar(&cfg.selectOne, "select-1", false, "auto-select if exactly one item")
+	fs.BoolVar(&cfg.fast, "fast", false, "disable streaming delay (append items as fast as stdin produces them)")
 
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
@@ -209,3 +222,58 @@ func parseFlags(args []string, stderr io.Writer) (config, error) {
 	return cfg, nil
 }
 
+const usageText = `Usage:
+  fuzzyfinder [OPTIONS]
+
+Description:
+  Interactive fzf-like fuzzy picker built on the gitgum fuzzyfinder library.
+  Reads items from stdin (one per line) and writes the selected item(s) to
+  stdout. The terminal UI is drawn on /dev/tty so stdout stays clean and
+  can be piped into another command.
+
+  Items stream into the picker as they arrive — pipes that take a while to
+  produce all their output (find, fd, ripgrep, ...) are usable immediately,
+  and you can begin typing a query before the producer has finished.
+
+  Matching is fuzzy and case-insensitive; results are ranked by score with
+  matched characters highlighted. Empty lines from stdin are skipped.
+
+Options:
+  -m, --multi          Allow selecting multiple items. Tab toggles the item
+                       under the cursor; Enter prints all selected items, one
+                       per line, in selection order.
+  -q, --query <s>      Start with the picker's query pre-filled to <s>. Useful
+                       for narrowing results immediately or for scripting.
+  -p, --prompt <s>     Prompt prefix shown before the query (default "> ").
+                       Set per-context to remind the user what they are picking,
+                       e.g. -p 'branch> '.
+      --header <s>     Static header line displayed above the items. Does not
+                       scroll and is not searched.
+  -1, --select-1       Auto-select if there is exactly one matching item, with
+                       no UI shown. Combine with --query for non-interactive use.
+      --fast           Disable the streaming delay. Items are appended as fast
+                       as stdin produces them, instead of throttled to match
+                       the gg switch animation cadence.
+  -v, --version        Print version and exit.
+  -h, --help           Show this help message.
+
+Key bindings:
+  Enter                  Confirm selection
+  Esc, Ctrl-C, Ctrl-D    Cancel (exit 130)
+  Tab                    Toggle selection (with --multi)
+  Up,    Ctrl-K, Ctrl-P  Move cursor up
+  Down,  Ctrl-J, Ctrl-N  Move cursor down
+  PgUp,  Ctrl-B          Page up
+  PgDn,  Ctrl-F          Page down
+  Left                   Move query cursor left
+  Right                  Move query cursor right
+  Home,  Ctrl-A          Jump to start of query
+  End,   Ctrl-E          Jump to end of query
+  Backspace / Delete     Delete char before / under cursor
+  Ctrl-W                 Delete previous word
+  Ctrl-U                 Clear query
+`
+
+func printUsage(w io.Writer) {
+	fmt.Fprint(w, usageText)
+}

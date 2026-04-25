@@ -225,9 +225,24 @@ func TestFind(t *testing.T) {
 			events: append(runes("a"), keys([]input{
 				{tcell.KeyCtrlA, 'A', tcell.ModCtrl},
 				{tcell.KeyBackspace, rune(tcell.KeyBackspace), tcell.ModNone},
-				{tcell.KeyCtrlF, 'F', tcell.ModCtrl},
+				{tcell.KeyRight, rune(tcell.KeyRight), tcell.ModNone},
 			}...)...),
 		},
+		"input zdravej": {events: runes("Здравей")},
+		"left-right cyrillic": {
+			events: append(runes("Здравей"), keys([]input{
+				{tcell.KeyLeft, rune(tcell.KeyLeft), tcell.ModNone},
+				{tcell.KeyLeft, rune(tcell.KeyLeft), tcell.ModNone},
+				{tcell.KeyRight, rune(tcell.KeyRight), tcell.ModNone},
+			}...)...),
+		},
+		"backspace cyrillic": {
+			events: append(runes("Здравей"), keys([]input{
+				{tcell.KeyBackspace, rune(tcell.KeyBackspace), tcell.ModNone},
+				{tcell.KeyBackspace, rune(tcell.KeyBackspace), tcell.ModNone},
+			}...)...),
+		},
+		"ctrl-w cyrillic": {events: append(runes("Аз обичам"), keys(input{tcell.KeyCtrlW, 'W', tcell.ModCtrl})...)},
 		"header line": {opts: []fuzzyfinder.Option{fuzzyfinder.WithHeader("Search?")}},
 		"header line which exceeds max charaters": {opts: []fuzzyfinder.Option{fuzzyfinder.WithHeader("Waht do you want to search for?")}},
 	}
@@ -242,13 +257,8 @@ func TestFind(t *testing.T) {
 			events = append(events, key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 			term.SetEvents(events...)
 
-			opts := append(
-				c.opts,
-				fuzzyfinder.WithMode(fuzzyfinder.ModeCaseSensitive),
-			)
-
 			assertWithGolden(t, func() string {
-				_, err := f.Find(trackNames(), opts...)
+				_, err := f.Find(trackNames(), c.opts...)
 				assert.Error(t, err, fuzzyfinder.ErrAbort)
 
 				res := term.GetResult()
@@ -270,7 +280,6 @@ func TestFind_hotReload(t *testing.T) {
 		_, err := f.FindLive(
 			&names,
 			&sync.Mutex{},
-			fuzzyfinder.WithMode(fuzzyfinder.ModeCaseSensitive),
 		)
 		assert.Error(t, err, fuzzyfinder.ErrAbort)
 
@@ -292,7 +301,6 @@ func TestFind_hotReloadLock(t *testing.T) {
 		_, err := f.FindLive(
 			&names,
 			mu.RLocker(),
-			fuzzyfinder.WithMode(fuzzyfinder.ModeCaseSensitive),
 		)
 		assert.Error(t, err, fuzzyfinder.ErrAbort)
 

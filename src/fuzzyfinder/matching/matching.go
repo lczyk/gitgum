@@ -1,143 +1,34 @@
-// Package matching provides matching features that find appropriate strings
-// by using a passed input string.
+// Package matching filters a slice of strings against a query using
+// case-insensitive, whitespace-split substring matching: an item matches when
+// it contains every whitespace-delimited word in the query (any order).
 package matching
 
-import (
-	"sort"
-	"strings"
-	"unicode"
+import "strings"
 
-	"github.com/lczyk/gitgum/src/fuzzyfinder/scoring"
-)
-
-// Matched represents a result of FindAll.
+// Matched represents a result of FindAll: the index of the matched item in
+// the original slice.
 type Matched struct {
-	// Idx is the index of an item of the original slice which was used to
-	// search matched strings.
 	Idx int
-	// Pos is the range of matched position.
-	// [2]int is a closed interval [from, to] -- both indices inclusive.
-	Pos [2]int
-	// score is the value that indicates how it similar to the input string.
-	// The bigger score, the more similar it is.
-	score int
 }
 
-// Option represents available matching options.
-type Option func(*opt)
-
-type Mode int
-
-const (
-	ModeSmart Mode = iota
-	ModeCaseSensitive
-	ModeCaseInsensitive
-)
-
-// opt represents available options and its default values.
-type opt struct {
-	mode    Mode
-	matcher func(query, item string) bool
-}
-
-// WithMode specifies a matching mode. The default mode is ModeSmart.
-func WithMode(m Mode) Option {
-	return func(o *opt) {
-		o.mode = m
+// FindAll returns the indices of slice entries that match query, preserving
+// the original order. An empty query matches every item.
+func FindAll(query string, slice []string) []Matched {
+	words := strings.Fields(strings.ToLower(query))
+	res := make([]Matched, 0, len(slice))
+	for i, s := range slice {
+		if matches(strings.ToLower(s), words) {
+			res = append(res, Matched{Idx: i})
+		}
 	}
+	return res
 }
 
-// WithMatcher specifies a custom matching function.
-// If provided, this overrides the default fuzzy matching.
-func WithMatcher(matcher func(query, item string) bool) Option {
-	return func(o *opt) {
-		o.matcher = matcher
-	}
-}
-
-// SubstringMatcher is a case-insensitive, whitespace-split substring matcher:
-// the item matches if it contains every whitespace-delimited word from the query
-// (case-insensitive). Suitable for fzf-style filtering of free-form input.
-func SubstringMatcher(query, item string) bool {
-	itemLower := strings.ToLower(item)
-	for _, word := range strings.Fields(query) {
-		if !strings.Contains(itemLower, strings.ToLower(word)) {
+func matches(itemLower string, lowerWords []string) bool {
+	for _, w := range lowerWords {
+		if !strings.Contains(itemLower, w) {
 			return false
 		}
 	}
 	return true
-}
-
-// FindAll tries to find out sub-strings from slice that match the passed argument in.
-// The returned slice is sorted by similarity scores in descending order.
-func FindAll(in string, slice []string, opts ...Option) []Matched {
-	var opt opt
-	for _, o := range opts {
-		o(&opt)
-	}
-	m := match(in, slice, opt)
-	sort.Slice(m, func(i, j int) bool {
-		if m[i].score == m[j].score {
-			return m[i].Idx > m[j].Idx
-		}
-		return m[i].score > m[j].score
-	})
-	return m
-}
-
-// match iterates each string of slice for check whether it is matched to the input string.
-func match(input string, slice []string, opt opt) (res []Matched) {
-	if opt.matcher != nil {
-		for idxOfSlice, s := range slice {
-			if opt.matcher(input, s) {
-				res = append(res, Matched{Idx: idxOfSlice, score: 1000})
-			}
-		}
-		return res
-	}
-
-	if opt.mode == ModeSmart {
-		if !strings.ContainsFunc(input, unicode.IsUpper) {
-			opt.mode = ModeCaseInsensitive
-		} else {
-			opt.mode = ModeCaseSensitive
-		}
-	}
-	if opt.mode == ModeCaseInsensitive {
-		input = strings.ToLower(input)
-	}
-
-	in := []rune(input)
-	if len(in) == 0 {
-		for i := range slice {
-			res = append(res, Matched{Idx: i})
-		}
-		return res
-	}
-	for idxOfSlice, s := range slice {
-		var idx int
-		if opt.mode == ModeCaseInsensitive {
-			s = strings.ToLower(s)
-		}
-		for _, r := range s {
-			if r == in[idx] {
-				idx++
-				if idx == len(in) {
-					score, pos, err := scoring.Calculate(s, input)
-					if err != nil {
-						// the fuzzy loop ensures s contains all runes of input before we get here,
-						// so this shouldn't fire; break so we don't re-access in[idx] with idx == len(in)
-						break
-					}
-					res = append(res, Matched{
-						Idx:   idxOfSlice,
-						Pos:   pos,
-						score: score,
-					})
-					break
-				}
-			}
-		}
-	}
-	return res
 }

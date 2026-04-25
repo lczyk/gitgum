@@ -53,7 +53,7 @@ func TestStreamItems(t *testing.T) {
 		lock  sync.Mutex
 		items []string
 	)
-	if err := streamItems(context.Background(), strings.NewReader("a\nb\r\n\nc\n"), &lock, &items); err != nil {
+	if err := streamItems(context.Background(), strings.NewReader("a\nb\r\n\nc\n"), &lock, &items, 0); err != nil {
 		t.Fatalf("streamItems: %v", err)
 	}
 	want := []string{"a", "b", "c"}

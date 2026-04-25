@@ -171,8 +171,17 @@ func (f *finder) _draw() {
 		maxHeight--
 	}
 
-	// Number line
-	for i, r := range fmt.Sprintf("%d/%d", len(f.state.matched), len(f.state.items)) {
+	// Item lines
+	itemAreaHeight := maxHeight - 2
+	pageSize := itemAreaHeight + 1
+	topIdx := f.state.y - f.state.cursorY
+
+	// Number line: counts + cursor row indicator (e.g. "12/40  row 7/40")
+	numberLine := fmt.Sprintf("%d/%d", len(f.state.matched), len(f.state.items))
+	if pageSize > 0 && len(f.state.matched) > pageSize {
+		numberLine += fmt.Sprintf("  row %d/%d", f.state.y+1, len(f.state.matched))
+	}
+	for i, r := range numberLine {
 		style := tcell.StyleDefault.
 			Foreground(tcell.ColorYellow).
 			Background(tcell.ColorDefault)
@@ -180,9 +189,6 @@ func (f *finder) _draw() {
 		f.term.SetContent(2+i, maxHeight-1, r, nil, style)
 	}
 	maxHeight--
-
-	// Item lines
-	itemAreaHeight := maxHeight - 1
 	// slice from the bottom-most visible item upward
 	matched := f.state.matched[f.state.y-f.state.cursorY:]
 	words := strings.Fields(string(f.state.input))
@@ -274,6 +280,42 @@ func (f *finder) _draw() {
 			}
 		}
 	}
+
+	// Scrollbar in the rightmost column of the item area. Drawn only when the
+	// matched list does not fit in the visible window.
+	if pageSize > 0 && len(f.state.matched) > pageSize {
+		trackTop := maxHeight - 1 - itemAreaHeight
+		trackBot := maxHeight - 1
+		trackHeight := trackBot - trackTop + 1
+		total := len(f.state.matched)
+
+		thumbSize := max(1, trackHeight*pageSize/total)
+		if thumbSize > trackHeight {
+			thumbSize = trackHeight
+		}
+		// topIdx is the bottom-of-screen item index in matched; the top of the
+		// visible window is topIdx + (visibleCount-1). Map that to a track offset
+		// from trackTop.
+		visibleTop := topIdx + min(itemAreaHeight, total-1-topIdx)
+		maxOffset := trackHeight - thumbSize
+		offset := 0
+		if total > pageSize {
+			offset = (total - 1 - visibleTop) * maxOffset / (total - pageSize)
+		}
+		offset = min(maxOffset, max(0, offset))
+
+		trackStyle := tcell.StyleDefault.Foreground(tcell.ColorDarkGray).Background(tcell.ColorDefault)
+		thumbStyle := tcell.StyleDefault.Foreground(tcell.ColorYellow).Background(tcell.ColorDefault)
+		col := maxWidth - 1
+		for row := 0; row < trackHeight; row++ {
+			y := trackTop + row
+			if row >= offset && row < offset+thumbSize {
+				f.term.SetContent(col, y, '█', nil, thumbStyle)
+			} else {
+				f.term.SetContent(col, y, '│', nil, trackStyle)
+			}
+		}
+	}
 }
 
 func (f *finder) draw(d time.Duration) {
@@ -349,12 +391,12 @@ func (f *finder) readKey(ctx context.Context) error {
 			f.state.input = append(f.state.input[:x], f.state.input[x+1:]...)
 		case tcell.KeyEnter:
 			return errEntered
-		case tcell.KeyLeft, tcell.KeyCtrlB:
+		case tcell.KeyLeft:
 			if f.state.x > 0 {
 				f.state.cursorX -= runewidth.RuneWidth(f.state.input[f.state.x-1])
 				f.state.x--
 			}
-		case tcell.KeyRight, tcell.KeyCtrlF:
+		case tcell.KeyRight:
 			if f.state.x < len(f.state.input) {
 				f.state.cursorX += runewidth.RuneWidth(f.state.input[f.state.x])
 				f.state.x++
@@ -398,11 +440,11 @@ func (f *finder) readKey(ctx context.Context) error {
 			if f.state.cursorY-1 >= 0 {
 				f.state.cursorY--
 			}
-		case tcell.KeyPgUp:
+		case tcell.KeyPgUp, tcell.KeyCtrlB:
 			f.state.y += min(pageScrollBy, matchedLinesCount-1-f.state.y)
 			maxCursorY := min(screenHeight-3, matchedLinesCount-1)
 			f.state.cursorY += min(pageScrollBy, maxCursorY-f.state.cursorY)
-		case tcell.KeyPgDn:
+		case tcell.KeyPgDn, tcell.KeyCtrlF:
 			f.state.y -= min(pageScrollBy, f.state.y)
 			f.state.cursorY -= min(pageScrollBy, f.state.cursorY)
 		case tcell.KeyTab:
@@ -472,13 +514,7 @@ func (f *finder) filter() {
 	}
 
 	// FindAll may take a lot of time, so it is desired to use RLock to avoid goroutine blocking.
-	var opts []matching.Option
-	if f.opt.matcher != nil {
-		opts = []matching.Option{matching.WithMatcher(f.opt.matcher)}
-	} else {
-		opts = []matching.Option{matching.WithMode(f.opt.mode)}
-	}
-	matchedItems := matching.FindAll(string(f.state.input), f.state.items, opts...)
+	matchedItems := matching.FindAll(string(f.state.input), f.state.items)
 	f.stateMu.RUnlock()
 
 	f.stateMu.Lock()
