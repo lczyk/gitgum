@@ -66,6 +66,7 @@ type config struct {
 	header    string
 	selectOne bool
 	fast      bool
+	reverse   bool
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -113,6 +114,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	if cfg.selectOne {
 		opts = append(opts, fuzzyfinder.WithSelectOne())
+	}
+	if cfg.reverse {
+		opts = append(opts, fuzzyfinder.WithReverse())
 	}
 	opts = append(opts, fuzzyfinder.WithContext(ctx))
 
@@ -215,6 +219,7 @@ func parseFlags(args []string, stderr io.Writer) (config, error) {
 	fs.BoolVar(&cfg.selectOne, "1", false, "auto-select if exactly one item (shorthand)")
 	fs.BoolVar(&cfg.selectOne, "select-1", false, "auto-select if exactly one item")
 	fs.BoolVar(&cfg.fast, "fast", false, "disable streaming delay (append items as fast as stdin produces them)")
+	fs.BoolVar(&cfg.reverse, "reverse", false, "render prompt at the top with items growing downward")
 
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
@@ -254,6 +259,8 @@ Options:
       --fast           Disable the streaming delay. Items are appended as fast
                        as stdin produces them, instead of throttled to match
                        the gg switch animation cadence.
+      --reverse        Render the prompt at the top with items growing
+                       downward. Default is bottom-up (prompt at the bottom).
   -v, --version        Print version and exit.
   -h, --help           Show this help message.
 

@@ -445,17 +445,20 @@ func TestFindMulti(t *testing.T) {
 		"input glow": {events: runes("glow"), expected: []int{5}},
 		"select two items": {events: keys([]input{
 			{tcell.KeyTab, rune(tcell.KeyTab), tcell.ModNone},
-			{tcell.KeyUp, rune(tcell.KeyUp), tcell.ModNone},
 			{tcell.KeyTab, rune(tcell.KeyTab), tcell.ModNone},
 		}...), expected: []int{0, 1}},
 		"select two items with another order": {events: keys([]input{
 			{tcell.KeyUp, rune(tcell.KeyUp), tcell.ModNone},
 			{tcell.KeyTab, rune(tcell.KeyTab), tcell.ModNone},
+			{tcell.KeyDown, rune(tcell.KeyDown), tcell.ModNone},
+			{tcell.KeyDown, rune(tcell.KeyDown), tcell.ModNone},
 			{tcell.KeyTab, rune(tcell.KeyTab), tcell.ModNone},
 		}...), expected: []int{1, 0}},
 		"toggle": {events: keys([]input{
 			{tcell.KeyTab, rune(tcell.KeyTab), tcell.ModNone},
+			{tcell.KeyDown, rune(tcell.KeyDown), tcell.ModNone},
 			{tcell.KeyTab, rune(tcell.KeyTab), tcell.ModNone},
+			{tcell.KeyDown, rune(tcell.KeyDown), tcell.ModNone},
 		}...), expected: []int{0}},
 		"empty result": {events: runes("fffffff"), abort: true},
 		"resize window": {events: []tcell.Event{

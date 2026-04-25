@@ -130,49 +130,54 @@ func (f *finder) _draw() {
 	f.term.Clear()
 
 	maxWidth := width
-	maxHeight := height
 
-	// prompt line
+	// Layout: rows are addressed as offsets from the prompt outward into the
+	// item area. step is +1 in reverse mode (prompt at top, items grow down)
+	// and -1 otherwise (prompt at bottom, items grow up).
+	step := -1
+	promptRow := height - 1
+	if f.opt.reverse {
+		step = 1
+		promptRow = 0
+	}
+	rowAt := func(offset int) int { return promptRow + step*offset }
+
+	// Prompt line
 	var promptLinePad int
-
 	for _, r := range f.opt.promptString {
-		style := tcell.StyleDefault.
-			Foreground(tcell.ColorBlue).
-			Background(tcell.ColorDefault)
-
-		f.term.SetContent(promptLinePad, maxHeight-1, r, nil, style)
+		style := tcell.StyleDefault.Foreground(tcell.ColorBlue).Background(tcell.ColorDefault)
+		f.term.SetContent(promptLinePad, promptRow, r, nil, style)
 		promptLinePad++
 	}
 	var w int
 	for _, r := range f.state.input {
-		style := tcell.StyleDefault.
-			Foreground(tcell.ColorDefault).
-			Background(tcell.ColorDefault).
-			Bold(true)
-
-		// Add a space between '>' and runes.
-		f.term.SetContent(promptLinePad+w, maxHeight-1, r, nil, style)
+		style := tcell.StyleDefault.Foreground(tcell.ColorDefault).Background(tcell.ColorDefault).Bold(true)
+		f.term.SetContent(promptLinePad+w, promptRow, r, nil, style)
 		w += runewidth.RuneWidth(r)
 	}
-	f.term.ShowCursor(promptLinePad+f.state.cursorX, maxHeight-1)
+	f.term.ShowCursor(promptLinePad+f.state.cursorX, promptRow)
 
-	maxHeight--
-
-	// Header line
+	// Header line (offset 1 from prompt) — only present when set.
+	offset := 1
 	if len(f.opt.header) > 0 {
 		w = 0
 		for _, r := range runewidth.Truncate(f.opt.header, maxWidth-2, "..") {
-			style := tcell.StyleDefault.
-				Foreground(tcell.ColorGreen).
-				Background(tcell.ColorDefault)
-			f.term.SetContent(2+w, maxHeight-1, r, nil, style)
+			style := tcell.StyleDefault.Foreground(tcell.ColorGreen).Background(tcell.ColorDefault)
+			f.term.SetContent(2+w, rowAt(offset), r, nil, style)
 			w += runewidth.RuneWidth(r)
 		}
-		maxHeight--
+		offset++
 	}
 
-	// Item lines
-	itemAreaHeight := maxHeight - 2
+	// Item area sizing
+	numberOffset := offset
+	firstItemOffset := offset + 1
+	// itemAreaHeight = inclusive count of usable item rows minus 1
+	// Total band rows = height; rows used so far = firstItemOffset; remaining = height - firstItemOffset
+	itemAreaHeight := height - firstItemOffset - 1
+	if itemAreaHeight < 0 {
+		itemAreaHeight = 0
+	}
 	pageSize := itemAreaHeight + 1
 	topIdx := f.state.y - f.state.cursorY
 
@@ -182,37 +187,29 @@ func (f *finder) _draw() {
 		numberLine += fmt.Sprintf("  row %d/%d", f.state.y+1, len(f.state.matched))
 	}
 	for i, r := range numberLine {
-		style := tcell.StyleDefault.
-			Foreground(tcell.ColorYellow).
-			Background(tcell.ColorDefault)
-
-		f.term.SetContent(2+i, maxHeight-1, r, nil, style)
+		style := tcell.StyleDefault.Foreground(tcell.ColorYellow).Background(tcell.ColorDefault)
+		f.term.SetContent(2+i, rowAt(numberOffset), r, nil, style)
 	}
-	maxHeight--
-	// slice from the bottom-most visible item upward
-	matched := f.state.matched[f.state.y-f.state.cursorY:]
+
+	// Item lines: i=0 is the row closest to the prompt.
+	matched := f.state.matched[topIdx:]
 	words := strings.Fields(string(f.state.input))
 
 	for i, m := range matched {
 		if i > itemAreaHeight {
 			break
 		}
+		row := rowAt(firstItemOffset + i)
 		if i == f.state.cursorY {
-			style := tcell.StyleDefault.
-				Foreground(tcell.ColorRed).
-				Background(tcell.ColorBlack)
-
-			f.term.SetContent(0, maxHeight-1-i, '>', nil, style)
-			f.term.SetContent(1, maxHeight-1-i, ' ', nil, style)
+			style := tcell.StyleDefault.Foreground(tcell.ColorRed).Background(tcell.ColorBlack)
+			f.term.SetContent(0, row, '>', nil, style)
+			f.term.SetContent(1, row, ' ', nil, style)
 		}
 
 		if f.multi {
 			if _, ok := f.state.selection[m.Idx]; ok {
-				style := tcell.StyleDefault.
-					Foreground(tcell.ColorRed).
-					Background(tcell.ColorBlack)
-
-				f.term.SetContent(1, maxHeight-1-i, '>', nil, style)
+				style := tcell.StyleDefault.Foreground(tcell.ColorRed).Background(tcell.ColorBlack)
+				f.term.SetContent(1, row, '>', nil, style)
 			}
 		}
 
@@ -244,72 +241,59 @@ func (f *finder) _draw() {
 
 		w := 2
 		for j, r := range itemRunes {
-			style := tcell.StyleDefault.
-				Foreground(tcell.ColorDefault).
-				Background(tcell.ColorDefault)
-			// Highlight selected strings.
+			style := tcell.StyleDefault.Foreground(tcell.ColorDefault).Background(tcell.ColorDefault)
 			hasHighlighted := highlightPositions[j]
 			if hasHighlighted {
-				style = tcell.StyleDefault.
-					Foreground(tcell.ColorGreen).
-					Background(tcell.ColorDefault)
+				style = tcell.StyleDefault.Foreground(tcell.ColorGreen).Background(tcell.ColorDefault)
 			}
 			if i == f.state.cursorY {
 				if hasHighlighted {
-					style = tcell.StyleDefault.
-						Foreground(tcell.ColorDarkCyan).
-						Bold(true).
-						Background(tcell.ColorBlack)
+					style = tcell.StyleDefault.Foreground(tcell.ColorDarkCyan).Bold(true).Background(tcell.ColorBlack)
 				} else {
-					style = tcell.StyleDefault.
-						Foreground(tcell.ColorYellow).
-						Bold(true).
-						Background(tcell.ColorBlack)
+					style = tcell.StyleDefault.Foreground(tcell.ColorYellow).Bold(true).Background(tcell.ColorBlack)
 				}
 			}
 
 			rw := runewidth.RuneWidth(r)
-			// Shorten item cells.
 			if w+rw+2 > maxWidth {
-				f.term.SetContent(w, maxHeight-1-i, '.', nil, style)
-				f.term.SetContent(w+1, maxHeight-1-i, '.', nil, style)
+				f.term.SetContent(w, row, '.', nil, style)
+				f.term.SetContent(w+1, row, '.', nil, style)
 				break
-			} else {
-				f.term.SetContent(w, maxHeight-1-i, r, nil, style)
-				w += rw
 			}
+			f.term.SetContent(w, row, r, nil, style)
+			w += rw
 		}
 	}
 
-	// Scrollbar in the rightmost column of the item area. Drawn only when the
-	// matched list does not fit in the visible window.
+	// Scrollbar in the rightmost column of the item area, only when the
+	// matched list overflows the visible window.
 	if pageSize > 0 && len(f.state.matched) > pageSize {
-		trackTop := maxHeight - 1 - itemAreaHeight
-		trackBot := maxHeight - 1
-		trackHeight := trackBot - trackTop + 1
+		trackHeight := pageSize
 		total := len(f.state.matched)
 
 		thumbSize := max(1, trackHeight*pageSize/total)
 		if thumbSize > trackHeight {
 			thumbSize = trackHeight
 		}
-		// topIdx is the bottom-of-screen item index in matched; the top of the
-		// visible window is topIdx + (visibleCount-1). Map that to a track offset
-		// from trackTop.
-		visibleTop := topIdx + min(itemAreaHeight, total-1-topIdx)
+		visibleFar := topIdx + min(itemAreaHeight, total-1-topIdx)
 		maxOffset := trackHeight - thumbSize
-		offset := 0
+		thumbOff := 0
 		if total > pageSize {
-			offset = (total - 1 - visibleTop) * maxOffset / (total - pageSize)
+			// In bottom-up mode, thumb at the top track row corresponds to
+			// the worst-rank items (highest matched index). In reverse mode,
+			// the track row closest to the prompt is the best item.
+			thumbOff = (total - 1 - visibleFar) * maxOffset / (total - pageSize)
 		}
-		offset = min(maxOffset, max(0, offset))
+		thumbOff = min(maxOffset, max(0, thumbOff))
 
 		trackStyle := tcell.StyleDefault.Foreground(tcell.ColorDarkGray).Background(tcell.ColorDefault)
 		thumbStyle := tcell.StyleDefault.Foreground(tcell.ColorYellow).Background(tcell.ColorDefault)
 		col := maxWidth - 1
 		for row := 0; row < trackHeight; row++ {
-			y := trackTop + row
-			if row >= offset && row < offset+thumbSize {
+			// Track row 0 is the row farthest from the prompt; row trackHeight-1
+			// is closest. firstItemOffset+itemAreaHeight is the far end.
+			y := rowAt(firstItemOffset + (trackHeight - 1 - row))
+			if row >= thumbOff && row < thumbOff+thumbSize {
 				f.term.SetContent(col, y, '█', nil, thumbStyle)
 			} else {
 				f.term.SetContent(col, y, '│', nil, trackStyle)
@@ -427,26 +411,31 @@ func (f *finder) readKey(ctx context.Context) error {
 			f.state.cursorX = 0
 			f.state.x = 0
 		case tcell.KeyUp, tcell.KeyCtrlK, tcell.KeyCtrlP:
-			if f.state.y+1 < matchedLinesCount {
-				f.state.y++
-			}
-			if f.state.cursorY+1 < min(matchedLinesCount, screenHeight-2) {
-				f.state.cursorY++
+			// Visually upward. In bottom-up layout that means away from the
+			// bottom prompt; in reverse layout it means toward the top prompt.
+			if f.opt.reverse {
+				f.scrollTowardPrompt(matchedLinesCount, screenHeight)
+			} else {
+				f.scrollAwayFromPrompt(matchedLinesCount, screenHeight)
 			}
 		case tcell.KeyDown, tcell.KeyCtrlJ, tcell.KeyCtrlN:
-			if f.state.y > 0 {
-				f.state.y--
-			}
-			if f.state.cursorY-1 >= 0 {
-				f.state.cursorY--
+			if f.opt.reverse {
+				f.scrollAwayFromPrompt(matchedLinesCount, screenHeight)
+			} else {
+				f.scrollTowardPrompt(matchedLinesCount, screenHeight)
 			}
 		case tcell.KeyPgUp, tcell.KeyCtrlB:
-			f.state.y += min(pageScrollBy, matchedLinesCount-1-f.state.y)
-			maxCursorY := min(screenHeight-3, matchedLinesCount-1)
-			f.state.cursorY += min(pageScrollBy, maxCursorY-f.state.cursorY)
+			if f.opt.reverse {
+				f.pageTowardPrompt(pageScrollBy)
+			} else {
+				f.pageAwayFromPrompt(pageScrollBy, matchedLinesCount, screenHeight)
+			}
 		case tcell.KeyPgDn, tcell.KeyCtrlF:
-			f.state.y -= min(pageScrollBy, f.state.y)
-			f.state.cursorY -= min(pageScrollBy, f.state.cursorY)
+			if f.opt.reverse {
+				f.pageAwayFromPrompt(pageScrollBy, matchedLinesCount, screenHeight)
+			} else {
+				f.pageTowardPrompt(pageScrollBy)
+			}
 		case tcell.KeyTab:
 			if !f.multi {
 				return nil
@@ -458,12 +447,7 @@ func (f *finder) readKey(ctx context.Context) error {
 				f.state.selection[idx] = f.state.selectionIdx
 				f.state.selectionIdx++
 			}
-			if f.state.y > 0 {
-				f.state.y--
-			}
-			if f.state.cursorY > 0 {
-				f.state.cursorY--
-			}
+			f.scrollAwayFromPrompt(matchedLinesCount, screenHeight)
 		default:
 			if e.Rune() != 0 {
 				width, _ := f.term.Size()
@@ -501,6 +485,50 @@ func (f *finder) readKey(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// Cursor scroll helpers. "Toward prompt" moves toward the best match (state.y
+// decreases); "away from prompt" moves toward worse matches (state.y
+// increases). Both wrap when at the boundary.
+
+func (f *finder) scrollAwayFromPrompt(matchedLinesCount, screenHeight int) {
+	if f.state.y+1 < matchedLinesCount {
+		f.state.y++
+		if f.state.cursorY+1 < min(matchedLinesCount, screenHeight-2) {
+			f.state.cursorY++
+		}
+		return
+	}
+	// At the far end: wrap back to the prompt edge.
+	f.state.y = 0
+	f.state.cursorY = 0
+}
+
+func (f *finder) scrollTowardPrompt(matchedLinesCount, screenHeight int) {
+	if f.state.y > 0 {
+		f.state.y--
+		if f.state.cursorY > 0 {
+			f.state.cursorY--
+		}
+		return
+	}
+	// At the prompt edge: wrap to the far end.
+	if matchedLinesCount == 0 {
+		return
+	}
+	f.state.y = matchedLinesCount - 1
+	f.state.cursorY = min(matchedLinesCount-1, screenHeight-3)
+}
+
+func (f *finder) pageAwayFromPrompt(pageScrollBy, matchedLinesCount, screenHeight int) {
+	f.state.y += min(pageScrollBy, matchedLinesCount-1-f.state.y)
+	maxCursorY := min(screenHeight-3, matchedLinesCount-1)
+	f.state.cursorY += min(pageScrollBy, maxCursorY-f.state.cursorY)
+}
+
+func (f *finder) pageTowardPrompt(pageScrollBy int) {
+	f.state.y -= min(pageScrollBy, f.state.y)
+	f.state.cursorY -= min(pageScrollBy, f.state.cursorY)
 }
 
 func (f *finder) filter() {

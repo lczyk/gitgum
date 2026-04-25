@@ -8,6 +8,7 @@ type opt struct {
 	ctx          context.Context
 	query        string
 	selectOne    bool
+	reverse      bool
 }
 
 var defaultOption = opt{
@@ -51,3 +52,12 @@ func WithSelectOne() Option {
 		o.selectOne = true
 	}
 }
+
+// WithReverse renders the prompt at the top and items growing downward.
+// Default layout is bottom-up (prompt at bottom).
+func WithReverse() Option {
+	return func(o *opt) {
+		o.reverse = true
+	}
+}
+
