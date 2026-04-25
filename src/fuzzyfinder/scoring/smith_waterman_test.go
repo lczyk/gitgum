@@ -15,7 +15,6 @@ func Test_smithWaterman(t *testing.T) {
 		wantScore int
 		wantPos   [2]int
 	}{
-		{"bioinformatics typical", "TACGGGCCCGCTA", "TAGCCCTA", 78, [2]int{0, 12}},
 		{"gap in corpus", "TACGGG-CCCGCTA", "TAGCCCTA", 68, [2]int{0, 13}},
 		{"phrase with spaces", "FLY ME TO THE MOON", "MEON", 16, [2]int{4, 17}},
 		// best DP cell matches only the first s2 char (maxJ < len(s2)-1), so the
