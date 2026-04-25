@@ -3,6 +3,7 @@ package fuzzyfinder_test
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -104,6 +105,16 @@ func TestReal(t *testing.T) {
 	names := trackNames()
 	_, err := fuzzyfinder.Find(context.Background(), &names, nil, fuzzyfinder.Opt{})
 	assert.NoError(t, err)
+}
+
+// makeNumberedItems returns ["item-00", "item-01", ...] of length n. Used
+// by paging tests where we want predictable, large-enough item sets.
+func makeNumberedItems(n int) []string {
+	out := make([]string, n)
+	for i := range n {
+		out[i] = fmt.Sprintf("item-%02d", i)
+	}
+	return out
 }
 
 func TestFind(t *testing.T) {
@@ -264,6 +275,78 @@ func TestFind(t *testing.T) {
 
 				res := term.GetResult()
 				return res
+			})
+		})
+	}
+}
+
+// TestFind_pagination exercises page-aligned navigation against a 30-item
+// list. With screenHeight=10, pageSize=8 → 4 pages (last is partial).
+func TestFind_pagination(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		events []tcell.Event
+		opt    fuzzyfinder.Opt
+	}{
+		"initial": {},
+		"pg-dn lands on page 2 first item": {
+			// Default mode: PgDn = pageTowardPrompt → wraps backward to last page.
+			events: keys(input{tcell.KeyPgDn, rune(tcell.KeyPgDn), tcell.ModNone}),
+		},
+		"reverse pg-dn first of next page": {
+			// Reverse: PgDn → page 1, cursor at item 8 visually on top.
+			opt:    fuzzyfinder.Opt{Reverse: true},
+			events: keys(input{tcell.KeyPgDn, rune(tcell.KeyPgDn), tcell.ModNone}),
+		},
+		"reverse up at top of page 1 jumps to last of page 0": {
+			opt: fuzzyfinder.Opt{Reverse: true},
+			events: keys([]input{
+				{tcell.KeyPgDn, rune(tcell.KeyPgDn), tcell.ModNone},
+				{tcell.KeyUp, rune(tcell.KeyUp), tcell.ModNone},
+			}...),
+		},
+		"reverse pg-dn preserves cursor offset": {
+			// Down twice (cursorY=2) then PgDn → land on cursorY=2 of page 1
+			// (= item 10).
+			opt: fuzzyfinder.Opt{Reverse: true},
+			events: keys([]input{
+				{tcell.KeyDown, rune(tcell.KeyDown), tcell.ModNone},
+				{tcell.KeyDown, rune(tcell.KeyDown), tcell.ModNone},
+				{tcell.KeyPgDn, rune(tcell.KeyPgDn), tcell.ModNone},
+			}...),
+		},
+		"reverse ctrl+down behaves as pg-dn": {
+			opt:    fuzzyfinder.Opt{Reverse: true},
+			events: keys(input{tcell.KeyDown, rune(tcell.KeyDown), tcell.ModCtrl}),
+		},
+		"reverse pg-dn 4x cycles back to page 1": {
+			opt: fuzzyfinder.Opt{Reverse: true},
+			events: keys([]input{
+				{tcell.KeyPgDn, rune(tcell.KeyPgDn), tcell.ModNone},
+				{tcell.KeyPgDn, rune(tcell.KeyPgDn), tcell.ModNone},
+				{tcell.KeyPgDn, rune(tcell.KeyPgDn), tcell.ModNone},
+				{tcell.KeyPgDn, rune(tcell.KeyPgDn), tcell.ModNone},
+			}...),
+		},
+		"reverse pg-up cycles to last partial page": {
+			opt:    fuzzyfinder.Opt{Reverse: true},
+			events: keys(input{tcell.KeyPgUp, rune(tcell.KeyPgUp), tcell.ModNone}),
+		},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f, term := fuzzyfinder.NewWithMockedTerminal()
+			events := append(c.events, key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
+			term.SetEvents(events...)
+
+			assertWithGolden(t, func() string {
+				items := makeNumberedItems(30)
+				_, err := f.Find(context.Background(), &items, nil, c.opt)
+				assert.Error(t, err, fuzzyfinder.ErrAbort)
+				return term.GetResult()
 			})
 		})
 	}
