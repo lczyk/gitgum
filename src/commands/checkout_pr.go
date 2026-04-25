@@ -130,11 +130,7 @@ func parsePRSelection(selection string) (int, string, error) {
 		return 0, "", fmt.Errorf("invalid PR selection format: %s", selection)
 	}
 
-	prNumber, err := strconv.Atoi(matches[1])
-	if err != nil {
-		return 0, "", fmt.Errorf("invalid PR number: %s", matches[1])
-	}
-
+	prNumber, _ := strconv.Atoi(matches[1]) // regex guarantees \d+
 	prType := matches[2]
 	return prNumber, prType, nil
 }
