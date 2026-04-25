@@ -89,7 +89,17 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	readErrCh := make(chan error, 1)
 	go func() { readErrCh <- streamItems(ctx, br, &lock, &items) }()
 
-	opts := buildOptions(cfg)
+	// build picker options
+	opts := []fuzzyfinder.Option{fuzzyfinder.WithPromptString(cfg.prompt)}
+	if cfg.query != "" {
+		opts = append(opts, fuzzyfinder.WithQuery(cfg.query))
+	}
+	if cfg.header != "" {
+		opts = append(opts, fuzzyfinder.WithHeader(cfg.header))
+	}
+	if cfg.selectOne {
+		opts = append(opts, fuzzyfinder.WithSelectOne())
+	}
 	opts = append(opts, fuzzyfinder.WithContext(ctx))
 
 	var (
@@ -114,7 +124,22 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(items) == 0 {
 		return exitNoMatch
 	}
-	return writeResult(stdout, stderr, items, idxs, findErr)
+
+	// write results
+	if findErr != nil {
+		if errors.Is(findErr, fuzzyfinder.ErrAbort) {
+			return exitCancelled
+		}
+		fmt.Fprintf(stderr, "fuzzyfinder: %v\n", findErr)
+		return exitUsage
+	}
+	for _, idx := range idxs {
+		if idx < 0 || idx >= len(items) {
+			return exitNoMatch
+		}
+		fmt.Fprintln(stdout, items[idx])
+	}
+	return exitOK
 }
 
 // readFirstLine returns the first non-empty line from r, or "" if r reaches
@@ -184,35 +209,3 @@ func parseFlags(args []string, stderr io.Writer) (config, error) {
 	return cfg, nil
 }
 
-func buildOptions(cfg config) []fuzzyfinder.Option {
-	opts := []fuzzyfinder.Option{
-		fuzzyfinder.WithPromptString(cfg.prompt),
-	}
-	if cfg.query != "" {
-		opts = append(opts, fuzzyfinder.WithQuery(cfg.query))
-	}
-	if cfg.header != "" {
-		opts = append(opts, fuzzyfinder.WithHeader(cfg.header))
-	}
-	if cfg.selectOne {
-		opts = append(opts, fuzzyfinder.WithSelectOne())
-	}
-	return opts
-}
-
-func writeResult(stdout, stderr io.Writer, items []string, idxs []int, err error) int {
-	if err != nil {
-		if errors.Is(err, fuzzyfinder.ErrAbort) {
-			return exitCancelled
-		}
-		fmt.Fprintf(stderr, "fuzzyfinder: %v\n", err)
-		return exitUsage
-	}
-	for _, idx := range idxs {
-		if idx < 0 || idx >= len(items) {
-			return exitNoMatch
-		}
-		fmt.Fprintln(stdout, items[idx])
-	}
-	return exitOK
-}
