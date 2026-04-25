@@ -27,15 +27,15 @@ func (p *PushCommand) Execute(args []string) error {
 			if errors.Is(err, ui.ErrCancelled) {
 				return nil
 			}
-			return err
+			return fmt.Errorf("confirming push to upstream: %w", err)
 		}
-		if confirmed {
-			if err := cmdrun.RunWithOutput("git", "push"); err != nil {
-				return fmt.Errorf("failed to push: %w", err)
-			}
-			fmt.Printf("Pushed to remote tracking branch '%s'.\n", remoteBranch)
+		if !confirmed {
 			return nil
 		}
+		if err := cmdrun.RunWithOutput("git", "push"); err != nil {
+			return fmt.Errorf("failed to push: %w", err)
+		}
+		fmt.Printf("Pushed to remote tracking branch '%s'.\n", remoteBranch)
 		return nil
 	}
 
@@ -112,7 +112,7 @@ func (p *PushCommand) Execute(args []string) error {
 			if errors.Is(err, ui.ErrCancelled) {
 				return nil
 			}
-			return err
+			return fmt.Errorf("confirming push to remote: %w", err)
 		}
 		if !confirmed {
 			return nil
@@ -129,7 +129,7 @@ func (p *PushCommand) Execute(args []string) error {
 			if errors.Is(err, ui.ErrCancelled) {
 				return nil
 			}
-			return err
+			return fmt.Errorf("confirming create remote branch: %w", err)
 		}
 		if !confirmed {
 			return nil
