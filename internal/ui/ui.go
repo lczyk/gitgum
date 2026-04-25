@@ -8,11 +8,9 @@ import (
 	"github.com/lczyk/gitgum/src/fuzzyfinder/matching"
 )
 
-// ErrCancelled is returned when the user cancels a picker operation (Ctrl+C or ESC).
-var ErrCancelled = errors.New("picker operation cancelled")
+// ErrCancelled is returned when the user cancels a selection or confirmation (Ctrl+C or ESC).
+var ErrCancelled = errors.New("cancelled")
 
-// selectWith is the testable core of Select — finder is injected so tests
-// can drive it without terminal i/o.
 func selectWith(finder func([]string, ...fuzzyfinder.Option) (int, error), prompt string, options []string, initialQuery ...string) (string, error) {
 	if len(options) == 0 {
 		return "", fmt.Errorf("no options provided")
@@ -41,8 +39,6 @@ func Select(prompt string, options []string, initialQuery ...string) (string, er
 	return selectWith(fuzzyfinder.Find, prompt, options, initialQuery...)
 }
 
-// confirmWith is the testable core of Confirm — selector is injected so tests
-// can drive it without terminal i/o.
 func confirmWith(selector func(string, []string, ...string) (string, error), prompt string, defaultYes bool) (bool, error) {
 	options := []string{"yes", "no"}
 	if !defaultYes {
