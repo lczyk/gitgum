@@ -114,7 +114,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return exitNoMatch
 	}
 
-	// write results
 	if findErr != nil {
 		if errors.Is(findErr, fuzzyfinder.ErrAbort) {
 			return exitCancelled

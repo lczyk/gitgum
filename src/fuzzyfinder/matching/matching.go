@@ -5,20 +5,14 @@ package matching
 
 import "strings"
 
-// Matched represents a result of FindAll: the index of the matched item in
-// the original slice.
-type Matched struct {
-	Idx int
-}
-
 // FindAll returns the indices of slice entries that match query, preserving
 // the original order. An empty query matches every item.
-func FindAll(query string, slice []string) []Matched {
+func FindAll(query string, slice []string) []int {
 	words := strings.Fields(strings.ToLower(query))
-	res := make([]Matched, 0, len(slice))
+	res := make([]int, 0, len(slice))
 	for i, s := range slice {
 		if matches(strings.ToLower(s), words) {
-			res = append(res, Matched{Idx: i})
+			res = append(res, i)
 		}
 	}
 	return res

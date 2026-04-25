@@ -41,9 +41,8 @@ var (
 )
 
 type state struct {
-	items      []string           // All item names.
-	allMatched []matching.Matched // All items.
-	matched    []matching.Matched // Matched items against the input.
+	items   []string // All item names.
+	matched []int    // Matched items against the input.
 
 	// x is the current index of the prompt line.
 	x int
@@ -60,9 +59,7 @@ type state struct {
 
 	input []rune
 
-	// selections holds whether a key is selected or not. Each key is
-	// an index of an item (Matched.Idx). Each value represents the position
-	// which it is selected.
+	// selection holds the multi-select state. key = items index, value = selection order (1-based).
 	selection map[int]int
 	// selectionIdx holds the next index, which is used to a selection's value.
 	selectionIdx int
@@ -96,7 +93,7 @@ type finder struct {
 	termEventsChan <-chan tcell.Event
 }
 
-func (f *finder) initFinder(items []string, matched []matching.Matched, opt Opt) error {
+func (f *finder) initFinder(items []string, opt Opt) error {
 	if f.term == nil {
 		s, err := newScreen(opt.Height)
 		if err != nil {
@@ -121,8 +118,7 @@ func (f *finder) initFinder(items []string, matched []matching.Matched, opt Opt)
 	}
 
 	f.state.items = items
-	f.state.matched = matched
-	f.state.allMatched = matched
+	f.state.matched = makeMatched(len(items))
 
 	if !isInTesting() {
 		f.drawTimer = time.AfterFunc(0, func() {
@@ -145,11 +141,10 @@ func (f *finder) initFinder(items []string, matched []matching.Matched, opt Opt)
 	return nil
 }
 
-func (f *finder) updateItems(items []string, matched []matching.Matched) {
+func (f *finder) updateItems(items []string) {
 	f.stateMu.Lock()
 	f.state.items = items
-	f.state.matched = matched
-	f.state.allMatched = matched
+	f.state.matched = makeMatched(len(items))
 	f.stateMu.Unlock()
 	f.eventCh <- struct{}{}
 }
@@ -239,7 +234,7 @@ func (f *finder) _draw() {
 		}
 
 		if f.multi {
-			if _, ok := f.state.selection[m.Idx]; ok {
+			if _, ok := f.state.selection[m]; ok {
 				style := tcell.StyleDefault.Foreground(tcell.ColorRed).Background(tcell.ColorBlack)
 				f.term.SetContent(1, row, '>', nil, style)
 			}
@@ -247,8 +242,8 @@ func (f *finder) _draw() {
 
 		// Compute positions to highlight for multi-word matching
 		var highlightPositions map[int]bool
-		itemRunes := []rune(f.state.items[m.Idx])
-		lowerItemRunes := []rune(strings.ToLower(f.state.items[m.Idx]))
+		itemRunes := []rune(f.state.items[m])
+		lowerItemRunes := []rune(strings.ToLower(f.state.items[m]))
 		for _, word := range words {
 			lowerWord := strings.ToLower(word)
 			wordRunes := []rune(lowerWord)
@@ -494,7 +489,7 @@ func (f *finder) readKey(ctx context.Context) error {
 			if !f.multi {
 				return nil
 			}
-			idx := f.state.matched[f.state.y].Idx
+			idx := f.state.matched[f.state.y]
 			if _, ok := f.state.selection[idx]; ok {
 				delete(f.state.selection, idx)
 			} else {
@@ -616,7 +611,7 @@ func (f *finder) filter() {
 		f.stateMu.RUnlock()
 		f.stateMu.Lock()
 		defer f.stateMu.Unlock()
-		f.state.matched = f.state.allMatched
+		f.state.matched = makeMatched(len(f.state.items))
 		return
 	}
 
@@ -666,7 +661,6 @@ func (f *finder) find(ctx context.Context, itemsPtr *[]string, lock sync.Locker,
 	}
 
 	itemsCopy := snapshot()
-	matched := makeMatched(len(itemsCopy))
 
 	var inited chan struct{}
 	if lock != nil {
@@ -683,7 +677,7 @@ func (f *finder) find(ctx context.Context, itemsPtr *[]string, lock sync.Locker,
 					curr := len(*itemsPtr)
 					if prev != curr {
 						itemsCopy = append([]string(nil), (*itemsPtr)...)
-						f.updateItems(itemsCopy, makeMatched(curr))
+						f.updateItems(itemsCopy)
 					}
 					lock.Unlock()
 					prev = curr
@@ -692,7 +686,7 @@ func (f *finder) find(ctx context.Context, itemsPtr *[]string, lock sync.Locker,
 		}()
 	}
 
-	if err := f.initFinder(itemsCopy, matched, opt); err != nil {
+	if err := f.initFinder(itemsCopy, opt); err != nil {
 		return nil, fmt.Errorf("failed to initialize the fuzzy finder: %w", err)
 	}
 	if inited != nil {
@@ -701,10 +695,10 @@ func (f *finder) find(ctx context.Context, itemsPtr *[]string, lock sync.Locker,
 	return f.runLoop(ctx, &opt)
 }
 
-func makeMatched(n int) []matching.Matched {
-	matched := make([]matching.Matched, n)
+func makeMatched(n int) []int {
+	matched := make([]int, n)
 	for i := range matched {
-		matched[i] = matching.Matched{Idx: i}
+		matched[i] = i
 	}
 	return matched
 }
@@ -715,7 +709,7 @@ func (f *finder) runLoop(ctx context.Context, opt *Opt) ([]int, error) {
 	}
 
 	if opt.SelectOne && len(f.state.matched) == 1 {
-		return []int{f.state.matched[0].Idx}, nil
+		return []int{f.state.matched[0]}, nil
 	}
 
 	go func() {
@@ -754,7 +748,7 @@ func (f *finder) runLoop(ctx context.Context, opt *Opt) ([]int, error) {
 				}
 				if f.multi {
 					if len(f.state.selection) == 0 {
-						return []int{f.state.matched[f.state.y].Idx}, nil
+						return []int{f.state.matched[f.state.y]}, nil
 					}
 					poss, idxs := make([]int, 0, len(f.state.selection)), make([]int, 0, len(f.state.selection))
 					for idx, pos := range f.state.selection {
@@ -766,7 +760,7 @@ func (f *finder) runLoop(ctx context.Context, opt *Opt) ([]int, error) {
 					})
 					return idxs, nil
 				}
-				return []int{f.state.matched[f.state.y].Idx}, nil
+				return []int{f.state.matched[f.state.y]}, nil
 			case err != nil:
 				return nil, fmt.Errorf("failed to read a key: %w", err)
 			}

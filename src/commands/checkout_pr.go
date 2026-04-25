@@ -14,8 +14,8 @@ import (
 )
 
 var (
-	prRegex        = regexp.MustCompile(`^[a-f0-9]+\s+refs/pull/(\d+)/(head|merge)$`)
-	prSelectionRex = regexp.MustCompile(`^PR #(\d+) \((head|merge)\)$`)
+	prRegex          = regexp.MustCompile(`^[a-f0-9]+\s+refs/pull/(\d+)/(head|merge)$`)
+	prSelectionRegex = regexp.MustCompile(`^PR #(\d+) \((head|merge)\)$`)
 )
 
 type CheckoutPRCommand struct{}
@@ -121,7 +121,7 @@ func formatPROptions(prRefs []PRRef) []string {
 }
 
 func parsePRSelection(selection string) (int, string, error) {
-	matches := prSelectionRex.FindStringSubmatch(selection)
+	matches := prSelectionRegex.FindStringSubmatch(selection)
 	if len(matches) != 3 {
 		return 0, "", fmt.Errorf("invalid PR selection format: %s", selection)
 	}
