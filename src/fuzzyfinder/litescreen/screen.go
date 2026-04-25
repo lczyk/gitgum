@@ -44,8 +44,8 @@ import (
 // The current mode is encoded in yOrigin: yOrigin == 0 means fullscreen,
 // yOrigin > 0 means inline.
 type Screen struct {
-	in  *os.File
-	out *os.File
+	in  *os.File  // /dev/tty input fd; used for raw mode + size queries
+	out io.Writer // /dev/tty output, but DI-able for tests
 
 	rawState *term.State
 
@@ -247,26 +247,10 @@ func (s *Screen) Init() error {
 	s.rawState = st
 
 	w, termH := s.terminalSize()
-	rows, fullscreen := resolveHeight(s.height, termH)
-	s.fb = newFramebuf(w, rows)
-
-	if fullscreen {
-		// Enter alt-screen, clear, home cursor, hide cursor.
-		io.WriteString(s.out, "\x1b[?1049h\x1b[2J\x1b[H\x1b[?25l")
-		s.yOrigin = 0
-	} else {
-		// Inline mode: scroll content up by emitting (rows-1) newlines so
-		// we have N free lines at the bottom of the terminal. After the
-		// LFs the cursor is clamped to the last row, so the region's first
-		// row is termH-rows.
-		io.WriteString(s.out, "\x1b[?25l")
-		for i := 0; i < rows-1; i++ {
-			io.WriteString(s.out, "\n")
-		}
-		s.yOrigin = termH - rows
-		// Clear the region in case prior content overlaps.
-		fmt.Fprintf(s.out, "\x1b[%d;1H\x1b[J", s.yOrigin+1)
-	}
+	out, yOrigin, fb := initSequence(s.height, w, termH)
+	s.yOrigin = yOrigin
+	s.fb = fb
+	s.out.Write(out)
 	s.cursorVisible = false
 
 	s.winch = make(chan os.Signal, 1)
@@ -276,6 +260,32 @@ func (s *Screen) Init() error {
 	signal.Notify(s.sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go s.signalLoop()
 	return nil
+}
+
+// initSequence is the pure-byte composition for Init: given the user's
+// height policy and the current terminal size, returns the byte stream to
+// emit, plus the resolved yOrigin and a fresh framebuf. Pulled out of Init
+// so the byte stream is testable without /dev/tty + raw mode + signals.
+func initSequence(height, termW, termH int) (out []byte, yOrigin int, fb *framebuf) {
+	rows, fullscreen := resolveHeight(height, termH)
+	fb = newFramebuf(termW, rows)
+	var buf bytes.Buffer
+	if fullscreen {
+		// Enter alt-screen, clear, home cursor, hide cursor.
+		buf.WriteString("\x1b[?1049h\x1b[2J\x1b[H\x1b[?25l")
+		yOrigin = 0
+	} else {
+		// Inline: emit (rows-1) newlines to scroll content up, leaving
+		// the bottom rows free. Cursor is clamped to the last row, so the
+		// region's first row is termH-rows.
+		buf.WriteString("\x1b[?25l")
+		for range rows - 1 {
+			buf.WriteByte('\n')
+		}
+		yOrigin = termH - rows
+		fmt.Fprintf(&buf, "\x1b[%d;1H\x1b[J", yOrigin+1)
+	}
+	return buf.Bytes(), yOrigin, fb
 }
 
 // signalLoop catches SIGINT/SIGTERM, restores the terminal, and re-raises
@@ -298,16 +308,22 @@ func (s *Screen) signalLoop() {
 // inline (clear region).
 func (s *Screen) cleanup() {
 	s.cleanupOnce.Do(func() {
-		if s.yOrigin == 0 {
-			io.WriteString(s.out, "\x1b[m\x1b[?25h\x1b[?1049l")
-		} else {
-			fmt.Fprintf(s.out, "\x1b[m\x1b[%d;1H\x1b[J\x1b[?25h", s.yOrigin+1)
-		}
+		s.out.Write(finiSequence(s.yOrigin))
 		if s.rawState != nil {
 			term.Restore(int(s.in.Fd()), s.rawState)
 			s.rawState = nil
 		}
 	})
+}
+
+// finiSequence is the pure-byte composition for Fini, given the yOrigin
+// that was set up at Init time. yOrigin == 0 → fullscreen → leave alt-screen.
+// yOrigin > 0 → inline → clear region.
+func finiSequence(yOrigin int) []byte {
+	if yOrigin == 0 {
+		return []byte("\x1b[m\x1b[?25h\x1b[?1049l")
+	}
+	return []byte(fmt.Sprintf("\x1b[m\x1b[%d;1H\x1b[J\x1b[?25h", yOrigin+1))
 }
 
 func (s *Screen) Fini() {
@@ -324,7 +340,9 @@ func (s *Screen) Fini() {
 		s.sigCh = nil
 	}
 	s.in.Close()
-	s.out.Close()
+	if c, ok := s.out.(io.Closer); ok {
+		c.Close()
+	}
 }
 
 func (s *Screen) Size() (int, int) {
@@ -370,10 +388,12 @@ func cellEqual(a, b liteCell) bool {
 	return true
 }
 
-// terminalSize queries the terminal connected to s.out for its size, falling
-// back to 80x24 on error so we always have a usable framebuf.
+// terminalSize queries the input tty fd for its size, falling back to 80x24
+// on error so we always have a usable framebuf. Reads work on the input fd
+// the same as on output for TIOCGWINSZ; using it lets s.out be any
+// io.Writer (handy for tests).
 func (s *Screen) terminalSize() (int, int) {
-	w, h, err := term.GetSize(int(s.out.Fd()))
+	w, h, err := term.GetSize(int(s.in.Fd()))
 	if err != nil || w <= 0 || h <= 0 {
 		return 80, 24
 	}
@@ -487,28 +507,35 @@ func (s *Screen) handleResize() (int, int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	w, termH := s.terminalSize()
-	rows, fullscreen := resolveHeight(s.height, termH)
-
-	prevWidth := s.fb.width
-	if fullscreen {
-		s.yOrigin = 0
-		io.WriteString(s.out, "\x1b[2J\x1b[H")
-	} else {
-		s.yOrigin = termH - rows
-		if w < prevWidth {
-			// Narrowing reflows previous picker rows into more visual lines
-			// that scroll up past yOrigin, leaving wrapped tails above it.
-			// We can't clear them precisely without knowing how much wrap
-			// happened, so wipe the entire visible viewport. Scrollback is
-			// untouched — pre-picker output is still scrollable up.
-			// Its not the best thing to do here, but i cant think of anythig
-			// better atm..
-			io.WriteString(s.out, "\x1b[2J")
-		}
-		fmt.Fprintf(s.out, "\x1b[%d;1H\x1b[J", s.yOrigin+1)
-	}
+	out, yOrigin, rows := resizeSequence(s.height, w, termH, s.fb.width)
+	s.yOrigin = yOrigin
+	s.out.Write(out)
 	s.fb.resize(w, rows)
 	return w, rows
+}
+
+// resizeSequence is the pure-byte composition for handleResize. Given the
+// height policy, new terminal size, and previous framebuf width, returns
+// the byte stream + new yOrigin + new picker row count.
+func resizeSequence(height, termW, termH, prevWidth int) (out []byte, yOrigin, rows int) {
+	rows, fullscreen := resolveHeight(height, termH)
+	var buf bytes.Buffer
+	if fullscreen {
+		yOrigin = 0
+		buf.WriteString("\x1b[2J\x1b[H")
+	} else {
+		yOrigin = termH - rows
+		if termW < prevWidth {
+			// Narrowing reflows previous picker rows into more visual
+			// lines that scroll up past yOrigin, leaving wrapped tails
+			// above it. We can't clear them precisely without knowing how
+			// much wrap happened, so wipe the entire visible viewport.
+			// Scrollback is untouched — pre-picker output stays scrollable.
+			buf.WriteString("\x1b[2J")
+		}
+		fmt.Fprintf(&buf, "\x1b[%d;1H\x1b[J", yOrigin+1)
+	}
+	return buf.Bytes(), yOrigin, rows
 }
 
 const escTimeout = 50 * time.Millisecond

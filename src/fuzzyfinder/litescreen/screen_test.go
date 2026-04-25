@@ -419,6 +419,95 @@ func TestResolveHeight(t *testing.T) {
 	}
 }
 
+// --- init/fini/resize byte sequences ---------------------------------------
+//
+// These exercise the pure byte composition extracted from Init/Fini/
+// handleResize so the actual emission can be verified without /dev/tty,
+// raw mode, or signal handlers.
+
+func TestInitSequence_Fullscreen(t *testing.T) {
+	out, yOrigin, fb := initSequence(0, 80, 24)
+	got := string(out)
+	assert.Equal(t, yOrigin, 0)
+	assert.Equal(t, fb.width, 80)
+	assert.Equal(t, fb.height, 24)
+	assert.That(t, strings.Contains(got, "\x1b[?1049h"), "expected smcup; got %q", got)
+	assert.That(t, strings.Contains(got, "\x1b[2J"), "expected screen clear; got %q", got)
+	assert.That(t, strings.Contains(got, "\x1b[H"), "expected cursor home; got %q", got)
+	assert.That(t, strings.Contains(got, "\x1b[?25l"), "expected hide cursor; got %q", got)
+}
+
+func TestInitSequence_Inline(t *testing.T) {
+	out, yOrigin, fb := initSequence(5, 80, 24)
+	got := string(out)
+	assert.Equal(t, yOrigin, 19) // 24-5
+	assert.Equal(t, fb.width, 80)
+	assert.Equal(t, fb.height, 5)
+	assert.Equal(t, strings.Count(got, "\n"), 4) // rows-1 newlines
+	assert.That(t, strings.Contains(got, "\x1b[?25l"), "expected hide cursor; got %q", got)
+	assert.That(t, strings.Contains(got, "\x1b[20;1H\x1b[J"), "expected region clear at row 20; got %q", got)
+	// Inline must NOT enter alt-screen — that would clobber prior output.
+	assert.That(t, !strings.Contains(got, "\x1b[?1049h"), "inline must not enter alt-screen")
+}
+
+func TestInitSequence_NegativeHeight(t *testing.T) {
+	out, yOrigin, fb := initSequence(-2, 80, 24)
+	got := string(out)
+	assert.Equal(t, fb.height, 22)         // termH + height = 24 + (-2)
+	assert.Equal(t, yOrigin, 2)            // termH - rows = 24 - 22
+	assert.That(t, strings.Contains(got, "\x1b[3;1H\x1b[J"), "expected region clear at row 3; got %q", got)
+}
+
+func TestFiniSequence(t *testing.T) {
+	full := string(finiSequence(0))
+	assert.That(t, strings.Contains(full, "\x1b[?1049l"), "fullscreen fini emits rmcup; got %q", full)
+	assert.That(t, strings.Contains(full, "\x1b[?25h"), "fullscreen fini shows cursor; got %q", full)
+
+	inline := string(finiSequence(19))
+	assert.That(t, strings.Contains(inline, "\x1b[20;1H\x1b[J"), "inline fini clears region at yOrigin+1; got %q", inline)
+	assert.That(t, strings.Contains(inline, "\x1b[?25h"), "inline fini shows cursor; got %q", inline)
+	// Inline must NOT leave alt-screen — we never entered it.
+	assert.That(t, !strings.Contains(inline, "\x1b[?1049l"), "inline fini must not emit rmcup")
+}
+
+func TestResizeSequence_Fullscreen(t *testing.T) {
+	out, yOrigin, rows := resizeSequence(0, 100, 30, 80)
+	got := string(out)
+	assert.Equal(t, yOrigin, 0)
+	assert.Equal(t, rows, 30)
+	assert.That(t, strings.Contains(got, "\x1b[2J"), "fullscreen resize clears screen")
+	assert.That(t, strings.Contains(got, "\x1b[H"), "fullscreen resize homes cursor")
+}
+
+func TestResizeSequence_InlineExpand(t *testing.T) {
+	// width grew (60 → 80). No \x1b[2J — preserve content above.
+	out, yOrigin, rows := resizeSequence(5, 80, 24, 60)
+	got := string(out)
+	assert.Equal(t, yOrigin, 19)
+	assert.Equal(t, rows, 5)
+	assert.That(t, !strings.Contains(got, "\x1b[2J"), "expand must not full-clear")
+	assert.That(t, strings.Contains(got, "\x1b[20;1H\x1b[J"), "expand clears region")
+}
+
+func TestResizeSequence_InlineNarrow(t *testing.T) {
+	// width shrank (100 → 60) → wipe viewport.
+	out, yOrigin, rows := resizeSequence(5, 60, 24, 100)
+	got := string(out)
+	assert.Equal(t, yOrigin, 19)
+	assert.Equal(t, rows, 5)
+	assert.That(t, strings.Contains(got, "\x1b[2J"), "narrow must full-clear viewport")
+	assert.That(t, strings.Contains(got, "\x1b[20;1H\x1b[J"), "narrow also clears region")
+}
+
+func TestResizeSequence_InlineSameWidth(t *testing.T) {
+	// Width unchanged (80 == 80) → minimal clear.
+	out, yOrigin, rows := resizeSequence(5, 80, 24, 80)
+	got := string(out)
+	assert.Equal(t, yOrigin, 19)
+	assert.Equal(t, rows, 5)
+	assert.That(t, !strings.Contains(got, "\x1b[2J"), "same-width must not full-clear")
+}
+
 // --- framebuf yOrigin ------------------------------------------------------
 
 func TestFramebuf_FlushWithYOrigin(t *testing.T) {
