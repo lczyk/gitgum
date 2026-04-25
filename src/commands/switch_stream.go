@@ -27,6 +27,13 @@ func streamBranches(ctx context.Context, currentBranch, trackingRemote string, r
 		seen     = make(map[string]struct{})
 	)
 
+	// fetch once so producers do map lookups instead of N subprocess calls.
+	checkedOut, err := git.CheckedOutBranches()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error getting worktrees: %v\n", err)
+		checkedOut = map[string]bool{}
+	}
+
 	queue := make(chan branchEntry, 1000)
 	go func() {
 		for {
@@ -45,15 +52,15 @@ func streamBranches(ctx context.Context, currentBranch, trackingRemote string, r
 		}
 	}()
 
-	go streamLocalBranches(ctx, queue, currentBranch)
+	go streamLocalBranches(ctx, queue, currentBranch, checkedOut)
 	for _, remote := range remotes {
-		go streamRemoteBranches(ctx, queue, remote, currentBranch, trackingRemote)
+		go streamRemoteBranches(ctx, queue, remote, currentBranch, trackingRemote, checkedOut)
 	}
 
 	return &branches, &lock
 }
 
-func streamLocalBranches(ctx context.Context, queue chan<- branchEntry, currentBranch string) {
+func streamLocalBranches(ctx context.Context, queue chan<- branchEntry, currentBranch string, checkedOut map[string]bool) {
 	locals, err := git.GetLocalBranches()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error getting local branches: %v\n", err)
@@ -64,12 +71,7 @@ func streamLocalBranches(ctx context.Context, queue chan<- branchEntry, currentB
 		if branch == currentBranch {
 			continue
 		}
-		isCheckedOut, _, err := git.IsWorktreeCheckedOut(branch)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error checking worktree status for local branch '%s': %v\n", branch, err)
-			continue
-		}
-		if isCheckedOut {
+		if checkedOut[branch] {
 			continue
 		}
 		tr, err := git.GetBranchTrackingRemote(branch)
@@ -96,7 +98,7 @@ func streamLocalBranches(ctx context.Context, queue chan<- branchEntry, currentB
 	}
 }
 
-func streamRemoteBranches(ctx context.Context, queue chan<- branchEntry, remote, currentBranch, trackingRemote string) {
+func streamRemoteBranches(ctx context.Context, queue chan<- branchEntry, remote, currentBranch, trackingRemote string, checkedOut map[string]bool) {
 	branches, err := git.GetRemoteBranches(remote)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error getting remote branches for '%s': %v\n", remote, err)
@@ -107,12 +109,7 @@ func streamRemoteBranches(ctx context.Context, queue chan<- branchEntry, remote,
 		if remote == trackingRemote && branch == currentBranch {
 			continue
 		}
-		isCheckedOut, _, err := git.IsWorktreeCheckedOut(branch)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error checking worktree status for remote branch '%s': %v\n", branch, err)
-			continue
-		}
-		if isCheckedOut {
+		if checkedOut[branch] {
 			continue
 		}
 		select {

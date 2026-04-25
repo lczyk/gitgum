@@ -3,6 +3,7 @@ package git_test
 import (
 	"os"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/lczyk/assert"
@@ -201,6 +202,35 @@ func TestGetCurrentBranchUpstream(t *testing.T) {
 		upstream, err := git.Repo{Dir: dir}.GetCurrentBranchUpstream()
 		assert.NoError(t, err)
 		assert.Equal(t, "origin/main", upstream)
+	})
+}
+
+func TestCheckedOutBranches(t *testing.T) {
+	t.Parallel()
+
+	t.Run("main worktree only", func(t *testing.T) {
+		t.Parallel()
+		dir := temp_repo.NewRepo(t)
+		current := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "--abbrev-ref", "HEAD"))
+
+		checked, err := git.Repo{Dir: dir}.CheckedOutBranches()
+		assert.NoError(t, err)
+		assert.That(t, checked[current], "current branch should be in set")
+		assert.That(t, !checked["not-a-branch"], "absent branch should not be in set")
+	})
+
+	t.Run("with linked worktree", func(t *testing.T) {
+		t.Parallel()
+		dir := temp_repo.NewRepo(t)
+		current := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "--abbrev-ref", "HEAD"))
+		temp_repo.RunGit(t, dir, "branch", "feature")
+		wt := t.TempDir()
+		temp_repo.RunGit(t, dir, "worktree", "add", wt, "feature")
+
+		checked, err := git.Repo{Dir: dir}.CheckedOutBranches()
+		assert.NoError(t, err)
+		assert.That(t, checked[current], "main worktree branch in set")
+		assert.That(t, checked["feature"], "linked worktree branch in set")
 	})
 }
 
