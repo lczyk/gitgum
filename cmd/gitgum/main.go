@@ -56,10 +56,9 @@ func main() {
 	_, err := parser.Parse()
 	if err != nil {
 		// go-flags already prints the error
-		if flagsErr, ok := err.(*flags.Error); ok {
-			if flagsErr.Type == flags.ErrHelp {
-				os.Exit(0)
-			}
+		var flagsErr *flags.Error
+		if errors.As(err, &flagsErr) && flagsErr.Type == flags.ErrHelp {
+			os.Exit(0)
 		}
 		os.Exit(1)
 	}
