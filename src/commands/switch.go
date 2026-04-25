@@ -107,7 +107,7 @@ func (s *SwitchCommand) applySelection(selected string) error {
 	typ, name := parts[0], parts[1]
 
 	switch typ {
-	case "local":
+	case "local", "local/remote":
 		if err := s.checkoutBranch(name); err != nil {
 			return err
 		}

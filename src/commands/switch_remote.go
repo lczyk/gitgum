@@ -50,7 +50,7 @@ func (s *SwitchCommand) retargetTracking(remote, branch string) error {
 	}
 	if !confirmed {
 		fmt.Fprintln(os.Stderr, "Not setting tracking reference. Aborting switch.")
-		return fmt.Errorf("user cancelled")
+		return ui.ErrCancelled
 	}
 	if err := cmdrun.RunQuiet("git", "branch", "--set-upstream-to="+remote+"/"+branch, branch); err != nil {
 		return fmt.Errorf("setting tracking reference: %w", err)
@@ -101,7 +101,7 @@ func (s *SwitchCommand) createTrackingBranch(remote, branch string) error {
 	}
 	if !confirmed {
 		fmt.Fprintln(os.Stderr, "Not creating a local tracking branch. Aborting switch.")
-		return fmt.Errorf("user cancelled")
+		return ui.ErrCancelled
 	}
 	if err := cmdrun.RunQuiet("git", "checkout", "-b", branch, remote+"/"+branch); err != nil {
 		return fmt.Errorf("creating tracking branch: %w", err)
