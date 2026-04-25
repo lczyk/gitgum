@@ -92,14 +92,10 @@ func parsePRRefs(lsRemoteOutput string) []PRRef {
 		if len(matches) != 3 {
 			continue
 		}
-		prNumber, err := strconv.Atoi(matches[1])
-		if err != nil {
-			continue
-		}
+		prNumber, _ := strconv.Atoi(matches[1]) // regex guarantees \d+
 		prType := matches[2]
 
 		existing, found := prMap[prNumber]
-		// head takes precedence over merge for the same PR number
 		if !found || (existing.Type == "merge" && prType == "head") {
 			prMap[prNumber] = PRRef{Number: prNumber, Type: prType}
 		}
