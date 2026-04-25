@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/lczyk/gitgum/src/fuzzyfinder"
 )
@@ -11,7 +12,12 @@ import (
 // ErrCancelled is returned when the user cancels a selection or confirmation (Ctrl+C or ESC).
 var ErrCancelled = errors.New("cancelled")
 
-func selectWith(finder func(context.Context, []string, fuzzyfinder.Opt) ([]int, error), prompt string, options []string, initialQuery ...string) (string, error) {
+// Select presents options via the fuzzyfinder library and returns the selected item.
+func Select(prompt string, options []string, initialQuery ...string) (string, error) {
+	return selectWith(fuzzyfinder.Find, prompt, options, initialQuery...)
+}
+
+func selectWith(finder func(context.Context, *[]string, sync.Locker, fuzzyfinder.Opt) ([]int, error), prompt string, options []string, initialQuery ...string) (string, error) {
 	if len(options) == 0 {
 		return "", fmt.Errorf("no options provided")
 	}
@@ -21,7 +27,7 @@ func selectWith(finder func(context.Context, []string, fuzzyfinder.Opt) ([]int, 
 		opt.Query = initialQuery[0]
 	}
 
-	idxs, err := finder(context.Background(), options, opt)
+	idxs, err := finder(context.Background(), &options, nil, opt)
 	if err != nil {
 		if errors.Is(err, fuzzyfinder.ErrAbort) {
 			return "", ErrCancelled
@@ -29,11 +35,6 @@ func selectWith(finder func(context.Context, []string, fuzzyfinder.Opt) ([]int, 
 		return "", fmt.Errorf("running picker: %w", err)
 	}
 	return options[idxs[0]], nil
-}
-
-// Select presents options via the fuzzyfinder library and returns the selected item.
-func Select(prompt string, options []string, initialQuery ...string) (string, error) {
-	return selectWith(fuzzyfinder.Find, prompt, options, initialQuery...)
 }
 
 func confirmWith(selector func(string, []string, ...string) (string, error), prompt string, defaultYes bool) (bool, error) {

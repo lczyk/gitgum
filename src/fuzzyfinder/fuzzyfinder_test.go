@@ -102,7 +102,8 @@ func TestReal(t *testing.T) {
 		t.Skip("--real is disabled")
 		return
 	}
-	_, err := fuzzyfinder.Find(context.Background(), trackNames(), fuzzyfinder.Opt{})
+	names := trackNames()
+	_, err := fuzzyfinder.Find(context.Background(), &names, nil, fuzzyfinder.Opt{})
 	assert.NoError(t, err)
 }
 
@@ -258,7 +259,8 @@ func TestFind(t *testing.T) {
 			term.SetEvents(events...)
 
 			assertWithGolden(t, func() string {
-				_, err := f.Find(context.Background(), trackNames(), c.opt)
+				names := trackNames()
+				_, err := f.Find(context.Background(), &names, nil, c.opt)
 				assert.Error(t, err, fuzzyfinder.ErrAbort)
 
 				res := term.GetResult()
@@ -277,7 +279,7 @@ func TestFind_hotReload(t *testing.T) {
 
 	names := trackNames()
 	assertWithGolden(t, func() string {
-		_, err := f.FindLive(
+		_, err := f.Find(
 			context.Background(),
 			&names,
 			&sync.Mutex{},
@@ -300,7 +302,7 @@ func TestFind_hotReloadLock(t *testing.T) {
 	var mu sync.RWMutex
 	names := trackNames()
 	assertWithGolden(t, func() string {
-		_, err := f.FindLive(
+		_, err := f.Find(
 			context.Background(),
 			&names,
 			mu.RLocker(),
@@ -334,7 +336,8 @@ func TestFind_enter(t *testing.T) {
 			events = append(events, key(input{tcell.KeyEnter, rune(tcell.KeyEnter), tcell.ModNone}))
 			term.SetEvents(events...)
 
-			idxs, err := f.Find(context.Background(), trackNames(), fuzzyfinder.Opt{})
+			names := trackNames()
+			idxs, err := f.Find(context.Background(), &names, nil, fuzzyfinder.Opt{})
 			assert.NoError(t, err)
 			assert.Equal(t, c.expected, idxs[0])
 		})
@@ -352,7 +355,8 @@ func TestFind_withContext(t *testing.T) {
 	cancelFunc()
 
 	assertWithGolden(t, func() string {
-		_, err := f.Find(cancelledCtx, trackNames(), fuzzyfinder.Opt{})
+		names := trackNames()
+		_, err := f.Find(cancelledCtx, &names, nil, fuzzyfinder.Opt{})
 		assert.Error(t, err, context.Canceled)
 
 		res := term.GetResult()
@@ -372,7 +376,7 @@ func TestFind_WithQuery(t *testing.T) {
 		term.SetEvents(events...)
 
 		assertWithGolden(t, func() string {
-			idxs, err := f.Find(context.Background(), things, fuzzyfinder.Opt{})
+			idxs, err := f.Find(context.Background(), &things, nil, fuzzyfinder.Opt{})
 			assert.NoError(t, err)
 			assert.Equal(t, 0, idxs[0])
 			return term.GetResult()
@@ -384,7 +388,7 @@ func TestFind_WithQuery(t *testing.T) {
 		term.SetEvents(events...)
 
 		assertWithGolden(t, func() string {
-			idxs, err := f.Find(context.Background(), things, fuzzyfinder.Opt{Query: "three2"})
+			idxs, err := f.Find(context.Background(), &things, nil, fuzzyfinder.Opt{Query: "three2"})
 			assert.NoError(t, err)
 			assert.Equal(t, 1, idxs[0])
 			return term.GetResult()
@@ -423,7 +427,8 @@ func TestFind_WithSelectOne(t *testing.T) {
 			term.SetEvents(key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 
 			assertWithGolden(t, func() string {
-				idxs, err := f.Find(context.Background(), c.things, fuzzyfinder.Opt{
+				things := c.things
+				idxs, err := f.Find(context.Background(), &things, nil, fuzzyfinder.Opt{
 					Query:     c.query,
 					SelectOne: true,
 				})
@@ -480,7 +485,8 @@ func TestFindMulti(t *testing.T) {
 			events = append(events, key(input{tcell.KeyEnter, rune(tcell.KeyEnter), tcell.ModNone}))
 			term.SetEvents(events...)
 
-			idxs, err := f.Find(context.Background(), trackNames(), fuzzyfinder.Opt{Multi: true})
+			names := trackNames()
+			idxs, err := f.Find(context.Background(), &names, nil, fuzzyfinder.Opt{Multi: true})
 			if c.abort {
 				assert.Error(t, err, fuzzyfinder.ErrAbort)
 				return
@@ -500,7 +506,8 @@ func BenchmarkFind(b *testing.B) {
 			events := append(runes("adrele!!"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 			term.SetEvents(events...)
 
-			_, err := f.Find(context.Background(), trackNames(), fuzzyfinder.Opt{})
+			names := trackNames()
+			_, err := f.Find(context.Background(), &names, nil, fuzzyfinder.Opt{})
 			assert.Error(b, err, fuzzyfinder.ErrAbort)
 		}
 	})
@@ -514,7 +521,7 @@ func BenchmarkFind(b *testing.B) {
 			term.SetEvents(events...)
 
 			names := trackNames()
-			_, err := f.FindLive(context.Background(), &names, &sync.Mutex{}, fuzzyfinder.Opt{})
+			_, err := f.Find(context.Background(), &names, &sync.Mutex{}, fuzzyfinder.Opt{})
 			assert.Error(b, err, fuzzyfinder.ErrAbort)
 		}
 	})

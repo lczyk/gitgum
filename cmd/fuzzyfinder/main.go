@@ -99,7 +99,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	go func() { readErrCh <- streamItems(ctx, br, &lock, &items, delay) }()
 
-	idxs, findErr := fuzzyfinder.FindLive(ctx, &items, &lock, cfg.opt)
+	idxs, findErr := fuzzyfinder.Find(ctx, &items, &lock, cfg.opt)
 	cancel()
 
 	if err := <-readErrCh; err != nil {

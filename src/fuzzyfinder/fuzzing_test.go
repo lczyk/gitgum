@@ -110,10 +110,10 @@ func TestFuzz(t *testing.T) {
 						}
 					}
 				}()
-				_, err := finder.FindLive(ctx, &items, &mu, opt)
+				_, err := finder.Find(ctx, &items, &mu, opt)
 				assert.Error(t, err, fuzzyfinder.ErrAbort)
 			} else {
-				_, err := finder.Find(context.Background(), items, opt)
+				_, err := finder.Find(context.Background(), &items, nil, opt)
 				assert.Error(t, err, fuzzyfinder.ErrAbort)
 			}
 		})

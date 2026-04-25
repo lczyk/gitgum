@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/lczyk/gitgum/src/fuzzyfinder"
@@ -59,7 +60,7 @@ func TestSelectEmptyOptions(t *testing.T) {
 }
 
 func TestSelectAbortMapsToErrCancelled(t *testing.T) {
-	_, err := selectWith(func(_ context.Context, _ []string, _ fuzzyfinder.Opt) ([]int, error) {
+	_, err := selectWith(func(_ context.Context, _ *[]string, _ sync.Locker, _ fuzzyfinder.Opt) ([]int, error) {
 		return nil, fuzzyfinder.ErrAbort
 	}, "test", []string{"a"})
 	if !errors.Is(err, ErrCancelled) {
@@ -69,7 +70,7 @@ func TestSelectAbortMapsToErrCancelled(t *testing.T) {
 
 func TestSelectFinderError(t *testing.T) {
 	sentinel := errors.New("boom")
-	_, err := selectWith(func(_ context.Context, _ []string, _ fuzzyfinder.Opt) ([]int, error) {
+	_, err := selectWith(func(_ context.Context, _ *[]string, _ sync.Locker, _ fuzzyfinder.Opt) ([]int, error) {
 		return nil, sentinel
 	}, "test", []string{"a"})
 	if !errors.Is(err, sentinel) {

@@ -563,31 +563,13 @@ func (f *finder) filter() {
 	}
 }
 
-// findStatic runs the picker against a fixed slice of items.
-func (f *finder) findStatic(ctx context.Context, items []string, opt Opt) ([]int, error) {
-	opt = opt.withDefaults()
-	f.multi = opt.Multi
-
-	matched := makeMatched(len(items))
-
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	if err := f.initFinder(items, matched, opt); err != nil {
-		return nil, fmt.Errorf("failed to initialize the fuzzy finder: %w", err)
-	}
-	return f.runLoop(ctx, &opt)
-}
-
-// findLive runs the picker against a slice that may grow concurrently;
-// lock guards reads of *itemsPtr while items are appended by the caller.
-func (f *finder) findLive(ctx context.Context, itemsPtr *[]string, lock sync.Locker, opt Opt) ([]int, error) {
+// find runs the picker. When lock is non-nil, the slice may grow concurrently
+// and a background goroutine polls for new items. When lock is nil, items is
+// treated as static — no polling, the slice is snapshotted once.
+func (f *finder) find(ctx context.Context, itemsPtr *[]string, lock sync.Locker, opt Opt) ([]int, error) {
 	if itemsPtr == nil {
 		return nil, errors.New("items pointer must not be nil")
 	}
-	if lock == nil {
-		return nil, errors.New("lock must not be nil")
-	}
 
 	opt = opt.withDefaults()
 	f.multi = opt.Multi
@@ -595,36 +577,48 @@ func (f *finder) findLive(ctx context.Context, itemsPtr *[]string, lock sync.Loc
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	lock.Lock()
-	itemsCopy := append([]string(nil), (*itemsPtr)...)
-	lock.Unlock()
+	snapshot := func() []string {
+		if lock == nil {
+			return *itemsPtr
+		}
+		lock.Lock()
+		defer lock.Unlock()
+		return append([]string(nil), (*itemsPtr)...)
+	}
+
+	itemsCopy := snapshot()
 	matched := makeMatched(len(itemsCopy))
 
-	inited := make(chan struct{})
-	go func() {
-		<-inited
-		var prev int
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(30 * time.Millisecond):
-				lock.Lock()
-				curr := len(*itemsPtr)
-				if prev != curr {
-					itemsCopy = append([]string(nil), (*itemsPtr)...)
-					f.updateItems(itemsCopy, makeMatched(curr))
+	var inited chan struct{}
+	if lock != nil {
+		inited = make(chan struct{})
+		go func() {
+			<-inited
+			var prev int
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(30 * time.Millisecond):
+					lock.Lock()
+					curr := len(*itemsPtr)
+					if prev != curr {
+						itemsCopy = append([]string(nil), (*itemsPtr)...)
+						f.updateItems(itemsCopy, makeMatched(curr))
+					}
+					lock.Unlock()
+					prev = curr
 				}
-				lock.Unlock()
-				prev = curr
 			}
-		}
-	}()
+		}()
+	}
 
 	if err := f.initFinder(itemsCopy, matched, opt); err != nil {
 		return nil, fmt.Errorf("failed to initialize the fuzzy finder: %w", err)
 	}
-	close(inited)
+	if inited != nil {
+		close(inited)
+	}
 	return f.runLoop(ctx, &opt)
 }
 
@@ -704,24 +698,16 @@ func (f *finder) runLoop(ctx context.Context, opt *Opt) ([]int, error) {
 // Find displays a fuzzy-finder UI over items and returns the indices of the
 // selected entries, or ErrAbort if the user cancels. With Opt.Multi=false,
 // the returned slice always has exactly one element.
-func Find(ctx context.Context, items []string, opt Opt) ([]int, error) {
+//
+// Pass lock=nil for a static slice. Pass a non-nil lock when the slice may
+// grow concurrently — the picker re-snapshots under lock on a 30ms cadence.
+func Find(ctx context.Context, items *[]string, lock sync.Locker, opt Opt) ([]int, error) {
 	f := &finder{}
-	return f.Find(ctx, items, opt)
+	return f.Find(ctx, items, lock, opt)
 }
 
-func (f *finder) Find(ctx context.Context, items []string, opt Opt) ([]int, error) {
-	return f.findStatic(ctx, items, opt)
-}
-
-// FindLive is like Find but for a slice that may grow concurrently. Callers
-// append to *items under lock; the picker re-reads on a 30ms cadence.
-func FindLive(ctx context.Context, items *[]string, lock sync.Locker, opt Opt) ([]int, error) {
-	f := &finder{}
-	return f.FindLive(ctx, items, lock, opt)
-}
-
-func (f *finder) FindLive(ctx context.Context, items *[]string, lock sync.Locker, opt Opt) ([]int, error) {
-	return f.findLive(ctx, items, lock, opt)
+func (f *finder) Find(ctx context.Context, items *[]string, lock sync.Locker, opt Opt) ([]int, error) {
+	return f.find(ctx, items, lock, opt)
 }
 
 func isInTesting() bool {
