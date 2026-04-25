@@ -67,10 +67,19 @@ func (s *SwitchCommand) Execute(args []string) error {
 	selected, err := pickBranch(ctx, branches, lock)
 	cancel()
 	if err != nil {
+		if errors.Is(err, ui.ErrCancelled) {
+			return nil
+		}
 		return err
 	}
 
-	return s.applySelection(selected)
+	if err := s.applySelection(selected); err != nil {
+		if errors.Is(err, ui.ErrCancelled) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func pickBranch(ctx context.Context, branches *[]string, lock *sync.Mutex) (string, error) {
