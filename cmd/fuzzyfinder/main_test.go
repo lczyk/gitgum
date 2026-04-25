@@ -12,7 +12,7 @@ import (
 
 func TestParseFlags(t *testing.T) {
 	cfg, err := parseFlags([]string{"-m", "-q", "foo", "--prompt", "$ ", "--header", "h", "-1"}, &bytes.Buffer{})
-	assert.NoError(t, err, "parseFlags")
+	assert.NoError(t, err)
 	assert.That(t, cfg.opt.Multi)
 	assert.Equal(t, cfg.opt.Query, "foo")
 	assert.Equal(t, cfg.opt.Prompt, "$ ")
