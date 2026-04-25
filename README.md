@@ -129,3 +129,5 @@ Flags: `-m`/`--multi`, `-q`/`--query`, `-p`/`--prompt`, `--header`, `-1`/`--sele
 - [ ] ? unify switch
 - [ ] make switch work well when offline
 - [ ] de-novo shell completions
+- [ ] redo `--fast`
+- [ ] display pages instead of rows
