@@ -11,8 +11,8 @@ func TestFindAll(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct {
-		query    string
-		want     []int // indices into slice
+		query string
+		want  []int // indices into slice
 	}{
 		"empty query matches all":        {"", []int{0, 1, 2}},
 		"single word substring":          {"album", []int{0}},

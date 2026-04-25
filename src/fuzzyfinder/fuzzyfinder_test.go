@@ -243,7 +243,7 @@ func TestFind(t *testing.T) {
 			}...)...),
 		},
 		"ctrl-w cyrillic": {events: append(runes("Аз обичам"), keys(input{tcell.KeyCtrlW, 'W', tcell.ModCtrl})...)},
-		"header line": {opt: fuzzyfinder.Opt{Header: "Search?"}},
+		"header line":     {opt: fuzzyfinder.Opt{Header: "Search?"}},
 		"header line which exceeds max charaters": {opt: fuzzyfinder.Opt{Header: "Waht do you want to search for?"}},
 	}
 

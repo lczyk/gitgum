@@ -47,31 +47,30 @@ test:  ## Run the test suite with race detector
 		go test -race ./...; \
 	fi
 
-.PHONY: check
-check:  ## go vet across the module
+.PHONY: lint
+lint:  ## go vet + gofmt check (no writes)
 	go vet ./...
-
-.PHONY: fmt
-fmt:  ## gofmt the tree in place
-	gofmt -s -w ./cmd ./internal ./src
-
-.PHONY: fmt-check
-fmt-check:  ## Verify gofmt without modifying files
 	@out=$$(gofmt -s -l ./cmd ./internal ./src); \
 	if [ -n "$$out" ]; then \
 		echo "Unformatted files:"; echo "$$out"; exit 1; \
 	fi
 
-.PHONY: coverage
-coverage:  ## Run tests with coverage profile
-	go test -coverpkg ./... -covermode=atomic -coverprofile=coverage.txt -race ./...
+.PHONY: format
+format:  ## gofmt the tree in place
+	gofmt -s -w ./cmd ./internal ./src
 
-.PHONY: coverage-web
-coverage-web: coverage  ## Open coverage report in browser
-	go tool cover -html=coverage.txt
+.PHONY: cover
+cover:  ## Coverage profile + HTML file (cover.out, cover.html)
+	go test -coverpkg=./... -coverprofile=cover.out -race ./...
+	go tool cover -func=cover.out
+	go tool cover -html=cover.out -o cover.html
+
+.PHONY: cover-open
+cover-open: cover  ## Run coverage and open the HTML report in a browser
+	go tool cover -html=cover.out
 
 .PHONY: verify
-verify: fmt-check check test  ## Pre-commit gate: fmt-check, vet, test
+verify: lint test  ## Pre-commit gate: lint, test
 	@echo "All checks passed."
 
 .PHONY: clean
