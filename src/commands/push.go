@@ -55,25 +55,19 @@ func (p *PushCommand) Execute(args []string) error {
 
 	var selectedRemote string
 	if len(args) > 0 {
-		providedRemote := args[0]
 		for _, r := range remotes {
-			if r == providedRemote {
+			if r == args[0] {
 				selectedRemote = r
 				break
 			}
 		}
-		if selectedRemote == "" {
-			remote, err := ui.Select(fmt.Sprintf("Push '%s' to", currentBranch), remotes, providedRemote)
-			if err != nil {
-				if errors.Is(err, ui.ErrCancelled) {
-					return nil
-				}
-				return fmt.Errorf("selecting remote: %w", err)
-			}
-			selectedRemote = remote
+	}
+	if selectedRemote == "" {
+		var query []string
+		if len(args) > 0 {
+			query = args[:1]
 		}
-	} else {
-		remote, err := ui.Select(fmt.Sprintf("Push '%s' to", currentBranch), remotes)
+		remote, err := ui.Select(fmt.Sprintf("Push '%s' to", currentBranch), remotes, query...)
 		if err != nil {
 			if errors.Is(err, ui.ErrCancelled) {
 				return nil
