@@ -23,8 +23,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 	}
 
 	if len(branches) == 0 {
-		fmt.Fprintln(os.Stderr, "No local branches found.")
-		return fmt.Errorf("no branches")
+		return fmt.Errorf("no local branches found")
 	}
 
 	branch, err := ui.Select("Select a branch to delete", branches)
@@ -78,8 +77,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 		}
 
 		if len(otherBranches) == 0 {
-			fmt.Fprintln(os.Stderr, "No other branches found to switch to. Aborting delete.")
-			return fmt.Errorf("no other branches")
+			return fmt.Errorf("no other branches to switch to")
 		}
 
 		otherBranch, err := ui.Select("Select a branch to switch to", otherBranches)

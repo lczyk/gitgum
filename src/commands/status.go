@@ -26,7 +26,7 @@ func (s *StatusCommand) Execute(args []string) error {
 	}
 
 	if err := git.CheckInRepo(); err != nil {
-		return fmt.Errorf("checking git repo: %w", err)
+		return err
 	}
 
 	printHeader("--- BRANCHES ---------------------------")

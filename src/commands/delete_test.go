@@ -24,5 +24,5 @@ func TestDeleteCommand_NoBranches(t *testing.T) {
 	err := cmd.Execute(nil)
 
 	assert.Error(t, err, assert.AnyError, "should error when no branches exist")
-	assert.ContainsString(t, err.Error(), "no branches")
+	assert.ContainsString(t, err.Error(), "no local branches")
 }
