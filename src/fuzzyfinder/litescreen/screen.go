@@ -269,27 +269,91 @@ func (f *framebuf) flush(yOrigin, cx, cy int, cursorVisible bool) []byte {
 	return buf.Bytes()
 }
 
+// Options configure construction of a Screen with custom IO and/or size
+// reporting. Use with NewWithOptions when you need to redirect output (e.g.
+// to a bytes.Buffer for tests, or a remote pty for embedding the picker in
+// a larger UI). When In or Out is set, the Screen runs in "headless" mode:
+// no raw mode is entered, no signal handlers are registered, and Size
+// queries fall back to the user-supplied Size func (default 80x24). The
+// caller is then responsible for whatever terminal management is needed.
+type Options struct {
+	// Height policy. See New for semantics.
+	Height int
+	// In is the input source. Default: opens /dev/tty.
+	In io.Reader
+	// Out is the output destination. Default: opens /dev/tty.
+	Out io.Writer
+	// Size reports terminal dimensions. Default: real ioctl on /dev/tty
+	// when In/Out are unset; 80x24 when In or Out is overridden.
+	Size func() (w, h int)
+}
+
 // New constructs a Screen with the given height policy:
 //
 //	0   fullscreen (alt-screen, preserves nothing above)
 //	N>0 exactly N rows at the bottom; prior output preserved above
 //	N<0 terminal_rows + N (e.g. -2 leaves 2 rows visible above)
+//
+// IO goes to /dev/tty. For custom IO, see NewWithOptions.
 func New(height int) (*Screen, error) {
-	in, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
-	if err != nil {
-		return nil, fmt.Errorf("open /dev/tty for read: %w", err)
+	return NewWithOptions(Options{Height: height})
+}
+
+// NewWithOptions constructs a Screen with custom IO and/or size reporting.
+// If In and Out are both unset, behavior matches New — opens /dev/tty,
+// real raw mode, real signal handlers. If either is set, the Screen runs
+// headless (no raw mode, no signal handlers, no /dev/tty).
+func NewWithOptions(opts Options) (*Screen, error) {
+	headless := opts.In != nil || opts.Out != nil
+	if !headless {
+		in, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
+		if err != nil {
+			return nil, fmt.Errorf("open /dev/tty for read: %w", err)
+		}
+		out, err := os.OpenFile("/dev/tty", os.O_WRONLY, 0)
+		if err != nil {
+			in.Close()
+			return nil, fmt.Errorf("open /dev/tty for write: %w", err)
+		}
+		return &Screen{
+			hooks:  realHooks(in, out),
+			in:     in,
+			out:    out,
+			height: opts.Height,
+		}, nil
 	}
-	out, err := os.OpenFile("/dev/tty", os.O_WRONLY, 0)
-	if err != nil {
-		in.Close()
-		return nil, fmt.Errorf("open /dev/tty for write: %w", err)
+
+	in := opts.In
+	if in == nil {
+		in = strings.NewReader("")
+	}
+	out := opts.Out
+	if out == nil {
+		out = io.Discard
+	}
+	size := opts.Size
+	if size == nil {
+		size = func() (int, int) { return 80, 24 }
 	}
 	return &Screen{
-		hooks:  realHooks(in, out),
+		hooks:  headlessHooks(size),
 		in:     in,
 		out:    out,
-		height: height,
+		height: opts.Height,
 	}, nil
+}
+
+// headlessHooks returns hooks with no /dev/tty / signal side effects.
+func headlessHooks(size func() (int, int)) hooks {
+	return hooks{
+		enterRaw:    func() (func(), error) { return func() {}, nil },
+		getSize:     size,
+		closeIO:     func() {},
+		notifyWinch: func(chan<- os.Signal) {},
+		notifySig:   func(chan<- os.Signal) {},
+		stopSignal:  func(chan<- os.Signal) {},
+		raiseSignal: func(os.Signal) {},
+	}
 }
 
 func (s *Screen) Init() error {
@@ -311,7 +375,7 @@ func (s *Screen) Init() error {
 
 	s.sigCh = make(chan os.Signal, 1)
 	s.notifySig(s.sigCh)
-	go s.signalLoop()
+	go s.signalLoop(s.sigCh)
 	return nil
 }
 
@@ -345,8 +409,11 @@ func initSequence(height, termW, termH int) (out []byte, yOrigin int, fb *frameb
 // the signal so the default handler runs (process exit with the correct
 // status). Without this, a Ctrl-C delivered while the picker is up leaves
 // the terminal in raw mode + cursor hidden.
-func (s *Screen) signalLoop() {
-	sig, ok := <-s.sigCh
+//
+// The channel is passed by value (not read off s.sigCh) so Fini can nil
+// the field without racing with this goroutine's receive.
+func (s *Screen) signalLoop(ch <-chan os.Signal) {
+	sig, ok := <-ch
 	if !ok {
 		return
 	}
@@ -493,22 +560,22 @@ func (s *Screen) ChannelEvents(out chan<- tcell.Event, quit <-chan struct{}) {
 	// Don't close `out` on exit: the finder's receive loop doesn't check
 	// `ok` and would spin on the closed channel.
 	bytesCh := make(chan byte, 256)
-	readErr := make(chan error, 1)
-	go s.readLoop(bytesCh, readErr)
+	go s.readLoop(bytesCh)
+
+	// Capture winch locally so Fini can nil s.winch without racing this loop.
+	winch := s.winch
 
 	for {
 		select {
 		case <-quit:
 			return
-		case <-s.winch:
+		case <-winch:
 			w, h := s.handleResize()
 			select {
 			case out <- tcell.NewEventResize(w, h):
 			case <-quit:
 				return
 			}
-		case <-readErr:
-			return
 		case b, ok := <-bytesCh:
 			if !ok {
 				return
@@ -525,17 +592,19 @@ func (s *Screen) ChannelEvents(out chan<- tcell.Event, quit <-chan struct{}) {
 	}
 }
 
-func (s *Screen) readLoop(out chan<- byte, errCh chan<- error) {
+func (s *Screen) readLoop(out chan<- byte) {
 	buf := make([]byte, 64)
 	for {
 		n, err := s.in.Read(buf)
-		if err != nil {
-			errCh <- err
-			close(out)
-			return
-		}
+		// Deliver any bytes we got *before* honouring the error — Read can
+		// return both n>0 and err on the final chunk (e.g. EOF after the
+		// last data), and we want the parser to see those bytes.
 		for i := 0; i < n; i++ {
 			out <- buf[i]
+		}
+		if err != nil {
+			close(out)
+			return
 		}
 	}
 }
