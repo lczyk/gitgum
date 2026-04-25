@@ -126,8 +126,8 @@ Flags: `-m`/`--multi`, `-q`/`--query`, `-p`/`--prompt`, `--header`, `-1`/`--sele
 
 - [x] finish porting from bash version (what other commands do we want?)
 - [x] integration tests with mock git repositories
-- [ ] ? unify switch
+- [x] ? unify switch
 - [ ] make switch work well when offline
 - [ ] de-novo shell completions
 - [ ] redo `--fast`
-- [ ] display pages instead of rows
+- [x] display pages instead of rows

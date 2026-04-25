@@ -757,19 +757,36 @@ func parseCSI(ch <-chan byte) tcell.Event {
 }
 
 func mapCSI(params string, final byte) tcell.Event {
+	// Modifier-prefixed forms: "1;<mod>" before A/B/C/D/H/F. xterm modifier
+	// codes: 2=shift, 3=alt, 5=ctrl, 6=shift+ctrl, 7=alt+ctrl, 8=all.
+	mod := tcell.ModNone
+	if rest, ok := strings.CutPrefix(params, "1;"); ok {
+		switch rest {
+		case "2":
+			mod = tcell.ModShift
+		case "3":
+			mod = tcell.ModAlt
+		case "5":
+			mod = tcell.ModCtrl
+		case "6":
+			mod = tcell.ModShift | tcell.ModCtrl
+		case "7":
+			mod = tcell.ModAlt | tcell.ModCtrl
+		}
+	}
 	switch final {
 	case 'A':
-		return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+		return tcell.NewEventKey(tcell.KeyUp, 0, mod)
 	case 'B':
-		return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+		return tcell.NewEventKey(tcell.KeyDown, 0, mod)
 	case 'C':
-		return tcell.NewEventKey(tcell.KeyRight, 0, tcell.ModNone)
+		return tcell.NewEventKey(tcell.KeyRight, 0, mod)
 	case 'D':
-		return tcell.NewEventKey(tcell.KeyLeft, 0, tcell.ModNone)
+		return tcell.NewEventKey(tcell.KeyLeft, 0, mod)
 	case 'H':
-		return tcell.NewEventKey(tcell.KeyHome, 0, tcell.ModNone)
+		return tcell.NewEventKey(tcell.KeyHome, 0, mod)
 	case 'F':
-		return tcell.NewEventKey(tcell.KeyEnd, 0, tcell.ModNone)
+		return tcell.NewEventKey(tcell.KeyEnd, 0, mod)
 	case '~':
 		switch params {
 		case "1", "7":

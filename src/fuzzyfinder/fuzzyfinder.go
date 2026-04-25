@@ -211,10 +211,12 @@ func (f *finder) _draw() {
 	pageSize := itemAreaHeight + 1
 	topIdx := f.state.y - f.state.cursorY
 
-	// Number line: counts + cursor row indicator (e.g. "12/40  row 7/40")
+	// Number line: counts + page indicator (e.g. "12/40  page 2/5")
 	numberLine := fmt.Sprintf("%d/%d", len(f.state.matched), len(f.state.items))
 	if pageSize > 0 && len(f.state.matched) > pageSize {
-		numberLine += fmt.Sprintf("  row %d/%d", f.state.y+1, len(f.state.matched))
+		page := f.state.y/pageSize + 1
+		totalPages := (len(f.state.matched) + pageSize - 1) / pageSize
+		numberLine += fmt.Sprintf("  page %d/%d", page, totalPages)
 	}
 	for i, r := range numberLine {
 		style := tcell.StyleDefault.Foreground(tcell.ColorYellow).Background(tcell.ColorDefault)
@@ -377,8 +379,16 @@ func (f *finder) readKey(ctx context.Context) error {
 	_, screenHeight := f.term.Size()
 	matchedLinesCount := len(f.state.matched)
 
-	// Max number of lines to scroll by using PgUp and PgDn
-	var pageScrollBy = screenHeight - 3
+	// Visible item-row count, must match _draw's pageSize so Ctrl+B/F align
+	// to the same boundaries as the renderer paints.
+	firstItemOffset := 2
+	if len(f.opt.Header) > 0 {
+		firstItemOffset = 3
+	}
+	pageSize := screenHeight - firstItemOffset
+	if pageSize < 1 {
+		pageSize = 1
+	}
 
 	switch e := e.(type) {
 	case *tcell.EventKey:
@@ -443,28 +453,42 @@ func (f *finder) readKey(ctx context.Context) error {
 		case tcell.KeyUp, tcell.KeyCtrlK, tcell.KeyCtrlP:
 			// Visually upward. In bottom-up layout that means away from the
 			// bottom prompt; in reverse layout it means toward the top prompt.
-			if f.opt.Reverse {
-				f.scrollTowardPrompt(matchedLinesCount, screenHeight)
+			// Ctrl+Up acts as PgUp (page jump).
+			if e.Modifiers()&tcell.ModCtrl != 0 && e.Key() == tcell.KeyUp {
+				if f.opt.Reverse {
+					f.pageTowardPrompt(pageSize, matchedLinesCount)
+				} else {
+					f.pageAwayFromPrompt(pageSize, matchedLinesCount)
+				}
+			} else if f.opt.Reverse {
+				f.scrollTowardPrompt(pageSize, matchedLinesCount)
 			} else {
-				f.scrollAwayFromPrompt(matchedLinesCount, screenHeight)
+				f.scrollAwayFromPrompt(pageSize, matchedLinesCount)
 			}
 		case tcell.KeyDown, tcell.KeyCtrlJ, tcell.KeyCtrlN:
-			if f.opt.Reverse {
-				f.scrollAwayFromPrompt(matchedLinesCount, screenHeight)
+			// Ctrl+Down acts as PgDn (page jump).
+			if e.Modifiers()&tcell.ModCtrl != 0 && e.Key() == tcell.KeyDown {
+				if f.opt.Reverse {
+					f.pageAwayFromPrompt(pageSize, matchedLinesCount)
+				} else {
+					f.pageTowardPrompt(pageSize, matchedLinesCount)
+				}
+			} else if f.opt.Reverse {
+				f.scrollAwayFromPrompt(pageSize, matchedLinesCount)
 			} else {
-				f.scrollTowardPrompt(matchedLinesCount, screenHeight)
+				f.scrollTowardPrompt(pageSize, matchedLinesCount)
 			}
 		case tcell.KeyPgUp, tcell.KeyCtrlB:
 			if f.opt.Reverse {
-				f.pageTowardPrompt(pageScrollBy)
+				f.pageTowardPrompt(pageSize, matchedLinesCount)
 			} else {
-				f.pageAwayFromPrompt(pageScrollBy, matchedLinesCount, screenHeight)
+				f.pageAwayFromPrompt(pageSize, matchedLinesCount)
 			}
 		case tcell.KeyPgDn, tcell.KeyCtrlF:
 			if f.opt.Reverse {
-				f.pageAwayFromPrompt(pageScrollBy, matchedLinesCount, screenHeight)
+				f.pageAwayFromPrompt(pageSize, matchedLinesCount)
 			} else {
-				f.pageTowardPrompt(pageScrollBy)
+				f.pageTowardPrompt(pageSize, matchedLinesCount)
 			}
 		case tcell.KeyTab:
 			if !f.multi {
@@ -477,7 +501,7 @@ func (f *finder) readKey(ctx context.Context) error {
 				f.state.selection[idx] = f.state.selectionIdx
 				f.state.selectionIdx++
 			}
-			f.scrollAwayFromPrompt(matchedLinesCount, screenHeight)
+			f.scrollAwayFromPrompt(pageSize, matchedLinesCount)
 		default:
 			if e.Rune() != 0 {
 				width, _ := f.term.Size()
@@ -497,9 +521,14 @@ func (f *finder) readKey(ctx context.Context) error {
 		f.term.Clear()
 
 		width, height := f.term.Size()
-		itemAreaHeight := height - 2 - 1
-		if itemAreaHeight >= 0 && f.state.cursorY > itemAreaHeight {
-			f.state.cursorY = itemAreaHeight
+		// Recompute cursorY for the new page size (strict alignment).
+		newFirstItemOffset := 2
+		if len(f.opt.Header) > 0 {
+			newFirstItemOffset = 3
+		}
+		newPageSize := height - newFirstItemOffset
+		if newPageSize > 0 {
+			f.state.cursorY = f.state.y % newPageSize
 		}
 
 		maxLineWidth := width - 2 - 1
@@ -521,44 +550,64 @@ func (f *finder) readKey(ctx context.Context) error {
 // decreases); "away from prompt" moves toward worse matches (state.y
 // increases). Both wrap when at the boundary.
 
-func (f *finder) scrollAwayFromPrompt(matchedLinesCount, screenHeight int) {
-	if f.state.y+1 < matchedLinesCount {
-		f.state.y++
-		if f.state.cursorY+1 < min(matchedLinesCount, screenHeight-2) {
-			f.state.cursorY++
-		}
-		return
-	}
-	// At the far end: wrap back to the prompt edge.
-	f.state.y = 0
-	f.state.cursorY = 0
-}
+// Strict-page navigation. Visible items are always page-aligned: topIdx =
+// (y/pageSize)*pageSize, cursorY = y%pageSize. Crossing a page boundary
+// shifts the visible page; mid-page moves leave the page unchanged.
 
-func (f *finder) scrollTowardPrompt(matchedLinesCount, screenHeight int) {
-	if f.state.y > 0 {
-		f.state.y--
-		if f.state.cursorY > 0 {
-			f.state.cursorY--
-		}
-		return
-	}
-	// At the prompt edge: wrap to the far end.
+// scrollAwayFromPrompt advances y by 1 (forward in matched), wrapping past
+// the end. cursorY recomputed from y%pageSize so crossing a page boundary
+// shifts the visible page.
+func (f *finder) scrollAwayFromPrompt(pageSize, matchedLinesCount int) {
 	if matchedLinesCount == 0 {
 		return
 	}
-	f.state.y = matchedLinesCount - 1
-	f.state.cursorY = min(matchedLinesCount-1, screenHeight-3)
+	f.state.y = (f.state.y + 1) % matchedLinesCount
+	f.state.cursorY = f.state.y % pageSize
 }
 
-func (f *finder) pageAwayFromPrompt(pageScrollBy, matchedLinesCount, screenHeight int) {
-	f.state.y += min(pageScrollBy, matchedLinesCount-1-f.state.y)
-	maxCursorY := min(screenHeight-3, matchedLinesCount-1)
-	f.state.cursorY += min(pageScrollBy, maxCursorY-f.state.cursorY)
+// scrollTowardPrompt is the symmetric step backward.
+func (f *finder) scrollTowardPrompt(pageSize, matchedLinesCount int) {
+	if matchedLinesCount == 0 {
+		return
+	}
+	f.state.y = ((f.state.y-1)%matchedLinesCount + matchedLinesCount) % matchedLinesCount
+	f.state.cursorY = f.state.y % pageSize
 }
 
-func (f *finder) pageTowardPrompt(pageScrollBy int) {
-	f.state.y -= min(pageScrollBy, f.state.y)
-	f.state.cursorY -= min(pageScrollBy, f.state.cursorY)
+// pageAwayFromPrompt jumps to the same in-page offset on the next page,
+// wrapping to page 0 past the last page. The cursor stays at the same
+// visual row; only the visible page changes.
+func (f *finder) pageAwayFromPrompt(pageSize, matchedLinesCount int) {
+	if matchedLinesCount == 0 {
+		return
+	}
+	totalPages := (matchedLinesCount + pageSize - 1) / pageSize
+	currentPage := f.state.y / pageSize
+	newPage := (currentPage + 1) % totalPages
+	newY := newPage*pageSize + f.state.cursorY
+	if newY >= matchedLinesCount {
+		// last page short of cursorY rows: clamp to last item
+		newY = matchedLinesCount - 1
+	}
+	f.state.y = newY
+	f.state.cursorY = newY % pageSize
+}
+
+// pageTowardPrompt is the symmetric jump backward, cycling to the last
+// page when stepping back past page 0.
+func (f *finder) pageTowardPrompt(pageSize, matchedLinesCount int) {
+	if matchedLinesCount == 0 {
+		return
+	}
+	totalPages := (matchedLinesCount + pageSize - 1) / pageSize
+	currentPage := f.state.y / pageSize
+	newPage := (currentPage - 1 + totalPages) % totalPages
+	newY := newPage*pageSize + f.state.cursorY
+	if newY >= matchedLinesCount {
+		newY = matchedLinesCount - 1
+	}
+	f.state.y = newY
+	f.state.cursorY = newY % pageSize
 }
 
 func (f *finder) filter() {
