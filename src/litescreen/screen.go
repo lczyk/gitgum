@@ -646,6 +646,18 @@ func resizeSequence(height, termW, termH, prevWidth int) (out []byte, yOrigin, r
 
 const escTimeout = 50 * time.Millisecond
 
+// resetEscTimer stops t, drains any already-fired tick (safe per time.Timer
+// docs), and resets to escTimeout. Used between bytes in multi-byte sequences.
+func resetEscTimer(t *time.Timer) {
+	if !t.Stop() {
+		select {
+		case <-t.C:
+		default:
+		}
+	}
+	t.Reset(escTimeout)
+}
+
 // parseEvent consumes b plus any follow-up bytes needed to form a complete
 // event, and returns it. May read additional bytes from ch (for escape
 // sequences and UTF-8 continuation bytes). Returns nil if the bytes don't
@@ -745,13 +757,7 @@ func parseCSI(ch <-chan byte) tcell.Event {
 			params = append(params, b)
 			// Reset the timer for the next byte; CSI sequences arrive
 			// contiguously so any gap means the sequence is malformed.
-			if !timer.Stop() {
-				select {
-				case <-timer.C:
-				default:
-				}
-			}
-			timer.Reset(escTimeout)
+			resetEscTimer(timer)
 		}
 	}
 }
@@ -858,13 +864,7 @@ func parseUTF8(lead byte, ch <-chan byte) tcell.Event {
 			}
 			buf = append(buf, b)
 		}
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
-			}
-		}
-		timer.Reset(escTimeout)
+		resetEscTimer(timer)
 	}
 	r, _ := utf8.DecodeRune(buf)
 	if r == utf8.RuneError {
