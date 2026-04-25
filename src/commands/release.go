@@ -262,19 +262,16 @@ func parseSemver(s string) (semver, error) {
 	if len(parts) != 3 {
 		return semver{}, fmt.Errorf("version %q is not in major.minor.patch form", s)
 	}
-	maj, err := strconv.Atoi(parts[0])
-	if err != nil {
-		return semver{}, fmt.Errorf("parse major in %q: %w", s, err)
+	labels := [3]string{"major", "minor", "patch"}
+	var nums [3]int
+	for i, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			return semver{}, fmt.Errorf("parse %s in %q: %w", labels[i], s, err)
+		}
+		nums[i] = n
 	}
-	min, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return semver{}, fmt.Errorf("parse minor in %q: %w", s, err)
-	}
-	pat, err := strconv.Atoi(parts[2])
-	if err != nil {
-		return semver{}, fmt.Errorf("parse patch in %q: %w", s, err)
-	}
-	return semver{maj, min, pat}, nil
+	return semver{nums[0], nums[1], nums[2]}, nil
 }
 
 func bumpVersion(current, bump string) (string, error) {
