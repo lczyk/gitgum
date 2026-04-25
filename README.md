@@ -1,5 +1,7 @@
 # gitgum
 
+[![lint_and_test](https://github.com/lczyk/gitgum/actions/workflows/lint_and_test.yml/badge.svg)](https://github.com/lczyk/gitgum/actions/workflows/lint_and_test.yml)
+
 A bunch of git commands with an interactive fuzzy-finder UI (used to be [gum](https://github.com/charmbracelet/gum), hence the name). The features are very tailored to the kind of workflows I have, but nothing work-specific is encoded in.
 
 The picker is the in-tree [`src/fuzzyfinder`](src/fuzzyfinder) library — a slimmed-down fork of [`ktr0731/go-fuzzyfinder`](https://github.com/ktr0731/go-fuzzyfinder). No external `fzf` binary is required.
