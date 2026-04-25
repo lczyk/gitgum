@@ -8,6 +8,9 @@ import (
 	runewidth "github.com/mattn/go-runewidth"
 )
 
+// ansiReset is the ANSI SGR reset sequence (ESC [ m).
+const ansiReset = "\x1b[m"
+
 // TerminalMock is a mocked terminal for testing.
 // Use NewWithMockedTerminal to create one.
 type TerminalMock struct {
@@ -53,7 +56,7 @@ func (m *TerminalMock) GetResult() string {
 			if fg != prevFg || bg != prevBg {
 				prevFg, prevBg = fg, bg
 
-				s += "\x1b\x5b\x6d" // Reset previous color.
+				s += ansiReset
 				v := parseAttr(fg, bg, attr)
 				s += v
 			}
@@ -72,7 +75,7 @@ func (m *TerminalMock) GetResult() string {
 		}
 		s += "\n"
 	}
-	s += "\x1b\x5b\x6d" // Reset previous color.
+	s += ansiReset
 
 	return s
 }
@@ -80,25 +83,25 @@ func (m *TerminalMock) GetResult() string {
 // parseAttr parses color and attribute for testing.
 func parseAttr(fg, bg tcell.Color, attr tcell.AttrMask) string {
 	var params []string
-	if attr&tcell.AttrBold == tcell.AttrBold {
+	if attr&tcell.AttrBold != 0 {
 		params = append(params, "1")
 	}
-	if attr&tcell.AttrBlink == tcell.AttrBlink {
+	if attr&tcell.AttrBlink != 0 {
 		params = append(params, "5")
 	}
-	if attr&tcell.AttrReverse == tcell.AttrReverse {
+	if attr&tcell.AttrReverse != 0 {
 		params = append(params, "7")
 	}
-	if attr&tcell.AttrUnderline == tcell.AttrUnderline {
+	if attr&tcell.AttrUnderline != 0 {
 		params = append(params, "4")
 	}
-	if attr&tcell.AttrDim == tcell.AttrDim {
+	if attr&tcell.AttrDim != 0 {
 		params = append(params, "2")
 	}
-	if attr&tcell.AttrItalic == tcell.AttrItalic {
+	if attr&tcell.AttrItalic != 0 {
 		params = append(params, "3")
 	}
-	if attr&tcell.AttrStrikeThrough == tcell.AttrStrikeThrough {
+	if attr&tcell.AttrStrikeThrough != 0 {
 		params = append(params, "9")
 	}
 
