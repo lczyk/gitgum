@@ -97,7 +97,7 @@ func match(input string, slice []string, opt opt) (res []Matched) {
 	}
 
 	if opt.mode == ModeSmart {
-		if strings.IndexFunc(input, unicode.IsUpper) == -1 {
+		if !strings.ContainsFunc(input, unicode.IsUpper) {
 			opt.mode = ModeCaseInsensitive
 		} else {
 			opt.mode = ModeCaseSensitive
@@ -108,28 +108,33 @@ func match(input string, slice []string, opt opt) (res []Matched) {
 	}
 
 	in := []rune(input)
+	if len(in) == 0 {
+		for i := range slice {
+			res = append(res, Matched{Idx: i})
+		}
+		return res
+	}
 	for idxOfSlice, s := range slice {
 		var idx int
 		if opt.mode == ModeCaseInsensitive {
 			s = strings.ToLower(s)
 		}
-	LINE_MATCHING:
 		for _, r := range s {
 			if r == in[idx] {
 				idx++
 				if idx == len(in) {
 					score, pos, err := scoring.Calculate(s, input)
 					if err != nil {
-						// LINE_MATCHING guarantees s contains all runes of input, so this shouldn't fire;
-						// break (not continue) so we don't try in[idx] again with idx already == len(in)
-						break LINE_MATCHING
+						// the fuzzy loop ensures s contains all runes of input before we get here,
+						// so this shouldn't fire; break so we don't re-access in[idx] with idx == len(in)
+						break
 					}
 					res = append(res, Matched{
 						Idx:   idxOfSlice,
 						Pos:   pos,
 						score: score,
 					})
-					break LINE_MATCHING
+					break
 				}
 			}
 		}

@@ -76,6 +76,13 @@ func TestSubstringMatcher(t *testing.T) {
 	}
 }
 
+func TestFindAllEmptyQuery(t *testing.T) {
+	t.Parallel()
+	slice := []string{"foo", "bar", "baz"}
+	matched := matching.FindAll("", slice)
+	assert.Len(t, matched, len(slice))
+}
+
 func TestFindAllWithMatcher(t *testing.T) {
 	t.Parallel()
 
