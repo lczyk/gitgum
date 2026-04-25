@@ -25,7 +25,7 @@ build: ./bin/gitgum ./bin/fuzzyfinder  ## Build all binaries (compressed with up
 
 .PHONY: generate-version
 generate-version:
-	go generate ./src/version
+	go run github.com/lczyk/version/go/cmd/generate-version -out ./src/version/version.go -pkg version
 
 .PHONY: du
 du: ./bin/gitgum ./bin/fuzzyfinder  ## Show binary sizes

@@ -1,6 +1,6 @@
 module github.com/lczyk/gitgum
 
-go 1.25.0
+go 1.26.2
 
 require (
 	github.com/gdamore/tcell/v2 v2.13.9
@@ -14,6 +14,7 @@ require (
 require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/gdamore/encoding v1.0.1 // indirect
+	github.com/lczyk/version/go v0.2.0
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	golang.org/x/sys v0.43.0 // indirect

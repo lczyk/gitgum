@@ -8,7 +8,8 @@ import (
 	flags "github.com/jessevdk/go-flags"
 	"github.com/lczyk/gitgum/internal/ui"
 	"github.com/lczyk/gitgum/src/commands"
-	"github.com/lczyk/gitgum/src/version"
+	vinfo "github.com/lczyk/gitgum/src/version"
+	ver "github.com/lczyk/version/go"
 )
 
 // Options defines the global command structure
@@ -29,7 +30,7 @@ func main() {
 	// Check for version flag before parsing to avoid command requirement
 	for _, arg := range os.Args[1:] {
 		if arg == "--version" || arg == "-v" {
-			fmt.Println(version.FormatVersion(version.Version, version.CommitSHA, version.BuildDate, version.BuildInfo))
+			fmt.Println(ver.FormatVersion(vinfo.Version, vinfo.CommitSHA, vinfo.BuildDate, vinfo.BuildInfo))
 			os.Exit(0)
 		}
 	}
