@@ -3,7 +3,6 @@ package commands
 import (
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/git"
@@ -51,7 +50,6 @@ func (p *PushCommand) Execute(args []string) error {
 	}
 
 	if len(remotes) == 0 {
-		fmt.Fprintln(os.Stderr, "No remotes found. Aborting push.")
 		return fmt.Errorf("no remotes")
 	}
 
