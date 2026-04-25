@@ -80,12 +80,8 @@ func (c *CleanCommand) Execute(args []string) error {
 
 	if changes {
 		fmt.Println("Discarding changes...")
-		stdout, stderr, err := cmdrun.Run("git", "reset", "--hard")
-		if err != nil {
-			return fmt.Errorf("failed to reset changes: %w\nStdout: %s\nStderr: %s", err, stdout, stderr)
-		}
-		if stdout != "" {
-			fmt.Println(stdout)
+		if err := cmdrun.RunWithOutput("git", "reset", "--hard"); err != nil {
+			return fmt.Errorf("failed to reset changes: %w", err)
 		}
 	}
 
@@ -96,12 +92,8 @@ func (c *CleanCommand) Execute(args []string) error {
 		}
 
 		fmt.Println("Removing untracked files...")
-		stdout, stderr, err := cmdrun.Run("git", cleanArgs...)
-		if err != nil {
-			return fmt.Errorf("failed to clean untracked files: %w\nStdout: %s\nStderr: %s", err, stdout, stderr)
-		}
-		if stdout != "" {
-			fmt.Println(stdout)
+		if err := cmdrun.RunWithOutput("git", cleanArgs...); err != nil {
+			return fmt.Errorf("failed to clean untracked files: %w", err)
 		}
 	}
 
