@@ -43,14 +43,62 @@ import (
 //
 // The current mode is encoded in yOrigin: yOrigin == 0 means fullscreen,
 // yOrigin > 0 means inline.
-type Screen struct {
-	in  *os.File  // /dev/tty input fd; used for raw mode + size queries
-	out io.Writer // /dev/tty output, but DI-able for tests
 
-	rawState *term.State
+// hooks bundles every OS-side dependency the renderer touches. Production
+// wires these to /dev/tty + term + os/signal in realHooks(); tests pass
+// stubs (e.g. testHooks) so Init/handleResize/Fini run end-to-end without
+// touching real terminals or the global signal table. Embedded into Screen
+// so call sites read as `s.enterRaw()` etc. rather than `s.hooks.enterRaw()`.
+type hooks struct {
+	enterRaw    func() (restore func(), err error)
+	getSize     func() (int, int)
+	closeIO     func()
+	notifyWinch func(chan<- os.Signal)
+	notifySig   func(chan<- os.Signal)
+	stopSignal  func(chan<- os.Signal)
+	raiseSignal func(os.Signal)
+}
+
+// realHooks wires hooks to real /dev/tty + term + os/signal calls. The fd
+// is captured once; in/out are closed by closeIO.
+func realHooks(in *os.File, out *os.File) hooks {
+	fd := int(in.Fd())
+	return hooks{
+		enterRaw: func() (func(), error) {
+			st, err := term.MakeRaw(fd)
+			if err != nil {
+				return nil, err
+			}
+			return func() { term.Restore(fd, st) }, nil
+		},
+		getSize: func() (int, int) {
+			w, h, err := term.GetSize(fd)
+			if err != nil || w <= 0 || h <= 0 {
+				return 80, 24
+			}
+			return w, h
+		},
+		closeIO:     func() { in.Close(); out.Close() },
+		notifyWinch: func(ch chan<- os.Signal) { signal.Notify(ch, syscall.SIGWINCH) },
+		notifySig:   func(ch chan<- os.Signal) { signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM) },
+		stopSignal:  signal.Stop,
+		raiseSignal: func(sig os.Signal) {
+			signal.Reset(sig.(syscall.Signal))
+			syscall.Kill(syscall.Getpid(), sig.(syscall.Signal))
+		},
+	}
+}
+
+type Screen struct {
+	hooks // OS hooks; embedded so callers say s.enterRaw, s.getSize, etc.
+
+	in  io.Reader // input bytes (real /dev/tty in production, anything in tests)
+	out io.Writer // output bytes
 
 	height  int // raw height arg to New; see resolveHeight
 	yOrigin int // first row of region (0-indexed); 0 in fullscreen
+
+	restore func() // set by Init via enterRaw, called by cleanup
 
 	mu               sync.Mutex
 	fb               *framebuf
@@ -236,17 +284,22 @@ func New(height int) (*Screen, error) {
 		in.Close()
 		return nil, fmt.Errorf("open /dev/tty for write: %w", err)
 	}
-	return &Screen{in: in, out: out, height: height}, nil
+	return &Screen{
+		hooks:  realHooks(in, out),
+		in:     in,
+		out:    out,
+		height: height,
+	}, nil
 }
 
 func (s *Screen) Init() error {
-	st, err := term.MakeRaw(int(s.in.Fd()))
+	restore, err := s.enterRaw()
 	if err != nil {
 		return fmt.Errorf("raw mode: %w", err)
 	}
-	s.rawState = st
+	s.restore = restore
 
-	w, termH := s.terminalSize()
+	w, termH := s.getSize()
 	out, yOrigin, fb := initSequence(s.height, w, termH)
 	s.yOrigin = yOrigin
 	s.fb = fb
@@ -254,10 +307,10 @@ func (s *Screen) Init() error {
 	s.cursorVisible = false
 
 	s.winch = make(chan os.Signal, 1)
-	signal.Notify(s.winch, syscall.SIGWINCH)
+	s.notifyWinch(s.winch)
 
 	s.sigCh = make(chan os.Signal, 1)
-	signal.Notify(s.sigCh, syscall.SIGINT, syscall.SIGTERM)
+	s.notifySig(s.sigCh)
 	go s.signalLoop()
 	return nil
 }
@@ -298,8 +351,7 @@ func (s *Screen) signalLoop() {
 		return
 	}
 	s.cleanup()
-	signal.Reset(sig.(syscall.Signal))
-	syscall.Kill(syscall.Getpid(), sig.(syscall.Signal))
+	s.raiseSignal(sig)
 }
 
 // cleanup restores the terminal to its pre-Init state. Idempotent: safe to
@@ -309,9 +361,9 @@ func (s *Screen) signalLoop() {
 func (s *Screen) cleanup() {
 	s.cleanupOnce.Do(func() {
 		s.out.Write(finiSequence(s.yOrigin))
-		if s.rawState != nil {
-			term.Restore(int(s.in.Fd()), s.rawState)
-			s.rawState = nil
+		if s.restore != nil {
+			s.restore()
+			s.restore = nil
 		}
 	})
 }
@@ -330,19 +382,16 @@ func (s *Screen) Fini() {
 	s.cleanup()
 
 	if s.winch != nil {
-		signal.Stop(s.winch)
+		s.stopSignal(s.winch)
 		close(s.winch)
 		s.winch = nil
 	}
 	if s.sigCh != nil {
-		signal.Stop(s.sigCh)
+		s.stopSignal(s.sigCh)
 		close(s.sigCh)
 		s.sigCh = nil
 	}
-	s.in.Close()
-	if c, ok := s.out.(io.Closer); ok {
-		c.Close()
-	}
+	s.closeIO()
 }
 
 func (s *Screen) Size() (int, int) {
@@ -386,18 +435,6 @@ func cellEqual(a, b liteCell) bool {
 		}
 	}
 	return true
-}
-
-// terminalSize queries the input tty fd for its size, falling back to 80x24
-// on error so we always have a usable framebuf. Reads work on the input fd
-// the same as on output for TIOCGWINSZ; using it lets s.out be any
-// io.Writer (handy for tests).
-func (s *Screen) terminalSize() (int, int) {
-	w, h, err := term.GetSize(int(s.in.Fd()))
-	if err != nil || w <= 0 || h <= 0 {
-		return 80, 24
-	}
-	return w, h
 }
 
 // styleToSGR converts a tcell.Style to the corresponding ANSI SGR sequence.
@@ -506,7 +543,7 @@ func (s *Screen) readLoop(out chan<- byte, errCh chan<- error) {
 func (s *Screen) handleResize() (int, int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	w, termH := s.terminalSize()
+	w, termH := s.getSize()
 	out, yOrigin, rows := resizeSequence(s.height, w, termH, s.fb.width)
 	s.yOrigin = yOrigin
 	s.out.Write(out)

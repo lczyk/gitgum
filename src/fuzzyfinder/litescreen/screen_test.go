@@ -1,6 +1,9 @@
 package litescreen
 
 import (
+	"bytes"
+	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -417,6 +420,98 @@ func TestResolveHeight(t *testing.T) {
 			assert.Equal(t, full, tt.wantFull)
 		})
 	}
+}
+
+// stubHooks builds a hooks struct that doesn't touch /dev/tty or signals.
+// getSize returns a fixed size; restore/closeIO/notify*/raise are no-ops.
+// Tests that need to verify cleanup ran can pass a *bool for restoreCalled.
+func stubHooks(termW, termH int, restoreCalled *bool, raised *os.Signal) hooks {
+	return hooks{
+		enterRaw: func() (func(), error) {
+			return func() {
+				if restoreCalled != nil {
+					*restoreCalled = true
+				}
+			}, nil
+		},
+		getSize:     func() (int, int) { return termW, termH },
+		closeIO:     func() {},
+		notifyWinch: func(chan<- os.Signal) {},
+		notifySig:   func(chan<- os.Signal) {},
+		stopSignal:  func(chan<- os.Signal) {},
+		raiseSignal: func(sig os.Signal) {
+			if raised != nil {
+				*raised = sig
+			}
+		},
+	}
+}
+
+// newTestScreen builds a Screen wired up with stubHooks + bytes.Buffer for
+// out + the given input reader. The buffer is returned so tests can assert
+// on the output byte stream.
+func newTestScreen(height, termW, termH int, in io.Reader) (*Screen, *bytes.Buffer, *bool) {
+	var out bytes.Buffer
+	var restoreCalled bool
+	s := &Screen{
+		hooks:  stubHooks(termW, termH, &restoreCalled, nil),
+		in:     in,
+		out:    &out,
+		height: height,
+	}
+	return s, &out, &restoreCalled
+}
+
+func TestScreen_InitFini_Inline(t *testing.T) {
+	s, out, restoreCalled := newTestScreen(5, 80, 24, strings.NewReader(""))
+
+	err := s.Init()
+	assert.NoError(t, err)
+	got := out.String()
+	assert.That(t, strings.Contains(got, "\x1b[?25l"), "init hides cursor")
+	assert.That(t, strings.Contains(got, "\x1b[20;1H\x1b[J"), "init clears region at row 20")
+	assert.Equal(t, s.yOrigin, 19)
+	assert.Equal(t, s.fb.height, 5)
+	assert.That(t, !*restoreCalled, "restore must not run before Fini")
+
+	out.Reset()
+	s.Fini()
+	final := out.String()
+	assert.That(t, strings.Contains(final, "\x1b[20;1H\x1b[J"), "fini clears region")
+	assert.That(t, strings.Contains(final, "\x1b[?25h"), "fini shows cursor")
+	assert.That(t, *restoreCalled, "fini must restore raw mode")
+}
+
+func TestScreen_InitFini_Fullscreen(t *testing.T) {
+	s, out, restoreCalled := newTestScreen(0, 80, 24, strings.NewReader(""))
+
+	assert.NoError(t, s.Init())
+	got := out.String()
+	assert.That(t, strings.Contains(got, "\x1b[?1049h"), "fullscreen enters alt-screen")
+	assert.Equal(t, s.yOrigin, 0)
+
+	out.Reset()
+	s.Fini()
+	final := out.String()
+	assert.That(t, strings.Contains(final, "\x1b[?1049l"), "fullscreen exits alt-screen on Fini")
+	assert.That(t, *restoreCalled, "fini restores raw mode")
+}
+
+func TestScreen_HandleResize_Narrow(t *testing.T) {
+	s, out, _ := newTestScreen(5, 100, 24, strings.NewReader(""))
+	assert.NoError(t, s.Init())
+
+	// Simulate terminal narrowing: swap getSize to report new width.
+	s.getSize = func() (int, int) { return 60, 24 }
+	out.Reset()
+
+	w, rows := s.handleResize()
+	assert.Equal(t, w, 60)
+	assert.Equal(t, rows, 5)
+	got := out.String()
+	assert.That(t, strings.Contains(got, "\x1b[2J"), "narrow triggers full-clear")
+
+	s.Fini()
 }
 
 // --- init/fini/resize byte sequences ---------------------------------------
