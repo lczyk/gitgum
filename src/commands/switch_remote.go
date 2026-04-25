@@ -17,7 +17,7 @@ func (s *SwitchCommand) handleRemoteSelection(remote, branch string) error {
 		return s.createTrackingBranch(remote, branch)
 	}
 
-	fmt.Printf("Branch '%s' is already tracked locally as '%s'.\n", branch, branch)
+	fmt.Printf("Branch '%s/%s' already has a local counterpart.\n", remote, branch)
 
 	trackingRemote, err := git.GetBranchTrackingRemote(branch)
 	if err != nil {
@@ -85,6 +85,7 @@ func (s *SwitchCommand) alignWithRemote(remote, branch string) error {
 	}
 	if !confirmed {
 		fmt.Fprintln(os.Stderr, "Not resetting local branch.")
+		fmt.Printf("Switched to branch '%s' (diverged from '%s/%s').\n", branch, remote, branch)
 		return nil
 	}
 	if err := cmdrun.RunQuiet("git", "reset", "--hard", remoteRef); err != nil {
