@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	flags "github.com/jessevdk/go-flags"
+	"github.com/lczyk/assert"
 )
 
 // Ensures every field of Options implements flags.Commander. A wrong Execute
@@ -14,22 +15,18 @@ func TestAllCommandsImplementCommander(t *testing.T) {
 	commanderType := reflect.TypeOf((*flags.Commander)(nil)).Elem()
 	optsType := reflect.TypeOf(Options{})
 
-	if optsType.NumField() == 0 {
-		t.Fatal("Options has no fields")
-	}
+	assert.That(t, optsType.NumField() > 0, "Options has no fields")
 
 	for i := 0; i < optsType.NumField(); i++ {
 		field := optsType.Field(i)
 
 		// go-flags silently ignores fields without the command: tag, so they'd
 		// never actually be registered — catch that here.
-		if field.Tag.Get("command") == "" {
-			t.Errorf("%s: missing command: struct tag — go-flags will silently skip this field", field.Name)
-		}
+		assert.That(t, field.Tag.Get("command") != "",
+			"%s: missing command: struct tag — go-flags will silently skip this field", field.Name)
 
 		ptrType := reflect.PointerTo(field.Type)
-		if !ptrType.Implements(commanderType) {
-			t.Errorf("%s (%s) does not implement flags.Commander — check Execute signature is Execute(args []string) error", field.Name, field.Type)
-		}
+		assert.That(t, ptrType.Implements(commanderType),
+			"%s (%s) does not implement flags.Commander — check Execute signature is Execute(args []string) error", field.Name, field.Type)
 	}
 }

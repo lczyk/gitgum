@@ -66,9 +66,8 @@ func assertWithGolden(t *testing.T, f func() string) {
 		expected = strings.ReplaceAll(expected, "\r\n", "\n")
 	}
 
-	if diff := cmp.Diff(expected, actual); diff != "" {
-		t.Errorf("wrong result: \n%s", diff)
-	}
+	diff := cmp.Diff(expected, actual)
+	assert.That(t, diff == "", "wrong result: \n%s", diff)
 }
 
 type track struct {

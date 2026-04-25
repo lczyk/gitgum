@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/lczyk/assert"
 	"github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
@@ -29,12 +30,8 @@ func TestConfirmWith(t *testing.T) {
 				},
 				"Test?", tc.defaultYes,
 			)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tc.want {
-				t.Errorf("got %v, want %v", got, tc.want)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, got, tc.want)
 		})
 	}
 }
@@ -47,25 +44,19 @@ func TestConfirmWithSelectorError(t *testing.T) {
 		},
 		"Test?", true,
 	)
-	if !errors.Is(err, sentinel) {
-		t.Errorf("expected sentinel error, got %v", err)
-	}
+	assert.Error(t, err, sentinel)
 }
 
 func TestSelectEmptyOptions(t *testing.T) {
 	_, err := Select("test", nil)
-	if err == nil {
-		t.Fatal("expected error for empty options, got nil")
-	}
+	assert.Error(t, err, assert.AnyError, "expected error for empty options")
 }
 
 func TestSelectAbortMapsToErrCancelled(t *testing.T) {
 	_, err := selectWith(func(_ context.Context, _ *[]string, _ sync.Locker, _ fuzzyfinder.Opt) ([]int, error) {
 		return nil, fuzzyfinder.ErrAbort
 	}, "test", []string{"a"})
-	if !errors.Is(err, ErrCancelled) {
-		t.Errorf("expected ErrCancelled, got %v", err)
-	}
+	assert.Error(t, err, ErrCancelled)
 }
 
 func TestSelectFinderError(t *testing.T) {
@@ -73,7 +64,5 @@ func TestSelectFinderError(t *testing.T) {
 	_, err := selectWith(func(_ context.Context, _ *[]string, _ sync.Locker, _ fuzzyfinder.Opt) ([]int, error) {
 		return nil, sentinel
 	}, "test", []string{"a"})
-	if !errors.Is(err, sentinel) {
-		t.Errorf("expected sentinel wrapped in finder error, got %v", err)
-	}
+	assert.Error(t, err, sentinel)
 }
