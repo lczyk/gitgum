@@ -11,3 +11,6 @@ bin/
 # Editor / OS noise
 .DS_Store
 *.swp
+
+cover.out
+cover.html
