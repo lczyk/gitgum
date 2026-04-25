@@ -32,13 +32,13 @@ func (s *StatusCommand) Execute(args []string) error {
 	printHeader("--- BRANCHES ---------------------------")
 	stdout, _, err := cmdrun.Run("git", "--no-pager", "branch", "-vv")
 	if err != nil {
-		return fmt.Errorf("error getting branches: %w", err)
+		return fmt.Errorf("getting branches: %w", err)
 	}
 	fmt.Fprintln(out, stdout)
 
 	stdout, _, err = cmdrun.Run("git", "remote", "-v")
 	if err != nil {
-		return fmt.Errorf("error getting remotes: %w", err)
+		return fmt.Errorf("getting remotes: %w", err)
 	}
 	remotes := parseRemotes(stdout)
 	if len(remotes) > 0 {
@@ -51,7 +51,7 @@ func (s *StatusCommand) Execute(args []string) error {
 	// single call gets both branch status (line 0) and change lines (rest)
 	stdout, _, err = cmdrun.Run("git", "status", "--short", "--branch")
 	if err != nil {
-		return fmt.Errorf("error getting status: %w", err)
+		return fmt.Errorf("getting status: %w", err)
 	}
 	lines := strings.Split(stdout, "\n")
 
