@@ -434,7 +434,7 @@ func TestFindMulti(t *testing.T) {
 		expected []int
 		abort    bool
 	}{
-		"input glow": {events: runes("glow"), expected: []int{0}},
+		"input glow": {events: runes("glow"), expected: []int{5}},
 		"select two items": {events: keys([]input{
 			{tcell.KeyTab, rune(tcell.KeyTab), tcell.ModNone},
 			{tcell.KeyUp, rune(tcell.KeyUp), tcell.ModNone},
@@ -470,7 +470,7 @@ func TestFindMulti(t *testing.T) {
 				return
 			}
 			assert.NoError(t, err)
-			assert.Len(t, idxs, len(c.expected))
+			assert.EqualArrays(t, c.expected, idxs)
 		})
 	}
 }
