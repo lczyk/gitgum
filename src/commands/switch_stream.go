@@ -19,7 +19,7 @@ type branchEntry struct {
 
 // streamBranches collects local and remote branches concurrently, deduplicating
 // and writing into a slice protected by the returned lock. Caller cancels ctx
-// when the consumer (fuzzyfinder) is done.
+// when the consumer (fuzzyfinder) is done; cancellation also stops producers.
 func streamBranches(ctx context.Context, currentBranch, trackingRemote string, remotes []string) (*[]string, *sync.Mutex) {
 	var (
 		lock     sync.Mutex
@@ -45,15 +45,15 @@ func streamBranches(ctx context.Context, currentBranch, trackingRemote string, r
 		}
 	}()
 
-	go streamLocalBranches(queue, currentBranch)
+	go streamLocalBranches(ctx, queue, currentBranch)
 	for _, remote := range remotes {
-		go streamRemoteBranches(queue, remote, currentBranch, trackingRemote)
+		go streamRemoteBranches(ctx, queue, remote, currentBranch, trackingRemote)
 	}
 
 	return &branches, &lock
 }
 
-func streamLocalBranches(queue chan<- branchEntry, currentBranch string) {
+func streamLocalBranches(ctx context.Context, queue chan<- branchEntry, currentBranch string) {
 	locals, err := git.GetLocalBranches()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error getting local branches: %v\n", err)
@@ -76,21 +76,27 @@ func streamLocalBranches(queue chan<- branchEntry, currentBranch string) {
 		if err != nil {
 			tr = ""
 		}
+		var entry branchEntry
 		if tr != "" {
-			queue <- branchEntry{
+			entry = branchEntry{
 				display:  "local/remote: " + branch,
 				dedupKey: "remote:" + tr + "/" + branch,
 			}
 		} else {
-			queue <- branchEntry{
+			entry = branchEntry{
 				display:  "local: " + branch,
 				dedupKey: "local:" + branch,
 			}
 		}
+		select {
+		case queue <- entry:
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 
-func streamRemoteBranches(queue chan<- branchEntry, remote, currentBranch, trackingRemote string) {
+func streamRemoteBranches(ctx context.Context, queue chan<- branchEntry, remote, currentBranch, trackingRemote string) {
 	branches, err := git.GetRemoteBranches(remote)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error getting remote branches for '%s': %v\n", remote, err)
@@ -109,9 +115,13 @@ func streamRemoteBranches(queue chan<- branchEntry, remote, currentBranch, track
 		if isCheckedOut {
 			continue
 		}
-		queue <- branchEntry{
+		select {
+		case queue <- branchEntry{
 			display:  "remote: " + remote + "/" + branch,
 			dedupKey: "remote:" + remote + "/" + branch,
+		}:
+		case <-ctx.Done():
+			return
 		}
 	}
 }
