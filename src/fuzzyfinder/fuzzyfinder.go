@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -16,9 +17,21 @@ import (
 	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/lczyk/gitgum/src/fuzzyfinder/litescreen"
 	"github.com/lczyk/gitgum/src/fuzzyfinder/matching"
 	runewidth "github.com/mattn/go-runewidth"
 )
+
+// newScreen returns the screen backend selected by the FF_RENDERER env var.
+// Default is tcell (existing alt-screen behavior). FF_RENDERER=lite uses our
+// own ANSI renderer — currently fullscreen-only, the foundation for inline
+// (--height) mode.
+func newScreen() (screen, error) {
+	if os.Getenv("FF_RENDERER") == "lite" {
+		return litescreen.New()
+	}
+	return tcell.NewScreen()
+}
 
 var (
 	// ErrAbort is returned from Find* functions if there are no selections.
@@ -54,8 +67,24 @@ type state struct {
 	selectionIdx int
 }
 
+// screen is the subset of tcell.Screen the finder actually uses. Pulling it
+// out as a local interface lets us swap in a non-tcell renderer later (e.g.
+// an inline ANSI renderer that preserves terminal scrollback) without
+// touching the finder logic. tcell.Screen and tcell.SimulationScreen both
+// satisfy it implicitly.
+type screen interface {
+	Init() error
+	Fini()
+	Size() (int, int)
+	Clear()
+	SetContent(x, y int, mainc rune, combc []rune, style tcell.Style)
+	ShowCursor(x, y int)
+	Show()
+	ChannelEvents(ch chan<- tcell.Event, quit <-chan struct{})
+}
+
 type finder struct {
-	term      tcell.Screen
+	term      screen
 	stateMu   sync.RWMutex
 	state     state
 	drawTimer *time.Timer
@@ -68,11 +97,11 @@ type finder struct {
 
 func (f *finder) initFinder(items []string, matched []matching.Matched, opt Opt) error {
 	if f.term == nil {
-		screen, err := tcell.NewScreen()
+		s, err := newScreen()
 		if err != nil {
 			return fmt.Errorf("failed to new screen: %w", err)
 		}
-		f.term = screen
+		f.term = s
 		if err := f.term.Init(); err != nil {
 			return fmt.Errorf("failed to initialize screen: %w", err)
 		}
