@@ -52,10 +52,12 @@ func (r *ReleaseCommand) Execute(args []string) error {
 		return err
 	}
 
+	remote := mainPushRemote()
+
 	if state, ok := alreadyReleased(); ok {
 		fmt.Printf("Already released: HEAD is %q (tag %s already at HEAD).\n", state.subject, state.tag)
 		fmt.Printf("Nothing to do. To publish:\n")
-		fmt.Printf("  git push origin main && git push origin %s\n", state.tag)
+		fmt.Printf("  git push %s main && git push %s %s\n", remote, remote, state.tag)
 		return nil
 	}
 
@@ -103,7 +105,7 @@ func (r *ReleaseCommand) Execute(args []string) error {
 	}
 
 	fmt.Printf("\nTagged %s. To publish:\n", strings.Join(tags, ", "))
-	fmt.Printf("  git push origin main && git push origin %s\n", strings.Join(tags, " "))
+	fmt.Printf("  git push %s main && git push %s %s\n", remote, remote, strings.Join(tags, " "))
 	fmt.Println("\nTo fully undo (drops the commit and the tag(s)):")
 	fmt.Printf("  git reset --hard HEAD~1 && git tag -d %s\n", strings.Join(tags, " "))
 	return nil
@@ -183,6 +185,19 @@ func alreadyReleased() (releasedState, bool) {
 		return releasedState{}, false
 	}
 	return releasedState{tag: tag, subject: subject}, true
+}
+
+// mainPushRemote returns the remote main tracks. Falls back to the sole
+// configured remote, then "origin", so the suggested push command stays useful
+// even when main has no upstream yet.
+func mainPushRemote() string {
+	if r, _ := git.GetBranchTrackingRemote("main"); r != "" {
+		return r
+	}
+	if remotes, _ := git.GetRemotes(); len(remotes) == 1 {
+		return remotes[0]
+	}
+	return "origin"
 }
 
 func tagExists(tag string) (bool, error) {
