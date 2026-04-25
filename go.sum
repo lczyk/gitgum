@@ -12,8 +12,8 @@ github.com/jessevdk/go-flags v1.6.1 h1:Cvu5U8UGrLay1rZfv/zP7iLpSHGUZ/Ou68T0iX1bB
 github.com/jessevdk/go-flags v1.6.1/go.mod h1:Mk8T1hIAWpOiJiHa9rJASDK2UGWji0EuPGBnNLMooyc=
 github.com/lczyk/assert v0.3.1 h1:YT73aXv4wtKBZRNLgSERzi+QzztMkiPIxm8oxfh+zms=
 github.com/lczyk/assert v0.3.1/go.mod h1:Vv3LWPfjC/FbJ3IXb22YNWxZWicc1x6R7hzDCf+RARc=
-github.com/lczyk/version/go v0.2.0 h1:TbAPJLZ2NJrd3/2ZksSg/liCwQTNn2aQN7L2EhwX4X8=
-github.com/lczyk/version/go v0.2.0/go.mod h1:iy2Kpe1bghb/8crCqLiJLrzRf6iEf/tnxrBQ9KcqiSA=
+github.com/lczyk/version/go v0.4.0 h1:AivRyexcv6v7GLRmRkV6qUgjn8X7RS+S0VgJxMSfhnM=
+github.com/lczyk/version/go v0.4.0/go.mod h1:8CHgUp1ILDx0+yN/F53SM/QKRjVEXjt3Od4D4L0986Y=
 github.com/lucasb-eyer/go-colorful v1.4.0 h1:UtrWVfLdarDgc44HcS7pYloGHJUjHV/4FwW4TvVgFr4=
 github.com/lucasb-eyer/go-colorful v1.4.0/go.mod h1:R4dSotOR9KMtayYi1e77YzuveK+i7ruzyGqttikkLy0=
 github.com/mattn/go-runewidth v0.0.23 h1:7ykA0T0jkPpzSvMS5i9uoNn2Xy3R383f9HDx3RybWcw=
