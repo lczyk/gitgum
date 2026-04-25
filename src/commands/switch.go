@@ -75,12 +75,9 @@ func (s *SwitchCommand) Execute(args []string) error {
 
 func pickBranch(ctx context.Context, branches *[]string, lock *sync.Mutex) (string, error) {
 	prompt := "Select a branch to switch to"
-	idx, err := fuzzyfinder.FindLive(
-		branches,
-		lock,
-		fuzzyfinder.WithPromptString(prompt+": "),
-		fuzzyfinder.WithContext(ctx),
-	)
+	idxs, err := fuzzyfinder.FindLive(ctx, branches, lock, fuzzyfinder.Opt{
+		Prompt: prompt + ": ",
+	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "No branch selected. Aborting switch.")
 		if errors.Is(err, fuzzyfinder.ErrAbort) {
@@ -91,6 +88,7 @@ func pickBranch(ctx context.Context, branches *[]string, lock *sync.Mutex) (stri
 
 	lock.Lock()
 	defer lock.Unlock()
+	idx := idxs[0]
 	if idx < 0 || idx >= len(*branches) {
 		return "", fmt.Errorf("invalid branch selection index: %d", idx)
 	}

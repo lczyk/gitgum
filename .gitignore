@@ -1,8 +1,8 @@
 # bins and any binaries which may have gotten built in the repo root
 bin/
-gitgum
-fuzzyfinder
-generate-version
+/gitgum
+/fuzzyfinder
+/generate-version
 
 # Go build artifacts accidentally produced in repo root
 /gitgum

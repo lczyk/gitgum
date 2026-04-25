@@ -14,20 +14,20 @@ func TestParseFlags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseFlags: %v", err)
 	}
-	if !cfg.multi {
-		t.Errorf("multi = false, want true")
+	if !cfg.opt.Multi {
+		t.Errorf("Multi = false, want true")
 	}
-	if cfg.query != "foo" {
-		t.Errorf("query = %q, want %q", cfg.query, "foo")
+	if cfg.opt.Query != "foo" {
+		t.Errorf("Query = %q, want %q", cfg.opt.Query, "foo")
 	}
-	if cfg.prompt != "$ " {
-		t.Errorf("prompt = %q, want %q", cfg.prompt, "$ ")
+	if cfg.opt.Prompt != "$ " {
+		t.Errorf("Prompt = %q, want %q", cfg.opt.Prompt, "$ ")
 	}
-	if cfg.header != "h" {
-		t.Errorf("header = %q, want %q", cfg.header, "h")
+	if cfg.opt.Header != "h" {
+		t.Errorf("Header = %q, want %q", cfg.opt.Header, "h")
 	}
-	if !cfg.selectOne {
-		t.Errorf("selectOne = false, want true")
+	if !cfg.opt.SelectOne {
+		t.Errorf("SelectOne = false, want true")
 	}
 }
 
@@ -36,8 +36,8 @@ func TestParseFlags_DefaultPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseFlags: %v", err)
 	}
-	if cfg.prompt != "> " {
-		t.Fatalf("default prompt = %q, want %q", cfg.prompt, "> ")
+	if cfg.opt.Prompt != "> " {
+		t.Fatalf("default prompt = %q, want %q", cfg.opt.Prompt, "> ")
 	}
 }
 

@@ -60,13 +60,8 @@ func isTTY(f *os.File) bool {
 }
 
 type config struct {
-	multi     bool
-	query     string
-	prompt    string
-	header    string
-	selectOne bool
-	fast      bool
-	reverse   bool
+	opt  fuzzyfinder.Opt
+	fast bool
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -104,32 +99,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	go func() { readErrCh <- streamItems(ctx, br, &lock, &items, delay) }()
 
-	// build picker options
-	opts := []fuzzyfinder.Option{fuzzyfinder.WithPromptString(cfg.prompt)}
-	if cfg.query != "" {
-		opts = append(opts, fuzzyfinder.WithQuery(cfg.query))
-	}
-	if cfg.header != "" {
-		opts = append(opts, fuzzyfinder.WithHeader(cfg.header))
-	}
-	if cfg.selectOne {
-		opts = append(opts, fuzzyfinder.WithSelectOne())
-	}
-	if cfg.reverse {
-		opts = append(opts, fuzzyfinder.WithReverse())
-	}
-	opts = append(opts, fuzzyfinder.WithContext(ctx))
-
-	var (
-		idxs    []int
-		findErr error
-	)
-	if cfg.multi {
-		idxs, findErr = fuzzyfinder.FindMultiLive(&items, &lock, opts...)
-	} else {
-		idx, err := fuzzyfinder.FindLive(&items, &lock, opts...)
-		idxs, findErr = []int{idx}, err
-	}
+	idxs, findErr := fuzzyfinder.FindLive(ctx, &items, &lock, cfg.opt)
 	cancel()
 
 	if err := <-readErrCh; err != nil {
@@ -209,17 +179,17 @@ func parseFlags(args []string, stderr io.Writer) (config, error) {
 	fs.Usage = func() { printUsage(stderr) }
 
 	var cfg config
-	fs.BoolVar(&cfg.multi, "m", false, "multi-select (shorthand)")
-	fs.BoolVar(&cfg.multi, "multi", false, "multi-select")
-	fs.StringVar(&cfg.query, "q", "", "initial query (shorthand)")
-	fs.StringVar(&cfg.query, "query", "", "initial query")
-	fs.StringVar(&cfg.prompt, "p", "> ", "prompt prefix (shorthand)")
-	fs.StringVar(&cfg.prompt, "prompt", "> ", "prompt prefix")
-	fs.StringVar(&cfg.header, "header", "", "static header line")
-	fs.BoolVar(&cfg.selectOne, "1", false, "auto-select if exactly one item (shorthand)")
-	fs.BoolVar(&cfg.selectOne, "select-1", false, "auto-select if exactly one item")
+	fs.BoolVar(&cfg.opt.Multi, "m", false, "multi-select (shorthand)")
+	fs.BoolVar(&cfg.opt.Multi, "multi", false, "multi-select")
+	fs.StringVar(&cfg.opt.Query, "q", "", "initial query (shorthand)")
+	fs.StringVar(&cfg.opt.Query, "query", "", "initial query")
+	fs.StringVar(&cfg.opt.Prompt, "p", "> ", "prompt prefix (shorthand)")
+	fs.StringVar(&cfg.opt.Prompt, "prompt", "> ", "prompt prefix")
+	fs.StringVar(&cfg.opt.Header, "header", "", "static header line")
+	fs.BoolVar(&cfg.opt.SelectOne, "1", false, "auto-select if exactly one item (shorthand)")
+	fs.BoolVar(&cfg.opt.SelectOne, "select-1", false, "auto-select if exactly one item")
 	fs.BoolVar(&cfg.fast, "fast", false, "disable streaming delay (append items as fast as stdin produces them)")
-	fs.BoolVar(&cfg.reverse, "reverse", false, "render prompt at the top with items growing downward")
+	fs.BoolVar(&cfg.opt.Reverse, "reverse", false, "render prompt at the top with items growing downward")
 
 	if err := fs.Parse(args); err != nil {
 		return cfg, err

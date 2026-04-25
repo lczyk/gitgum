@@ -91,10 +91,7 @@ func TestFuzz(t *testing.T) {
 			var promptStr, header string
 			fuzzer.Fuzz(&promptStr)
 			fuzzer.Fuzz(&header)
-			opts := []fuzzyfinder.Option{
-				fuzzyfinder.WithPromptString(promptStr),
-				fuzzyfinder.WithHeader(header),
-			}
+			opt := fuzzyfinder.Opt{Prompt: promptStr, Header: header}
 
 			if *hotReload {
 				ctx, cancel := context.WithCancel(context.Background())
@@ -113,10 +110,10 @@ func TestFuzz(t *testing.T) {
 						}
 					}
 				}()
-				_, err := finder.FindLive(&items, &mu, opts...)
+				_, err := finder.FindLive(ctx, &items, &mu, opt)
 				assert.Error(t, err, fuzzyfinder.ErrAbort)
 			} else {
-				_, err := finder.Find(items, opts...)
+				_, err := finder.Find(context.Background(), items, opt)
 				assert.Error(t, err, fuzzyfinder.ErrAbort)
 			}
 		})

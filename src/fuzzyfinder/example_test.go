@@ -1,20 +1,21 @@
 package fuzzyfinder_test
 
 import (
+	"context"
 	"fmt"
 
-	"github.com/lczyk/gitgum/src/fuzzyfinder"
+	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
 func ExampleFind() {
 	items := []string{"foo", "bar", "baz"}
-	idx, _ := fuzzyfinder.Find(items)
-	fmt.Println(items[idx])
+	idxs, _ := ff.Find(context.Background(), items, ff.Opt{})
+	fmt.Println(items[idxs[0]])
 }
 
-func ExampleFindMulti() {
+func ExampleFind_multi() {
 	items := []string{"foo", "bar", "baz"}
-	idxs, _ := fuzzyfinder.FindMulti(items)
+	idxs, _ := ff.Find(context.Background(), items, ff.Opt{Multi: true})
 	for _, idx := range idxs {
 		fmt.Println(items[idx])
 	}

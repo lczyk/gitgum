@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -58,8 +59,8 @@ func TestSelectEmptyOptions(t *testing.T) {
 }
 
 func TestSelectAbortMapsToErrCancelled(t *testing.T) {
-	_, err := selectWith(func(_ []string, _ ...fuzzyfinder.Option) (int, error) {
-		return 0, fuzzyfinder.ErrAbort
+	_, err := selectWith(func(_ context.Context, _ []string, _ fuzzyfinder.Opt) ([]int, error) {
+		return nil, fuzzyfinder.ErrAbort
 	}, "test", []string{"a"})
 	if !errors.Is(err, ErrCancelled) {
 		t.Errorf("expected ErrCancelled, got %v", err)
@@ -68,8 +69,8 @@ func TestSelectAbortMapsToErrCancelled(t *testing.T) {
 
 func TestSelectFinderError(t *testing.T) {
 	sentinel := errors.New("boom")
-	_, err := selectWith(func(_ []string, _ ...fuzzyfinder.Option) (int, error) {
-		return 0, sentinel
+	_, err := selectWith(func(_ context.Context, _ []string, _ fuzzyfinder.Opt) ([]int, error) {
+		return nil, sentinel
 	}, "test", []string{"a"})
 	if !errors.Is(err, sentinel) {
 		t.Errorf("expected sentinel wrapped in finder error, got %v", err)

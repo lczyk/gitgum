@@ -1,63 +1,27 @@
 package fuzzyfinder
 
-import "context"
-
-type opt struct {
-	promptString string
-	header       string
-	ctx          context.Context
-	query        string
-	selectOne    bool
-	reverse      bool
+// Opt configures a fuzzy-finder run. The zero value is valid; only set the
+// fields you want to override.
+type Opt struct {
+	// Prompt is the string drawn before the query. Defaults to "> ".
+	Prompt string
+	// Header is a static line displayed above the items.
+	Header string
+	// Query pre-fills the picker's query.
+	Query string
+	// SelectOne auto-selects the only matching item without showing the UI.
+	SelectOne bool
+	// Reverse renders the prompt at the top with items growing downward.
+	// Default is bottom-up (prompt at bottom).
+	Reverse bool
+	// Multi lets the user select multiple items via Tab. When false, the
+	// returned slice always has exactly one element.
+	Multi bool
 }
 
-var defaultOption = opt{
-	promptString: "> ",
-}
-
-// Option represents available fuzzy-finding options.
-type Option func(*opt)
-
-// WithPromptString changes the prompt string. The default value is "> ".
-func WithPromptString(s string) Option {
-	return func(o *opt) {
-		o.promptString = s
+func (o Opt) withDefaults() Opt {
+	if o.Prompt == "" {
+		o.Prompt = "> "
 	}
+	return o
 }
-
-// WithHeader enables to set the header.
-func WithHeader(s string) Option {
-	return func(o *opt) {
-		o.header = s
-	}
-}
-
-// WithContext enables closing the fuzzy finder from parent.
-func WithContext(ctx context.Context) Option {
-	return func(o *opt) {
-		o.ctx = ctx
-	}
-}
-
-// WithQuery sets the initial query.
-func WithQuery(s string) Option {
-	return func(o *opt) {
-		o.query = s
-	}
-}
-
-// WithSelectOne automatically selects the item if there is only one match.
-func WithSelectOne() Option {
-	return func(o *opt) {
-		o.selectOne = true
-	}
-}
-
-// WithReverse renders the prompt at the top and items growing downward.
-// Default layout is bottom-up (prompt at bottom).
-func WithReverse() Option {
-	return func(o *opt) {
-		o.reverse = true
-	}
-}
-

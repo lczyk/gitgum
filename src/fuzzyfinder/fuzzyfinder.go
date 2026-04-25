@@ -60,13 +60,13 @@ type finder struct {
 	state     state
 	drawTimer *time.Timer
 	eventCh   chan struct{}
-	opt       *opt
+	opt       *Opt
 	multi     bool
 
 	termEventsChan <-chan tcell.Event
 }
 
-func (f *finder) initFinder(items []string, matched []matching.Matched, opt opt) error {
+func (f *finder) initFinder(items []string, matched []matching.Matched, opt Opt) error {
 	if f.term == nil {
 		screen, err := tcell.NewScreen()
 		if err != nil {
@@ -105,10 +105,10 @@ func (f *finder) initFinder(items []string, matched []matching.Matched, opt opt)
 	}
 	f.eventCh = make(chan struct{}, 30) // A large value
 
-	if opt.query != "" {
-		f.state.input = []rune(opt.query)
-		f.state.cursorX = runewidth.StringWidth(opt.query)
-		f.state.x = len(opt.query)
+	if opt.Query != "" {
+		f.state.input = []rune(opt.Query)
+		f.state.cursorX = runewidth.StringWidth(opt.Query)
+		f.state.x = len(opt.Query)
 		f.filter()
 	}
 
@@ -136,7 +136,7 @@ func (f *finder) _draw() {
 	// and -1 otherwise (prompt at bottom, items grow up).
 	step := -1
 	promptRow := height - 1
-	if f.opt.reverse {
+	if f.opt.Reverse {
 		step = 1
 		promptRow = 0
 	}
@@ -144,7 +144,7 @@ func (f *finder) _draw() {
 
 	// Prompt line
 	var promptLinePad int
-	for _, r := range f.opt.promptString {
+	for _, r := range f.opt.Prompt {
 		style := tcell.StyleDefault.Foreground(tcell.ColorBlue).Background(tcell.ColorDefault)
 		f.term.SetContent(promptLinePad, promptRow, r, nil, style)
 		promptLinePad++
@@ -159,9 +159,9 @@ func (f *finder) _draw() {
 
 	// Header line (offset 1 from prompt) — only present when set.
 	offset := 1
-	if len(f.opt.header) > 0 {
+	if len(f.opt.Header) > 0 {
 		w = 0
-		for _, r := range runewidth.Truncate(f.opt.header, maxWidth-2, "..") {
+		for _, r := range runewidth.Truncate(f.opt.Header, maxWidth-2, "..") {
 			style := tcell.StyleDefault.Foreground(tcell.ColorGreen).Background(tcell.ColorDefault)
 			f.term.SetContent(2+w, rowAt(offset), r, nil, style)
 			w += runewidth.RuneWidth(r)
@@ -413,25 +413,25 @@ func (f *finder) readKey(ctx context.Context) error {
 		case tcell.KeyUp, tcell.KeyCtrlK, tcell.KeyCtrlP:
 			// Visually upward. In bottom-up layout that means away from the
 			// bottom prompt; in reverse layout it means toward the top prompt.
-			if f.opt.reverse {
+			if f.opt.Reverse {
 				f.scrollTowardPrompt(matchedLinesCount, screenHeight)
 			} else {
 				f.scrollAwayFromPrompt(matchedLinesCount, screenHeight)
 			}
 		case tcell.KeyDown, tcell.KeyCtrlJ, tcell.KeyCtrlN:
-			if f.opt.reverse {
+			if f.opt.Reverse {
 				f.scrollAwayFromPrompt(matchedLinesCount, screenHeight)
 			} else {
 				f.scrollTowardPrompt(matchedLinesCount, screenHeight)
 			}
 		case tcell.KeyPgUp, tcell.KeyCtrlB:
-			if f.opt.reverse {
+			if f.opt.Reverse {
 				f.pageTowardPrompt(pageScrollBy)
 			} else {
 				f.pageAwayFromPrompt(pageScrollBy, matchedLinesCount, screenHeight)
 			}
 		case tcell.KeyPgDn, tcell.KeyCtrlF:
-			if f.opt.reverse {
+			if f.opt.Reverse {
 				f.pageAwayFromPrompt(pageScrollBy, matchedLinesCount, screenHeight)
 			} else {
 				f.pageTowardPrompt(pageScrollBy)
@@ -564,20 +564,13 @@ func (f *finder) filter() {
 }
 
 // findStatic runs the picker against a fixed slice of items.
-func (f *finder) findStatic(items []string, opts []Option, multi bool) ([]int, error) {
-	opt := defaultOption
-	for _, o := range opts {
-		o(&opt)
-	}
-	f.multi = multi
+func (f *finder) findStatic(ctx context.Context, items []string, opt Opt) ([]int, error) {
+	opt = opt.withDefaults()
+	f.multi = opt.Multi
 
 	matched := makeMatched(len(items))
 
-	parentCtx := context.Background()
-	if opt.ctx != nil {
-		parentCtx = opt.ctx
-	}
-	ctx, cancel := context.WithCancel(parentCtx)
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	if err := f.initFinder(items, matched, opt); err != nil {
@@ -588,7 +581,7 @@ func (f *finder) findStatic(items []string, opts []Option, multi bool) ([]int, e
 
 // findLive runs the picker against a slice that may grow concurrently;
 // lock guards reads of *itemsPtr while items are appended by the caller.
-func (f *finder) findLive(itemsPtr *[]string, lock sync.Locker, opts []Option, multi bool) ([]int, error) {
+func (f *finder) findLive(ctx context.Context, itemsPtr *[]string, lock sync.Locker, opt Opt) ([]int, error) {
 	if itemsPtr == nil {
 		return nil, errors.New("items pointer must not be nil")
 	}
@@ -596,17 +589,10 @@ func (f *finder) findLive(itemsPtr *[]string, lock sync.Locker, opts []Option, m
 		return nil, errors.New("lock must not be nil")
 	}
 
-	opt := defaultOption
-	for _, o := range opts {
-		o(&opt)
-	}
-	f.multi = multi
+	opt = opt.withDefaults()
+	f.multi = opt.Multi
 
-	parentCtx := context.Background()
-	if opt.ctx != nil {
-		parentCtx = opt.ctx
-	}
-	ctx, cancel := context.WithCancel(parentCtx)
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	lock.Lock()
@@ -650,12 +636,12 @@ func makeMatched(n int) []matching.Matched {
 	return matched
 }
 
-func (f *finder) runLoop(ctx context.Context, opt *opt) ([]int, error) {
+func (f *finder) runLoop(ctx context.Context, opt *Opt) ([]int, error) {
 	if !isInTesting() {
 		defer f.term.Fini()
 	}
 
-	if opt.selectOne && len(f.state.matched) == 1 {
+	if opt.SelectOne && len(f.state.matched) == 1 {
 		return []int{f.state.matched[0].Idx}, nil
 	}
 
@@ -715,54 +701,27 @@ func (f *finder) runLoop(ctx context.Context, opt *opt) ([]int, error) {
 	}
 }
 
-// Find displays a fuzzy-finder UI over items and returns the index of the
-// selected entry, or ErrAbort if the user cancels.
-func Find(items []string, opts ...Option) (int, error) {
+// Find displays a fuzzy-finder UI over items and returns the indices of the
+// selected entries, or ErrAbort if the user cancels. With Opt.Multi=false,
+// the returned slice always has exactly one element.
+func Find(ctx context.Context, items []string, opt Opt) ([]int, error) {
 	f := &finder{}
-	return f.Find(items, opts...)
+	return f.Find(ctx, items, opt)
 }
 
-func (f *finder) Find(items []string, opts ...Option) (int, error) {
-	res, err := f.findStatic(items, opts, false)
-	if err != nil {
-		return 0, err
-	}
-	return res[0], nil
+func (f *finder) Find(ctx context.Context, items []string, opt Opt) ([]int, error) {
+	return f.findStatic(ctx, items, opt)
 }
 
-// FindMulti behaves like Find but lets the user select multiple items via Tab.
-func FindMulti(items []string, opts ...Option) ([]int, error) {
+// FindLive is like Find but for a slice that may grow concurrently. Callers
+// append to *items under lock; the picker re-reads on a 30ms cadence.
+func FindLive(ctx context.Context, items *[]string, lock sync.Locker, opt Opt) ([]int, error) {
 	f := &finder{}
-	return f.FindMulti(items, opts...)
+	return f.FindLive(ctx, items, lock, opt)
 }
 
-func (f *finder) FindMulti(items []string, opts ...Option) ([]int, error) {
-	return f.findStatic(items, opts, true)
-}
-
-// FindLive displays a fuzzy-finder UI over a slice that may grow concurrently.
-// Callers append to *items under lock; the picker re-reads on a 30ms cadence.
-func FindLive(items *[]string, lock sync.Locker, opts ...Option) (int, error) {
-	f := &finder{}
-	return f.FindLive(items, lock, opts...)
-}
-
-func (f *finder) FindLive(items *[]string, lock sync.Locker, opts ...Option) (int, error) {
-	res, err := f.findLive(items, lock, opts, false)
-	if err != nil {
-		return 0, err
-	}
-	return res[0], nil
-}
-
-// FindMultiLive is the multi-select variant of FindLive.
-func FindMultiLive(items *[]string, lock sync.Locker, opts ...Option) ([]int, error) {
-	f := &finder{}
-	return f.FindMultiLive(items, lock, opts...)
-}
-
-func (f *finder) FindMultiLive(items *[]string, lock sync.Locker, opts ...Option) ([]int, error) {
-	return f.findLive(items, lock, opts, true)
+func (f *finder) FindLive(ctx context.Context, items *[]string, lock sync.Locker, opt Opt) ([]int, error) {
+	return f.findLive(ctx, items, lock, opt)
 }
 
 func isInTesting() bool {
