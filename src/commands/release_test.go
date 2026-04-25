@@ -64,26 +64,76 @@ func TestReadWriteVersion(t *testing.T) {
 	err := writeVersion(path, header, "1.2.3")
 	assert.NoError(t, err, "writeVersion")
 
-	gotHeader, gotVer, err := readVersion(path)
+	gotHeader, gotPrefixes, gotVer, err := readVersion(path)
 	assert.NoError(t, err, "readVersion")
 	assert.Equal(t, gotVer, "1.2.3")
 	assert.EqualArrays(t, gotHeader, header)
+	assert.That(t, gotPrefixes == nil, "no prefixes when no tags directive")
 
 	// round-trip without header
 	err = writeVersion(path, nil, "2.0.0")
 	assert.NoError(t, err, "writeVersion no header")
 
-	_, gotVer, err = readVersion(path)
+	_, _, gotVer, err = readVersion(path)
 	assert.NoError(t, err, "readVersion no header")
 	assert.Equal(t, gotVer, "2.0.0")
 
 	// missing file
-	_, _, err = readVersion(filepath.Join(dir, "MISSING"))
+	_, _, _, err = readVersion(filepath.Join(dir, "MISSING"))
 	assert.Error(t, err, assert.AnyError, "missing file should error")
 
 	// file with no version line
 	empty := filepath.Join(dir, "EMPTY")
 	os.WriteFile(empty, []byte("# only a comment\n"), 0o644)
-	_, _, err = readVersion(empty)
+	_, _, _, err = readVersion(empty)
 	assert.Error(t, err, assert.AnyError, "no version line should error")
+}
+
+func TestReadVersion_TagsDirective(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "VERSION")
+	body := "# managed by release\n# tags: go rust python\n0.2.0\n"
+	err := os.WriteFile(path, []byte(body), 0o644)
+	assert.NoError(t, err)
+
+	header, prefixes, current, err := readVersion(path)
+	assert.NoError(t, err)
+	assert.Equal(t, current, "0.2.0")
+	assert.EqualArrays(t, prefixes, []string{"go", "rust", "python"})
+	assert.Equal(t, len(header), 2)
+}
+
+func TestParseTagsDirective(t *testing.T) {
+	tests := []struct {
+		in   string
+		want []string
+		ok   bool
+	}{
+		{"# tags: go rust python", []string{"go", "rust", "python"}, true},
+		{"# tags: go,rust,python", []string{"go", "rust", "python"}, true},
+		{"# tags: go, rust ,python", []string{"go", "rust", "python"}, true},
+		{"#tags:go", []string{"go"}, true},
+		{"# tags:", nil, true},
+		{"# managed by release", nil, false},
+		{"# release tags: nope", nil, false},
+		// messy spacing / mixed separators
+		{"#tags: go,rust,         python              ", []string{"go", "rust", "python"}, true},
+		{"#   tags:  go   rust   python   ", []string{"go", "rust", "python"}, true},
+		{"# tags: go,,rust,,,python", []string{"go", "rust", "python"}, true},
+		{"# tags:\tgo\trust\tpython", []string{"go", "rust", "python"}, true},
+		{"# tags:    ", nil, true},
+	}
+	for _, tt := range tests {
+		got, ok := parseTagsDirective(tt.in)
+		assert.Equal(t, ok, tt.ok)
+		assert.EqualArrays(t, got, tt.want)
+	}
+}
+
+func TestBuildTags(t *testing.T) {
+	assert.EqualArrays(t, buildTags("1.2.3", nil), []string{"v1.2.3"})
+	assert.EqualArrays(t,
+		buildTags("0.3.0", []string{"go", "rust"}),
+		[]string{"v0.3.0", "go/v0.3.0", "rust/v0.3.0"},
+	)
 }

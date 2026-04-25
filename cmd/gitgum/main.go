@@ -37,7 +37,7 @@ func main() {
 
 	// If no command provided, use fuzzyfinder to select one
 	if len(os.Args) == 1 {
-		cmds := []string{"switch", "status", "push", "clean", "empty"}
+		cmds := []string{"switch", "status", "push", "clean", "empty", "help"}
 		selected, err := ui.Select("Select command", cmds)
 		if err != nil {
 			if errors.Is(err, ui.ErrCancelled) {
@@ -47,6 +47,11 @@ func main() {
 			os.Exit(1)
 		}
 		os.Args = append(os.Args, selected)
+	}
+
+	// `gg help` is an alias for `gg --help` (go-flags has no built-in help command)
+	if len(os.Args) == 2 && os.Args[1] == "help" {
+		os.Args = []string{os.Args[0], "--help"}
 	}
 
 	var opts Options

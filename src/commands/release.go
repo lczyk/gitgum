@@ -60,7 +60,7 @@ func (r *ReleaseCommand) Execute(args []string) error {
 	}
 
 	versionPath := filepath.Join(root, versionFileName)
-	header, current, hasFile, err := readVersionOrFallback(versionPath)
+	header, prefixes, current, hasFile, err := readVersionOrFallback(versionPath)
 	if err != nil {
 		return err
 	}
@@ -69,17 +69,19 @@ func (r *ReleaseCommand) Execute(args []string) error {
 	if err != nil {
 		return err
 	}
-	tag := "v" + next
+	tags := buildTags(next, prefixes)
 
-	if exists, err := tagExists(tag); err != nil {
-		return err
-	} else if exists {
-		return fmt.Errorf("tag %s already exists", tag)
+	for _, t := range tags {
+		if exists, err := tagExists(t); err != nil {
+			return err
+		} else if exists {
+			return fmt.Errorf("tag %s already exists", t)
+		}
 	}
 
 	fmt.Printf("Bumping %s -> %s\n", current, next)
 
-	commitArgs := []string{"commit", "-m", "release: " + tag}
+	commitArgs := []string{"commit", "-m", "release: " + tags[0]}
 	if hasFile {
 		if err := writeVersion(versionPath, header, next); err != nil {
 			return err
@@ -94,16 +96,27 @@ func (r *ReleaseCommand) Execute(args []string) error {
 	if err := cmdrun.RunWithOutput("git", commitArgs...); err != nil {
 		return fmt.Errorf("git commit: %w", err)
 	}
-	if err := cmdrun.RunWithOutput("git", "tag", "-a", tag, "-m", "release "+tag); err != nil {
-		return fmt.Errorf("git tag: %w", err)
+	for _, t := range tags {
+		if err := cmdrun.RunWithOutput("git", "tag", "-a", t, "-m", "release "+t); err != nil {
+			return fmt.Errorf("git tag %s: %w", t, err)
+		}
 	}
 
-	fmt.Printf("\nTagged %s. To publish:\n", tag)
-	fmt.Printf("  git push origin main && git push origin %s\n", tag)
-	fmt.Println("\nNote: 'git reset HEAD~1' undoes the commit but leaves the tag")
-	fmt.Printf("pointing at the orphaned commit. To fully undo, also run:\n")
-	fmt.Printf("  git tag -d %s\n", tag)
+	fmt.Printf("\nTagged %s. To publish:\n", strings.Join(tags, ", "))
+	fmt.Printf("  git push origin main && git push origin %s\n", strings.Join(tags, " "))
+	fmt.Println("\nTo fully undo (drops the commit and the tag(s)):")
+	fmt.Printf("  git reset --hard HEAD~1 && git tag -d %s\n", strings.Join(tags, " "))
 	return nil
+}
+
+// buildTags returns the list of tags to create: bare "v"+next first, then
+// "<prefix>/v"+next for each prefix.
+func buildTags(next string, prefixes []string) []string {
+	tags := []string{"v" + next}
+	for _, p := range prefixes {
+		tags = append(tags, p+"/v"+next)
+	}
+	return tags
 }
 
 func repoRoot() (string, error) {
@@ -198,25 +211,25 @@ func latestSemverTag() string {
 
 // readVersionOrFallback reads VERSION at path, falling back to the latest
 // vX.Y.Z tag, then to "0.0.0". hasFile reports whether VERSION exists.
-func readVersionOrFallback(path string) (header []string, current string, hasFile bool, err error) {
-	header, current, err = readVersion(path)
+func readVersionOrFallback(path string) (header, prefixes []string, current string, hasFile bool, err error) {
+	header, prefixes, current, err = readVersion(path)
 	if err == nil {
-		return header, current, true, nil
+		return header, prefixes, current, true, nil
 	}
 	if !os.IsNotExist(err) {
-		return nil, "", false, err
+		return nil, nil, "", false, err
 	}
 	// VERSION absent — fall back.
 	if tag := latestSemverTag(); tag != "" {
-		return nil, strings.TrimPrefix(tag, "v"), false, nil
+		return nil, nil, strings.TrimPrefix(tag, "v"), false, nil
 	}
-	return nil, "0.0.0", false, nil
+	return nil, nil, "0.0.0", false, nil
 }
 
-func readVersion(path string) (header []string, current string, err error) {
+func readVersion(path string) (header, prefixes []string, current string, err error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
 	defer f.Close()
 
@@ -229,6 +242,9 @@ func readVersion(path string) (header []string, current string, err error) {
 		}
 		if strings.HasPrefix(trimmed, "#") {
 			header = append(header, line)
+			if p, ok := parseTagsDirective(trimmed); ok {
+				prefixes = p
+			}
 			continue
 		}
 		if current == "" {
@@ -236,12 +252,27 @@ func readVersion(path string) (header []string, current string, err error) {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
 	if current == "" {
-		return nil, "", fmt.Errorf("%s contains no version line", path)
+		return nil, nil, "", fmt.Errorf("%s contains no version line", path)
 	}
-	return header, current, nil
+	return header, prefixes, current, nil
+}
+
+// parseTagsDirective parses a header line like "# tags: go rust python" and
+// returns the prefix list. Comma- and space-separated values are accepted.
+// Returns ok=false if the line is not a tags directive.
+func parseTagsDirective(line string) (prefixes []string, ok bool) {
+	rest := strings.TrimSpace(strings.TrimPrefix(line, "#"))
+	rest, ok = strings.CutPrefix(rest, "tags:")
+	if !ok {
+		return nil, false
+	}
+	for _, f := range strings.FieldsFunc(rest, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' }) {
+		prefixes = append(prefixes, f)
+	}
+	return prefixes, true
 }
 
 func writeVersion(path string, header []string, version string) error {
