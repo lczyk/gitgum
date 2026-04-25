@@ -94,11 +94,8 @@ func (d *DeleteCommand) Execute(args []string) error {
 		fmt.Printf("Switched to branch '%s'.\n", otherBranch)
 	}
 
-	// non-fatal: if we can't determine upstream, just skip remote deletion
-	remoteName, remoteBranchName, err := git.GetBranchUpstream(branch)
-	if err != nil {
-		remoteName = ""
-	}
+	// non-fatal: skip remote deletion if upstream lookup fails
+	remoteName, remoteBranchName, _ := git.GetBranchUpstream(branch)
 
 	needsToDeleteRemote := false
 

@@ -19,10 +19,7 @@ func (s *SwitchCommand) handleRemoteSelection(remote, branch string) error {
 
 	fmt.Printf("Branch '%s/%s' already has a local counterpart.\n", remote, branch)
 
-	trackingRemote, err := git.GetBranchTrackingRemote(branch)
-	if err != nil {
-		trackingRemote = ""
-	}
+	trackingRemote, _ := git.GetBranchTrackingRemote(branch)
 	if trackingRemote != "" {
 		fmt.Printf("Tracking reference for local branch '%s': '%s'\n", branch, trackingRemote)
 	}
