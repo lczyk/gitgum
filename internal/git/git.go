@@ -250,10 +250,10 @@ func GetBranchTrackingRemote(branch string) (string, error) {
 	return CWD().GetBranchTrackingRemote(branch)
 }
 func CheckedOutBranches() (map[string]bool, error) { return CWD().CheckedOutBranches() }
-func GetCommitHash(ref string) (string, error)  { return CWD().GetCommitHash(ref) }
-func BranchExists(branch string) bool           { return CWD().BranchExists(branch) }
-func GetCurrentBranch() (string, error)         { return CWD().GetCurrentBranch() }
-func GetCurrentBranchUpstream() (string, error) { return CWD().GetCurrentBranchUpstream() }
+func GetCommitHash(ref string) (string, error)     { return CWD().GetCommitHash(ref) }
+func BranchExists(branch string) bool              { return CWD().BranchExists(branch) }
+func GetCurrentBranch() (string, error)            { return CWD().GetCurrentBranch() }
+func GetCurrentBranchUpstream() (string, error)    { return CWD().GetCurrentBranchUpstream() }
 func RemoteBranchExists(remote, branch string) (bool, error) {
 	return CWD().RemoteBranchExists(remote, branch)
 }
