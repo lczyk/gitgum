@@ -13,6 +13,11 @@ import (
 // If a local branch with the same name exists, offers to align tracking + reset.
 // Otherwise offers to create a tracking branch.
 func (s *SwitchCommand) handleRemoteSelection(remote, branch string) error {
+	fmt.Printf("Fetching '%s/%s'...\n", remote, branch)
+	if err := cmdrun.RunQuiet("git", "fetch", remote, branch); err != nil {
+		return fmt.Errorf("fetching '%s/%s': %w", remote, branch, err)
+	}
+
 	if !git.BranchExists(branch) {
 		return s.createTrackingBranch(remote, branch)
 	}
