@@ -1,5 +1,7 @@
 # gitgum
 
+![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/lczyk/gitgum)
+![GitHub Tag](https://img.shields.io/github/v/tag/lczyk/gitgum?label=release)
 [![lint_and_test](https://github.com/lczyk/gitgum/actions/workflows/lint_and_test.yml/badge.svg)](https://github.com/lczyk/gitgum/actions/workflows/lint_and_test.yml)
 
 A bunch of git commands with an interactive fuzzy-finder UI (used to be [gum](https://github.com/charmbracelet/gum), hence the name). The features are very tailored to the kind of workflows I have, but nothing work-specific is encoded in.
