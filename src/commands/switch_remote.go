@@ -19,10 +19,7 @@ func (s *SwitchCommand) handleRemoteSelection(remote, branch string) error {
 
 	fmt.Printf("Branch '%s/%s' already has a local counterpart.\n", remote, branch)
 
-	trackingRemote, err := git.GetBranchTrackingRemote(branch)
-	if err != nil {
-		trackingRemote = ""
-	}
+	trackingRemote, _ := git.GetBranchTrackingRemote(branch)
 	if trackingRemote != "" {
 		fmt.Printf("Tracking reference for local branch '%s': '%s'\n", branch, trackingRemote)
 	}
@@ -91,7 +88,7 @@ func (s *SwitchCommand) alignWithRemote(remote, branch string) error {
 	if err := cmdrun.RunQuiet("git", "reset", "--hard", remoteRef); err != nil {
 		return fmt.Errorf("resetting local branch: %w", err)
 	}
-	fmt.Printf("Reset local branch '%s' to remote branch '%s/%s'.\n", branch, remote, branch)
+	fmt.Printf("Switched to branch '%s', reset to remote branch '%s/%s'.\n", branch, remote, branch)
 	return nil
 }
 

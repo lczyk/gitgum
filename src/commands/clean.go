@@ -86,13 +86,8 @@ func (c *CleanCommand) Execute(args []string) error {
 	}
 
 	if untracked {
-		cleanArgs := []string{"clean", "-fd"}
-		if ignored {
-			cleanArgs = append(cleanArgs, "-x")
-		}
-
 		fmt.Println("Removing untracked files...")
-		if err := cmdrun.RunWithOutput("git", cleanArgs...); err != nil {
+		if err := cmdrun.RunWithOutput("git", gitCleanArgs(false, ignored)...); err != nil {
 			return fmt.Errorf("failed to clean untracked files: %w", err)
 		}
 	}
@@ -119,11 +114,7 @@ func getAffectedFiles(changes, untracked, ignored bool) ([]string, error) {
 	}
 
 	if untracked {
-		cleanArgs := []string{"clean", "-fdn"}
-		if ignored {
-			cleanArgs = append(cleanArgs, "-x")
-		}
-		stdout, _, err := cmdrun.Run("git", cleanArgs...)
+		stdout, _, err := cmdrun.Run("git", gitCleanArgs(true, ignored)...)
 		if err != nil {
 			return nil, fmt.Errorf("listing untracked files: %w", err)
 		}
@@ -135,4 +126,17 @@ func getAffectedFiles(changes, untracked, ignored bool) ([]string, error) {
 	}
 
 	return affectedFiles, nil
+}
+
+// gitCleanArgs builds git clean args. dry-run appends -n; ignored adds -x.
+func gitCleanArgs(dryRun, ignored bool) []string {
+	flags := "-fd"
+	if dryRun {
+		flags += "n"
+	}
+	args := []string{"clean", flags}
+	if ignored {
+		args = append(args, "-x")
+	}
+	return args
 }

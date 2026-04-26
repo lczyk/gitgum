@@ -10,6 +10,7 @@ import (
 
 	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/git"
+	"github.com/lczyk/gitgum/internal/strutil"
 	"github.com/lczyk/gitgum/internal/ui"
 )
 
@@ -215,8 +216,7 @@ func latestSemverTag() string {
 	if err != nil || out == "" {
 		return ""
 	}
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
+	for _, line := range strutil.SplitLines(out) {
 		if _, err := parseSemver(strings.TrimPrefix(line, "v")); err == nil {
 			return line
 		}

@@ -25,6 +25,10 @@ func TestAllCommandsImplementCommander(t *testing.T) {
 		assert.That(t, field.Tag.Get("command") != "",
 			"%s: missing command: struct tag — go-flags will silently skip this field", field.Name)
 
+		// go-flags accepts a missing description: tag but shows empty help text — catch that here.
+		assert.That(t, field.Tag.Get("description") != "",
+			"%s: missing description: struct tag — command will have empty help text in gg --help", field.Name)
+
 		ptrType := reflect.PointerTo(field.Type)
 		assert.That(t, ptrType.Implements(commanderType),
 			"%s (%s) does not implement flags.Commander — check Execute signature is Execute(args []string) error", field.Name, field.Type)

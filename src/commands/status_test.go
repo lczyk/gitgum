@@ -29,6 +29,26 @@ func TestStatusCommand_InGitRepo(t *testing.T) {
 	output := buf.String()
 	assert.ContainsString(t, output, "BRANCHES")
 	assert.ContainsString(t, output, "STATUS")
+	// clean repo: no change lines, CHANGES section must not appear
+	if strings.Contains(output, "CHANGES") {
+		t.Errorf("clean repo should not emit CHANGES section, got:\n%s", output)
+	}
+}
+
+func TestStatusCommand_WithChanges(t *testing.T) {
+	dir := temp_repo.InitTempRepo(t)
+
+	// untracked file triggers git status --short --branch to emit a change line
+	temp_repo.WriteFile(t, dir, "untracked.txt", "hello\n")
+
+	var buf strings.Builder
+	cmd := &StatusCommand{out: &buf}
+	err := cmd.Execute(nil)
+
+	assert.NoError(t, err, "should succeed with pending changes")
+	output := buf.String()
+	assert.ContainsString(t, output, "CHANGES")
+	assert.ContainsString(t, output, "STATUS")
 }
 
 func TestParseRemotes(t *testing.T) {

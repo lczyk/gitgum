@@ -33,8 +33,8 @@ func TestFindAll(t *testing.T) {
 			t.Parallel()
 			matched := matching.FindAll(c.query, slice)
 			assert.Len(t, matched, len(c.want))
-			for i, m := range matched {
-				assert.Equal(t, c.want[i], m.Idx)
+			for i, idx := range matched {
+				assert.Equal(t, c.want[i], idx)
 			}
 		})
 	}

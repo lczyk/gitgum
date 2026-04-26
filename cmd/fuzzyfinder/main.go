@@ -110,11 +110,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	lock.Lock()
 	defer lock.Unlock()
-	if len(items) == 0 {
-		return exitNoMatch
-	}
 
-	// write results
 	if findErr != nil {
 		if errors.Is(findErr, fuzzyfinder.ErrAbort) {
 			return exitCancelled

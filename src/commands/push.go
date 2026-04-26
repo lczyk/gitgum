@@ -84,45 +84,7 @@ func (p *PushCommand) Execute(args []string) error {
 		return fmt.Errorf("checking remote branch: %w", err)
 	}
 
-	if remoteBranchExists {
-		localCommit, err := git.GetCommitHash(currentBranch)
-		if err != nil {
-			return fmt.Errorf("getting local commit: %w", err)
-		}
-
-		remoteCommit, err := git.GetCommitHash(expectedRemoteBranchName)
-		if err != nil {
-			return fmt.Errorf("could not find remote branch '%s': %w", expectedRemoteBranchName, err)
-		}
-
-		if localCommit == remoteCommit {
-			fmt.Printf("No changes to push. Local branch '%s' is up to date with remote branch '%s'.\n",
-				currentBranch, expectedRemoteBranchName)
-			// set upstream since we're targeting this remote
-			if err := cmdrun.RunQuiet("git", "branch", "--set-upstream-to="+expectedRemoteBranchName, currentBranch); err != nil {
-				return fmt.Errorf("failed to set upstream: %w", err)
-			}
-			fmt.Printf("Updated upstream to '%s'.\n", expectedRemoteBranchName)
-			return nil
-		}
-
-		confirmed, err := ui.Confirm(fmt.Sprintf("Remote branch '%s' already exists. Do you want to push to it?",
-			expectedRemoteBranchName), true)
-		if err != nil {
-			if errors.Is(err, ui.ErrCancelled) {
-				return nil
-			}
-			return fmt.Errorf("confirming push to remote: %w", err)
-		}
-		if !confirmed {
-			return nil
-		}
-
-		if err := cmdrun.RunWithOutput("git", "push", selectedRemote, currentBranch); err != nil {
-			return fmt.Errorf("failed to push: %w", err)
-		}
-		fmt.Printf("Pushed to remote branch '%s'.\n", expectedRemoteBranchName)
-	} else {
+	if !remoteBranchExists {
 		confirmed, err := ui.Confirm(fmt.Sprintf("No remote branch '%s' found. Do you want to create it?",
 			expectedRemoteBranchName), false)
 		if err != nil {
@@ -138,10 +100,47 @@ func (p *PushCommand) Execute(args []string) error {
 		if err := cmdrun.RunWithOutput("git", "push", "-u", selectedRemote, currentBranch); err != nil {
 			return fmt.Errorf("failed to push: %w", err)
 		}
-
 		fmt.Printf("Created and set tracking reference for '%s' to '%s'.\n",
 			currentBranch, expectedRemoteBranchName)
+		return nil
 	}
 
+	localCommit, err := git.GetCommitHash(currentBranch)
+	if err != nil {
+		return fmt.Errorf("getting local commit: %w", err)
+	}
+
+	remoteCommit, err := git.GetCommitHash(expectedRemoteBranchName)
+	if err != nil {
+		return fmt.Errorf("could not find remote branch '%s': %w", expectedRemoteBranchName, err)
+	}
+
+	if localCommit == remoteCommit {
+		fmt.Printf("No changes to push. Local branch '%s' is up to date with remote branch '%s'.\n",
+			currentBranch, expectedRemoteBranchName)
+		// set upstream since we're targeting this remote
+		if err := cmdrun.RunQuiet("git", "branch", "--set-upstream-to="+expectedRemoteBranchName, currentBranch); err != nil {
+			return fmt.Errorf("failed to set upstream: %w", err)
+		}
+		fmt.Printf("Updated upstream to '%s'.\n", expectedRemoteBranchName)
+		return nil
+	}
+
+	confirmed, err := ui.Confirm(fmt.Sprintf("Remote branch '%s' already exists. Do you want to push to it?",
+		expectedRemoteBranchName), true)
+	if err != nil {
+		if errors.Is(err, ui.ErrCancelled) {
+			return nil
+		}
+		return fmt.Errorf("confirming push to remote: %w", err)
+	}
+	if !confirmed {
+		return nil
+	}
+
+	if err := cmdrun.RunWithOutput("git", "push", selectedRemote, currentBranch); err != nil {
+		return fmt.Errorf("failed to push: %w", err)
+	}
+	fmt.Printf("Pushed to remote branch '%s'.\n", expectedRemoteBranchName)
 	return nil
 }

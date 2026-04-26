@@ -53,8 +53,3 @@ func confirmWith(selector func(string, []string, ...string) (string, error), pro
 func Confirm(prompt string, defaultYes bool) (bool, error) {
 	return confirmWith(Select, prompt, defaultYes)
 }
-
-// PrintHeader prints a dim header line.
-func PrintHeader(message string) {
-	fmt.Printf("\033[0;30m%s\033[0m\n", message)
-}

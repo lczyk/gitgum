@@ -37,7 +37,7 @@ func TestPushCommand_AlreadyUpToDate_SetsUpstream(t *testing.T) {
 	temp_repo.RunGit(t, bareDir, "init", "--bare")
 	temp_repo.RunGit(t, dir, "remote", "add", "origin", bareDir)
 
-	branch := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "--abbrev-ref", "HEAD"))
+	branch := currentBranchIn(t, dir)
 	temp_repo.RunGit(t, dir, "push", "origin", branch)
 
 	cmd := &PushCommand{}

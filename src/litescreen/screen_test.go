@@ -83,11 +83,12 @@ func TestNewWithOptions_HeadlessFullscreen(t *testing.T) {
 
 func TestNewWithOptions_SetContentAndShow(t *testing.T) {
 	var out bytes.Buffer
-	s, _ := litescreen.NewWithOptions(litescreen.Options{
+	s, err := litescreen.NewWithOptions(litescreen.Options{
 		Height: 3,
 		Out:    &out,
 		Size:   fixedSize(20, 10),
 	})
+	assert.NoError(t, err)
 	assert.NoError(t, s.Init())
 	out.Reset()
 
@@ -116,11 +117,10 @@ func recvEvent(t *testing.T, ch <-chan tcell.Event) tcell.Event {
 
 func TestNewWithOptions_ChannelEventsRunes(t *testing.T) {
 	// Plain ASCII runes from injected input.
-	s, _ := litescreen.NewWithOptions(litescreen.Options{
-		In:   strings.NewReader("ab"),
-		Out:  &bytes.Buffer{},
-		Size: fixedSize(80, 24),
+	s, err := litescreen.NewWithOptions(litescreen.Options{
+		In: strings.NewReader("ab"),
 	})
+	assert.NoError(t, err)
 	assert.NoError(t, s.Init())
 	defer s.Fini()
 
@@ -137,11 +137,10 @@ func TestNewWithOptions_ChannelEventsRunes(t *testing.T) {
 func TestNewWithOptions_ChannelEventsEscape(t *testing.T) {
 	// CSI sequence followed by Ctrl-C. Verifies the parser handles escape
 	// sequences end-to-end via the public API.
-	s, _ := litescreen.NewWithOptions(litescreen.Options{
-		In:   strings.NewReader("\x1b[A\x03"), // up arrow, Ctrl-C
-		Out:  &bytes.Buffer{},
-		Size: fixedSize(80, 24),
+	s, err := litescreen.NewWithOptions(litescreen.Options{
+		In: strings.NewReader("\x1b[A\x03"), // up arrow, Ctrl-C
 	})
+	assert.NoError(t, err)
 	assert.NoError(t, s.Init())
 	defer s.Fini()
 

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/lczyk/gitgum/internal/cmdrun"
+	"github.com/lczyk/gitgum/internal/strutil"
 )
 
 // Repo is a git repository identified by an absolute path. The zero value
@@ -101,14 +102,7 @@ func (r Repo) GetRemotes() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	var remotes []string
-	for _, line := range strings.Split(stdout, "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			remotes = append(remotes, line)
-		}
-	}
-	return remotes, nil
+	return strutil.SplitLines(stdout), nil
 }
 
 // GetRemoteBranches returns branches for a specific remote.
@@ -151,21 +145,25 @@ func (r Repo) GetBranchTrackingRemote(branch string) (string, error) {
 	return remote, err
 }
 
-// IsWorktreeCheckedOut checks if a branch is checked out in a worktree.
-func (r Repo) IsWorktreeCheckedOut(branch string) (bool, string, error) {
+// CheckedOutBranches returns the set of branch names currently checked out in
+// any worktree (including the main worktree). Callers use the map for O(1)
+// lookups rather than running a separate subprocess per branch.
+func (r Repo) CheckedOutBranches() (map[string]bool, error) {
 	stdout, _, err := r.run("worktree", "list")
 	if err != nil {
-		return false, "", err
+		return nil, err
 	}
+	out := make(map[string]bool)
 	for _, line := range strings.Split(stdout, "\n") {
-		if strings.Contains(line, "["+branch+"]") || strings.Contains(line, " "+branch+" ") {
-			fields := strings.Fields(line)
-			if len(fields) > 0 {
-				return true, fields[0], nil
-			}
+		// each worktree line ends with [branch] for named branches;
+		// detached HEADs and bare worktrees use (…) instead.
+		start := strings.LastIndex(line, "[")
+		end := strings.LastIndex(line, "]")
+		if start != -1 && end > start {
+			out[line[start+1:end]] = true
 		}
 	}
-	return false, "", nil
+	return out, nil
 }
 
 // GetCommitHash returns the commit hash for a ref.
@@ -251,9 +249,7 @@ func GetBranchUpstream(branch string) (string, string, error) {
 func GetBranchTrackingRemote(branch string) (string, error) {
 	return CWD().GetBranchTrackingRemote(branch)
 }
-func IsWorktreeCheckedOut(branch string) (bool, string, error) {
-	return CWD().IsWorktreeCheckedOut(branch)
-}
+func CheckedOutBranches() (map[string]bool, error) { return CWD().CheckedOutBranches() }
 func GetCommitHash(ref string) (string, error)  { return CWD().GetCommitHash(ref) }
 func BranchExists(branch string) bool           { return CWD().BranchExists(branch) }
 func GetCurrentBranch() (string, error)         { return CWD().GetCurrentBranch() }

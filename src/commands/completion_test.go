@@ -12,15 +12,14 @@ import (
 
 func TestCompletionCommand_Execute(t *testing.T) {
 	cases := map[string]struct {
-		cmdName    string
-		shell      string
-		wantErr    bool
-		errMessage string
+		cmdName string
+		shell   string
+		wantErr string // non-empty: expected error pattern; empty: expect success
 	}{
 		"bash with gitgum":      {cmdName: "gitgum", shell: "bash"},
 		"fish with custom-name": {cmdName: "custom-name", shell: "fish"},
 		"zsh with gg":           {cmdName: "gg", shell: "zsh"},
-		"invalid shell":         {shell: "invalid", wantErr: true, errMessage: "invalid shell type 'invalid'"},
+		"invalid shell":         {shell: "invalid", wantErr: "invalid shell type 'invalid'"},
 		"default cmd name":      {shell: "bash"},
 	}
 
@@ -33,8 +32,8 @@ func TestCompletionCommand_Execute(t *testing.T) {
 			err := cmd.Execute(nil)
 			output := buf.String()
 
-			if tt.wantErr {
-				assert.Error(t, err, tt.errMessage)
+			if tt.wantErr != "" {
+				assert.Error(t, err, tt.wantErr)
 			} else {
 				assert.NoError(t, err)
 				assert.That(t, !strings.Contains(output, completions.Placeholder), "placeholder should be replaced")

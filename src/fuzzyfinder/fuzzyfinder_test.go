@@ -356,7 +356,7 @@ func TestFind_hotReload(t *testing.T) {
 	t.Parallel()
 
 	f, term := fuzzyfinder.NewWithMockedTerminal()
-	events := append(runes("adrena"), keys(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone})...)
+	events := append(runes("adrena"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 	term.SetEvents(events...)
 
 	names := trackNames()
@@ -378,7 +378,7 @@ func TestFind_hotReloadLock(t *testing.T) {
 	t.Parallel()
 
 	f, term := fuzzyfinder.NewWithMockedTerminal()
-	events := append(runes("adrena"), keys(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone})...)
+	events := append(runes("adrena"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 	term.SetEvents(events...)
 
 	var mu sync.RWMutex
@@ -430,7 +430,7 @@ func TestFind_withContext(t *testing.T) {
 	t.Parallel()
 
 	f, term := fuzzyfinder.NewWithMockedTerminal()
-	events := append(runes("adrena"), keys(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone})...)
+	events := append(runes("adrena"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 	term.SetEvents(events...)
 
 	cancelledCtx, cancelFunc := context.WithCancel(context.Background())
