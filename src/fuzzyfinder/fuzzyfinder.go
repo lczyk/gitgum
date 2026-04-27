@@ -93,9 +93,24 @@ type finder struct {
 	termEventsChan <-chan tcell.Event
 }
 
+// chromeRows returns the count of non-item rows the picker draws around the
+// item area: the prompt+number-line row (merged), plus header when set. Used
+// to translate Opt.Height (item-row count) into total framebuf rows.
+func chromeRows(opt Opt) int {
+	n := 1 // merged prompt + number-line
+	if opt.Header != "" {
+		n++
+	}
+	return n
+}
+
 func (f *finder) initFinder(items []string, opt Opt) error {
 	if f.term == nil {
-		s, err := newScreen(opt.Height)
+		screenH := opt.Height
+		if screenH > 0 {
+			screenH += chromeRows(opt)
+		}
+		s, err := newScreen(screenH)
 		if err != nil {
 			return fmt.Errorf("failed to new screen: %w", err)
 		}
@@ -167,25 +182,10 @@ func (f *finder) _draw() {
 	}
 	rowAt := func(offset int) int { return promptRow + step*offset }
 
-	// Prompt line
-	var promptLinePad int
-	for _, r := range f.opt.Prompt {
-		style := tcell.StyleDefault.Foreground(tcell.ColorBlue).Background(tcell.ColorDefault)
-		f.term.SetContent(promptLinePad, promptRow, r, nil, style)
-		promptLinePad++
-	}
-	var w int
-	for _, r := range f.state.input {
-		style := tcell.StyleDefault.Foreground(tcell.ColorDefault).Background(tcell.ColorDefault).Bold(true)
-		f.term.SetContent(promptLinePad+w, promptRow, r, nil, style)
-		w += runewidth.RuneWidth(r)
-	}
-	f.term.ShowCursor(promptLinePad+f.state.cursorX, promptRow)
-
 	// Header line (offset 1 from prompt) — only present when set.
 	offset := 1
+	var w int
 	if len(f.opt.Header) > 0 {
-		w = 0
 		for _, r := range runewidth.Truncate(f.opt.Header, maxWidth-2, "..") {
 			style := tcell.StyleDefault.Foreground(tcell.ColorGreen).Background(tcell.ColorDefault)
 			f.term.SetContent(2+w, rowAt(offset), r, nil, style)
@@ -194,11 +194,9 @@ func (f *finder) _draw() {
 		offset++
 	}
 
-	// Item area sizing
-	numberOffset := offset
-	firstItemOffset := offset + 1
-	// itemAreaHeight = inclusive count of usable item rows minus 1
-	// Total band rows = height; rows used so far = firstItemOffset; remaining = height - firstItemOffset
+	// Item area sizing. Number-line shares the prompt row, so chrome above
+	// the items is just `offset` rows (prompt + optional header).
+	firstItemOffset := offset
 	itemAreaHeight := height - firstItemOffset - 1
 	if itemAreaHeight < 0 {
 		itemAreaHeight = 0
@@ -206,17 +204,66 @@ func (f *finder) _draw() {
 	pageSize := itemAreaHeight + 1
 	topIdx := f.state.y - f.state.cursorY
 
-	// Number line: counts + page indicator (e.g. "12/40  page 2/5")
-	numberLine := fmt.Sprintf("%d/%d", len(f.state.matched), len(f.state.items))
-	if pageSize > 0 && len(f.state.matched) > pageSize {
-		page := f.state.y/pageSize + 1
-		totalPages := (len(f.state.matched) + pageSize - 1) / pageSize
-		numberLine += fmt.Sprintf("  page %d/%d", page, totalPages)
+	// Number-line: counts + page indicator, drawn at the left of the prompt
+	// row; the prompt and query render to its right separated by a small gap.
+	// Numerators are left-padded with grey '0's (and the page section is
+	// always shown) so the rendered width stays constant as the user types —
+	// the prompt column doesn't jump around.
+	totalItems := len(f.state.items)
+	matchedCount := len(f.state.matched)
+	tw := len(fmt.Sprintf("%d", totalItems))
+	page, totalPages := 1, 1
+	maxPages := 1
+	if pageSize > 0 {
+		page = f.state.y/pageSize + 1
+		if matchedCount > 0 {
+			totalPages = (matchedCount + pageSize - 1) / pageSize
+		}
+		maxPages = (totalItems + pageSize - 1) / pageSize
+		if maxPages < 1 {
+			maxPages = 1
+		}
 	}
-	for i, r := range numberLine {
-		style := tcell.StyleDefault.Foreground(tcell.ColorYellow).Background(tcell.ColorDefault)
-		f.term.SetContent(2+i, rowAt(numberOffset), r, nil, style)
+	pw := len(fmt.Sprintf("%d", maxPages))
+
+	yellow := tcell.StyleDefault.Foreground(tcell.ColorYellow).Background(tcell.ColorDefault)
+	grey := tcell.StyleDefault.Foreground(tcell.ColorDarkGray).Background(tcell.ColorDefault)
+	col := 0
+	emit := func(s string, st tcell.Style) {
+		for _, r := range s {
+			f.term.SetContent(col, promptRow, r, nil, st)
+			col++
+		}
 	}
+	emitPadded := func(n, w int) {
+		s := fmt.Sprintf("%d", n)
+		if pad := w - len(s); pad > 0 {
+			emit(strings.Repeat("0", pad), grey)
+		}
+		emit(s, yellow)
+	}
+	emitPadded(matchedCount, tw)
+	emit("/", yellow)
+	emit(fmt.Sprintf("%d", totalItems), yellow)
+	emit("  page ", yellow)
+	emitPadded(page, pw)
+	emit("/", yellow)
+	emitPadded(totalPages, pw)
+
+	const numberPromptGap = 2
+	promptCol := col + numberPromptGap
+	for _, r := range f.opt.Prompt {
+		style := tcell.StyleDefault.Foreground(tcell.ColorBlue).Background(tcell.ColorDefault)
+		f.term.SetContent(promptCol, promptRow, r, nil, style)
+		promptCol++
+	}
+	w = 0
+	for _, r := range f.state.input {
+		style := tcell.StyleDefault.Foreground(tcell.ColorDefault).Background(tcell.ColorDefault).Bold(true)
+		f.term.SetContent(promptCol+w, promptRow, r, nil, style)
+		w += runewidth.RuneWidth(r)
+	}
+	f.term.ShowCursor(promptCol+f.state.cursorX, promptRow)
 
 	// Item lines: i=0 is the row closest to the prompt.
 	matched := f.state.matched[topIdx:]
@@ -375,10 +422,11 @@ func (f *finder) readKey(ctx context.Context) error {
 	matchedLinesCount := len(f.state.matched)
 
 	// Visible item-row count, must match _draw's pageSize so Ctrl+B/F align
-	// to the same boundaries as the renderer paints.
-	firstItemOffset := 2
+	// to the same boundaries as the renderer paints. Number-line shares the
+	// prompt row, so chrome above items = 1 + (header ? 1 : 0).
+	firstItemOffset := 1
 	if len(f.opt.Header) > 0 {
-		firstItemOffset = 3
+		firstItemOffset = 2
 	}
 	pageSize := screenHeight - firstItemOffset
 	if pageSize < 1 {

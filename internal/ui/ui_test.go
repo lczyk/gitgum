@@ -55,7 +55,7 @@ func TestSelectEmptyOptions(t *testing.T) {
 func TestSelectAbortMapsToErrCancelled(t *testing.T) {
 	_, err := selectWith(func(_ context.Context, _ *[]string, _ sync.Locker, _ fuzzyfinder.Opt) ([]int, error) {
 		return nil, fuzzyfinder.ErrAbort
-	}, "test", []string{"a"})
+	}, 10, "test", []string{"a"})
 	assert.Error(t, err, ErrCancelled)
 }
 
@@ -63,6 +63,6 @@ func TestSelectFinderError(t *testing.T) {
 	sentinel := errors.New("boom")
 	_, err := selectWith(func(_ context.Context, _ *[]string, _ sync.Locker, _ fuzzyfinder.Opt) ([]int, error) {
 		return nil, sentinel
-	}, "test", []string{"a"})
+	}, 10, "test", []string{"a"})
 	assert.Error(t, err, sentinel)
 }

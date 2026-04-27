@@ -17,10 +17,11 @@ type Opt struct {
 	// Multi lets the user select multiple items via Tab. When false, the
 	// returned slice always has exactly one element.
 	Multi bool
-	// Height controls inline rendering.
+	// Height controls inline rendering. Counts item rows only — the prompt
+	// and number-line (and header, when set) are drawn in addition.
 	//   0   fullscreen (alt-screen)
-	//   N>0 exactly N rows at the bottom; prior output preserved above
-	//   N<0 terminal_rows + N
+	//   N>0 N visible item rows; prompt+number-line+header drawn above/below
+	//   N<0 terminal_rows + N (raw band size, unchanged from prior behavior)
 	// Honored only by the default litescreen renderer; ignored when the
 	// FF_RENDERER=legacy escape hatch is set (tcell can't preserve
 	// terminal scrollback).

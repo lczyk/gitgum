@@ -14,15 +14,19 @@ var ErrCancelled = errors.New("cancelled")
 
 // Select presents options via the fuzzyfinder library and returns the selected item.
 func Select(prompt string, options []string, initialQuery ...string) (string, error) {
-	return selectWith(fuzzyfinder.Find, prompt, options, initialQuery...)
+	return selectWith(fuzzyfinder.Find, 10, prompt, options, initialQuery...)
 }
 
-func selectWith(finder func(context.Context, *[]string, sync.Locker, fuzzyfinder.Opt) ([]int, error), prompt string, options []string, initialQuery ...string) (string, error) {
+func selectShort(prompt string, options []string, initialQuery ...string) (string, error) {
+	return selectWith(fuzzyfinder.Find, 2, prompt, options, initialQuery...)
+}
+
+func selectWith(finder func(context.Context, *[]string, sync.Locker, fuzzyfinder.Opt) ([]int, error), height int, prompt string, options []string, initialQuery ...string) (string, error) {
 	if len(options) == 0 {
 		return "", fmt.Errorf("no options provided")
 	}
 
-	opt := fuzzyfinder.Opt{Prompt: prompt + ": "}
+	opt := fuzzyfinder.Opt{Prompt: prompt + ": ", Height: height, Reverse: true}
 	if len(initialQuery) > 0 {
 		opt.Query = initialQuery[0]
 	}
@@ -51,5 +55,5 @@ func confirmWith(selector func(string, []string, ...string) (string, error), pro
 
 // Confirm asks a yes/no question via the fuzzyfinder library.
 func Confirm(prompt string, defaultYes bool) (bool, error) {
-	return confirmWith(Select, prompt, defaultYes)
+	return confirmWith(selectShort, prompt, defaultYes)
 }
