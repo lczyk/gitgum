@@ -53,5 +53,6 @@
     "worktrees",
     "dedup",
     "nums",
+    "nonblocking",
   ]
 }

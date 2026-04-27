@@ -15,6 +15,7 @@ package litescreen
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -91,11 +92,77 @@ func realHooks(in *os.File, out *os.File) hooks {
 	}
 }
 
+// inputSource abstracts readLoop's view of input. Production wraps /dev/tty
+// with SetNonblock + EAGAIN-poll semantics; tests can swap in any reader
+// (with or without simulated EAGAIN) without needing a real *os.File.
+//
+// Lifecycle: setup once before reads, teardown once after. read returns
+// errNoData when no bytes are available right now (caller sleeps and
+// retries) or any other error to signal end-of-stream.
+type inputSource interface {
+	setup() error
+	teardown()
+	read(buf []byte) (int, error)
+}
+
+// errNoData is the sentinel inputSource.read returns when no bytes are
+// ready right now. Distinct from real errors so readLoop can poll instead
+// of exiting.
+var errNoData = errors.New("nonblocking read: no data ready")
+
+// fdInput wraps an *os.File with raw nonblocking syscall.Read. Production
+// uses this for /dev/tty so close(fd) interrupts the polling cleanly
+// (close alone doesn't unblock a stranded blocking read on darwin).
+//
+// The fd is captured once in setup and reused in read. *os.File.Fd() must
+// NOT be called on every read: each call invokes pfd.SetBlocking(), which
+// clears O_NONBLOCK and turns syscall.Read back into a blocking call —
+// stranding readLoop until kernel data arrives.
+type fdInput struct {
+	f  *os.File
+	fd int
+}
+
+func (i *fdInput) setup() error {
+	i.fd = int(i.f.Fd())
+	return syscall.SetNonblock(i.fd, true)
+}
+func (i *fdInput) teardown() {
+	syscall.SetNonblock(i.fd, false)
+}
+func (i *fdInput) read(buf []byte) (int, error) {
+	n, err := syscall.Read(i.fd, buf)
+	if err == syscall.EAGAIN || err == syscall.EWOULDBLOCK {
+		return 0, errNoData
+	}
+	return n, err
+}
+
+// readerInput wraps any io.Reader. Setup/teardown are no-ops; read
+// delegates directly. Suitable for tests with bounded readers (e.g.
+// strings.Reader); production must use fdInput because a blocking
+// io.Reader.Read on /dev/tty would strand readLoop on darwin.
+type readerInput struct{ r io.Reader }
+
+func (i *readerInput) setup() error                 { return nil }
+func (i *readerInput) teardown()                    {}
+func (i *readerInput) read(buf []byte) (int, error) { return i.r.Read(buf) }
+
+// inputFor picks the right inputSource for a given io.Reader: fdInput for
+// real *os.File, readerInput otherwise.
+func inputFor(r io.Reader) inputSource {
+	if f, ok := r.(*os.File); ok {
+		return &fdInput{f: f}
+	}
+	return &readerInput{r: r}
+}
+
 type Screen struct {
 	hooks // OS hooks; embedded so callers say s.enterRaw, s.getSize, etc.
 
-	in  io.Reader // input bytes (real /dev/tty in production, anything in tests)
-	out io.Writer // output bytes
+	in    io.Reader   // input bytes (real /dev/tty in production, anything in tests)
+	input inputSource // readLoop's view of in; lazily derived from in if nil at Init time
+	out   io.Writer   // output bytes
 
 	height  int // raw height arg to New; see resolveHeight
 	yOrigin int // first row of region (0-indexed); 0 in fullscreen
@@ -467,6 +534,9 @@ func (s *Screen) Init() error {
 	s.out.Write(out)
 	s.cursorVisible = false
 
+	if s.input == nil {
+		s.input = inputFor(s.in)
+	}
 	s.quit = make(chan struct{})
 	s.readDone = make(chan struct{})
 	s.bytesCh = make(chan byte, 256)
@@ -720,46 +790,21 @@ func (s *Screen) ChannelEvents(out chan<- tcell.Event, quit <-chan struct{}) {
 	}
 }
 
-// readLoop reads input bytes off s.in and forwards them to out. It MUST exit
-// when s.quit closes; otherwise on darwin a stranded blocking syscall.Read on
-// the closed /dev/tty fd later steals input bytes (DSR responses, keystrokes)
-// from the next picker that opens /dev/tty. We use SetNonblock + EAGAIN
-// polling so the loop can check s.quit between reads — close(fd) alone does
-// not interrupt a blocked read on darwin.
+// readLoop reads input bytes off s.input and forwards them to out. It MUST
+// exit when s.quit closes; otherwise on darwin a stranded blocking
+// syscall.Read on the closed /dev/tty fd later steals input bytes (DSR
+// responses, keystrokes) from the next picker that opens /dev/tty.
+//
+// The polling+quit pattern is uniform across input types: the inputSource
+// is responsible for whatever setup makes errNoData possible (production:
+// SetNonblock(fd) + raw syscall.Read; tests: any io.Reader, with a fake
+// inputSource if EAGAIN simulation is wanted).
 func (s *Screen) readLoop(out chan<- byte) {
 	defer close(out)
-
-	// If s.in is a real *os.File (production), put the fd into non-blocking
-	// mode so we can poll. In tests s.in may be a strings.Reader; fall back
-	// to the simple blocking path there (tests don't strand goroutines).
-	f, isFile := s.in.(*os.File)
-	if !isFile {
-		buf := make([]byte, 64)
-		for {
-			select {
-			case <-s.quit:
-				return
-			default:
-			}
-			n, err := s.in.Read(buf)
-			for i := range n {
-				select {
-				case out <- buf[i]:
-				case <-s.quit:
-					return
-				}
-			}
-			if err != nil {
-				return
-			}
-		}
-	}
-
-	fd := int(f.Fd())
-	if err := syscall.SetNonblock(fd, true); err != nil {
+	if err := s.input.setup(); err != nil {
 		return
 	}
-	defer syscall.SetNonblock(fd, false)
+	defer s.input.teardown()
 
 	buf := make([]byte, 64)
 	for {
@@ -768,7 +813,7 @@ func (s *Screen) readLoop(out chan<- byte) {
 			return
 		default:
 		}
-		n, err := syscall.Read(fd, buf)
+		n, err := s.input.read(buf)
 		if n > 0 {
 			for i := range n {
 				select {
@@ -779,7 +824,7 @@ func (s *Screen) readLoop(out chan<- byte) {
 			}
 			continue
 		}
-		if err == syscall.EAGAIN || err == syscall.EWOULDBLOCK {
+		if errors.Is(err, errNoData) {
 			// Poll interval: snappy enough that keystrokes feel responsive,
 			// slack enough not to busy-spin when idle.
 			select {
@@ -789,7 +834,7 @@ func (s *Screen) readLoop(out chan<- byte) {
 			}
 			continue
 		}
-		// Any other error (including fd closed) → exit.
+		// EOF or any other error → exit.
 		return
 	}
 }

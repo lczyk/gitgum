@@ -2,6 +2,7 @@ package litescreen
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"strings"
@@ -561,6 +562,150 @@ func TestScreen_Fini_StopsReadLoop(t *testing.T) {
 	}
 }
 
+// fakeInputSource lets tests drive readLoop's polling path without a real
+// fd. Each call to read returns either bytes from a queue or errNoData,
+// alternating, until quit closes via the channel.
+type fakeInputSource struct {
+	bytes      [][]byte
+	idx        int
+	setupErr   error
+	teardownN  int
+	readCalled int
+}
+
+func (f *fakeInputSource) setup() error { return f.setupErr }
+func (f *fakeInputSource) teardown()    { f.teardownN++ }
+func (f *fakeInputSource) read(buf []byte) (int, error) {
+	f.readCalled++
+	if f.idx >= len(f.bytes) {
+		return 0, errNoData
+	}
+	chunk := f.bytes[f.idx]
+	f.idx++
+	n := copy(buf, chunk)
+	return n, nil
+}
+
+// TestReadLoop_PollsOnNoData verifies that readLoop honours the inputSource
+// contract: bytes are forwarded, errNoData triggers a poll-sleep instead
+// of exit, and quit closes the loop cleanly. Exercises the production
+// polling path through a fake inputSource — no real fd needed.
+//
+// Pairs with TestScreen_ReadLoop_ForwardsBytes, the integration counterpart
+// that runs the same byte-forwarding scenario through real *os.File +
+// fdInput + raw syscall.Read. This fake-based test is faster and isolates
+// the abstraction; the integration test catches issues that only surface
+// against the real syscall path.
+func TestReadLoop_PollsOnNoData(t *testing.T) {
+	s, _, _ := newTestScreen(5, 80, 24, strings.NewReader(""))
+	fake := &fakeInputSource{bytes: [][]byte{{'a'}, {'b'}}}
+	s.input = fake
+
+	assert.NoError(t, s.Init())
+
+	got := make([]byte, 0, 2)
+	for range 2 {
+		select {
+		case b := <-s.bytesCh:
+			got = append(got, b)
+		case <-time.After(time.Second):
+			s.Fini()
+			t.Fatalf("timed out waiting for byte after %d", len(got))
+		}
+	}
+	assert.Equal(t, string(got), "ab")
+	// Stop readLoop before inspecting the counter — Fini's wait on readDone
+	// gives us the happens-before so the test's read of fake.readCalled
+	// doesn't race with the goroutine's writes.
+	s.Fini()
+	assert.That(t, fake.readCalled > len(fake.bytes),
+		"expected polling past queued bytes; readCalled=%d", fake.readCalled)
+}
+
+// TestReadLoop_SetupErrorExits guards the contract that a failed setup
+// short-circuits readLoop and lets Fini wait complete cleanly.
+func TestReadLoop_SetupErrorExits(t *testing.T) {
+	s, _, _ := newTestScreen(5, 80, 24, strings.NewReader(""))
+	fake := &fakeInputSource{setupErr: errors.New("boom")}
+	s.input = fake
+
+	assert.NoError(t, s.Init())
+
+	done := make(chan struct{})
+	go func() { s.Fini(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Fini blocked when setup errored")
+	}
+	// teardown must NOT run if setup failed.
+	assert.Equal(t, fake.teardownN, 0)
+}
+
+// TestReadLoop_TeardownOnQuit guards that the inputSource is properly torn
+// down when readLoop exits via quit (not just via natural EOF). Without
+// this, a long-lived inputSource (e.g. fdInput holding O_NONBLOCK on a
+// real fd) would leak its setup state across pickers.
+func TestReadLoop_TeardownOnQuit(t *testing.T) {
+	s, _, _ := newTestScreen(5, 80, 24, strings.NewReader(""))
+	fake := &fakeInputSource{} // empty bytes → always errNoData
+	s.input = fake
+
+	assert.NoError(t, s.Init())
+	s.Fini()
+
+	assert.Equal(t, fake.teardownN, 1)
+}
+
+// TestReadLoop_ErrorExits guards that any error other than errNoData
+// terminates the loop. Without this, an inputSource returning a "real"
+// error (e.g. EBADF after fd close) would be treated as transient and the
+// loop would spin forever.
+func TestReadLoop_ErrorExits(t *testing.T) {
+	s, _, _ := newTestScreen(5, 80, 24, strings.NewReader(""))
+	fake := &erroringInputSource{err: errors.New("permanent failure")}
+	s.input = fake
+
+	assert.NoError(t, s.Init())
+
+	// readDone must close on its own (via readLoop's deferred close), not
+	// because Fini signaled quit. We give it a generous window and Fini
+	// only as cleanup.
+	select {
+	case <-s.readDone:
+		// Good — readLoop exited on the error.
+	case <-time.After(time.Second):
+		s.Fini()
+		t.Fatal("readLoop did not exit on persistent read error")
+	}
+	s.Fini()
+}
+
+type erroringInputSource struct {
+	err error
+}
+
+func (e *erroringInputSource) setup() error                 { return nil }
+func (e *erroringInputSource) teardown()                    {}
+func (e *erroringInputSource) read(buf []byte) (int, error) { return 0, e.err }
+
+// TestInputFor_Dispatch documents the factory contract: *os.File goes to
+// fdInput, anything else to readerInput. Important because production
+// silently relies on this dispatch — a regression here means /dev/tty
+// would lose its nonblocking-poll guarantee.
+func TestInputFor_Dispatch(t *testing.T) {
+	pr, pw, err := os.Pipe()
+	assert.NoError(t, err)
+	defer pr.Close()
+	defer pw.Close()
+
+	_, isFD := inputFor(pr).(*fdInput)
+	assert.That(t, isFD, "expected *os.File → fdInput")
+
+	_, isReader := inputFor(strings.NewReader("")).(*readerInput)
+	assert.That(t, isReader, "expected non-file Reader → readerInput")
+}
+
 // TestScreen_Fini_Idempotent guards the finiOnce wrapper. Without it, a
 // second Fini would double-close s.winch / s.sigCh / s.quit and panic.
 func TestScreen_Fini_Idempotent(t *testing.T) {
@@ -575,6 +720,13 @@ func TestScreen_Fini_Idempotent(t *testing.T) {
 // TestScreen_ReadLoop_ForwardsBytes verifies the SetNonblock + poll path
 // still delivers input bytes correctly to ChannelEvents — the cancellation
 // fix mustn't break the happy path.
+//
+// Pairs with TestReadLoop_PollsOnNoData, which covers the same byte-
+// forwarding contract through a fakeInputSource. This test is kept
+// alongside it because it exercises the real *os.File → fdInput → raw
+// syscall.Read path end-to-end (via os.Pipe); the fake test cannot.
+// Together they catch regressions in either the abstraction or the
+// production wiring.
 func TestScreen_ReadLoop_ForwardsBytes(t *testing.T) {
 	pr, pw, err := os.Pipe()
 	assert.NoError(t, err)
