@@ -52,6 +52,7 @@ import (
 type hooks struct {
 	enterRaw    func() (restore func(), err error)
 	getSize     func() (int, int)
+	queryRow    func() int // 1-indexed cursor row at Init time; 0 = unknown (fall back to bottom-anchored layout)
 	closeIO     func()
 	notifyWinch func(chan<- os.Signal)
 	notifySig   func(chan<- os.Signal)
@@ -78,6 +79,7 @@ func realHooks(in *os.File, out *os.File) hooks {
 			}
 			return w, h
 		},
+		queryRow:    func() int { return queryCursorRow(in, out) },
 		closeIO:     func() { in.Close(); out.Close() },
 		notifyWinch: func(ch chan<- os.Signal) { signal.Notify(ch, syscall.SIGWINCH) },
 		notifySig:   func(ch chan<- os.Signal) { signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM) },
@@ -348,12 +350,93 @@ func headlessHooks(size func() (int, int)) hooks {
 	return hooks{
 		enterRaw:    func() (func(), error) { return func() {}, nil },
 		getSize:     size,
+		queryRow:    func() int { return 0 },
 		closeIO:     func() {},
 		notifyWinch: func(chan<- os.Signal) {},
 		notifySig:   func(chan<- os.Signal) {},
 		stopSignal:  func(chan<- os.Signal) {},
 		raiseSignal: func(os.Signal) {},
 	}
+}
+
+// queryCursorRow asks the terminal for the cursor's current row using DSR
+// (\e[6n) and parses the reply (\e[Y;XR). Returns the 1-indexed row, or 0
+// on error/timeout — callers fall back to bottom-anchored layout in that
+// case. Called from Init before any keystroke reader is attached, so the
+// reply bytes don't race with the input loop.
+//
+// Reads via raw syscall.Read on the fd in non-blocking mode; *os.File's
+// runtime poller doesn't reliably support SetReadDeadline on /dev/tty
+// opened via os.OpenFile (darwin), and a goroutine + blocking Read could
+// strand a reader that later steals user keystrokes.
+func queryCursorRow(in *os.File, out *os.File) int {
+	fd := int(in.Fd())
+	if err := syscall.SetNonblock(fd, true); err != nil {
+		return 0
+	}
+	defer syscall.SetNonblock(fd, false)
+
+	// Drain any pending bytes (stale DSR responses from a prior run, queued
+	// keystrokes, etc.) so our parse sees only the response to the query
+	// we're about to send.
+	drainBuf := make([]byte, 64)
+	for range 16 {
+		n, err := syscall.Read(fd, drainBuf)
+		if n > 0 {
+			continue
+		}
+		if err == syscall.EAGAIN || err == syscall.EWOULDBLOCK || n == 0 {
+			break
+		}
+	}
+
+	if _, err := out.Write([]byte("\x1b[6n")); err != nil {
+		return 0
+	}
+
+	var got []byte
+	buf := make([]byte, 32)
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		n, err := syscall.Read(fd, buf)
+		if n > 0 {
+			got = append(got, buf[:n]...)
+			if bytes.IndexByte(got, 'R') >= 0 {
+				break
+			}
+			continue
+		}
+		if err == syscall.EAGAIN || err == syscall.EWOULDBLOCK {
+			time.Sleep(2 * time.Millisecond)
+			continue
+		}
+		if err != nil {
+			return 0
+		}
+	}
+
+	i := bytes.Index(got, []byte("\x1b["))
+	if i < 0 {
+		return 0
+	}
+	body := got[i+2:]
+	end := bytes.IndexByte(body, 'R')
+	if end < 0 {
+		return 0
+	}
+	body = body[:end]
+	semi := bytes.IndexByte(body, ';')
+	if semi < 0 {
+		return 0
+	}
+	row := 0
+	for _, c := range body[:semi] {
+		if c < '0' || c > '9' {
+			return 0
+		}
+		row = row*10 + int(c-'0')
+	}
+	return row
 }
 
 func (s *Screen) Init() error {
@@ -364,7 +447,8 @@ func (s *Screen) Init() error {
 	s.restore = restore
 
 	w, termH := s.getSize()
-	out, yOrigin, fb := initSequence(s.height, w, termH)
+	cursorRow := s.queryRow()
+	out, yOrigin, fb := initSequence(s.height, w, termH, cursorRow)
 	s.yOrigin = yOrigin
 	s.fb = fb
 	s.out.Write(out)
@@ -380,10 +464,11 @@ func (s *Screen) Init() error {
 }
 
 // initSequence is the pure-byte composition for Init: given the user's
-// height policy and the current terminal size, returns the byte stream to
-// emit, plus the resolved yOrigin and a fresh framebuf. Pulled out of Init
-// so the byte stream is testable without /dev/tty + raw mode + signals.
-func initSequence(height, termW, termH int) (out []byte, yOrigin int, fb *framebuf) {
+// height policy, current terminal size, and current cursor row (1-indexed,
+// 0 = unknown), returns the byte stream to emit, plus the resolved yOrigin
+// and a fresh framebuf. Pulled out of Init so the byte stream is testable
+// without /dev/tty + raw mode + signals.
+func initSequence(height, termW, termH, cursorRow int) (out []byte, yOrigin int, fb *framebuf) {
 	rows, fullscreen := resolveHeight(height, termH)
 	fb = newFramebuf(termW, rows)
 	var buf bytes.Buffer
@@ -392,14 +477,25 @@ func initSequence(height, termW, termH int) (out []byte, yOrigin int, fb *frameb
 		buf.WriteString("\x1b[?1049h\x1b[2J\x1b[H\x1b[?25l")
 		yOrigin = 0
 	} else {
-		// Inline: emit (rows-1) newlines to scroll content up, leaving
-		// the bottom rows free. Cursor is clamped to the last row, so the
-		// region's first row is termH-rows.
+		// Inline: emit (rows-1) newlines from current cursor position to
+		// scroll content up if needed, leaving `rows` rows free for the
+		// region. Region anchors at the cursor's current row when there's
+		// space below; otherwise it sticks to the bottom of the terminal.
 		buf.WriteString("\x1b[?25l")
 		for range rows - 1 {
 			buf.WriteByte('\n')
 		}
-		yOrigin = termH - rows
+		// finalRow = where cursor lands after the newlines (1-indexed).
+		// yOrigin = first row of region (0-indexed) = finalRow - rows.
+		anchor := cursorRow
+		if anchor <= 0 || anchor > termH {
+			anchor = termH
+		}
+		finalRow := anchor + rows - 1
+		if finalRow > termH {
+			finalRow = termH
+		}
+		yOrigin = finalRow - rows
 		fmt.Fprintf(&buf, "\x1b[%d;1H\x1b[J", yOrigin+1)
 	}
 	return buf.Bytes(), yOrigin, fb
@@ -613,7 +709,7 @@ func (s *Screen) handleResize() (int, int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	w, termH := s.getSize()
-	out, yOrigin, rows := resizeSequence(s.height, w, termH, s.fb.width)
+	out, yOrigin, rows := resizeSequence(s.height, w, termH, s.fb.width, s.yOrigin)
 	s.yOrigin = yOrigin
 	s.out.Write(out)
 	s.fb.resize(w, rows)
@@ -621,16 +717,20 @@ func (s *Screen) handleResize() (int, int) {
 }
 
 // resizeSequence is the pure-byte composition for handleResize. Given the
-// height policy, new terminal size, and previous framebuf width, returns
-// the byte stream + new yOrigin + new picker row count.
-func resizeSequence(height, termW, termH, prevWidth int) (out []byte, yOrigin, rows int) {
+// height policy, new terminal size, previous framebuf width, and previous
+// yOrigin (so a mid-screen anchor survives a spurious SIGWINCH), returns the
+// byte stream + new yOrigin + new picker row count.
+func resizeSequence(height, termW, termH, prevWidth, prevYOrigin int) (out []byte, yOrigin, rows int) {
 	rows, fullscreen := resolveHeight(height, termH)
 	var buf bytes.Buffer
 	if fullscreen {
 		yOrigin = 0
 		buf.WriteString("\x1b[2J\x1b[H")
 	} else {
-		yOrigin = termH - rows
+		yOrigin = prevYOrigin
+		if yOrigin < 0 || yOrigin+rows > termH {
+			yOrigin = termH - rows
+		}
 		if termW < prevWidth {
 			// Narrowing reflows previous picker rows into more visual
 			// lines that scroll up past yOrigin, leaving wrapped tails
