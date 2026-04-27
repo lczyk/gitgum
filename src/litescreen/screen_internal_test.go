@@ -561,6 +561,17 @@ func TestScreen_Fini_StopsReadLoop(t *testing.T) {
 	}
 }
 
+// TestScreen_Fini_Idempotent guards the finiOnce wrapper. Without it, a
+// second Fini would double-close s.winch / s.sigCh / s.quit and panic.
+func TestScreen_Fini_Idempotent(t *testing.T) {
+	s, _, _ := newTestScreen(5, 80, 24, strings.NewReader(""))
+	assert.NoError(t, s.Init())
+
+	s.Fini()
+	// Second call must not panic on double-close of channels.
+	s.Fini()
+}
+
 // TestScreen_ReadLoop_ForwardsBytes verifies the SetNonblock + poll path
 // still delivers input bytes correctly to ChannelEvents — the cancellation
 // fix mustn't break the happy path.

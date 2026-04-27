@@ -114,14 +114,19 @@ type Screen struct {
 	// runs at most once, from either Fini or the signal goroutine.
 	sigCh       chan os.Signal
 	cleanupOnce sync.Once
+	finiOnce    sync.Once
 
-	// readLoop cancellation. quit closes when Fini wants the reader to stop;
-	// readWG lets Fini wait for the goroutine to actually exit before
-	// closing fds. Without this, darwin leaves readLoop stranded in
-	// syscall.Read on the closed fd, where it later steals input bytes
-	// (including DSR responses) intended for the next picker.
-	quit   chan struct{}
-	readWG sync.WaitGroup
+	// readLoop lifecycle. Init starts the goroutine; quit closes when Fini
+	// wants it to stop; readDone closes when the goroutine actually exits.
+	// Fini waits on readDone before closing fds — without that, darwin leaves
+	// readLoop stranded in syscall.Read on the closed fd, where it later
+	// steals input bytes (including DSR responses) intended for the next
+	// picker. Starting readLoop in Init (caller's goroutine) instead of
+	// inside ChannelEvents (a goroutine) keeps the start happens-before the
+	// Fini wait, so the race detector is satisfied.
+	quit     chan struct{}
+	readDone chan struct{}
+	bytesCh  chan byte
 }
 
 // resolveHeight turns the user-supplied Height value into an actual row
@@ -463,6 +468,12 @@ func (s *Screen) Init() error {
 	s.cursorVisible = false
 
 	s.quit = make(chan struct{})
+	s.readDone = make(chan struct{})
+	s.bytesCh = make(chan byte, 256)
+	go func() {
+		defer close(s.readDone)
+		s.readLoop(s.bytesCh)
+	}()
 
 	s.winch = make(chan os.Signal, 1)
 	s.notifyWinch(s.winch)
@@ -551,28 +562,31 @@ func finiSequence(yOrigin int) []byte {
 	return []byte(fmt.Sprintf("\x1b[m\x1b[%d;1H\x1b[J\x1b[?25h", yOrigin+1))
 }
 
+// Fini is idempotent via finiOnce. We don't nil channel fields so that
+// concurrent reads in ChannelEvents (e.g. `winch := s.winch`) stay race-free
+// — close() on a channel doesn't mutate the field pointer, only the channel
+// state. Without finiOnce, calling Fini twice would double-close.
 func (s *Screen) Fini() {
-	s.cleanup()
+	s.finiOnce.Do(func() {
+		s.cleanup()
 
-	if s.winch != nil {
-		s.stopSignal(s.winch)
-		close(s.winch)
-		s.winch = nil
-	}
-	if s.sigCh != nil {
-		s.stopSignal(s.sigCh)
-		close(s.sigCh)
-		s.sigCh = nil
-	}
-	// Signal readLoop to exit and wait for it BEFORE closing fds. Otherwise
-	// the goroutine sits stranded in syscall.Read on darwin and steals input
-	// (DSR, keystrokes) intended for the next picker.
-	if s.quit != nil {
-		close(s.quit)
-		s.readWG.Wait()
-		s.quit = nil
-	}
-	s.closeIO()
+		if s.winch != nil {
+			s.stopSignal(s.winch)
+			close(s.winch)
+		}
+		if s.sigCh != nil {
+			s.stopSignal(s.sigCh)
+			close(s.sigCh)
+		}
+		// Signal readLoop to exit and wait for it BEFORE closing fds.
+		// Otherwise the goroutine sits stranded in syscall.Read on darwin
+		// and steals input (DSR, keystrokes) intended for the next picker.
+		if s.quit != nil {
+			close(s.quit)
+			<-s.readDone
+		}
+		s.closeIO()
+	})
 }
 
 func (s *Screen) Size() (int, int) {
@@ -673,11 +687,10 @@ func styleToSGR(st tcell.Style) string {
 func (s *Screen) ChannelEvents(out chan<- tcell.Event, quit <-chan struct{}) {
 	// Don't close `out` on exit: the finder's receive loop doesn't check
 	// `ok` and would spin on the closed channel.
-	bytesCh := make(chan byte, 256)
-	s.readWG.Add(1)
-	go s.readLoop(bytesCh)
-
-	// Capture winch locally so Fini can nil s.winch without racing this loop.
+	// readLoop is started in Init (caller's goroutine) so its lifecycle is
+	// established before any Fini wait — ChannelEvents just consumes from
+	// the bytes channel Init prepared.
+	bytesCh := s.bytesCh
 	winch := s.winch
 
 	for {
@@ -714,10 +727,9 @@ func (s *Screen) ChannelEvents(out chan<- tcell.Event, quit <-chan struct{}) {
 // polling so the loop can check s.quit between reads — close(fd) alone does
 // not interrupt a blocked read on darwin.
 func (s *Screen) readLoop(out chan<- byte) {
-	defer s.readWG.Done()
 	defer close(out)
 
-	// If s.in is a real *os.File (production), put the fd into nonblocking
+	// If s.in is a real *os.File (production), put the fd into non-blocking
 	// mode so we can poll. In tests s.in may be a strings.Reader; fall back
 	// to the simple blocking path there (tests don't strand goroutines).
 	f, isFile := s.in.(*os.File)
