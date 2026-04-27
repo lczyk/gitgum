@@ -9,6 +9,7 @@ import (
 )
 
 type ReplayListCommand struct {
+	cmdIO
 	Args struct {
 		BranchA string `positional-arg-name:"A" description:"Feature branch with commits to list"`
 		BranchB string `positional-arg-name:"B" description:"Trunk/base branch"`
@@ -46,7 +47,7 @@ func (r *ReplayListCommand) Execute(args []string) error {
 	}
 
 	for _, commit := range commits {
-		fmt.Println(commit)
+		fmt.Fprintln(r.out(), commit)
 	}
 
 	return nil

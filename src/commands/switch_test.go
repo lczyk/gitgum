@@ -31,10 +31,12 @@ func TestApplySelection_Local(t *testing.T) {
 	dir := temp_repo.InitTempRepo(t)
 	temp_repo.RunGit(t, dir, "branch", "feature")
 
-	s := &SwitchCommand{}
+	var buf strings.Builder
+	s := &SwitchCommand{cmdIO: cmdIO{Out: &buf}}
 	err := s.applySelection("local: feature")
 	assert.NoError(t, err)
 	assert.Equal(t, currentBranchIn(t, dir), "feature")
+	assert.ContainsString(t, buf.String(), "Switched to branch 'feature'.")
 }
 
 func TestApplySelection_RemoteInvalidFormat(t *testing.T) {
@@ -50,7 +52,8 @@ func TestApplySelection_LocalRemote(t *testing.T) {
 	dir := temp_repo.InitTempRepo(t)
 	temp_repo.RunGit(t, dir, "branch", "feature")
 
-	s := &SwitchCommand{}
+	var buf strings.Builder
+	s := &SwitchCommand{cmdIO: cmdIO{Out: &buf}}
 	err := s.applySelection("local/remote: feature")
 	assert.NoError(t, err)
 	assert.Equal(t, currentBranchIn(t, dir), "feature")

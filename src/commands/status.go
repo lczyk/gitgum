@@ -2,8 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"io"
-	"os"
 	"strings"
 
 	"github.com/lczyk/gitgum/internal/cmdrun"
@@ -11,15 +9,11 @@ import (
 )
 
 type StatusCommand struct {
-	// injectable for testing; nil falls back to os.Stdout
-	out io.Writer
+	cmdIO
 }
 
 func (s *StatusCommand) Execute(args []string) error {
-	out := s.out
-	if out == nil {
-		out = os.Stdout
-	}
+	out := s.out()
 
 	printHeader := func(msg string) {
 		fmt.Fprintf(out, "\033[0;30m%s\033[0m\n", msg)

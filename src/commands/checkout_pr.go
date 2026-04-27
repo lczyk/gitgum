@@ -2,7 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -18,7 +17,9 @@ var (
 	prSelectionRegex = regexp.MustCompile(`^PR #(\d+) \((head|merge)\)$`)
 )
 
-type CheckoutPRCommand struct{}
+type CheckoutPRCommand struct {
+	cmdIO
+}
 
 type PRRef struct {
 	Number int
@@ -36,23 +37,23 @@ func (c *CheckoutPRCommand) Execute(args []string) error {
 	}
 
 	if len(remotes) == 0 {
-		fmt.Fprintln(os.Stderr, "No remotes found. Aborting checkout-pr.")
+		fmt.Fprintln(c.err(), "No remotes found. Aborting checkout-pr.")
 		return fmt.Errorf("no remotes")
 	}
 
 	remote, err := ui.Select("Select a remote to fetch PR from", remotes)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "No remote selected. Aborting checkout-pr.")
+		fmt.Fprintln(c.err(), "No remote selected. Aborting checkout-pr.")
 		return err
 	}
 
-	prRefs, err := getPRRefs(remote)
+	prRefs, err := c.getPRRefs(remote)
 	if err != nil {
 		return fmt.Errorf("getting PR refs: %w", err)
 	}
 
 	if len(prRefs) == 0 {
-		fmt.Fprintln(os.Stderr, "No pull requests found on remote. Aborting checkout-pr.")
+		fmt.Fprintln(c.err(), "No pull requests found on remote. Aborting checkout-pr.")
 		return fmt.Errorf("no pull requests found")
 	}
 
@@ -60,7 +61,7 @@ func (c *CheckoutPRCommand) Execute(args []string) error {
 
 	selected, err := ui.Select("Select a pull request to checkout", prOptions)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "No PR selected. Aborting checkout-pr.")
+		fmt.Fprintln(c.err(), "No PR selected. Aborting checkout-pr.")
 		return err
 	}
 
@@ -69,11 +70,11 @@ func (c *CheckoutPRCommand) Execute(args []string) error {
 		return err
 	}
 
-	return checkoutPR(remote, prNumber, prType)
+	return c.checkoutPR(remote, prNumber, prType)
 }
 
-func getPRRefs(remote string) ([]PRRef, error) {
-	fmt.Println("Fetching pull request references from remote:", remote)
+func (c *CheckoutPRCommand) getPRRefs(remote string) ([]PRRef, error) {
+	fmt.Fprintln(c.out(), "Fetching pull request references from remote:", remote)
 	stdout, _, err := cmdrun.Run("git", "ls-remote", remote)
 	if err != nil {
 		return nil, fmt.Errorf("listing remote refs: %w", err)
@@ -131,7 +132,7 @@ func parsePRSelection(selection string) (int, string, error) {
 	return prNumber, prType, nil
 }
 
-func checkoutPR(remote string, prNumber int, prType string) error {
+func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType string) error {
 	branchName := fmt.Sprintf("pr-%d", prNumber)
 	prRef := fmt.Sprintf("refs/pull/%d/%s", prNumber, prType)
 
@@ -147,11 +148,11 @@ func checkoutPR(remote string, prNumber int, prType string) error {
 			if err := cmdrun.RunWithOutput("git", "checkout", branchName); err != nil {
 				return fmt.Errorf("checking out existing branch '%s': %w", branchName, err)
 			}
-			fmt.Printf("Switched to existing branch '%s'.\n", branchName)
+			fmt.Fprintf(c.out(), "Switched to existing branch '%s'.\n", branchName)
 			return nil
 		}
 
-		fmt.Printf("Fetching PR #%d from %s...\n", prNumber, remote)
+		fmt.Fprintf(c.out(), "Fetching PR #%d from %s...\n", prNumber, remote)
 		if err := cmdrun.RunWithOutput("git", "fetch", remote, prRef); err != nil {
 			return fmt.Errorf("fetching PR: %w", err)
 		}
@@ -164,7 +165,7 @@ func checkoutPR(remote string, prNumber int, prType string) error {
 			return fmt.Errorf("resetting branch: %w", err)
 		}
 
-		fmt.Printf("Reset branch '%s' to PR #%d (%s).\n", branchName, prNumber, prType)
+		fmt.Fprintf(c.out(), "Reset branch '%s' to PR #%d (%s).\n", branchName, prNumber, prType)
 		return nil
 	}
 
@@ -173,11 +174,11 @@ func checkoutPR(remote string, prNumber int, prType string) error {
 		return fmt.Errorf("checking git status: %w", err)
 	}
 	if dirty {
-		fmt.Fprintln(os.Stderr, "You have local changes that would be overwritten. Please commit or stash them before checking out a PR.")
+		fmt.Fprintln(c.err(), "You have local changes that would be overwritten. Please commit or stash them before checking out a PR.")
 		return fmt.Errorf("local changes would be overwritten")
 	}
 
-	fmt.Printf("Fetching PR #%d from %s...\n", prNumber, remote)
+	fmt.Fprintf(c.out(), "Fetching PR #%d from %s...\n", prNumber, remote)
 	if err := cmdrun.RunWithOutput("git", "fetch", remote, prRef); err != nil {
 		return fmt.Errorf("fetching PR: %w", err)
 	}
@@ -186,6 +187,6 @@ func checkoutPR(remote string, prNumber int, prType string) error {
 		return fmt.Errorf("creating and checking out branch: %w", err)
 	}
 
-	fmt.Printf("Checked out PR #%d (%s) as branch '%s'.\n", prNumber, prType, branchName)
+	fmt.Fprintf(c.out(), "Checked out PR #%d (%s) as branch '%s'.\n", prNumber, prType, branchName)
 	return nil
 }

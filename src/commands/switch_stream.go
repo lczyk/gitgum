@@ -3,7 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
-	"os"
+	"io"
 	"sync"
 	"time"
 
@@ -20,7 +20,8 @@ type branchEntry struct {
 // streamBranches collects local and remote branches concurrently, deduplicating
 // and writing into a slice protected by the returned lock. Caller cancels ctx
 // when the consumer (fuzzyfinder) is done; cancellation also stops producers.
-func streamBranches(ctx context.Context, currentBranch, trackingRemote string, remotes []string) (*[]string, *sync.Mutex) {
+// errOut receives non-fatal diagnostic messages from the producers.
+func streamBranches(ctx context.Context, errOut io.Writer, currentBranch, trackingRemote string, remotes []string) (*[]string, *sync.Mutex) {
 	var (
 		lock     sync.Mutex
 		branches []string
@@ -30,7 +31,7 @@ func streamBranches(ctx context.Context, currentBranch, trackingRemote string, r
 	// fetch once so producers do map lookups instead of N subprocess calls.
 	checkedOut, err := git.CheckedOutBranches()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error getting worktrees: %v\n", err)
+		fmt.Fprintf(errOut, "error getting worktrees: %v\n", err)
 		checkedOut = map[string]bool{}
 	}
 
@@ -52,18 +53,18 @@ func streamBranches(ctx context.Context, currentBranch, trackingRemote string, r
 		}
 	}()
 
-	go streamLocalBranches(ctx, queue, currentBranch, checkedOut)
+	go streamLocalBranches(ctx, errOut, queue, currentBranch, checkedOut)
 	for _, remote := range remotes {
-		go streamRemoteBranches(ctx, queue, remote, currentBranch, trackingRemote, checkedOut)
+		go streamRemoteBranches(ctx, errOut, queue, remote, currentBranch, trackingRemote, checkedOut)
 	}
 
 	return &branches, &lock
 }
 
-func streamLocalBranches(ctx context.Context, queue chan<- branchEntry, currentBranch string, checkedOut map[string]bool) {
+func streamLocalBranches(ctx context.Context, errOut io.Writer, queue chan<- branchEntry, currentBranch string, checkedOut map[string]bool) {
 	locals, err := git.GetLocalBranches()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error getting local branches: %v\n", err)
+		fmt.Fprintf(errOut, "error getting local branches: %v\n", err)
 		return
 	}
 
@@ -98,10 +99,10 @@ func streamLocalBranches(ctx context.Context, queue chan<- branchEntry, currentB
 	}
 }
 
-func streamRemoteBranches(ctx context.Context, queue chan<- branchEntry, remote, currentBranch, trackingRemote string, checkedOut map[string]bool) {
+func streamRemoteBranches(ctx context.Context, errOut io.Writer, queue chan<- branchEntry, remote, currentBranch, trackingRemote string, checkedOut map[string]bool) {
 	branches, err := git.GetRemoteBranches(remote)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error getting remote branches for '%s': %v\n", remote, err)
+		fmt.Fprintf(errOut, "error getting remote branches for '%s': %v\n", remote, err)
 		return
 	}
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
+	"io"
 	"strings"
 	"sync"
 
@@ -14,7 +14,9 @@ import (
 	"github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
-type SwitchCommand struct{}
+type SwitchCommand struct {
+	cmdIO
+}
 
 // resolveCurrentBranchContext figures out the current branch, its tracking
 // remote, and a human-readable status line for display. In detached HEAD,
@@ -61,14 +63,14 @@ func (s *SwitchCommand) Execute(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(statusLine)
+	fmt.Fprintln(s.out(), statusLine)
 
 	dirty, err := git.IsDirty()
 	if err != nil {
 		return fmt.Errorf("checking git status: %w", err)
 	}
 	if dirty {
-		fmt.Fprintln(os.Stderr, "You have local changes that would be overwritten by switching branches. Please commit or stash them before switching.")
+		fmt.Fprintln(s.err(), "You have local changes that would be overwritten by switching branches. Please commit or stash them before switching.")
 		return fmt.Errorf("local changes would be overwritten")
 	}
 
@@ -80,9 +82,9 @@ func (s *SwitchCommand) Execute(args []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	branches, lock := streamBranches(ctx, currentBranch, trackingRemote, remotes)
+	branches, lock := streamBranches(ctx, s.err(), currentBranch, trackingRemote, remotes)
 
-	selected, err := pickBranch(ctx, branches, lock)
+	selected, err := pickBranch(ctx, s.err(), branches, lock)
 	cancel()
 	if err != nil {
 		if errors.Is(err, ui.ErrCancelled) {
@@ -100,7 +102,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 	return nil
 }
 
-func pickBranch(ctx context.Context, branches *[]string, lock *sync.Mutex) (string, error) {
+func pickBranch(ctx context.Context, errOut io.Writer, branches *[]string, lock *sync.Mutex) (string, error) {
 	prompt := "Select a branch to switch to"
 	idxs, err := fuzzyfinder.Find(ctx, branches, lock, fuzzyfinder.Opt{
 		Prompt:  prompt + ": ",
@@ -108,7 +110,7 @@ func pickBranch(ctx context.Context, branches *[]string, lock *sync.Mutex) (stri
 		Reverse: true,
 	})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "No branch selected. Aborting switch.")
+		fmt.Fprintln(errOut, "No branch selected. Aborting switch.")
 		if errors.Is(err, fuzzyfinder.ErrAbort) {
 			return "", ui.ErrCancelled
 		}
@@ -136,7 +138,7 @@ func (s *SwitchCommand) applySelection(selected string) error {
 		if err := s.checkoutBranch(name); err != nil {
 			return err
 		}
-		fmt.Printf("Switched to branch '%s'.\n", name)
+		fmt.Fprintf(s.out(), "Switched to branch '%s'.\n", name)
 		return nil
 	case "remote":
 		remoteParts := strings.SplitN(name, "/", 2)

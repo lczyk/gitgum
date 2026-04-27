@@ -26,7 +26,7 @@ func TestCompletionCommand_Execute(t *testing.T) {
 	for name, tt := range cases {
 		t.Run(name, func(t *testing.T) {
 			var buf strings.Builder
-			cmd := &CompletionCommand{out: &buf, cmdName: tt.cmdName}
+			cmd := &CompletionCommand{cmdIO: cmdIO{Out: &buf}, cmdName: tt.cmdName}
 			cmd.Args.Shell = tt.shell
 
 			err := cmd.Execute(nil)

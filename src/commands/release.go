@@ -18,6 +18,7 @@ import (
 // commits the bump, and creates an annotated tag. Refuses unless on main with
 // a clean working tree. Push is left manual so the result can be inspected.
 type ReleaseCommand struct {
+	cmdIO
 	Args struct {
 		Bump string `positional-arg-name:"BUMP" choice:"patch" choice:"minor" choice:"major" required:"yes"`
 	} `positional-args:"yes"`
@@ -56,9 +57,9 @@ func (r *ReleaseCommand) Execute(args []string) error {
 	remote := mainPushRemote()
 
 	if state, ok := alreadyReleased(); ok {
-		fmt.Printf("Already released: HEAD is %q (tag %s already at HEAD).\n", state.subject, state.tag)
-		fmt.Printf("Nothing to do. To publish:\n")
-		fmt.Printf("  git push %s main && git push %s %s\n", remote, remote, state.tag)
+		fmt.Fprintf(r.out(), "Already released: HEAD is %q (tag %s already at HEAD).\n", state.subject, state.tag)
+		fmt.Fprintf(r.out(), "Nothing to do. To publish:\n")
+		fmt.Fprintf(r.out(), "  git push %s main && git push %s %s\n", remote, remote, state.tag)
 		return nil
 	}
 
@@ -82,7 +83,7 @@ func (r *ReleaseCommand) Execute(args []string) error {
 		}
 	}
 
-	fmt.Printf("Bumping %s -> %s\n", current, next)
+	fmt.Fprintf(r.out(), "Bumping %s -> %s\n", current, next)
 
 	commitArgs := []string{"commit", "-m", "release: " + tags[0]}
 	if hasFile {
@@ -105,10 +106,10 @@ func (r *ReleaseCommand) Execute(args []string) error {
 		}
 	}
 
-	fmt.Printf("\nTagged %s. To publish:\n", strings.Join(tags, ", "))
-	fmt.Printf("  git push %s main && git push %s %s\n", remote, remote, strings.Join(tags, " "))
-	fmt.Println("\nTo fully undo (drops the commit and the tag(s)):")
-	fmt.Printf("  git reset --hard HEAD~1 && git tag -d %s\n", strings.Join(tags, " "))
+	fmt.Fprintf(r.out(), "\nTagged %s. To publish:\n", strings.Join(tags, ", "))
+	fmt.Fprintf(r.out(), "  git push %s main && git push %s %s\n", remote, remote, strings.Join(tags, " "))
+	fmt.Fprintln(r.out(), "\nTo fully undo (drops the commit and the tag(s)):")
+	fmt.Fprintf(r.out(), "  git reset --hard HEAD~1 && git tag -d %s\n", strings.Join(tags, " "))
 	return nil
 }
 

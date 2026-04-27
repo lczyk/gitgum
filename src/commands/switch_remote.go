@@ -2,7 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/git"
@@ -13,7 +12,7 @@ import (
 // If a local branch with the same name exists, offers to align tracking + reset.
 // Otherwise offers to create a tracking branch.
 func (s *SwitchCommand) handleRemoteSelection(remote, branch string) error {
-	fmt.Printf("Fetching '%s/%s'...\n", remote, branch)
+	fmt.Fprintf(s.out(), "Fetching '%s/%s'...\n", remote, branch)
 	if err := cmdrun.RunQuiet("git", "fetch", remote, branch); err != nil {
 		return fmt.Errorf("fetching '%s/%s': %w", remote, branch, err)
 	}
@@ -22,11 +21,11 @@ func (s *SwitchCommand) handleRemoteSelection(remote, branch string) error {
 		return s.createTrackingBranch(remote, branch)
 	}
 
-	fmt.Printf("Branch '%s/%s' already has a local counterpart.\n", remote, branch)
+	fmt.Fprintf(s.out(), "Branch '%s/%s' already has a local counterpart.\n", remote, branch)
 
 	trackingRemote, _ := git.GetBranchTrackingRemote(branch)
 	if trackingRemote != "" {
-		fmt.Printf("Tracking reference for local branch '%s': '%s'\n", branch, trackingRemote)
+		fmt.Fprintf(s.out(), "Tracking reference for local branch '%s': '%s'\n", branch, trackingRemote)
 	}
 
 	if trackingRemote != remote {
@@ -43,7 +42,7 @@ func (s *SwitchCommand) handleRemoteSelection(remote, branch string) error {
 }
 
 func (s *SwitchCommand) retargetTracking(remote, branch string) error {
-	fmt.Printf("Local branch '%s' is not tracking remote branch '%s/%s'.\n", branch, remote, branch)
+	fmt.Fprintf(s.out(), "Local branch '%s' is not tracking remote branch '%s/%s'.\n", branch, remote, branch)
 
 	confirmed, err := ui.Confirm(fmt.Sprintf("Set '%s/%s' as the tracking reference for local branch '%s'?",
 		remote, branch, branch), false)
@@ -51,13 +50,13 @@ func (s *SwitchCommand) retargetTracking(remote, branch string) error {
 		return err
 	}
 	if !confirmed {
-		fmt.Fprintln(os.Stderr, "Not setting tracking reference. Aborting switch.")
+		fmt.Fprintln(s.err(), "Not setting tracking reference. Aborting switch.")
 		return ui.ErrCancelled
 	}
 	if err := cmdrun.RunQuiet("git", "branch", "--set-upstream-to="+remote+"/"+branch, branch); err != nil {
 		return fmt.Errorf("setting tracking reference: %w", err)
 	}
-	fmt.Printf("Set tracking reference for local branch '%s' to remote branch '%s/%s'.\n",
+	fmt.Fprintf(s.out(), "Set tracking reference for local branch '%s' to remote branch '%s/%s'.\n",
 		branch, remote, branch)
 	return nil
 }
@@ -75,8 +74,8 @@ func (s *SwitchCommand) alignWithRemote(remote, branch string) error {
 	}
 
 	if localCommit == remoteCommit {
-		fmt.Printf("Local branch '%s' is up to date with remote branch '%s/%s'.\n", branch, remote, branch)
-		fmt.Printf("Switched to branch '%s' tracking remote branch '%s/%s'.\n", branch, remote, branch)
+		fmt.Fprintf(s.out(), "Local branch '%s' is up to date with remote branch '%s/%s'.\n", branch, remote, branch)
+		fmt.Fprintf(s.out(), "Switched to branch '%s' tracking remote branch '%s/%s'.\n", branch, remote, branch)
 		return nil
 	}
 
@@ -86,14 +85,14 @@ func (s *SwitchCommand) alignWithRemote(remote, branch string) error {
 		return err
 	}
 	if !confirmed {
-		fmt.Fprintln(os.Stderr, "Not resetting local branch.")
-		fmt.Printf("Switched to branch '%s' (diverged from '%s/%s').\n", branch, remote, branch)
+		fmt.Fprintln(s.err(), "Not resetting local branch.")
+		fmt.Fprintf(s.out(), "Switched to branch '%s' (diverged from '%s/%s').\n", branch, remote, branch)
 		return nil
 	}
 	if err := cmdrun.RunQuiet("git", "reset", "--hard", remoteRef); err != nil {
 		return fmt.Errorf("resetting local branch: %w", err)
 	}
-	fmt.Printf("Switched to branch '%s', reset to remote branch '%s/%s'.\n", branch, remote, branch)
+	fmt.Fprintf(s.out(), "Switched to branch '%s', reset to remote branch '%s/%s'.\n", branch, remote, branch)
 	return nil
 }
 
@@ -103,13 +102,13 @@ func (s *SwitchCommand) createTrackingBranch(remote, branch string) error {
 		return err
 	}
 	if !confirmed {
-		fmt.Fprintln(os.Stderr, "Not creating a local tracking branch. Aborting switch.")
+		fmt.Fprintln(s.err(), "Not creating a local tracking branch. Aborting switch.")
 		return ui.ErrCancelled
 	}
 	if err := cmdrun.RunQuiet("git", "checkout", "-b", branch, remote+"/"+branch); err != nil {
 		return fmt.Errorf("creating tracking branch: %w", err)
 	}
-	fmt.Printf("Created and switched to local branch '%s' tracking remote branch '%s/%s'.\n",
+	fmt.Fprintf(s.out(), "Created and switched to local branch '%s' tracking remote branch '%s/%s'.\n",
 		branch, remote, branch)
 	return nil
 }

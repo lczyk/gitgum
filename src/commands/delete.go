@@ -9,7 +9,9 @@ import (
 	"github.com/lczyk/gitgum/internal/ui"
 )
 
-type DeleteCommand struct{}
+type DeleteCommand struct {
+	cmdIO
+}
 
 func (d *DeleteCommand) Execute(args []string) error {
 	if err := git.CheckInRepo(); err != nil {
@@ -28,7 +30,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 	branch, err := ui.Select("Select a branch to delete", branches)
 	if err != nil {
 		if errors.Is(err, ui.ErrCancelled) {
-			fmt.Println("Aborting delete.")
+			fmt.Fprintln(d.out(), "Aborting delete.")
 			return nil
 		}
 		return err
@@ -44,7 +46,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 			return err
 		}
 		if !confirmed {
-			fmt.Println("Aborting delete.")
+			fmt.Fprintln(d.out(), "Aborting delete.")
 			return nil
 		}
 	}
@@ -64,7 +66,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 			return err
 		}
 		if !confirmed {
-			fmt.Println("Aborting delete.")
+			fmt.Fprintln(d.out(), "Aborting delete.")
 			return nil
 		}
 
@@ -82,7 +84,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 		otherBranch, err := ui.Select("Select a branch to switch to", otherBranches)
 		if err != nil {
 			if errors.Is(err, ui.ErrCancelled) {
-				fmt.Println("Aborting delete.")
+				fmt.Fprintln(d.out(), "Aborting delete.")
 				return nil
 			}
 			return err
@@ -91,7 +93,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 		if err := cmdrun.RunWithOutput("git", "checkout", otherBranch); err != nil {
 			return fmt.Errorf("switching to branch '%s': %w", otherBranch, err)
 		}
-		fmt.Printf("Switched to branch '%s'.\n", otherBranch)
+		fmt.Fprintf(d.out(), "Switched to branch '%s'.\n", otherBranch)
 	}
 
 	// non-fatal: skip remote deletion if upstream lookup fails
@@ -125,23 +127,23 @@ func (d *DeleteCommand) Execute(args []string) error {
 			return err
 		}
 		if !confirmed {
-			fmt.Println("Aborting delete.")
+			fmt.Fprintln(d.out(), "Aborting delete.")
 			return nil
 		}
 
 		if err := cmdrun.RunWithOutput("git", "branch", "-D", branch); err != nil {
 			return fmt.Errorf("force deleting branch '%s': %w", branch, err)
 		}
-		fmt.Printf("Force deleted local branch '%s'.\n", branch)
+		fmt.Fprintf(d.out(), "Force deleted local branch '%s'.\n", branch)
 	} else {
-		fmt.Printf("Deleted local branch '%s'.\n", branch)
+		fmt.Fprintf(d.out(), "Deleted local branch '%s'.\n", branch)
 	}
 
 	if needsToDeleteRemote {
 		if err := cmdrun.RunWithOutput("git", "push", "--delete", remoteName, remoteBranchName); err != nil {
 			return fmt.Errorf("deleting remote branch: %w", err)
 		}
-		fmt.Printf("Deleted remote branch '%s/%s'.\n", remoteName, remoteBranchName)
+		fmt.Fprintf(d.out(), "Deleted remote branch '%s/%s'.\n", remoteName, remoteBranchName)
 	}
 
 	return nil

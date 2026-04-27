@@ -8,7 +8,9 @@ import (
 	"github.com/lczyk/gitgum/internal/ui"
 )
 
-type EmptyCommand struct{}
+type EmptyCommand struct {
+	cmdIO
+}
 
 func (e *EmptyCommand) Execute(args []string) error {
 	if err := git.CheckInRepo(); err != nil {
@@ -27,7 +29,7 @@ func (e *EmptyCommand) Execute(args []string) error {
 
 	hasUpstream := upstream != ""
 	if !hasUpstream {
-		fmt.Printf("Current branch '%s' has no upstream tracking branch.\n", currentBranch)
+		fmt.Fprintf(e.out(), "Current branch '%s' has no upstream tracking branch.\n", currentBranch)
 	}
 
 	if hasUpstream {
@@ -45,14 +47,14 @@ func (e *EmptyCommand) Execute(args []string) error {
 		return fmt.Errorf("checking if working tree is dirty: %w", err)
 	}
 	if dirty {
-		fmt.Println("Working tree has uncommitted changes. Stashing them before creating empty commit.")
+		fmt.Fprintln(e.out(), "Working tree has uncommitted changes. Stashing them before creating empty commit.")
 		if err := cmdrun.RunWithOutput("git", "stash", "--include-untracked"); err != nil {
 			return fmt.Errorf("stashing changes: %w", err)
 		}
 		defer func() {
-			fmt.Println("Restoring stashed changes.")
+			fmt.Fprintln(e.out(), "Restoring stashed changes.")
 			if err := cmdrun.RunWithOutput("git", "stash", "pop"); err != nil {
-				fmt.Printf("Warning: failed to pop stash: %v\n", err)
+				fmt.Fprintf(e.err(), "Warning: failed to pop stash: %v\n", err)
 			}
 		}()
 	}
@@ -61,7 +63,7 @@ func (e *EmptyCommand) Execute(args []string) error {
 		return fmt.Errorf("creating empty commit: %w", err)
 	}
 
-	fmt.Printf("Created empty commit on branch '%s'.\n", currentBranch)
+	fmt.Fprintf(e.out(), "Created empty commit on branch '%s'.\n", currentBranch)
 
 	if hasUpstream {
 		confirmed, err := ui.Confirm("Do you want to push this commit to the remote?", true)
@@ -72,9 +74,9 @@ func (e *EmptyCommand) Execute(args []string) error {
 			if err := cmdrun.RunWithOutput("git", "push"); err != nil {
 				return fmt.Errorf("pushing: %w", err)
 			}
-			fmt.Println("Pushed to remote.")
+			fmt.Fprintln(e.out(), "Pushed to remote.")
 		} else {
-			fmt.Println("Not pushing.")
+			fmt.Fprintln(e.out(), "Not pushing.")
 		}
 	}
 

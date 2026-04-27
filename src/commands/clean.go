@@ -14,6 +14,7 @@ const gitCleanDryRunPrefix = "Would remove "
 
 // CleanCommand handles discarding working tree changes and untracked files
 type CleanCommand struct {
+	cmdIO
 	Changes   *bool `long:"changes" description:"Discard staged and unstaged changes (default: true)"`
 	Untracked *bool `long:"untracked" description:"Remove untracked files (default: true)"`
 	Ignored   *bool `long:"ignored" description:"Remove ignored files (default: false)"`
@@ -42,7 +43,7 @@ func (c *CleanCommand) Execute(args []string) error {
 	}
 
 	if !changes && !untracked {
-		fmt.Println("Nothing to clean (all options disabled)")
+		fmt.Fprintln(c.out(), "Nothing to clean (all options disabled)")
 		return nil
 	}
 
@@ -52,20 +53,20 @@ func (c *CleanCommand) Execute(args []string) error {
 	}
 
 	if len(affectedFiles) == 0 {
-		fmt.Println("Nothing to clean (working tree is clean)")
+		fmt.Fprintln(c.out(), "Nothing to clean (working tree is clean)")
 		return nil
 	}
 
-	fmt.Printf("Files to be discarded (%d):\n", len(affectedFiles))
+	fmt.Fprintf(c.out(), "Files to be discarded (%d):\n", len(affectedFiles))
 	maxDisplay := 20
 	for i, file := range affectedFiles {
 		if i >= maxDisplay {
-			fmt.Printf("  ... and %d more files\n", len(affectedFiles)-maxDisplay)
+			fmt.Fprintf(c.out(), "  ... and %d more files\n", len(affectedFiles)-maxDisplay)
 			break
 		}
-		fmt.Printf("  %s\n", file)
+		fmt.Fprintf(c.out(), "  %s\n", file)
 	}
-	fmt.Println()
+	fmt.Fprintln(c.out())
 
 	if !c.Yes {
 		confirmed, err := ui.Confirm("Proceed with cleanup? This cannot be undone", false)
@@ -73,26 +74,26 @@ func (c *CleanCommand) Execute(args []string) error {
 			return err
 		}
 		if !confirmed {
-			fmt.Println("Cleanup cancelled")
+			fmt.Fprintln(c.out(), "Cleanup cancelled")
 			return nil
 		}
 	}
 
 	if changes {
-		fmt.Println("Discarding changes...")
+		fmt.Fprintln(c.out(), "Discarding changes...")
 		if err := cmdrun.RunWithOutput("git", "reset", "--hard"); err != nil {
 			return fmt.Errorf("failed to reset changes: %w", err)
 		}
 	}
 
 	if untracked {
-		fmt.Println("Removing untracked files...")
+		fmt.Fprintln(c.out(), "Removing untracked files...")
 		if err := cmdrun.RunWithOutput("git", gitCleanArgs(false, ignored)...); err != nil {
 			return fmt.Errorf("failed to clean untracked files: %w", err)
 		}
 	}
 
-	fmt.Println("Clean complete")
+	fmt.Fprintln(c.out(), "Clean complete")
 	return nil
 }
 

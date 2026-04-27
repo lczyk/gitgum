@@ -22,7 +22,7 @@ func TestStatusCommand_InGitRepo(t *testing.T) {
 	temp_repo.InitTempRepo(t)
 
 	var buf strings.Builder
-	cmd := &StatusCommand{out: &buf}
+	cmd := &StatusCommand{cmdIO: cmdIO{Out: &buf}}
 	err := cmd.Execute(nil)
 
 	assert.NoError(t, err, "should succeed in git repo")
@@ -42,7 +42,7 @@ func TestStatusCommand_WithChanges(t *testing.T) {
 	temp_repo.WriteFile(t, dir, "untracked.txt", "hello\n")
 
 	var buf strings.Builder
-	cmd := &StatusCommand{out: &buf}
+	cmd := &StatusCommand{cmdIO: cmdIO{Out: &buf}}
 	err := cmd.Execute(nil)
 
 	assert.NoError(t, err, "should succeed with pending changes")
