@@ -114,6 +114,14 @@ type Screen struct {
 	// runs at most once, from either Fini or the signal goroutine.
 	sigCh       chan os.Signal
 	cleanupOnce sync.Once
+
+	// readLoop cancellation. quit closes when Fini wants the reader to stop;
+	// readWG lets Fini wait for the goroutine to actually exit before
+	// closing fds. Without this, darwin leaves readLoop stranded in
+	// syscall.Read on the closed fd, where it later steals input bytes
+	// (including DSR responses) intended for the next picker.
+	quit   chan struct{}
+	readWG sync.WaitGroup
 }
 
 // resolveHeight turns the user-supplied Height value into an actual row
@@ -454,6 +462,8 @@ func (s *Screen) Init() error {
 	s.out.Write(out)
 	s.cursorVisible = false
 
+	s.quit = make(chan struct{})
+
 	s.winch = make(chan os.Signal, 1)
 	s.notifyWinch(s.winch)
 
@@ -553,6 +563,14 @@ func (s *Screen) Fini() {
 		s.stopSignal(s.sigCh)
 		close(s.sigCh)
 		s.sigCh = nil
+	}
+	// Signal readLoop to exit and wait for it BEFORE closing fds. Otherwise
+	// the goroutine sits stranded in syscall.Read on darwin and steals input
+	// (DSR, keystrokes) intended for the next picker.
+	if s.quit != nil {
+		close(s.quit)
+		s.readWG.Wait()
+		s.quit = nil
 	}
 	s.closeIO()
 }
@@ -656,6 +674,7 @@ func (s *Screen) ChannelEvents(out chan<- tcell.Event, quit <-chan struct{}) {
 	// Don't close `out` on exit: the finder's receive loop doesn't check
 	// `ok` and would spin on the closed channel.
 	bytesCh := make(chan byte, 256)
+	s.readWG.Add(1)
 	go s.readLoop(bytesCh)
 
 	// Capture winch locally so Fini can nil s.winch without racing this loop.
@@ -688,20 +707,78 @@ func (s *Screen) ChannelEvents(out chan<- tcell.Event, quit <-chan struct{}) {
 	}
 }
 
+// readLoop reads input bytes off s.in and forwards them to out. It MUST exit
+// when s.quit closes; otherwise on darwin a stranded blocking syscall.Read on
+// the closed /dev/tty fd later steals input bytes (DSR responses, keystrokes)
+// from the next picker that opens /dev/tty. We use SetNonblock + EAGAIN
+// polling so the loop can check s.quit between reads — close(fd) alone does
+// not interrupt a blocked read on darwin.
 func (s *Screen) readLoop(out chan<- byte) {
+	defer s.readWG.Done()
+	defer close(out)
+
+	// If s.in is a real *os.File (production), put the fd into nonblocking
+	// mode so we can poll. In tests s.in may be a strings.Reader; fall back
+	// to the simple blocking path there (tests don't strand goroutines).
+	f, isFile := s.in.(*os.File)
+	if !isFile {
+		buf := make([]byte, 64)
+		for {
+			select {
+			case <-s.quit:
+				return
+			default:
+			}
+			n, err := s.in.Read(buf)
+			for i := range n {
+				select {
+				case out <- buf[i]:
+				case <-s.quit:
+					return
+				}
+			}
+			if err != nil {
+				return
+			}
+		}
+	}
+
+	fd := int(f.Fd())
+	if err := syscall.SetNonblock(fd, true); err != nil {
+		return
+	}
+	defer syscall.SetNonblock(fd, false)
+
 	buf := make([]byte, 64)
 	for {
-		n, err := s.in.Read(buf)
-		// Deliver any bytes we got *before* honouring the error — Read can
-		// return both n>0 and err on the final chunk (e.g. EOF after the
-		// last data), and we want the parser to see those bytes.
-		for i := 0; i < n; i++ {
-			out <- buf[i]
-		}
-		if err != nil {
-			close(out)
+		select {
+		case <-s.quit:
 			return
+		default:
 		}
+		n, err := syscall.Read(fd, buf)
+		if n > 0 {
+			for i := range n {
+				select {
+				case out <- buf[i]:
+				case <-s.quit:
+					return
+				}
+			}
+			continue
+		}
+		if err == syscall.EAGAIN || err == syscall.EWOULDBLOCK {
+			// Poll interval: snappy enough that keystrokes feel responsive,
+			// slack enough not to busy-spin when idle.
+			select {
+			case <-s.quit:
+				return
+			case <-time.After(2 * time.Millisecond):
+			}
+			continue
+		}
+		// Any other error (including fd closed) → exit.
+		return
 	}
 }
 

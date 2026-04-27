@@ -515,6 +515,89 @@ func TestScreen_HandleResize_Narrow(t *testing.T) {
 	s.Fini()
 }
 
+// TestScreen_Fini_StopsReadLoop is the regression guard for the bug where
+// PICK1's readLoop goroutine sat stranded in syscall.Read on the closed
+// /dev/tty fd after Fini, then stole DSR responses (and other input) from
+// the next picker that opened /dev/tty. Symptom in production: second
+// picker's queryCursorRow timed out → fell back to bottom-anchor.
+//
+// Uses os.Pipe so s.in is a real *os.File and readLoop hits the production
+// SetNonblock + EAGAIN-poll + quit-channel path. Fini must signal quit and
+// wait for the goroutine to exit before returning.
+func TestScreen_Fini_StopsReadLoop(t *testing.T) {
+	pr, pw, err := os.Pipe()
+	assert.NoError(t, err)
+	defer pr.Close()
+	defer pw.Close()
+
+	var out bytes.Buffer
+	s := &Screen{
+		hooks:  stubHooks(80, 24, nil, nil),
+		in:     pr,
+		out:    &out,
+		height: 5,
+	}
+
+	assert.NoError(t, s.Init())
+
+	eventsCh := make(chan tcell.Event, 16)
+	go s.ChannelEvents(eventsCh, nil)
+
+	// Let ChannelEvents start its readLoop and reach the polling syscall.Read.
+	time.Sleep(20 * time.Millisecond)
+
+	done := make(chan struct{})
+	go func() {
+		s.Fini()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Good — Fini returned, meaning quit was honoured and the goroutine
+		// exited (readWG.Wait completed).
+	case <-time.After(2 * time.Second):
+		t.Fatal("Fini deadlocked — readLoop didn't exit on quit (stranded reader regression)")
+	}
+}
+
+// TestScreen_ReadLoop_ForwardsBytes verifies the SetNonblock + poll path
+// still delivers input bytes correctly to ChannelEvents — the cancellation
+// fix mustn't break the happy path.
+func TestScreen_ReadLoop_ForwardsBytes(t *testing.T) {
+	pr, pw, err := os.Pipe()
+	assert.NoError(t, err)
+	defer pr.Close()
+
+	var out bytes.Buffer
+	s := &Screen{
+		hooks:  stubHooks(80, 24, nil, nil),
+		in:     pr,
+		out:    &out,
+		height: 5,
+	}
+	assert.NoError(t, s.Init())
+
+	eventsCh := make(chan tcell.Event, 16)
+	go s.ChannelEvents(eventsCh, nil)
+
+	if _, err := pw.Write([]byte("a")); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case ev := <-eventsCh:
+		ke, ok := ev.(*tcell.EventKey)
+		assert.That(t, ok, "expected EventKey, got %T", ev)
+		assert.Equal(t, ke.Rune(), 'a')
+	case <-time.After(time.Second):
+		t.Fatal("readLoop didn't forward byte through ChannelEvents")
+	}
+
+	pw.Close()
+	s.Fini()
+}
+
 // --- init/fini/resize byte sequences ---------------------------------------
 //
 // These exercise the pure byte composition extracted from Init/Fini/
