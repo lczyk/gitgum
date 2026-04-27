@@ -44,7 +44,7 @@ func (s *SwitchCommand) handleRemoteSelection(remote, branch string) error {
 func (s *SwitchCommand) retargetTracking(remote, branch string) error {
 	fmt.Fprintf(s.out(), "Local branch '%s' is not tracking remote branch '%s/%s'.\n", branch, remote, branch)
 
-	confirmed, err := ui.Confirm(fmt.Sprintf("Set '%s/%s' as the tracking reference for local branch '%s'?",
+	confirmed, err := s.sel().Confirm(fmt.Sprintf("Set '%s/%s' as the tracking reference for local branch '%s'?",
 		remote, branch, branch), false)
 	if err != nil {
 		return err
@@ -79,7 +79,7 @@ func (s *SwitchCommand) alignWithRemote(remote, branch string) error {
 		return nil
 	}
 
-	confirmed, err := ui.Confirm(fmt.Sprintf("Local branch '%s' is not up to date with remote branch '%s/%s'. Reset the local branch to the remote branch?",
+	confirmed, err := s.sel().Confirm(fmt.Sprintf("Local branch '%s' is not up to date with remote branch '%s/%s'. Reset the local branch to the remote branch?",
 		branch, remote, branch), false)
 	if err != nil {
 		return err
@@ -97,7 +97,7 @@ func (s *SwitchCommand) alignWithRemote(remote, branch string) error {
 }
 
 func (s *SwitchCommand) createTrackingBranch(remote, branch string) error {
-	confirmed, err := ui.Confirm(fmt.Sprintf("Branch '%s' is not tracked locally. Create a local tracking branch?", branch), true)
+	confirmed, err := s.sel().Confirm(fmt.Sprintf("Branch '%s' is not tracked locally. Create a local tracking branch?", branch), true)
 	if err != nil {
 		return err
 	}

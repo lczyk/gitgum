@@ -11,7 +11,6 @@ import (
 	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/strutil"
-	"github.com/lczyk/gitgum/internal/ui"
 )
 
 // ReleaseCommand bumps the repo's VERSION (or falls back to the latest tag),
@@ -37,7 +36,7 @@ func (r *ReleaseCommand) Execute(args []string) error {
 		return fmt.Errorf("get current branch: %w", err)
 	}
 	if branch != "main" {
-		confirmed, err := ui.Confirm(fmt.Sprintf("Not on main (current: %s). Release anyway?", branch), false)
+		confirmed, err := r.sel().Confirm(fmt.Sprintf("Not on main (current: %s). Release anyway?", branch), false)
 		if err != nil {
 			return err
 		}

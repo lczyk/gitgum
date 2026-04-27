@@ -24,7 +24,7 @@ func (p *PushCommand) Execute(args []string) error {
 	}
 	if remoteBranch != "" {
 		fmt.Fprintf(p.out(), "Current branch already has a remote tracking branch: %s\n", remoteBranch)
-		confirmed, err := ui.Confirm("Do you want to push to the remote tracking branch?", true)
+		confirmed, err := p.sel().Confirm("Do you want to push to the remote tracking branch?", true)
 		if err != nil {
 			if errors.Is(err, ui.ErrCancelled) {
 				return nil
@@ -69,7 +69,7 @@ func (p *PushCommand) Execute(args []string) error {
 		if len(args) > 0 {
 			query = args[:1]
 		}
-		remote, err := ui.Select(fmt.Sprintf("Push '%s' to", currentBranch), remotes, query...)
+		remote, err := p.sel().Select(fmt.Sprintf("Push '%s' to", currentBranch), remotes, query...)
 		if err != nil {
 			if errors.Is(err, ui.ErrCancelled) {
 				return nil
@@ -87,7 +87,7 @@ func (p *PushCommand) Execute(args []string) error {
 	}
 
 	if !remoteBranchExists {
-		confirmed, err := ui.Confirm(fmt.Sprintf("No remote branch '%s' found. Do you want to create it?",
+		confirmed, err := p.sel().Confirm(fmt.Sprintf("No remote branch '%s' found. Do you want to create it?",
 			expectedRemoteBranchName), false)
 		if err != nil {
 			if errors.Is(err, ui.ErrCancelled) {
@@ -128,7 +128,7 @@ func (p *PushCommand) Execute(args []string) error {
 		return nil
 	}
 
-	confirmed, err := ui.Confirm(fmt.Sprintf("Remote branch '%s' already exists. Do you want to push to it?",
+	confirmed, err := p.sel().Confirm(fmt.Sprintf("Remote branch '%s' already exists. Do you want to push to it?",
 		expectedRemoteBranchName), true)
 	if err != nil {
 		if errors.Is(err, ui.ErrCancelled) {

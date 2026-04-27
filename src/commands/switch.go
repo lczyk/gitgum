@@ -4,14 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
-	"sync"
 
 	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/ui"
-	"github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
 type SwitchCommand struct {
@@ -84,9 +81,10 @@ func (s *SwitchCommand) Execute(args []string) error {
 
 	branches, lock := streamBranches(ctx, s.err(), currentBranch, trackingRemote, remotes)
 
-	selected, err := pickBranch(ctx, s.err(), branches, lock)
+	selected, err := s.sel().SelectStream(ctx, "Select a branch to switch to", branches, lock)
 	cancel()
 	if err != nil {
+		fmt.Fprintln(s.err(), "No branch selected. Aborting switch.")
 		if errors.Is(err, ui.ErrCancelled) {
 			return nil
 		}
@@ -100,30 +98,6 @@ func (s *SwitchCommand) Execute(args []string) error {
 		return err
 	}
 	return nil
-}
-
-func pickBranch(ctx context.Context, errOut io.Writer, branches *[]string, lock *sync.Mutex) (string, error) {
-	prompt := "Select a branch to switch to"
-	idxs, err := fuzzyfinder.Find(ctx, branches, lock, fuzzyfinder.Opt{
-		Prompt:  prompt + ": ",
-		Height:  10,
-		Reverse: true,
-	})
-	if err != nil {
-		fmt.Fprintln(errOut, "No branch selected. Aborting switch.")
-		if errors.Is(err, fuzzyfinder.ErrAbort) {
-			return "", ui.ErrCancelled
-		}
-		return "", err
-	}
-
-	lock.Lock()
-	defer lock.Unlock()
-	idx := idxs[0]
-	if idx < 0 || idx >= len(*branches) {
-		return "", fmt.Errorf("invalid branch selection index: %d", idx)
-	}
-	return (*branches)[idx], nil
 }
 
 func (s *SwitchCommand) applySelection(selected string) error {

@@ -27,7 +27,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 		return fmt.Errorf("no local branches found")
 	}
 
-	branch, err := ui.Select("Select a branch to delete", branches)
+	branch, err := d.sel().Select("Select a branch to delete", branches)
 	if err != nil {
 		if errors.Is(err, ui.ErrCancelled) {
 			fmt.Fprintln(d.out(), "Aborting delete.")
@@ -38,7 +38,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 
 	// main/master deletion is dangerous enough to warrant a confirmation
 	if branch == "main" || branch == "master" {
-		confirmed, err := ui.Confirm(
+		confirmed, err := d.sel().Confirm(
 			fmt.Sprintf("You are about to delete the '%s' branch. This is usually the main branch of the repository. Are you sure you want to proceed?", branch),
 			false,
 		)
@@ -58,7 +58,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 	}
 
 	if branch == currentBranch {
-		confirmed, err := ui.Confirm(
+		confirmed, err := d.sel().Confirm(
 			fmt.Sprintf("You are currently on branch '%s'. Do you want to switch to another branch before deleting it?", branch),
 			true,
 		)
@@ -81,7 +81,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 			return fmt.Errorf("no other branches to switch to")
 		}
 
-		otherBranch, err := ui.Select("Select a branch to switch to", otherBranches)
+		otherBranch, err := d.sel().Select("Select a branch to switch to", otherBranches)
 		if err != nil {
 			if errors.Is(err, ui.ErrCancelled) {
 				fmt.Fprintln(d.out(), "Aborting delete.")
@@ -102,7 +102,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 	needsToDeleteRemote := false
 
 	if remoteName != "" && remoteBranchName != "" {
-		confirmed, err := ui.Confirm(
+		confirmed, err := d.sel().Confirm(
 			fmt.Sprintf("Branch '%s' is tracking remote branch '%s/%s'. Do you want to delete the remote branch as well?", branch, remoteName, remoteBranchName),
 			false,
 		)
@@ -122,7 +122,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 			confirmMsg = fmt.Sprintf("Branch '%s' is not fully merged. Do you want to force delete the local branch?", branch)
 		}
 
-		confirmed, err := ui.Confirm(confirmMsg, false)
+		confirmed, err := d.sel().Confirm(confirmMsg, false)
 		if err != nil {
 			return err
 		}

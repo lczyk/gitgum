@@ -7,7 +7,6 @@ import (
 	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/strutil"
-	"github.com/lczyk/gitgum/internal/ui"
 )
 
 const gitCleanDryRunPrefix = "Would remove "
@@ -69,7 +68,7 @@ func (c *CleanCommand) Execute(args []string) error {
 	fmt.Fprintln(c.out())
 
 	if !c.Yes {
-		confirmed, err := ui.Confirm("Proceed with cleanup? This cannot be undone", false)
+		confirmed, err := c.sel().Confirm("Proceed with cleanup? This cannot be undone", false)
 		if err != nil {
 			return err
 		}

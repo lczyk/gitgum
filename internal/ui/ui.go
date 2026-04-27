@@ -41,6 +41,28 @@ func selectWith(finder func(context.Context, *[]string, sync.Locker, fuzzyfinder
 	return options[idxs[0]], nil
 }
 
+// SelectStream is like Select but reads candidates from a slice that may grow
+// concurrently behind lock — used by callers that stream entries from
+// background goroutines (e.g. switch). ctx is cancelled when the consumer is
+// done; that also tells producers to stop.
+func SelectStream(ctx context.Context, prompt string, options *[]string, lock sync.Locker) (string, error) {
+	opt := fuzzyfinder.Opt{Prompt: prompt + ": ", Height: 10, Reverse: true}
+	idxs, err := fuzzyfinder.Find(ctx, options, lock, opt)
+	if err != nil {
+		if errors.Is(err, fuzzyfinder.ErrAbort) {
+			return "", ErrCancelled
+		}
+		return "", fmt.Errorf("running picker: %w", err)
+	}
+	lock.Lock()
+	defer lock.Unlock()
+	idx := idxs[0]
+	if idx < 0 || idx >= len(*options) {
+		return "", fmt.Errorf("invalid selection index: %d", idx)
+	}
+	return (*options)[idx], nil
+}
+
 func confirmWith(selector func(string, []string, ...string) (string, error), prompt string, defaultYes bool) (bool, error) {
 	options := []string{"yes", "no"}
 	if !defaultYes {
@@ -56,4 +78,29 @@ func confirmWith(selector func(string, []string, ...string) (string, error), pro
 // Confirm asks a yes/no question via the fuzzyfinder library.
 func Confirm(prompt string, defaultYes bool) (bool, error) {
 	return confirmWith(selectShort, prompt, defaultYes)
+}
+
+// Selector is the interactive-input surface commands use. Tests inject a stub
+// to drive selections deterministically without a TTY; production code uses
+// RealSelector (the zero value), which delegates to the package-level functions.
+type Selector interface {
+	Select(prompt string, options []string, initialQuery ...string) (string, error)
+	SelectStream(ctx context.Context, prompt string, options *[]string, lock sync.Locker) (string, error)
+	Confirm(prompt string, defaultYes bool) (bool, error)
+}
+
+// RealSelector is the production Selector. Methods delegate to ui.Select,
+// ui.SelectStream, and ui.Confirm, which drive the real fuzzyfinder UI.
+type RealSelector struct{}
+
+func (RealSelector) Select(prompt string, options []string, initialQuery ...string) (string, error) {
+	return Select(prompt, options, initialQuery...)
+}
+
+func (RealSelector) SelectStream(ctx context.Context, prompt string, options *[]string, lock sync.Locker) (string, error) {
+	return SelectStream(ctx, prompt, options, lock)
+}
+
+func (RealSelector) Confirm(prompt string, defaultYes bool) (bool, error) {
+	return Confirm(prompt, defaultYes)
 }

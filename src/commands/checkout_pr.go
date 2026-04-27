@@ -9,7 +9,6 @@ import (
 	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/strutil"
-	"github.com/lczyk/gitgum/internal/ui"
 )
 
 var (
@@ -41,7 +40,7 @@ func (c *CheckoutPRCommand) Execute(args []string) error {
 		return fmt.Errorf("no remotes")
 	}
 
-	remote, err := ui.Select("Select a remote to fetch PR from", remotes)
+	remote, err := c.sel().Select("Select a remote to fetch PR from", remotes)
 	if err != nil {
 		fmt.Fprintln(c.err(), "No remote selected. Aborting checkout-pr.")
 		return err
@@ -59,7 +58,7 @@ func (c *CheckoutPRCommand) Execute(args []string) error {
 
 	prOptions := formatPROptions(prRefs)
 
-	selected, err := ui.Select("Select a pull request to checkout", prOptions)
+	selected, err := c.sel().Select("Select a pull request to checkout", prOptions)
 	if err != nil {
 		fmt.Fprintln(c.err(), "No PR selected. Aborting checkout-pr.")
 		return err
@@ -137,7 +136,7 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 	prRef := fmt.Sprintf("refs/pull/%d/%s", prNumber, prType)
 
 	if git.BranchExists(branchName) {
-		confirmed, err := ui.Confirm(
+		confirmed, err := c.sel().Confirm(
 			fmt.Sprintf("Branch '%s' already exists. Reset it to the latest PR state?", branchName),
 			false,
 		)

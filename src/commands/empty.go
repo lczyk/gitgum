@@ -5,7 +5,6 @@ import (
 
 	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/git"
-	"github.com/lczyk/gitgum/internal/ui"
 )
 
 type EmptyCommand struct {
@@ -66,7 +65,7 @@ func (e *EmptyCommand) Execute(args []string) error {
 	fmt.Fprintf(e.out(), "Created empty commit on branch '%s'.\n", currentBranch)
 
 	if hasUpstream {
-		confirmed, err := ui.Confirm("Do you want to push this commit to the remote?", true)
+		confirmed, err := e.sel().Confirm("Do you want to push this commit to the remote?", true)
 		if err != nil {
 			return err
 		}

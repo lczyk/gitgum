@@ -69,6 +69,25 @@ func TestResolveCurrentBranchContext_OnBranch(t *testing.T) {
 	assert.ContainsString(t, statusLine, currentBranch)
 }
 
+// End-to-end Execute test driven by a stub Selector. The stub bypasses the
+// real fuzzyfinder, so the streaming branch producers don't need to settle
+// before SelectStream returns.
+func TestSwitchCommand_Execute_PicksLocalBranch(t *testing.T) {
+	dir := temp_repo.InitTempRepo(t)
+	temp_repo.RunGit(t, dir, "branch", "feature")
+
+	var buf strings.Builder
+	stub := &stubSelector{selectAnswers: []string{"local: feature"}}
+	cmd := &SwitchCommand{cmdIO: cmdIO{Out: &buf, UI: stub}}
+
+	err := cmd.Execute(nil)
+	assert.NoError(t, err)
+	assert.Equal(t, currentBranchIn(t, dir), "feature")
+	assert.ContainsString(t, buf.String(), "Switched to branch 'feature'.")
+	assert.Equal(t, len(stub.selectCalls), 1)
+	assert.Equal(t, stub.selectCalls[0].Stream, true)
+}
+
 // Regression: in detached HEAD, rev-parse --abbrev-ref returns "HEAD" and
 // HEAD@{u} fails with "HEAD does not point to a branch". Previously this
 // propagated as a "getting tracking remote" error and broke `gg switch`.
