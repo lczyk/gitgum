@@ -16,6 +16,34 @@ import (
 
 type SwitchCommand struct{}
 
+// resolveCurrentBranchContext figures out the current branch, its tracking
+// remote, and a human-readable status line for display. In detached HEAD,
+// returns currentBranch="" so downstream branch filters don't match the literal
+// string "HEAD" (which can't be a real branch but is what rev-parse returns).
+func resolveCurrentBranchContext() (currentBranch, trackingRemote, statusLine string, err error) {
+	currentBranch, err = git.GetCurrentBranch()
+	if err != nil {
+		return "", "", "", fmt.Errorf("getting current branch: %w", err)
+	}
+
+	// "HEAD" from rev-parse --abbrev-ref means detached HEAD. Skip upstream
+	// lookup since HEAD@{u} fails with "HEAD does not point to a branch".
+	if currentBranch == "HEAD" {
+		return "", "", "Currently in detached HEAD state.", nil
+	}
+
+	trackingRemote, err = git.GetBranchTrackingRemote(currentBranch)
+	if err != nil {
+		return "", "", "", fmt.Errorf("getting tracking remote: %w", err)
+	}
+
+	branchDisplay := currentBranch
+	if trackingRemote != "" {
+		branchDisplay = fmt.Sprintf("(%s/)%s", trackingRemote, currentBranch)
+	}
+	return currentBranch, trackingRemote, "Current branch is: " + branchDisplay, nil
+}
+
 func (s *SwitchCommand) checkoutBranch(branch string) error {
 	_, stderr, err := cmdrun.Run("git", "checkout", "--quiet", branch)
 	if err != nil {
@@ -29,21 +57,11 @@ func (s *SwitchCommand) Execute(args []string) error {
 		return err
 	}
 
-	currentBranch, err := git.GetCurrentBranch()
+	currentBranch, trackingRemote, statusLine, err := resolveCurrentBranchContext()
 	if err != nil {
-		return fmt.Errorf("getting current branch: %w", err)
+		return err
 	}
-
-	trackingRemote, err := git.GetBranchTrackingRemote(currentBranch)
-	if err != nil {
-		return fmt.Errorf("getting tracking remote: %w", err)
-	}
-
-	branchDisplay := currentBranch
-	if trackingRemote != "" {
-		branchDisplay = fmt.Sprintf("(%s/)%s", trackingRemote, currentBranch)
-	}
-	fmt.Println("Current branch is:", branchDisplay)
+	fmt.Println(statusLine)
 
 	dirty, err := git.IsDirty()
 	if err != nil {
