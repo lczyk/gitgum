@@ -1,5 +1,7 @@
 package fuzzyfinder_test
 
+// cspell:ignore adrele adrena keeno fname AQUAPLUS ICHIDAIJI обичам Здравей zdravej
+
 import (
 	"context"
 	"flag"
@@ -232,7 +234,7 @@ func TestFind(t *testing.T) {
 			}...),
 		},
 		"tab doesn't work": {events: keys(input{tcell.KeyTab, rune(tcell.KeyTab), tcell.ModNone})},
-		"backspace doesnt change x if cursorX is 0": {
+		"backspace doesn't change x if cursorX is 0": {
 			events: append(runes("a"), keys([]input{
 				{tcell.KeyCtrlA, 'A', tcell.ModCtrl},
 				{tcell.KeyBackspace, rune(tcell.KeyBackspace), tcell.ModNone},
@@ -255,7 +257,7 @@ func TestFind(t *testing.T) {
 		},
 		"ctrl-w cyrillic": {events: append(runes("Аз обичам"), keys(input{tcell.KeyCtrlW, 'W', tcell.ModCtrl})...)},
 		"header line":     {opt: fuzzyfinder.Opt{Header: "Search?"}},
-		"header line which exceeds max charaters": {opt: fuzzyfinder.Opt{Header: "Waht do you want to search for?"}},
+		"header line which exceeds max characters": {opt: fuzzyfinder.Opt{Header: "What do you want to search for?"}},
 	}
 
 	for name, c := range cases {

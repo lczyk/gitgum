@@ -59,6 +59,10 @@ lint:  ## go vet + gofmt check (no writes)
 format:  ## gofmt the tree in place
 	gofmt -s -w ./cmd ./internal ./src
 
+.PHONY: spellcheck
+spellcheck:  ## Spellcheck sources and docs with cspell (via npx)
+	npx --yes cspell --no-progress --gitignore "**/*.go" "**/*.md" "Makefile"
+
 .PHONY: cover
 cover:  ## Coverage profile + HTML file (cover.out, cover.html)
 	go test -coverpkg=./... -coverprofile=cover.out -race ./...

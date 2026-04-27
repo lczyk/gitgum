@@ -13,10 +13,10 @@ func TestRender(t *testing.T) {
 		cmdName string
 		wantErr bool
 	}{
-		"bash":          {shell: "bash", cmdName: "myapp"},
+		"bash":          {shell: "bash", cmdName: "ff"},
 		"fish":          {shell: "fish", cmdName: "gg"},
 		"zsh":           {shell: "zsh", cmdName: "gitgum"},
-		"empty cmdname": {shell: "bash", cmdName: ""},
+		"empty cmdName": {shell: "bash", cmdName: ""},
 		"invalid shell": {shell: "invalid", cmdName: "test", wantErr: true},
 	}
 

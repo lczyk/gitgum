@@ -1,6 +1,8 @@
 //go:build fuzz
 // +build fuzz
 
+// cspell:ignore fuzzout tbkeys
+
 package fuzzyfinder_test
 
 import (

@@ -710,11 +710,11 @@ func (f *finder) find(ctx context.Context, itemsPtr *[]string, lock sync.Locker,
 
 	itemsCopy := snapshot()
 
-	var inited chan struct{}
+	var initialized chan struct{}
 	if lock != nil {
-		inited = make(chan struct{})
+		initialized = make(chan struct{})
 		go func() {
-			<-inited
+			<-initialized
 			var prev int
 			for {
 				select {
@@ -737,8 +737,8 @@ func (f *finder) find(ctx context.Context, itemsPtr *[]string, lock sync.Locker,
 	if err := f.initFinder(itemsCopy, opt); err != nil {
 		return nil, fmt.Errorf("failed to initialize the fuzzy finder: %w", err)
 	}
-	if inited != nil {
-		close(inited)
+	if initialized != nil {
+		close(initialized)
 	}
 	return f.runLoop(ctx, &opt)
 }

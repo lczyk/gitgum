@@ -9,7 +9,7 @@ import (
 	"github.com/lczyk/assert"
 )
 
-// ChdirTempDir chdirs into a fresh temp dir for the duration of the test.
+// ChdirTempDir changes to a fresh temp dir for the duration of the test.
 //
 // CAUTION: process cwd is shared, so a test that calls this cannot run in
 // parallel with another test that also calls it (or runs git commands relying
@@ -26,7 +26,7 @@ func ChdirTempDir(t *testing.T) string {
 	return dir
 }
 
-// InitTempRepo creates a temp git repo, chdirs into it, makes an initial
+// InitTempRepo creates a temp git repo, changes into it, makes an initial
 // commit, and returns the repo path.
 //
 // Uses ChdirTempDir under the hood, so tests using InitTempRepo cannot run in
@@ -48,7 +48,7 @@ func NewRepo(t *testing.T) string {
 }
 
 // InitEmptyTempRepo creates a temp git repo without any commits (no branches),
-// chdirs into it, and returns the path. Like InitTempRepo but stops before the
+// changes into it, and returns the path. Like InitTempRepo but stops before the
 // initial commit — useful for testing "no branches" error paths.
 //
 // Same cwd-sharing caveat as InitTempRepo; cannot run in parallel.

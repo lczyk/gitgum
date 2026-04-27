@@ -15,7 +15,7 @@ func currentBranchIn(t *testing.T, dir string) string {
 
 func TestApplySelection_InvalidFormat(t *testing.T) {
 	s := &SwitchCommand{}
-	err := s.applySelection("nocolonseparator")
+	err := s.applySelection("no-colon-separator")
 	assert.Error(t, err, assert.AnyError)
 	assert.ContainsString(t, err.Error(), "invalid selection")
 }
