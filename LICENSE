@@ -25,3 +25,7 @@ SOFTWARE.
 src/fuzzyfinder/ has been developed from a vendored copy of
 github.com/ktr0731/go-fuzzyfinder, which is distributed under the MIT License.
 The original license is preserved at LICENSE-go-fuzzyfinder.
+
+src/litescreen/ has been developed based on the LightRenderer from
+github.com/junegunn/fzf, which is distributed under the MIT License.
+The original license is preserved at LICENSE-fzf.
