@@ -1,10 +1,60 @@
 #compdef __GITGUM_CMD__
 
-# Zsh completion for gitgum (template - __GITGUM_CMD__ will be replaced)
-
 _gitgum() {
-    local -a commands
+    local context curcontext="$curcontext" state line ret=1
+    typeset -A opt_args
 
+    _arguments -C \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        '(-v --version)'{-v,--version}'[Show version]' \
+        '1: :_gitgum_commands' \
+        '*::arg:->args' \
+        && ret=0
+
+    case $state in
+        args)
+            case $line[1] in
+                completion)
+                    _arguments \
+                        '1:shell:((bash\:"Bourne Again SHell" fish\:"Friendly Interactive SHell" zsh\:"Z shell" nu\:"Nushell"))' \
+                        '(-h --help)'{-h,--help}'[Show help]' \
+                        && ret=0
+                    ;;
+                clean)
+                    _arguments \
+                        '--changes[Discard staged and unstaged changes (default: true)]' \
+                        '--untracked[Remove untracked files (default: true)]' \
+                        '--ignored[Remove ignored files (default: false)]' \
+                        '--all[Enable all cleanup options]' \
+                        '(-y --yes)'{-y,--yes}'[Skip confirmation prompt]' \
+                        '(-h --help)'{-h,--help}'[Show help]' \
+                        && ret=0
+                    ;;
+                replay-list)
+                    _arguments \
+                        '1:branch A:_gitgum_branches' \
+                        '2:branch B:_gitgum_branches' \
+                        && ret=0
+                    ;;
+                release)
+                    _arguments \
+                        '1:bump:(patch minor major)' \
+                        && ret=0
+                    ;;
+                switch|checkout-pr|status|push|delete|empty)
+                    _arguments \
+                        '(-h --help)'{-h,--help}'[Show help]' \
+                        && ret=0
+                    ;;
+            esac
+            ;;
+    esac
+
+    return ret
+}
+
+_gitgum_commands() {
+    local -a commands
     commands=(
         'switch:Switch to a branch interactively'
         'checkout-pr:Checkout a pull request from a remote repository'
@@ -15,84 +65,19 @@ _gitgum() {
         'delete:Delete a local branch and optionally its remote tracking branch'
         'replay-list:List commits on branch A since divergence from trunk B'
         'empty:Create an empty commit and optionally push it'
+        'release:Bump VERSION (or latest tag), commit, and tag'
     )
-
-    local -a global_opts
-    global_opts=(
-        '-h[Show help message]'
-        '--help[Show help message]'
-    )
-
-    if (( CURRENT == 2 )); then
-        _describe 'command' commands
-        return
-    fi
-
-    local cmd="${words[2]}"
-
-    case "$cmd" in
-        completion)
-            if (( CURRENT == 3 )); then
-                local -a shells
-                shells=('fish' 'bash' 'zsh')
-                _describe 'shell' shells
-            else
-                _arguments \
-                    '-h[Show help message]' \
-                    '--help[Show help message]'
-            fi
-            ;;
-        status)
-            _arguments \
-                '-h[Show help message]' \
-                '--help[Show help message]'
-            ;;
-        switch)
-            _arguments \
-                '-h[Show help message]' \
-                '--help[Show help message]'
-            ;;
-        checkout-pr)
-            _arguments \
-                '-h[Show help message]' \
-                '--help[Show help message]'
-            ;;
-        push)
-            _arguments \
-                '-h[Show help message]' \
-                '--help[Show help message]'
-            ;;
-        clean)
-            _arguments \
-                '--changes[Discard staged and unstaged changes (default)]' \
-                '--untracked[Remove untracked files (default)]' \
-                '--ignored[Remove ignored files]' \
-                '--all[Enable all cleanup options]' \
-                '--yes[Skip confirmation prompt]' \
-                '-y[Skip confirmation prompt]' \
-                '-h[Show help message]' \
-                '--help[Show help message]'
-            ;;
-        delete)
-            _arguments \
-                '-h[Show help message]' \
-                '--help[Show help message]'
-            ;;
-        replay-list)
-            _arguments \
-                '-h[Show help message]' \
-                '--help[Show help message]'
-            ;;
-        empty)
-            _arguments \
-                '-h[Show help message]' \
-                '--help[Show help message]'
-            ;;
-        *)
-            _arguments $global_opts
-            ;;
-    esac
+    _describe -t commands 'command' commands
 }
 
-_gitgum "$@"
+_gitgum_branches() {
+    local -a branches
+    branches=(${(f)"$(git for-each-ref --format='%(refname:short)' refs/heads refs/remotes 2>/dev/null)"})
+    _describe -t branches 'branch' branches
+}
 
+if [ "$funcstack[1]" = "_gitgum" ]; then
+    _gitgum "$@"
+else
+    compdef _gitgum __GITGUM_CMD__
+fi

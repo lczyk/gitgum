@@ -11,7 +11,7 @@ import (
 type CompletionCommand struct {
 	cmdIO
 	Args struct {
-		Shell string `positional-arg-name:"shell" description:"Shell type (fish, bash, or zsh)"`
+		Shell string `positional-arg-name:"shell" description:"Shell type (bash, fish, zsh, or nu)"`
 	} `positional-args:"yes" required:"yes"`
 
 	cmdName string // injectable for testing; empty falls back to os.Args[0]
