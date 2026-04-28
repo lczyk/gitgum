@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/lczyk/gitgum/internal/git"
-	"github.com/lczyk/gitgum/src/fuzzyfinder"
+	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
 const streamDelay = 3 * time.Millisecond
@@ -26,8 +26,8 @@ type branchEntry struct {
 // The returned SliceSource supports both Add (used by the producers below)
 // and RemoveFunc (left available for future hooks that drop branches as the
 // user deletes them).
-func streamBranches(ctx context.Context, errOut io.Writer, currentBranch, trackingRemote string, remotes []string) *fuzzyfinder.SliceSource {
-	src := fuzzyfinder.NewSliceSource()
+func streamBranches(ctx context.Context, errOut io.Writer, currentBranch, trackingRemote string, remotes []string) *ff.SliceSource {
+	src := ff.NewSliceSource()
 	seen := make(map[string]struct{})
 	var seenMu sync.Mutex
 

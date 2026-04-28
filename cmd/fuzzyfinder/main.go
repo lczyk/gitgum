@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/lczyk/gitgum/src/completions"
-	"github.com/lczyk/gitgum/src/fuzzyfinder"
+	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
 	vinfo "github.com/lczyk/gitgum/src/version"
 	ver "github.com/lczyk/version/go"
 )
@@ -67,7 +67,7 @@ func isTTY(f *os.File) bool {
 }
 
 type config struct {
-	opt        fuzzyfinder.Opt
+	opt        ff.Opt
 	fast       bool
 	completion string
 }
@@ -117,7 +117,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	go func() { readErrCh <- streamItems(ctx, br, &lock, &items, delay) }()
 
-	idxs, findErr := fuzzyfinder.Find(ctx, &items, &lock, cfg.opt)
+	idxs, findErr := ff.Find(ctx, &items, &lock, cfg.opt)
 	cancel()
 
 	if err := <-readErrCh; err != nil {
@@ -129,7 +129,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	defer lock.Unlock()
 
 	if findErr != nil {
-		if errors.Is(findErr, fuzzyfinder.ErrAbort) {
+		if errors.Is(findErr, ff.ErrAbort) {
 			return exitCancelled
 		}
 		fmt.Fprintf(stderr, "fuzzyfinder: %v\n", findErr)

@@ -17,7 +17,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	fuzz "github.com/google/gofuzz"
 	"github.com/lczyk/assert"
-	fuzzyfinder "github.com/lczyk/gitgum/src/fuzzyfinder"
+	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
 var (
@@ -87,13 +87,13 @@ func TestFuzz(t *testing.T) {
 			var mu sync.Mutex
 			items := trackNames()
 
-			finder, term := fuzzyfinder.NewWithMockedTerminal()
+			finder, term := ff.NewWithMockedTerminal()
 			term.SetEvents(append(events, key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))...)
 
 			var promptStr, header string
 			fuzzer.Fuzz(&promptStr)
 			fuzzer.Fuzz(&header)
-			opt := fuzzyfinder.Opt{Prompt: promptStr, Header: header}
+			opt := ff.Opt{Prompt: promptStr, Header: header}
 
 			if *hotReload {
 				ctx, cancel := context.WithCancel(context.Background())
@@ -113,10 +113,10 @@ func TestFuzz(t *testing.T) {
 					}
 				}()
 				_, err := finder.Find(ctx, &items, &mu, opt)
-				assert.Error(t, err, fuzzyfinder.ErrAbort)
+				assert.Error(t, err, ff.ErrAbort)
 			} else {
 				_, err := finder.Find(context.Background(), &items, nil, opt)
-				assert.Error(t, err, fuzzyfinder.ErrAbort)
+				assert.Error(t, err, ff.ErrAbort)
 			}
 		})
 	}

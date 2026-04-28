@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/lczyk/gitgum/src/fuzzyfinder"
+	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
 
@@ -15,26 +15,26 @@ var ErrCancelled = errors.New("cancelled")
 
 // Select presents options via the fuzzyfinder library and returns the selected item.
 func Select(prompt string, options []string, initialQuery ...string) (string, error) {
-	return selectWith(fuzzyfinder.Find, 10, prompt, options, initialQuery...)
+	return selectWith(ff.Find, 10, prompt, options, initialQuery...)
 }
 
 func selectShort(prompt string, options []string, initialQuery ...string) (string, error) {
-	return selectWith(fuzzyfinder.Find, 2, prompt, options, initialQuery...)
+	return selectWith(ff.Find, 2, prompt, options, initialQuery...)
 }
 
-func selectWith(finder func(context.Context, *[]string, sync.Locker, fuzzyfinder.Opt) ([]int, error), height int, prompt string, options []string, initialQuery ...string) (string, error) {
+func selectWith(finder func(context.Context, *[]string, sync.Locker, ff.Opt) ([]int, error), height int, prompt string, options []string, initialQuery ...string) (string, error) {
 	if len(options) == 0 {
 		return "", fmt.Errorf("no options provided")
 	}
 
-	opt := fuzzyfinder.Opt{Prompt: prompt + ": ", Height: height, Reverse: true}
+	opt := ff.Opt{Prompt: prompt + ": ", Height: height, Reverse: true}
 	if len(initialQuery) > 0 {
 		opt.Query = initialQuery[0]
 	}
 
 	idxs, err := finder(context.Background(), &options, nil, opt)
 	if err != nil {
-		if errors.Is(err, fuzzyfinder.ErrAbort) {
+		if errors.Is(err, ff.ErrAbort) {
 			return "", ErrCancelled
 		}
 		return "", fmt.Errorf("running picker: %w", err)
@@ -46,11 +46,11 @@ func selectWith(finder func(context.Context, *[]string, sync.Locker, fuzzyfinder
 // may grow (or shrink) concurrently — used by callers that stream entries
 // from background goroutines (e.g. switch). ctx is cancelled when the
 // consumer is done; that also tells producers to stop.
-func SelectStream(ctx context.Context, prompt string, src *fuzzyfinder.SliceSource) (string, error) {
-	opt := fuzzyfinder.Opt{Prompt: prompt + ": ", Height: 10, Reverse: true}
-	selected, err := fuzzyfinder.FindFromSource(ctx, src, opt)
+func SelectStream(ctx context.Context, prompt string, src *ff.SliceSource) (string, error) {
+	opt := ff.Opt{Prompt: prompt + ": ", Height: 10, Reverse: true}
+	selected, err := ff.FindFromSource(ctx, src, opt)
 	if err != nil {
-		if errors.Is(err, fuzzyfinder.ErrAbort) {
+		if errors.Is(err, ff.ErrAbort) {
 			return "", ErrCancelled
 		}
 		return "", fmt.Errorf("running picker: %w", err)
@@ -83,7 +83,7 @@ func Confirm(prompt string, defaultYes bool) (bool, error) {
 // RealSelector (the zero value), which delegates to the package-level functions.
 type Selector interface {
 	Select(prompt string, options []string, initialQuery ...string) (string, error)
-	SelectStream(ctx context.Context, prompt string, src *fuzzyfinder.SliceSource) (string, error)
+	SelectStream(ctx context.Context, prompt string, src *ff.SliceSource) (string, error)
 	Confirm(prompt string, defaultYes bool) (bool, error)
 }
 
@@ -95,7 +95,7 @@ func (RealSelector) Select(prompt string, options []string, initialQuery ...stri
 	return Select(prompt, options, initialQuery...)
 }
 
-func (RealSelector) SelectStream(ctx context.Context, prompt string, src *fuzzyfinder.SliceSource) (string, error) {
+func (RealSelector) SelectStream(ctx context.Context, prompt string, src *ff.SliceSource) (string, error) {
 	return SelectStream(ctx, prompt, src)
 }
 

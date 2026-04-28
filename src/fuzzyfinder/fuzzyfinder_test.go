@@ -17,7 +17,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/google/go-cmp/cmp"
 	"github.com/lczyk/assert"
-	fuzzyfinder "github.com/lczyk/gitgum/src/fuzzyfinder"
+	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
 var (
@@ -105,7 +105,7 @@ func TestReal(t *testing.T) {
 		return
 	}
 	names := trackNames()
-	_, err := fuzzyfinder.Find(context.Background(), &names, nil, fuzzyfinder.Opt{})
+	_, err := ff.Find(context.Background(), &names, nil, ff.Opt{})
 	assert.NoError(t, err)
 }
 
@@ -124,7 +124,7 @@ func TestFind(t *testing.T) {
 
 	cases := map[string]struct {
 		events []tcell.Event
-		opt    fuzzyfinder.Opt
+		opt    ff.Opt
 	}{
 		"initial":    {},
 		"input lo":   {events: runes("lo")},
@@ -256,8 +256,8 @@ func TestFind(t *testing.T) {
 			}...)...),
 		},
 		"ctrl-w cyrillic": {events: append(runes("Аз обичам"), keys(input{tcell.KeyCtrlW, 'W', tcell.ModCtrl})...)},
-		"header line":     {opt: fuzzyfinder.Opt{Header: "Search?"}},
-		"header line which exceeds max characters": {opt: fuzzyfinder.Opt{Header: "What do you want to search for?"}},
+		"header line":     {opt: ff.Opt{Header: "Search?"}},
+		"header line which exceeds max characters": {opt: ff.Opt{Header: "What do you want to search for?"}},
 	}
 
 	for name, c := range cases {
@@ -266,14 +266,14 @@ func TestFind(t *testing.T) {
 
 			events := c.events
 
-			f, term := fuzzyfinder.NewWithMockedTerminal()
+			f, term := ff.NewWithMockedTerminal()
 			events = append(events, key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 			term.SetEvents(events...)
 
 			assertWithGolden(t, func() string {
 				names := trackNames()
 				_, err := f.Find(context.Background(), &names, nil, c.opt)
-				assert.Error(t, err, fuzzyfinder.ErrAbort)
+				assert.Error(t, err, ff.ErrAbort)
 
 				res := term.GetResult()
 				return res
@@ -289,7 +289,7 @@ func TestFind_pagination(t *testing.T) {
 
 	cases := map[string]struct {
 		events []tcell.Event
-		opt    fuzzyfinder.Opt
+		opt    ff.Opt
 	}{
 		"initial": {},
 		"pg-dn lands on page 2 first item": {
@@ -298,11 +298,11 @@ func TestFind_pagination(t *testing.T) {
 		},
 		"reverse pg-dn first of next page": {
 			// Reverse: PgDn → page 1, cursor at item 8 visually on top.
-			opt:    fuzzyfinder.Opt{Reverse: true},
+			opt:    ff.Opt{Reverse: true},
 			events: keys(input{tcell.KeyPgDn, rune(tcell.KeyPgDn), tcell.ModNone}),
 		},
 		"reverse up at top of page 1 jumps to last of page 0": {
-			opt: fuzzyfinder.Opt{Reverse: true},
+			opt: ff.Opt{Reverse: true},
 			events: keys([]input{
 				{tcell.KeyPgDn, rune(tcell.KeyPgDn), tcell.ModNone},
 				{tcell.KeyUp, rune(tcell.KeyUp), tcell.ModNone},
@@ -311,7 +311,7 @@ func TestFind_pagination(t *testing.T) {
 		"reverse pg-dn preserves cursor offset": {
 			// Down twice (cursorY=2) then PgDn → land on cursorY=2 of page 1
 			// (= item 10).
-			opt: fuzzyfinder.Opt{Reverse: true},
+			opt: ff.Opt{Reverse: true},
 			events: keys([]input{
 				{tcell.KeyDown, rune(tcell.KeyDown), tcell.ModNone},
 				{tcell.KeyDown, rune(tcell.KeyDown), tcell.ModNone},
@@ -319,11 +319,11 @@ func TestFind_pagination(t *testing.T) {
 			}...),
 		},
 		"reverse ctrl+down behaves as pg-dn": {
-			opt:    fuzzyfinder.Opt{Reverse: true},
+			opt:    ff.Opt{Reverse: true},
 			events: keys(input{tcell.KeyDown, rune(tcell.KeyDown), tcell.ModCtrl}),
 		},
 		"reverse pg-dn 4x cycles back to page 1": {
-			opt: fuzzyfinder.Opt{Reverse: true},
+			opt: ff.Opt{Reverse: true},
 			events: keys([]input{
 				{tcell.KeyPgDn, rune(tcell.KeyPgDn), tcell.ModNone},
 				{tcell.KeyPgDn, rune(tcell.KeyPgDn), tcell.ModNone},
@@ -332,7 +332,7 @@ func TestFind_pagination(t *testing.T) {
 			}...),
 		},
 		"reverse pg-up cycles to last partial page": {
-			opt:    fuzzyfinder.Opt{Reverse: true},
+			opt:    ff.Opt{Reverse: true},
 			events: keys(input{tcell.KeyPgUp, rune(tcell.KeyPgUp), tcell.ModNone}),
 		},
 	}
@@ -340,14 +340,14 @@ func TestFind_pagination(t *testing.T) {
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			f, term := fuzzyfinder.NewWithMockedTerminal()
+			f, term := ff.NewWithMockedTerminal()
 			events := append(c.events, key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 			term.SetEvents(events...)
 
 			assertWithGolden(t, func() string {
 				items := makeNumberedItems(30)
 				_, err := f.Find(context.Background(), &items, nil, c.opt)
-				assert.Error(t, err, fuzzyfinder.ErrAbort)
+				assert.Error(t, err, ff.ErrAbort)
 				return term.GetResult()
 			})
 		})
@@ -357,7 +357,7 @@ func TestFind_pagination(t *testing.T) {
 func TestFind_hotReload(t *testing.T) {
 	t.Parallel()
 
-	f, term := fuzzyfinder.NewWithMockedTerminal()
+	f, term := ff.NewWithMockedTerminal()
 	events := append(runes("adrena"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 	term.SetEvents(events...)
 
@@ -367,9 +367,9 @@ func TestFind_hotReload(t *testing.T) {
 			context.Background(),
 			&names,
 			&sync.Mutex{},
-			fuzzyfinder.Opt{},
+			ff.Opt{},
 		)
-		assert.Error(t, err, fuzzyfinder.ErrAbort)
+		assert.Error(t, err, ff.ErrAbort)
 
 		res := term.GetResult()
 		return res
@@ -379,7 +379,7 @@ func TestFind_hotReload(t *testing.T) {
 func TestFind_hotReloadLock(t *testing.T) {
 	t.Parallel()
 
-	f, term := fuzzyfinder.NewWithMockedTerminal()
+	f, term := ff.NewWithMockedTerminal()
 	events := append(runes("adrena"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 	term.SetEvents(events...)
 
@@ -390,9 +390,9 @@ func TestFind_hotReloadLock(t *testing.T) {
 			context.Background(),
 			&names,
 			mu.RLocker(),
-			fuzzyfinder.Opt{},
+			ff.Opt{},
 		)
-		assert.Error(t, err, fuzzyfinder.ErrAbort)
+		assert.Error(t, err, ff.ErrAbort)
 
 		res := term.GetResult()
 		return res
@@ -416,12 +416,12 @@ func TestFind_enter(t *testing.T) {
 
 			events := c.events
 
-			f, term := fuzzyfinder.NewWithMockedTerminal()
+			f, term := ff.NewWithMockedTerminal()
 			events = append(events, key(input{tcell.KeyEnter, rune(tcell.KeyEnter), tcell.ModNone}))
 			term.SetEvents(events...)
 
 			names := trackNames()
-			idxs, err := f.Find(context.Background(), &names, nil, fuzzyfinder.Opt{})
+			idxs, err := f.Find(context.Background(), &names, nil, ff.Opt{})
 			assert.NoError(t, err)
 			assert.Equal(t, c.expected, idxs[0])
 		})
@@ -431,7 +431,7 @@ func TestFind_enter(t *testing.T) {
 func TestFind_withContext(t *testing.T) {
 	t.Parallel()
 
-	f, term := fuzzyfinder.NewWithMockedTerminal()
+	f, term := ff.NewWithMockedTerminal()
 	events := append(runes("adrena"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 	term.SetEvents(events...)
 
@@ -440,7 +440,7 @@ func TestFind_withContext(t *testing.T) {
 
 	assertWithGolden(t, func() string {
 		names := trackNames()
-		_, err := f.Find(cancelledCtx, &names, nil, fuzzyfinder.Opt{})
+		_, err := f.Find(cancelledCtx, &names, nil, ff.Opt{})
 		assert.Error(t, err, context.Canceled)
 
 		res := term.GetResult()
@@ -456,11 +456,11 @@ func TestFind_WithQuery(t *testing.T) {
 	)
 
 	t.Run("no initial query", func(t *testing.T) {
-		f, term := fuzzyfinder.NewWithMockedTerminal()
+		f, term := ff.NewWithMockedTerminal()
 		term.SetEvents(events...)
 
 		assertWithGolden(t, func() string {
-			idxs, err := f.Find(context.Background(), &things, nil, fuzzyfinder.Opt{})
+			idxs, err := f.Find(context.Background(), &things, nil, ff.Opt{})
 			assert.NoError(t, err)
 			assert.Equal(t, 0, idxs[0])
 			return term.GetResult()
@@ -468,11 +468,11 @@ func TestFind_WithQuery(t *testing.T) {
 	})
 
 	t.Run("has initial query", func(t *testing.T) {
-		f, term := fuzzyfinder.NewWithMockedTerminal()
+		f, term := ff.NewWithMockedTerminal()
 		term.SetEvents(events...)
 
 		assertWithGolden(t, func() string {
-			idxs, err := f.Find(context.Background(), &things, nil, fuzzyfinder.Opt{Query: "three2"})
+			idxs, err := f.Find(context.Background(), &things, nil, ff.Opt{Query: "three2"})
 			assert.NoError(t, err)
 			assert.Equal(t, 1, idxs[0])
 			return term.GetResult()
@@ -507,17 +507,17 @@ func TestFind_WithSelectOne(t *testing.T) {
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			f, term := fuzzyfinder.NewWithMockedTerminal()
+			f, term := ff.NewWithMockedTerminal()
 			term.SetEvents(key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 
 			assertWithGolden(t, func() string {
 				things := c.things
-				idxs, err := f.Find(context.Background(), &things, nil, fuzzyfinder.Opt{
+				idxs, err := f.Find(context.Background(), &things, nil, ff.Opt{
 					Query:     c.query,
 					SelectOne: true,
 				})
 				if c.abort {
-					assert.Error(t, err, fuzzyfinder.ErrAbort)
+					assert.Error(t, err, ff.ErrAbort)
 				} else {
 					assert.NoError(t, err)
 					assert.Equal(t, c.expected, idxs[0])
@@ -565,14 +565,14 @@ func TestFindMulti(t *testing.T) {
 
 			events := c.events
 
-			f, term := fuzzyfinder.NewWithMockedTerminal()
+			f, term := ff.NewWithMockedTerminal()
 			events = append(events, key(input{tcell.KeyEnter, rune(tcell.KeyEnter), tcell.ModNone}))
 			term.SetEvents(events...)
 
 			names := trackNames()
-			idxs, err := f.Find(context.Background(), &names, nil, fuzzyfinder.Opt{Multi: true})
+			idxs, err := f.Find(context.Background(), &names, nil, ff.Opt{Multi: true})
 			if c.abort {
-				assert.Error(t, err, fuzzyfinder.ErrAbort)
+				assert.Error(t, err, ff.ErrAbort)
 				return
 			}
 			assert.NoError(t, err)
@@ -586,13 +586,13 @@ func BenchmarkFind(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for b.Loop() {
-			f, term := fuzzyfinder.NewWithMockedTerminal()
+			f, term := ff.NewWithMockedTerminal()
 			events := append(runes("adrele!!"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 			term.SetEvents(events...)
 
 			names := trackNames()
-			_, err := f.Find(context.Background(), &names, nil, fuzzyfinder.Opt{})
-			assert.Error(b, err, fuzzyfinder.ErrAbort)
+			_, err := f.Find(context.Background(), &names, nil, ff.Opt{})
+			assert.Error(b, err, ff.ErrAbort)
 		}
 	})
 
@@ -600,13 +600,13 @@ func BenchmarkFind(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for b.Loop() {
-			f, term := fuzzyfinder.NewWithMockedTerminal()
+			f, term := ff.NewWithMockedTerminal()
 			events := append(runes("adrele!!"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 			term.SetEvents(events...)
 
 			names := trackNames()
-			_, err := f.Find(context.Background(), &names, &sync.Mutex{}, fuzzyfinder.Opt{})
-			assert.Error(b, err, fuzzyfinder.ErrAbort)
+			_, err := f.Find(context.Background(), &names, &sync.Mutex{}, ff.Opt{})
+			assert.Error(b, err, ff.ErrAbort)
 		}
 	})
 }
