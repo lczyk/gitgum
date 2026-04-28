@@ -41,8 +41,9 @@ var (
 )
 
 type state struct {
-	items   []string // All item names.
-	matched []int    // Matched items against the input.
+	items      []string // All item names.
+	itemsLower []string // Lowercased view of items for matching's hot path.
+	matched    []int    // Matched items against the input.
 
 	// x is the current index of the prompt line.
 	x int
@@ -133,6 +134,7 @@ func (f *finder) initFinder(items []string, opt Opt) error {
 	}
 
 	f.state.items = items
+	f.state.itemsLower = lowerCorpus(nil, nil, items)
 	f.state.matched = makeMatched(len(items))
 
 	if !isInTesting() {
@@ -167,7 +169,9 @@ func (f *finder) updateItems(items []string) {
 	cursorKey, cursorValid := f.cursorIdentityLocked()
 	selKeys, selOrders := f.selectionIdentitiesLocked()
 
+	prevItems := f.state.items
 	f.state.items = items
+	f.state.itemsLower = lowerCorpus(f.state.itemsLower, prevItems, items)
 
 	// Recompute matched against current input. Mirrors filter() but assumes
 	// the lock is held — callers from the resync goroutine want one atomic
@@ -175,7 +179,7 @@ func (f *finder) updateItems(items []string) {
 	if len(f.state.input) == 0 {
 		f.resetMatchedIdentity(len(items))
 	} else {
-		f.state.matched = matching.FindAll(string(f.state.input), items)
+		f.state.matched = matching.FindAllLower(strings.ToLower(string(f.state.input)), f.state.itemsLower)
 	}
 
 	// Re-key selection: drop entries whose item is gone; keep selection order
@@ -788,7 +792,7 @@ func (f *finder) filter() {
 	}
 
 	// FindAll may take a lot of time, so it is desired to use RLock to avoid goroutine blocking.
-	matchedItems := matching.FindAll(string(f.state.input), f.state.items)
+	matchedItems := matching.FindAllLower(strings.ToLower(string(f.state.input)), f.state.itemsLower)
 	f.stateMu.RUnlock()
 
 	f.stateMu.Lock()
@@ -866,6 +870,29 @@ func makeMatched(n int) []int {
 		matched[i] = i
 	}
 	return matched
+}
+
+// lowerCorpus updates dst so dst[i] == strings.ToLower(items[i]) for all i.
+// Reuses dst when its capacity allows and only re-lowers entries that differ
+// from prevItems (the previously-cached source). Pass prevItems=nil to force
+// a full rebuild. ASCII-lowercase items get aliased (Go's strings.ToLower
+// returns the input string when no rune needs lowering), so a fully-lowercase
+// corpus costs ~zero extra memory.
+func lowerCorpus(dst, prevItems, items []string) []string {
+	if cap(dst) >= len(items) {
+		dst = dst[:len(items)]
+	} else {
+		newDst := make([]string, len(items))
+		copy(newDst, dst)
+		dst = newDst
+	}
+	for i, s := range items {
+		if i < len(prevItems) && prevItems[i] == s {
+			continue // dst[i] already holds the right lowercase form
+		}
+		dst[i] = strings.ToLower(s)
+	}
+	return dst
 }
 
 // resetMatchedIdentity rewrites f.state.matched in place to [0..n), reusing
