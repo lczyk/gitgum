@@ -173,7 +173,7 @@ func (f *finder) updateItems(items []string) {
 	// the lock is held — callers from the resync goroutine want one atomic
 	// transition without dropping the lock mid-way.
 	if len(f.state.input) == 0 {
-		f.state.matched = makeMatched(len(items))
+		f.resetMatchedIdentity(len(items))
 	} else {
 		f.state.matched = matching.FindAll(string(f.state.input), items)
 	}
@@ -866,6 +866,21 @@ func makeMatched(n int) []int {
 		matched[i] = i
 	}
 	return matched
+}
+
+// resetMatchedIdentity rewrites f.state.matched in place to [0..n), reusing
+// the existing backing array when its capacity allows. This is the hot path
+// when the picker has no query — every resync rebuilds an identity-mapping
+// matched list, and at n=10k the allocation alone was ~80 KB per call.
+func (f *finder) resetMatchedIdentity(n int) {
+	if cap(f.state.matched) >= n {
+		f.state.matched = f.state.matched[:n]
+	} else {
+		f.state.matched = make([]int, n)
+	}
+	for i := range f.state.matched {
+		f.state.matched[i] = i
+	}
 }
 
 func (f *finder) runLoop(ctx context.Context, opt *Opt) ([]int, error) {

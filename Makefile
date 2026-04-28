@@ -63,6 +63,10 @@ format:  ## gofmt the tree in place
 spellcheck:  ## Spellcheck sources and docs with cspell (via npx)
 	npx --yes cspell --no-progress --gitignore "**/*.go" "**/*.md" "Makefile"
 
+.PHONY: bench
+bench:  ## Run benchmarks (override scope/duration: PKG=… BENCH=… BENCHTIME=…)
+	go test -run '^$$' -bench '$(or $(BENCH),.)' -benchmem -benchtime '$(or $(BENCHTIME),1s)' $(or $(PKG),./...)
+
 .PHONY: cover
 cover:  ## Coverage profile + HTML file (cover.out, cover.html)
 	go test -coverpkg=./... -coverprofile=cover.out -race ./...
