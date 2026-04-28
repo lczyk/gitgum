@@ -13,10 +13,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/lczyk/gitgum/src/completions"
 	"github.com/lczyk/gitgum/src/fuzzyfinder"
 	vinfo "github.com/lczyk/gitgum/src/version"
 	ver "github.com/lczyk/version/go"
@@ -34,6 +36,7 @@ const (
 const streamDelay = 3 * time.Millisecond
 
 func main() {
+	hasCompletion := false
 	for _, arg := range os.Args[1:] {
 		if arg == "--version" || arg == "-v" {
 			fmt.Println(ver.FormatVersion(vinfo.Version, vinfo.CommitSHA, vinfo.BuildDate, vinfo.BuildInfo))
@@ -43,8 +46,11 @@ func main() {
 			printUsage(os.Stdout)
 			os.Exit(exitOK)
 		}
+		if arg == "--completion" || arg == "-completion" || strings.HasPrefix(arg, "--completion=") || strings.HasPrefix(arg, "-completion=") {
+			hasCompletion = true
+		}
 	}
-	if isTTY(os.Stdin) {
+	if !hasCompletion && isTTY(os.Stdin) {
 		fmt.Fprintln(os.Stderr, "fuzzyfinder: stdin is a terminal; pipe input via stdin (e.g. `find . | fuzzyfinder`)")
 		os.Exit(exitUsage)
 	}
@@ -61,8 +67,9 @@ func isTTY(f *os.File) bool {
 }
 
 type config struct {
-	opt  fuzzyfinder.Opt
-	fast bool
+	opt        fuzzyfinder.Opt
+	fast       bool
+	completion string
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -72,6 +79,16 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return exitOK
 		}
 		return exitUsage
+	}
+
+	if cfg.completion != "" {
+		out, err := completions.RenderFuzzyfinder(cfg.completion, filepath.Base(os.Args[0]))
+		if err != nil {
+			fmt.Fprintf(stderr, "fuzzyfinder: %v\n", err)
+			return exitUsage
+		}
+		fmt.Fprint(stdout, out)
+		return exitOK
 	}
 
 	// Read synchronously until we have at least one item (or EOF). This avoids
@@ -188,6 +205,7 @@ func parseFlags(args []string, stderr io.Writer) (config, error) {
 	fs.BoolVar(&cfg.fast, "fast", false, "disable streaming delay (append items as fast as stdin produces them)")
 	fs.BoolVar(&cfg.opt.Reverse, "reverse", false, "render prompt at the top with items growing downward")
 	fs.IntVar(&cfg.opt.Height, "height", 0, "occupy only N rows of the terminal instead of fullscreen; preserves prior terminal output above the picker. 0 = fullscreen, N>0 = exact rows, N<0 = terminal_rows + N")
+	fs.StringVar(&cfg.completion, "completion", "", "print shell completion script for the given shell (bash, fish, zsh, or nu) and exit")
 
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
@@ -236,6 +254,9 @@ Options:
                          0     fullscreen (default)
                          N>0   exactly N rows
                          N<0   terminal_rows + N
+      --completion <s> Print a shell completion script for <s> and exit.
+                       Supported shells: bash, fish, zsh, nu. Source the
+                       output from your shell init.
   -v, --version        Print version and exit.
   -h, --help           Show this help message.
 
