@@ -15,7 +15,7 @@ func TestFindAll(t *testing.T) {
 
 	cases := map[string]struct {
 		query string
-		want  []int // indices into slice
+		want  []int // indices into haystack
 	}{
 		"empty query matches all":        {"", []int{0, 1, 2}},
 		"single word substring":          {"album", []int{0}},
@@ -25,7 +25,7 @@ func TestFindAll(t *testing.T) {
 		"some word missing":              {"white sound", nil},
 		"whitespace ignored":             {"   white    album   ", []int{0}},
 	}
-	slice := []string{
+	haystack := []string{
 		"WHITE ALBUM",
 		"SOUND OF DESTINY",
 		"Twinkle Snow",
@@ -34,7 +34,7 @@ func TestFindAll(t *testing.T) {
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			matched := matching.FindAll(c.query, slice)
+			matched := matching.FindAll(c.query, haystack)
 			assert.Len(t, matched, len(c.want))
 			for i, idx := range matched {
 				assert.Equal(t, c.want[i], idx)
@@ -45,9 +45,9 @@ func TestFindAll(t *testing.T) {
 
 func TestFindAll_unicode(t *testing.T) {
 	t.Parallel()
-	slice := []string{"日本語の本", "fußÄnger"}
-	assert.Len(t, matching.FindAll("日本", slice), 1)
-	assert.Len(t, matching.FindAll("Ä", slice), 1)
+	haystack := []string{"日本語の本", "fußÄnger"}
+	assert.Len(t, matching.FindAll("日本", haystack), 1)
+	assert.Len(t, matching.FindAll("Ä", haystack), 1)
 }
 
 func BenchmarkFindAll(b *testing.B) {
@@ -69,12 +69,12 @@ func BenchmarkFindAll(b *testing.B) {
 	}
 }
 
-// branchLikeCorpus builds a deterministic corpus of n strings shaped like
+// branchLikeHaystack builds a deterministic haystack of n strings shaped like
 // branch names — the realistic gg switch / fuzzyfinder workload. Mixes
 // prefixes ("feature/", "bugfix/", "release/", "user/...") and a stable case
 // distribution so strings.ToLower has work to do on a realistic fraction of
 // items.
-func branchLikeCorpus(n int) []string {
+func branchLikeHaystack(n int) []string {
 	prefixes := []string{"feature/", "bugfix/", "release/", "user/alice/", "user/bob/", "hotfix/"}
 	out := make([]string, n)
 	for i := range n {
@@ -89,9 +89,9 @@ func branchLikeCorpus(n int) []string {
 	return out
 }
 
-// unicodeCorpus mirrors branchLikeCorpus but with non-ASCII content so we
+// unicodeHaystack mirrors branchLikeHaystack but with non-ASCII content so we
 // can see the cost of strings.ToLower / strings.Contains on multi-byte runes.
-func unicodeCorpus(n int) []string {
+func unicodeHaystack(n int) []string {
 	prefixes := []string{"功能/", "修复/", "リリース/", "ユーザー/"}
 	out := make([]string, n)
 	for i := range n {
@@ -102,7 +102,7 @@ func unicodeCorpus(n int) []string {
 }
 
 // BenchmarkFindAll_Sweep covers the user-typing hot path across realistic
-// dimensions: corpus size × query shape. Item profile stays "branch-like"
+// dimensions: haystack size × query shape. Item profile stays "branch-like"
 // (short, mixed case) since that's the dominant workload; a separate
 // unicode sub-bench measures the rune-aware ToLower cost.
 func BenchmarkFindAll_Sweep(b *testing.B) {
@@ -118,13 +118,13 @@ func BenchmarkFindAll_Sweep(b *testing.B) {
 	sizes := []int{100, 1000, 10_000}
 
 	for _, n := range sizes {
-		corpus := branchLikeCorpus(n)
+		haystack := branchLikeHaystack(n)
 		for _, q := range queries {
 			b.Run(fmt.Sprintf("ascii/n=%d/%s", n, q.name), func(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 				for b.Loop() {
-					_ = matching.FindAll(q.query, corpus)
+					_ = matching.FindAll(q.query, haystack)
 				}
 			})
 		}
@@ -132,18 +132,18 @@ func BenchmarkFindAll_Sweep(b *testing.B) {
 
 	// Single unicode sweep at one size — confirms order-of-magnitude cost
 	// versus ASCII without exploding the matrix.
-	corpusU := unicodeCorpus(1000)
+	haystackU := unicodeHaystack(1000)
 	b.Run("unicode/n=1000/single_word_hits_some", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for b.Loop() {
-			_ = matching.FindAll("問題", corpusU)
+			_ = matching.FindAll("問題", haystackU)
 		}
 	})
 }
 
 // BenchmarkFindAllLower mirrors BenchmarkFindAll_Sweep with a pre-lowercased
-// corpus and query, isolating the substring-match cost from the per-call
+// haystack and query, isolating the substring-match cost from the per-call
 // strings.ToLower allocations. The picker uses this hot path on every
 // keystroke after caching itemsLower in state.
 func BenchmarkFindAllLower(b *testing.B) {
@@ -159,10 +159,10 @@ func BenchmarkFindAllLower(b *testing.B) {
 	sizes := []int{100, 1000, 10_000}
 
 	for _, n := range sizes {
-		corpus := branchLikeCorpus(n)
-		// Pre-lower the corpus once to mimic the cached state.itemsLower.
+		haystack := branchLikeHaystack(n)
+		// Pre-lower the haystack once to mimic the cached state.itemsLower.
 		lower := make([]string, n)
-		for i, s := range corpus {
+		for i, s := range haystack {
 			lower[i] = lowerASCII(s)
 		}
 		for _, q := range queries {
@@ -179,7 +179,7 @@ func BenchmarkFindAllLower(b *testing.B) {
 }
 
 // lowerASCII is strings.ToLower restricted to ASCII — sufficient for the
-// benchmark corpora and keeps the bench setup obviously deterministic.
+// benchmark haystacks and keeps the bench setup obviously deterministic.
 func lowerASCII(s string) string {
 	b := []byte(s)
 	for i, c := range b {

@@ -1,45 +1,46 @@
-// Package matching filters a slice of strings against a query using
+// Package matching filters a haystack of strings against a query using
 // case-insensitive, whitespace-split substring matching: an item matches when
-// it contains every whitespace-delimited word in the query (any order).
+// it contains every whitespace-delimited needle from the query (any order).
 package matching
 
 import "strings"
 
-// FindAll returns the indices of slice entries that match query, preserving
-// the original order. An empty query matches every item.
+// FindAll returns the indices of haystack entries that match query,
+// preserving the original order. An empty query matches every item.
 //
-// Lowercases the query and every item on each call. For hot-path callers
-// that re-query the same corpus repeatedly (e.g. an interactive picker), use
-// FindAllLower with a cached lowercased corpus to avoid per-keystroke
-// allocations.
-func FindAll(query string, slice []string) []int {
-	words := strings.Fields(strings.ToLower(query))
-	res := make([]int, 0, len(slice))
-	for i, s := range slice {
-		if matches(strings.ToLower(s), words) {
+// Lowercases the query and every haystack item on each call. For hot-path
+// callers that re-query the same haystack repeatedly (e.g. an interactive
+// picker), use FindAllLower with a cached lowercased haystack to avoid
+// per-keystroke allocations.
+func FindAll(query string, haystack []string) []int {
+	needles := strings.Fields(strings.ToLower(query))
+	res := make([]int, 0, len(haystack))
+	for i, s := range haystack {
+		if matches(strings.ToLower(s), needles) {
 			res = append(res, i)
 		}
 	}
 	return res
 }
 
-// FindAllLower is like FindAll but assumes query and items are already
+// FindAllLower is like FindAll but assumes query and haystack are already
 // lowercase. Saves the per-call strings.ToLower allocations on the keystroke
 // hot path.
-func FindAllLower(lowerQuery string, lowerSlice []string) []int {
-	words := strings.Fields(lowerQuery)
-	res := make([]int, 0, len(lowerSlice))
-	for i, s := range lowerSlice {
-		if matches(s, words) {
+func FindAllLower(lowerQuery string, lowerHaystack []string) []int {
+	needles := strings.Fields(lowerQuery)
+	res := make([]int, 0, len(lowerHaystack))
+	for i, s := range lowerHaystack {
+		if matches(s, needles) {
 			res = append(res, i)
 		}
 	}
 	return res
 }
 
-func matches(itemLower string, lowerWords []string) bool {
-	for _, w := range lowerWords {
-		if !strings.Contains(itemLower, w) {
+// matches reports whether every needle is a substring of itemLower.
+func matches(itemLower string, lowerNeedles []string) bool {
+	for _, n := range lowerNeedles {
+		if !strings.Contains(itemLower, n) {
 			return false
 		}
 	}

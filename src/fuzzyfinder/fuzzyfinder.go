@@ -134,7 +134,7 @@ func (f *finder) initFinder(items []string, opt Opt) error {
 	}
 
 	f.state.items = items
-	f.state.itemsLower = lowerCorpus(nil, nil, items)
+	f.state.itemsLower = lowerHaystack(nil, nil, items)
 	f.state.matched = makeMatched(len(items))
 
 	if !isInTesting() {
@@ -171,7 +171,7 @@ func (f *finder) updateItems(items []string) {
 
 	prevItems := f.state.items
 	f.state.items = items
-	f.state.itemsLower = lowerCorpus(f.state.itemsLower, prevItems, items)
+	f.state.itemsLower = lowerHaystack(f.state.itemsLower, prevItems, items)
 
 	// Recompute matched against current input. Mirrors filter() but assumes
 	// the lock is held — callers from the resync goroutine want one atomic
@@ -872,13 +872,13 @@ func makeMatched(n int) []int {
 	return matched
 }
 
-// lowerCorpus updates dst so dst[i] == strings.ToLower(items[i]) for all i.
+// lowerHaystack updates dst so dst[i] == strings.ToLower(items[i]) for all i.
 // Reuses dst when its capacity allows and only re-lowers entries that differ
 // from prevItems (the previously-cached source). Pass prevItems=nil to force
 // a full rebuild. ASCII-lowercase items get aliased (Go's strings.ToLower
 // returns the input string when no rune needs lowering), so a fully-lowercase
-// corpus costs ~zero extra memory.
-func lowerCorpus(dst, prevItems, items []string) []string {
+// haystack costs ~zero extra memory.
+func lowerHaystack(dst, prevItems, items []string) []string {
 	if cap(dst) >= len(items) {
 		dst = dst[:len(items)]
 	} else {
