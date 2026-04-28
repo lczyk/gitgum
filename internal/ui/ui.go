@@ -9,7 +9,6 @@ import (
 	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
-
 // ErrCancelled is returned when the user cancels a selection or confirmation (Ctrl+C or ESC).
 var ErrCancelled = errors.New("cancelled")
 
