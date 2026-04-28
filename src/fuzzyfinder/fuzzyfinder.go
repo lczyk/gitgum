@@ -156,12 +156,136 @@ func (f *finder) initFinder(items []string, opt Opt) error {
 	return nil
 }
 
+// updateItems atomically replaces the items slice and re-derives matched,
+// cursor, and selection so they keep pointing at the same logical items where
+// possible. Items that have been removed drop out of the selection; the
+// cursor follows its item if it still exists, otherwise it clamps.
 func (f *finder) updateItems(items []string) {
 	f.stateMu.Lock()
+
+	// Capture identity keys against the OLD items before replacing.
+	cursorKey, cursorValid := f.cursorIdentityLocked()
+	selKeys, selOrders := f.selectionIdentitiesLocked()
+
 	f.state.items = items
-	f.state.matched = makeMatched(len(items))
+
+	// Recompute matched against current input. Mirrors filter() but assumes
+	// the lock is held — callers from the resync goroutine want one atomic
+	// transition without dropping the lock mid-way.
+	if len(f.state.input) == 0 {
+		f.state.matched = makeMatched(len(items))
+	} else {
+		f.state.matched = matching.FindAll(string(f.state.input), items)
+	}
+
+	// Re-key selection: drop entries whose item is gone; keep selection order
+	// for survivors.
+	if len(selKeys) > 0 {
+		newSel := make(map[int]int, len(selKeys))
+		for i, k := range selKeys {
+			if newIdx, ok := findKey(items, k); ok {
+				newSel[newIdx] = selOrders[i]
+			}
+		}
+		f.state.selection = newSel
+	}
+
+	// Re-key cursor: if the cursored item still exists *and* still matches
+	// the query, point at its new position in matched. Otherwise clamp.
+	f.remapCursorLocked(cursorKey, cursorValid)
+
 	f.stateMu.Unlock()
-	f.eventCh <- struct{}{}
+
+	// Non-blocking signal: trigger redraw. The eventCh consumer also calls
+	// filter() but that's idempotent against the steady state we just wrote.
+	select {
+	case f.eventCh <- struct{}{}:
+	default:
+	}
+}
+
+// cursorIdentityLocked returns the identity key of the cursored item.
+// Caller must hold f.stateMu.
+func (f *finder) cursorIdentityLocked() (itemKey, bool) {
+	if len(f.state.matched) == 0 {
+		return itemKey{}, false
+	}
+	if f.state.y < 0 || f.state.y >= len(f.state.matched) {
+		return itemKey{}, false
+	}
+	idx := f.state.matched[f.state.y]
+	if idx < 0 || idx >= len(f.state.items) {
+		return itemKey{}, false
+	}
+	return keyOf(f.state.items, idx), true
+}
+
+// selectionIdentitiesLocked returns identity keys + selection orders for
+// every selected item. Order arrays line up by index.
+// Caller must hold f.stateMu.
+func (f *finder) selectionIdentitiesLocked() ([]itemKey, []int) {
+	if len(f.state.selection) == 0 {
+		return nil, nil
+	}
+	keys := make([]itemKey, 0, len(f.state.selection))
+	orders := make([]int, 0, len(f.state.selection))
+	for idx, ord := range f.state.selection {
+		if idx < 0 || idx >= len(f.state.items) {
+			continue
+		}
+		keys = append(keys, keyOf(f.state.items, idx))
+		orders = append(orders, ord)
+	}
+	return keys, orders
+}
+
+// remapCursorLocked points state.y at the new position of the cursored item
+// in the new matched list. If the item is gone or no longer matches the
+// query, clamps to a valid value.
+// Caller must hold f.stateMu.
+func (f *finder) remapCursorLocked(key itemKey, valid bool) {
+	if !valid {
+		f.clampCursorLocked()
+		return
+	}
+	newIdx, ok := findKey(f.state.items, key)
+	if !ok {
+		f.clampCursorLocked()
+		return
+	}
+	for y, m := range f.state.matched {
+		if m == newIdx {
+			f.state.y = y
+			if f.state.cursorY > y {
+				f.state.cursorY = y
+			}
+			return
+		}
+	}
+	f.clampCursorLocked()
+}
+
+// clampCursorLocked ensures state.y / state.cursorY are within matched bounds.
+// Caller must hold f.stateMu.
+func (f *finder) clampCursorLocked() {
+	n := len(f.state.matched)
+	if n == 0 {
+		f.state.y = 0
+		f.state.cursorY = 0
+		return
+	}
+	if f.state.y >= n {
+		f.state.y = n - 1
+	}
+	if f.state.cursorY > f.state.y {
+		f.state.cursorY = f.state.y
+	}
+	if f.state.y < 0 {
+		f.state.y = 0
+	}
+	if f.state.cursorY < 0 {
+		f.state.cursorY = 0
+	}
 }
 
 // _draw is used from draw with a timer.
@@ -685,12 +809,13 @@ func (f *finder) filter() {
 	}
 }
 
-// find runs the picker. When lock is non-nil, the slice may grow concurrently
-// and a background goroutine polls for new items. When lock is nil, items is
-// treated as static — no polling, the slice is snapshotted once.
-func (f *finder) find(ctx context.Context, itemsPtr *[]string, lock sync.Locker, opt Opt) ([]int, error) {
-	if itemsPtr == nil {
-		return nil, errors.New("items pointer must not be nil")
+// find runs the picker against a Source. The picker takes an initial snapshot,
+// then a background goroutine polls Version (if implemented) on a 30ms cadence
+// and re-snapshots when it changes. Sources without Version always re-snapshot
+// each tick.
+func (f *finder) find(ctx context.Context, src Source, opt Opt) ([]int, error) {
+	if src == nil {
+		return nil, errors.New("source must not be nil")
 	}
 
 	opt = opt.withDefaults()
@@ -699,47 +824,39 @@ func (f *finder) find(ctx context.Context, itemsPtr *[]string, lock sync.Locker,
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	snapshot := func() []string {
-		if lock == nil {
-			return *itemsPtr
-		}
-		lock.Lock()
-		defer lock.Unlock()
-		return append([]string(nil), (*itemsPtr)...)
+	versioned, _ := src.(Versioned)
+	var lastVersion uint64
+	if versioned != nil {
+		lastVersion = versioned.Version()
 	}
+	initial := src.Snapshot()
 
-	itemsCopy := snapshot()
-
-	var initialized chan struct{}
-	if lock != nil {
-		initialized = make(chan struct{})
-		go func() {
-			<-initialized
-			var prev int
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(30 * time.Millisecond):
-					lock.Lock()
-					curr := len(*itemsPtr)
-					if prev != curr {
-						itemsCopy = append([]string(nil), (*itemsPtr)...)
-						f.updateItems(itemsCopy)
+	initialized := make(chan struct{})
+	go func() {
+		<-initialized
+		ticker := time.NewTicker(30 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if versioned != nil {
+					v := versioned.Version()
+					if v == lastVersion {
+						continue
 					}
-					lock.Unlock()
-					prev = curr
+					lastVersion = v
 				}
+				f.updateItems(src.Snapshot())
 			}
-		}()
-	}
+		}
+	}()
 
-	if err := f.initFinder(itemsCopy, opt); err != nil {
+	if err := f.initFinder(initial, opt); err != nil {
 		return nil, fmt.Errorf("failed to initialize the fuzzy finder: %w", err)
 	}
-	if initialized != nil {
-		close(initialized)
-	}
+	close(initialized)
 	return f.runLoop(ctx, &opt)
 }
 
@@ -822,13 +939,55 @@ func (f *finder) runLoop(ctx context.Context, opt *Opt) ([]int, error) {
 //
 // Pass lock=nil for a static slice. Pass a non-nil lock when the slice may
 // grow concurrently — the picker re-snapshots under lock on a 30ms cadence.
+// Length-equal mutations (e.g. in-place edits or balanced add+remove) are not
+// detected on this path; for that, use FindFromSource with a SliceSource.
 func Find(ctx context.Context, items *[]string, lock sync.Locker, opt Opt) ([]int, error) {
+	if items == nil {
+		return nil, errors.New("items pointer must not be nil")
+	}
 	f := &finder{}
 	return f.Find(ctx, items, lock, opt)
 }
 
 func (f *finder) Find(ctx context.Context, items *[]string, lock sync.Locker, opt Opt) ([]int, error) {
-	return f.find(ctx, items, lock, opt)
+	return f.find(ctx, &legacyLockedSource{items: items, lock: lock}, opt)
+}
+
+// FindFromSource displays the picker over a Source and returns the selected
+// items as strings, or ErrAbort if the user cancels. With Opt.Multi=false the
+// returned slice always has exactly one element.
+//
+// Unlike Find, FindFromSource supports both adding and removing items while
+// the picker is open: callers mutate the source via SliceSource (or any
+// custom Source) and the picker resyncs on the next 30ms tick. Cursor and
+// selection are preserved across resyncs by item identity, not slice index.
+func FindFromSource(ctx context.Context, src Source, opt Opt) ([]string, error) {
+	f := &finder{}
+	return f.FindFromSource(ctx, src, opt)
+}
+
+// FindFromSource is the picker-method form, used by tests that need to inject
+// a mocked terminal.
+func (f *finder) FindFromSource(ctx context.Context, src Source, opt Opt) ([]string, error) {
+	idxs, err := f.find(ctx, src, opt)
+	if err != nil {
+		return nil, err
+	}
+	return f.itemsAtLocked(idxs), nil
+}
+
+// itemsAtLocked translates indices into the picker's terminal items snapshot.
+// Out-of-range indices are dropped.
+func (f *finder) itemsAtLocked(idxs []int) []string {
+	f.stateMu.RLock()
+	defer f.stateMu.RUnlock()
+	out := make([]string, 0, len(idxs))
+	for _, i := range idxs {
+		if i >= 0 && i < len(f.state.items) {
+			out = append(out, f.state.items[i])
+		}
+	}
+	return out
 }
 
 func isInTesting() bool {

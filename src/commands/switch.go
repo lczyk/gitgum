@@ -79,9 +79,9 @@ func (s *SwitchCommand) Execute(args []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	branches, lock := streamBranches(ctx, s.err(), currentBranch, trackingRemote, remotes)
+	src := streamBranches(ctx, s.err(), currentBranch, trackingRemote, remotes)
 
-	selected, err := s.sel().SelectStream(ctx, "Select a branch to switch to", branches, lock)
+	selected, err := s.sel().SelectStream(ctx, "Select a branch to switch to", src)
 	cancel()
 	if err != nil {
 		fmt.Fprintln(s.err(), "No branch selected. Aborting switch.")

@@ -3,7 +3,8 @@ package commands
 import (
 	"context"
 	"fmt"
-	"sync"
+
+	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
 // stubSelector replays canned answers for selector calls. Tests use it to
@@ -39,7 +40,7 @@ func (s *stubSelector) Select(prompt string, options []string, initialQuery ...s
 	return answer, nil
 }
 
-func (s *stubSelector) SelectStream(ctx context.Context, prompt string, options *[]string, lock sync.Locker) (string, error) {
+func (s *stubSelector) SelectStream(ctx context.Context, prompt string, src *ff.SliceSource) (string, error) {
 	s.selectCalls = append(s.selectCalls, selectCall{Prompt: prompt, Stream: true})
 	if len(s.selectAnswers) == 0 {
 		return "", fmt.Errorf("stubSelector: unexpected SelectStream call %q", prompt)

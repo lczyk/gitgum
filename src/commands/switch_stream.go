@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lczyk/gitgum/internal/git"
+	"github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
 const streamDelay = 3 * time.Millisecond
@@ -18,17 +19,20 @@ type branchEntry struct {
 }
 
 // streamBranches collects local and remote branches concurrently, deduplicating
-// and writing into a slice protected by the returned lock. Caller cancels ctx
+// and writing into a SliceSource the picker consumes. Caller cancels ctx
 // when the consumer (fuzzyfinder) is done; cancellation also stops producers.
 // errOut receives non-fatal diagnostic messages from the producers.
-func streamBranches(ctx context.Context, errOut io.Writer, currentBranch, trackingRemote string, remotes []string) (*[]string, *sync.Mutex) {
-	var (
-		lock     sync.Mutex
-		branches []string
-		seen     = make(map[string]struct{})
-	)
+//
+// The returned SliceSource supports both Add (used by the producers below)
+// and RemoveFunc (left available for future hooks that drop branches as the
+// user deletes them).
+func streamBranches(ctx context.Context, errOut io.Writer, currentBranch, trackingRemote string, remotes []string) *fuzzyfinder.SliceSource {
+	src := fuzzyfinder.NewSliceSource()
+	seen := make(map[string]struct{})
+	var seenMu sync.Mutex
 
-	// fetch once so producers do map lookups instead of N subprocess calls.
+	// Fetch checkout state once so producers can do map lookups instead of
+	// N subprocess calls.
 	checkedOut, err := git.CheckedOutBranches()
 	if err != nil {
 		fmt.Fprintf(errOut, "error getting worktrees: %v\n", err)
@@ -41,12 +45,14 @@ func streamBranches(ctx context.Context, errOut io.Writer, currentBranch, tracki
 			select {
 			case entry := <-queue:
 				time.Sleep(streamDelay)
-				lock.Lock()
-				if _, ok := seen[entry.dedupKey]; !ok {
-					seen[entry.dedupKey] = struct{}{}
-					branches = append(branches, entry.display)
+				seenMu.Lock()
+				if _, ok := seen[entry.dedupKey]; ok {
+					seenMu.Unlock()
+					continue
 				}
-				lock.Unlock()
+				seen[entry.dedupKey] = struct{}{}
+				seenMu.Unlock()
+				src.Add(entry.display)
 			case <-ctx.Done():
 				return
 			}
@@ -58,7 +64,13 @@ func streamBranches(ctx context.Context, errOut io.Writer, currentBranch, tracki
 		go streamRemoteBranches(ctx, errOut, queue, remote, currentBranch, trackingRemote, checkedOut)
 	}
 
-	return &branches, &lock
+	// Known limitation: branches deleted in another shell while the picker
+	// is open stay in the list until the user closes and reopens it. The
+	// underlying SliceSource supports RemoveFunc, but periodically polling
+	// git from inside the picker isn't worth the complexity for a stale
+	// entry that fails loudly on selection (`git checkout` errors). If this
+	// becomes a real annoyance, hook a rescanner here.
+	return src
 }
 
 func streamLocalBranches(ctx context.Context, errOut io.Writer, queue chan<- branchEntry, currentBranch string, checkedOut map[string]bool) {

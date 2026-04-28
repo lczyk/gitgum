@@ -9,6 +9,7 @@ import (
 	"github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
+
 // ErrCancelled is returned when the user cancels a selection or confirmation (Ctrl+C or ESC).
 var ErrCancelled = errors.New("cancelled")
 
@@ -41,26 +42,23 @@ func selectWith(finder func(context.Context, *[]string, sync.Locker, fuzzyfinder
 	return options[idxs[0]], nil
 }
 
-// SelectStream is like Select but reads candidates from a slice that may grow
-// concurrently behind lock — used by callers that stream entries from
-// background goroutines (e.g. switch). ctx is cancelled when the consumer is
-// done; that also tells producers to stop.
-func SelectStream(ctx context.Context, prompt string, options *[]string, lock sync.Locker) (string, error) {
+// SelectStream is like Select but reads candidates from a SliceSource that
+// may grow (or shrink) concurrently — used by callers that stream entries
+// from background goroutines (e.g. switch). ctx is cancelled when the
+// consumer is done; that also tells producers to stop.
+func SelectStream(ctx context.Context, prompt string, src *fuzzyfinder.SliceSource) (string, error) {
 	opt := fuzzyfinder.Opt{Prompt: prompt + ": ", Height: 10, Reverse: true}
-	idxs, err := fuzzyfinder.Find(ctx, options, lock, opt)
+	selected, err := fuzzyfinder.FindFromSource(ctx, src, opt)
 	if err != nil {
 		if errors.Is(err, fuzzyfinder.ErrAbort) {
 			return "", ErrCancelled
 		}
 		return "", fmt.Errorf("running picker: %w", err)
 	}
-	lock.Lock()
-	defer lock.Unlock()
-	idx := idxs[0]
-	if idx < 0 || idx >= len(*options) {
-		return "", fmt.Errorf("invalid selection index: %d", idx)
+	if len(selected) == 0 {
+		return "", fmt.Errorf("no selection returned")
 	}
-	return (*options)[idx], nil
+	return selected[0], nil
 }
 
 func confirmWith(selector func(string, []string, ...string) (string, error), prompt string, defaultYes bool) (bool, error) {
@@ -85,7 +83,7 @@ func Confirm(prompt string, defaultYes bool) (bool, error) {
 // RealSelector (the zero value), which delegates to the package-level functions.
 type Selector interface {
 	Select(prompt string, options []string, initialQuery ...string) (string, error)
-	SelectStream(ctx context.Context, prompt string, options *[]string, lock sync.Locker) (string, error)
+	SelectStream(ctx context.Context, prompt string, src *fuzzyfinder.SliceSource) (string, error)
 	Confirm(prompt string, defaultYes bool) (bool, error)
 }
 
@@ -97,8 +95,8 @@ func (RealSelector) Select(prompt string, options []string, initialQuery ...stri
 	return Select(prompt, options, initialQuery...)
 }
 
-func (RealSelector) SelectStream(ctx context.Context, prompt string, options *[]string, lock sync.Locker) (string, error) {
-	return SelectStream(ctx, prompt, options, lock)
+func (RealSelector) SelectStream(ctx context.Context, prompt string, src *fuzzyfinder.SliceSource) (string, error) {
+	return SelectStream(ctx, prompt, src)
 }
 
 func (RealSelector) Confirm(prompt string, defaultYes bool) (bool, error) {
