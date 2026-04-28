@@ -18,7 +18,7 @@ type Source interface {
 
 // Versioned is an optional extension of Source. When a Source implements it,
 // the picker uses Version to skip the Snapshot copy on idle ticks: it only
-// resnapshots when Version has changed since the previous refresh.
+// re-snapshots when Version has changed since the previous refresh.
 //
 // Implementations must bump the version on every mutation that could change
 // the result of Snapshot.
@@ -31,7 +31,7 @@ type Versioned interface {
 // Use Add / RemoveAt / RemoveFunc / Reset to mutate; the picker's resync
 // goroutine picks up changes on its next tick.
 //
-// SliceSource implements Versioned, so the picker only resnapshots when
+// SliceSource implements Versioned, so the picker only re-snapshots when
 // something actually changed.
 type SliceSource struct {
 	mu      sync.Mutex

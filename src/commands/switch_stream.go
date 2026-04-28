@@ -69,7 +69,7 @@ func streamBranches(ctx context.Context, errOut io.Writer, currentBranch, tracki
 	// underlying SliceSource supports RemoveFunc, but periodically polling
 	// git from inside the picker isn't worth the complexity for a stale
 	// entry that fails loudly on selection (`git checkout` errors). If this
-	// becomes a real annoyance, hook a rescanner here.
+	// becomes a real annoyance, hook a rescan goroutine here.
 	return src
 }
 

@@ -1,3 +1,5 @@
+// cspell:ignore CWORD COMPREPLY
+
 package completions
 
 import (
@@ -96,8 +98,8 @@ func lookupShell(t *testing.T, bin string) string {
 	if err != nil {
 		t.Skipf("%s not installed", bin)
 	}
-	vout, _ := exec.Command(path, "--version").CombinedOutput()
-	version := strings.TrimSpace(strings.SplitN(string(vout), "\n", 2)[0])
+	versionOut, _ := exec.Command(path, "--version").CombinedOutput()
+	version := strings.TrimSpace(strings.SplitN(string(versionOut), "\n", 2)[0])
 	t.Logf("%s: %s", path, version)
 	return path
 }
@@ -137,8 +139,8 @@ func lookupShellOnce(t *testing.T, bin string) string {
 	if err != nil {
 		return ""
 	}
-	vout, _ := exec.Command(path, "--version").CombinedOutput()
-	version := strings.TrimSpace(strings.SplitN(string(vout), "\n", 2)[0])
+	versionOut, _ := exec.Command(path, "--version").CombinedOutput()
+	version := strings.TrimSpace(strings.SplitN(string(versionOut), "\n", 2)[0])
 	t.Logf("%s: %s", path, version)
 	return path
 }
