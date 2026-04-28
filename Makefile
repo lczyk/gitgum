@@ -86,13 +86,3 @@ clean:  ## Remove build artifacts and generated files
 	rm -f ./bin/gitgum ./bin/fuzzyfinder
 	rm -f ./src/version/version.go
 	rm -f ./coverage.txt
-
-# release: bumps VERSION, commits, tags. Refuses unless on main with a clean
-# tree. Push manually after inspecting the result.
-# Usage: make release BUMP=patch|minor|major
-.PHONY: release
-release: ## Bump version, commit, tag (BUMP=patch|minor|major)
-	@if [ -z "$(BUMP)" ]; then \
-		echo "release: BUMP is required (e.g. make release BUMP=patch)" >&2; exit 1; \
-	fi
-	@go run ./cmd/gitgum release $(BUMP)
