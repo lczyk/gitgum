@@ -138,4 +138,3 @@ func BenchmarkScreen_Sync_AfterEdit(b *testing.B) {
 		})
 	}
 }
-

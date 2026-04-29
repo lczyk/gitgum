@@ -295,5 +295,5 @@ func RemoteBranchExists(remote, branch string) (bool, error) {
 func IsBranchAheadOfRemote(local, remote string) (bool, error) {
 	return CWD().IsBranchAheadOfRemote(local, remote)
 }
-func IsDirty() (bool, error)             { return CWD().IsDirty() }
-func GetDefaultBranch() (string, error)   { return CWD().GetDefaultBranch() }
+func IsDirty() (bool, error)            { return CWD().IsDirty() }
+func GetDefaultBranch() (string, error) { return CWD().GetDefaultBranch() }
