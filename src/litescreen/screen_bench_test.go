@@ -93,7 +93,7 @@ func BenchmarkScreen_Show_FullDiff(b *testing.B) {
 	}
 }
 
-// BenchmarkScreen_Sync measures the antitearing path: every cell re-emitted
+// BenchmarkScreen_Sync measures the anti-tearing path: every cell re-emitted
 // regardless of diff state, plus the leading region-clear. Compare against
 // Show_NoChange (idle) and Show_FullDiff (worst-case real change) to size
 // the cost of running aggressive redraws on a timer.
