@@ -40,7 +40,7 @@ install: ./bin/gitgum ./bin/fuzzyfinder  ## Symlink binaries into ~/.local/bin
 	ln -sf "$(PWD)/bin/fuzzyfinder" "$(HOME)/.local/bin/ff"
 
 .PHONY: test
-test:  ## Run the test suite with race detector
+test: generate-version  ## Run the test suite with race detector
 	@if command -v gotest >/dev/null 2>&1; then \
 		gotest -race ./...; \
 	else \
@@ -48,7 +48,7 @@ test:  ## Run the test suite with race detector
 	fi
 
 .PHONY: lint
-lint:  ## go vet + gofmt check (no writes)
+lint: generate-version  ## go vet + gofmt check (no writes)
 	go vet ./...
 	@out=$$(gofmt -s -l ./cmd ./internal ./src); \
 	if [ -n "$$out" ]; then \
