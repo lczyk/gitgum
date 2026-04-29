@@ -48,7 +48,7 @@ test: generate-version  ## Run the test suite with race detector
 	fi
 
 .PHONY: lint
-lint: generate-version  ## go vet + gofmt check (no writes)
+lint:  ## go vet + gofmt check (no writes)
 	go vet ./...
 	@out=$$(gofmt -s -l ./cmd ./internal ./src); \
 	if [ -n "$$out" ]; then \

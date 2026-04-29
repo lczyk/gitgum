@@ -61,7 +61,7 @@ func InitEmptyTempRepo(t *testing.T) string {
 
 func initEmptyAt(t testing.TB, dir string) {
 	t.Helper()
-	RunGit(t, dir, "init")
+	RunGit(t, dir, "init", "-b", "main")
 	RunGit(t, dir, "config", "user.name", "Test User")
 	RunGit(t, dir, "config", "user.email", "test@example.com")
 	RunGit(t, dir, "config", "commit.gpgsign", "false")
