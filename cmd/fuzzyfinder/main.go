@@ -106,6 +106,16 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// If stdin is piped from a producer that may also write to our
+	// terminal's stderr (the classic `find ~ | fuzzyfinder` case — find's
+	// "permission denied" lines tear the picker), force full repaints so
+	// the next frame overwrites the garbage. Skipped when stderr isn't a
+	// TTY: the producer's stderr is being captured elsewhere, no tearing.
+	// Tests pass a non-*os.File stdin; the cast guards against that.
+	if stdinFile, ok := stdin.(*os.File); ok && !isTTY(stdinFile) && isTTY(os.Stderr) {
+		cfg.opt.RedrawAggressive = true
+	}
+
 	var (
 		lock  sync.Mutex
 		items = []string{first}

@@ -690,6 +690,33 @@ func (s *Screen) Show() {
 	s.out.Write(s.fb.flush(s.yOrigin, s.cursorX, s.cursorY, s.cursorVisible))
 }
 
+// Sync forces a full repaint: every back-buffer cell is re-emitted regardless
+// of whether the diff thinks it changed. Used to recover from external writes
+// to the terminal (e.g. a sibling process writing to stderr while the picker
+// is up — `find ~ 2>&1 | ff` style tearing). Also clears the picker's region
+// before redrawing so stray bytes left in cells we don't otherwise touch are
+// wiped. Cost is a few KB of ANSI per call (full grid + SGR) vs. O(diff)
+// for Show; cheap enough to call on a timer.
+func (s *Screen) Sync() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Mark every front-buffer cell as a sentinel so flush's diff treats
+	// every back cell as changed and re-emits it.
+	for y := 0; y < s.fb.height; y++ {
+		for x := 0; x < s.fb.width; x++ {
+			s.fb.front[y][x] = liteCell{mainc: -1}
+		}
+	}
+	// Wipe the region (and anything below it in inline mode) before
+	// repainting. Without this, tearing left in cells outside the picker's
+	// own writes — or wrap residue from terminal scrolling — survives the
+	// repaint.
+	var prelude bytes.Buffer
+	fmt.Fprintf(&prelude, "\x1b[%d;1H\x1b[J", s.yOrigin+1)
+	s.out.Write(prelude.Bytes())
+	s.out.Write(s.fb.flush(s.yOrigin, s.cursorX, s.cursorY, s.cursorVisible))
+}
+
 func cellEqual(a, b liteCell) bool {
 	if a.mainc != b.mainc || a.style != b.style || len(a.combc) != len(b.combc) {
 		return false

@@ -79,6 +79,12 @@ type screen interface {
 	SetContent(x, y int, mainc rune, combc []rune, style tcell.Style)
 	ShowCursor(x, y int)
 	Show()
+	// Sync forces a full repaint. Used to recover from a sibling process
+	// writing to the terminal mid-render (e.g. find's stderr "permission
+	// denied" lines tearing the picker). tcell.Screen and litescreen.Screen
+	// both provide this; tcell.SimulationScreen inherits it via embedding
+	// in TerminalMock.
+	Sync()
 	ChannelEvents(ch chan<- tcell.Event, quit <-chan struct{})
 }
 
@@ -142,7 +148,7 @@ func (f *finder) initFinder(items []string, opt Opt) error {
 			f.stateMu.Lock()
 			f._draw()
 			f.stateMu.Unlock()
-			f.term.Show()
+			f.flush()
 		})
 		f.drawTimer.Stop()
 	}
@@ -511,10 +517,21 @@ func (f *finder) draw(d time.Duration) {
 	if isInTesting() {
 		// Don't use goroutine scheduling.
 		f._draw()
-		f.term.Show()
+		f.flush()
 	} else {
 		f.drawTimer.Reset(d)
 	}
+}
+
+// flush emits the current frame. Picks Sync (full repaint) when the caller
+// asked for aggressive redraws — typically because a sibling process is
+// writing to the same terminal — otherwise the cheaper diff-based Show.
+func (f *finder) flush() {
+	if f.opt != nil && f.opt.RedrawAggressive {
+		f.term.Sync()
+		return
+	}
+	f.term.Show()
 }
 
 // readKey reads a key input.
@@ -848,6 +865,16 @@ func (f *finder) find(ctx context.Context, src Source, opt Opt) ([]int, error) {
 				if versioned != nil {
 					v := versioned.Version()
 					if v == lastVersion {
+						// No source change. In aggressive mode also poke
+						// the redraw channel so the picker repaints over
+						// any tearing from a sibling writing to the
+						// terminal between source updates.
+						if opt.RedrawAggressive {
+							select {
+							case f.eventCh <- struct{}{}:
+							default:
+							}
+						}
 						continue
 					}
 					lastVersion = v

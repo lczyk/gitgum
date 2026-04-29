@@ -102,6 +102,38 @@ func TestNewWithOptions_SetContentAndShow(t *testing.T) {
 	s.Fini()
 }
 
+func TestNewWithOptions_SyncForcesFullRepaintAndClearsRegion(t *testing.T) {
+	var out bytes.Buffer
+	s, err := litescreen.NewWithOptions(litescreen.Options{
+		Height: 3,
+		Out:    &out,
+		Size:   fixedSize(20, 10),
+	})
+	assert.NoError(t, err)
+	assert.NoError(t, s.Init())
+
+	// Initial frame: write a cell and Show. Front buffer now matches back.
+	s.SetContent(0, 0, 'X', nil, tcell.StyleDefault)
+	s.Show()
+	out.Reset()
+
+	// Show again with no SetContent in between → diff is empty, only the
+	// cursor-hide/wrap/restore framing should appear.
+	s.Show()
+	noChange := out.String()
+	assert.That(t, !strings.Contains(noChange, "X"), "Show with empty diff must not re-emit 'X'; got %q", noChange)
+	out.Reset()
+
+	// Sync must (a) clear from yOrigin (row 8) to end-of-screen and (b) re-
+	// emit every cell, including the unchanged 'X'.
+	s.Sync()
+	got := out.String()
+	assert.That(t, strings.Contains(got, "\x1b[8;1H\x1b[J"), "Sync should clear region from yOrigin; got %q", got)
+	assert.That(t, strings.Contains(got, "X"), "Sync should re-emit 'X' even though back==front; got %q", got)
+
+	s.Fini()
+}
+
 // recvEvent reads an event with a deadline so tests don't hang if the
 // parser never produces one.
 func recvEvent(t *testing.T, ch <-chan tcell.Event) tcell.Event {

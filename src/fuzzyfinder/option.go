@@ -26,6 +26,12 @@ type Opt struct {
 	// FF_RENDERER=legacy escape hatch is set (tcell can't preserve
 	// terminal scrollback).
 	Height int
+	// RedrawAggressive forces a full repaint on every draw instead of the
+	// O(diff) emit. Set this when a sibling process may write to the same
+	// terminal as the picker (e.g. `find ~ | fuzzyfinder`, where find's
+	// stderr "permission denied" lines tear the picker). Cost is a few KB
+	// of ANSI per frame; safe to leave off otherwise.
+	RedrawAggressive bool
 }
 
 func (o Opt) withDefaults() Opt {
