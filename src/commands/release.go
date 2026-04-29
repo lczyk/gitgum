@@ -44,15 +44,6 @@ func (r *ReleaseCommand) Execute(args []string) error {
 			return fmt.Errorf("aborted: not on main branch")
 		}
 	}
-	if err := requireCleanTree(); err != nil {
-		return err
-	}
-
-	root, err := repoRoot()
-	if err != nil {
-		return err
-	}
-
 	remote := mainPushRemote()
 
 	if state, ok := alreadyReleased(); ok {
@@ -60,6 +51,19 @@ func (r *ReleaseCommand) Execute(args []string) error {
 		fmt.Fprintf(r.out(), "Nothing to do. To publish:\n")
 		fmt.Fprintf(r.out(), "  git push %s main && git push %s %s\n", remote, remote, state.tag)
 		return nil
+	}
+
+	stashed, err := r.handleDirtyTree("release")
+	if err != nil {
+		return err
+	}
+	if stashed {
+		defer r.restoreStash()
+	}
+
+	root, err := repoRoot()
+	if err != nil {
+		return err
 	}
 
 	versionPath := filepath.Join(root, versionFileName)
@@ -128,17 +132,6 @@ func repoRoot() (string, error) {
 		return "", fmt.Errorf("find repo root: %w", err)
 	}
 	return out, nil
-}
-
-func requireCleanTree() error {
-	out, _, err := cmdrun.Run("git", "status", "--porcelain")
-	if err != nil {
-		return fmt.Errorf("git status: %w", err)
-	}
-	if out != "" {
-		return fmt.Errorf("working tree not clean:\n%s", out)
-	}
-	return nil
 }
 
 type releasedState struct {
