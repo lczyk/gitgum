@@ -7,7 +7,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/gofuzz v1.2.0
 	github.com/jessevdk/go-flags v1.6.1
-	github.com/lczyk/assert v0.3.1
+	github.com/lczyk/assert v0.4.0
 	github.com/lczyk/version/go v0.5.0
 	github.com/mattn/go-runewidth v0.0.23
 	golang.org/x/term v0.40.0
