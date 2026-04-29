@@ -87,7 +87,7 @@ Useful for identifying the feature commits on a branch that need to be replayed 
 
 ### `gitgum release patch|minor|major`
 
-Bump `VERSION` (or fall back to the latest `vX.Y.Z` tag), commit, and create an annotated tag. Refuses on a dirty working tree; prompts (default no) when not on `main`. Push is left manual so the result can be inspected. Also exposed as `make release BUMP=patch|minor|major`.
+Bump `VERSION` (or fall back to the latest `vX.Y.Z` tag), commit, and create an annotated tag. Prompts (default no) when not on `main`. If the working tree has tracked uncommitted changes, prompts to auto-stash them (untracked files are left alone, partial-hunk staging is preserved on restore). Push is left manual so the result can be inspected.
 
 ### `gitgum completion fish|bash|zsh`
 

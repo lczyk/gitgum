@@ -216,6 +216,41 @@ func (r Repo) IsBranchAheadOfRemote(localBranch, remoteBranch string) (bool, err
 }
 
 // IsDirty reports whether the repo has tracked changes (ignoring untracked files).
+// GetDefaultBranch returns the repo's default branch, e.g. "main" or
+// "master". Resolution order:
+//  1. Symbolic ref of any remote's HEAD (origin first if present, otherwise
+//     the first remote alphabetically).
+//  2. Local branch named "main" or "master", in that order.
+//
+// Returns an error if none of the above resolve.
+func (r Repo) GetDefaultBranch() (string, error) {
+	remotes, _ := r.GetRemotes()
+	// Prefer origin if listed.
+	ordered := make([]string, 0, len(remotes))
+	for _, name := range remotes {
+		if name == "origin" {
+			ordered = append([]string{name}, ordered...)
+		} else {
+			ordered = append(ordered, name)
+		}
+	}
+	for _, name := range ordered {
+		out, _, err := r.run("symbolic-ref", "--short", "refs/remotes/"+name+"/HEAD")
+		if err == nil && out != "" {
+			// out is like "origin/main"; strip the remote prefix.
+			if _, branch, ok := strings.Cut(out, "/"); ok {
+				return branch, nil
+			}
+		}
+	}
+	for _, candidate := range []string{"main", "master"} {
+		if r.BranchExists(candidate) {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("could not determine default branch")
+}
+
 func (r Repo) IsDirty() (bool, error) {
 	stdout, _, err := r.run("status", "--porcelain=v1")
 	if err != nil {
@@ -260,4 +295,5 @@ func RemoteBranchExists(remote, branch string) (bool, error) {
 func IsBranchAheadOfRemote(local, remote string) (bool, error) {
 	return CWD().IsBranchAheadOfRemote(local, remote)
 }
-func IsDirty() (bool, error) { return CWD().IsDirty() }
+func IsDirty() (bool, error)             { return CWD().IsDirty() }
+func GetDefaultBranch() (string, error)   { return CWD().GetDefaultBranch() }

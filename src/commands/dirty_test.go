@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,9 +21,10 @@ func TestHandleDirtyTree_Clean(t *testing.T) {
 	stub := &stubSelector{}
 	c := newDirtyTestIO(stub)
 
-	stashed, err := c.handleDirtyTree("test")
+	cleanup, err := handleDirtyTree(c, "test")
 	assert.NoError(t, err)
-	assert.That(t, !stashed, "should not stash on clean tree")
+	assert.That(t, cleanup != nil, "cleanup must always be non-nil")
+	cleanup()
 	assert.Equal(t, len(stub.confirmCalls), 0)
 }
 
@@ -34,10 +36,14 @@ func TestHandleDirtyTree_UntrackedOnly(t *testing.T) {
 	stub := &stubSelector{}
 	c := newDirtyTestIO(stub)
 
-	stashed, err := c.handleDirtyTree("test")
+	cleanup, err := handleDirtyTree(c, "test")
 	assert.NoError(t, err)
-	assert.That(t, !stashed, "should not stash with only untracked files")
+	cleanup()
 	assert.Equal(t, len(stub.confirmCalls), 0)
+
+	// No stash should have been created.
+	stashList := temp_repo.RunGit(t, dir, "stash", "list")
+	assert.Equal(t, strings.TrimSpace(stashList), "")
 }
 
 func TestHandleDirtyTree_DirtyConfirmYes(t *testing.T) {
@@ -49,19 +55,25 @@ func TestHandleDirtyTree_DirtyConfirmYes(t *testing.T) {
 	stub := &stubSelector{confirmAnswers: []bool{true}}
 	c := newDirtyTestIO(stub)
 
-	stashed, err := c.handleDirtyTree("release")
+	cleanup, err := handleDirtyTree(c, "release")
 	assert.NoError(t, err)
-	assert.That(t, stashed, "should stash when user confirms")
 	assert.Equal(t, len(stub.confirmCalls), 1)
 	assert.ContainsString(t, stub.confirmCalls[0].Prompt, "release")
 
-	// Tree should now be clean.
+	// Tree should now be clean (changes stashed).
 	out := temp_repo.RunGit(t, dir, "status", "--porcelain")
 	assert.Equal(t, strings.TrimSpace(out), "")
 
 	// Stash list entry uses the label.
 	stashList := temp_repo.RunGit(t, dir, "stash", "list")
 	assert.ContainsString(t, stashList, "gitgum release auto-stash")
+
+	cleanup()
+
+	// After cleanup, tree should be dirty again and stash empty.
+	post := temp_repo.RunGit(t, dir, "status", "--porcelain")
+	assert.ContainsString(t, post, "README.md")
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "stash", "list")), "")
 }
 
 // Regression: untracked files coexisting with tracked changes must still
@@ -78,12 +90,12 @@ func TestHandleDirtyTree_TrackedAndUntrackedMixed(t *testing.T) {
 	stub := &stubSelector{confirmAnswers: []bool{true}}
 	c := newDirtyTestIO(stub)
 
-	stashed, err := c.handleDirtyTree("test")
+	cleanup, err := handleDirtyTree(c, "test")
 	assert.NoError(t, err)
-	assert.That(t, stashed, "tracked change should trigger stash even when untracked files coexist")
+	defer cleanup()
 	assert.Equal(t, len(stub.confirmCalls), 1)
 
-	// Untracked file must remain in working tree (default stash excludes untracked).
+	// Untracked file must remain in working tree.
 	_, statErr := os.Stat(filepath.Join(dir, "untracked.txt"))
 	assert.NoError(t, statErr, "untracked file should not be stashed away")
 }
@@ -91,9 +103,6 @@ func TestHandleDirtyTree_TrackedAndUntrackedMixed(t *testing.T) {
 func TestHandleDirtyTree_RestoresIndexAfterPop(t *testing.T) {
 	dir := temp_repo.InitTempRepo(t)
 
-	// One staged file, one unstaged-only file. The staged file should
-	// remain staged after the round-trip; the unstaged file should remain
-	// modified-but-unstaged.
 	stagedPath := filepath.Join(dir, "staged.txt")
 	err := os.WriteFile(stagedPath, []byte("staged\n"), 0o644)
 	assert.NoError(t, err)
@@ -106,11 +115,9 @@ func TestHandleDirtyTree_RestoresIndexAfterPop(t *testing.T) {
 	stub := &stubSelector{confirmAnswers: []bool{true}}
 	c := newDirtyTestIO(stub)
 
-	stashed, err := c.handleDirtyTree("test")
+	cleanup, err := handleDirtyTree(c, "test")
 	assert.NoError(t, err)
-	assert.That(t, stashed, "should stash")
-
-	c.restoreStash()
+	cleanup()
 
 	out := temp_repo.RunGit(t, dir, "status", "--porcelain")
 	gotStaged := map[string]string{}
@@ -123,8 +130,7 @@ func TestHandleDirtyTree_RestoresIndexAfterPop(t *testing.T) {
 	assert.Equal(t, gotStaged["staged.txt"], "A ")
 	assert.Equal(t, gotStaged["README.md"], " M")
 
-	stashList := temp_repo.RunGit(t, dir, "stash", "list")
-	assert.Equal(t, strings.TrimSpace(stashList), "")
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "stash", "list")), "")
 }
 
 // Partial-hunk staging: a file has both staged and unstaged changes (XY=MM
@@ -139,8 +145,6 @@ func TestHandleDirtyTree_PreservesPartialHunkStaging(t *testing.T) {
 	temp_repo.RunGit(t, dir, "add", "file.txt")
 	temp_repo.RunGit(t, dir, "commit", "-m", "add file")
 
-	// Modify two distinct hunks, stage only the first via a hand-crafted
-	// hunk applied with `git apply --cached`.
 	err = os.WriteFile(path, []byte("A\nb\nc\nd\nE\n"), 0o644)
 	assert.NoError(t, err)
 	stagePatch := "" +
@@ -168,10 +172,9 @@ func TestHandleDirtyTree_PreservesPartialHunkStaging(t *testing.T) {
 	stub := &stubSelector{confirmAnswers: []bool{true}}
 	c := newDirtyTestIO(stub)
 
-	stashed, err := c.handleDirtyTree("test")
+	cleanup, err := handleDirtyTree(c, "test")
 	assert.NoError(t, err)
-	assert.That(t, stashed, "should stash")
-	c.restoreStash()
+	cleanup()
 
 	indexAfter := temp_repo.RunGit(t, dir, "show", ":file.txt")
 	worktreeAfter, err := os.ReadFile(path)
@@ -193,10 +196,11 @@ func TestHandleDirtyTree_DirtyConfirmNo(t *testing.T) {
 	stub := &stubSelector{confirmAnswers: []bool{false}}
 	c := newDirtyTestIO(stub)
 
-	stashed, err := c.handleDirtyTree("test")
+	cleanup, err := handleDirtyTree(c, "test")
 	assert.Error(t, err, assert.AnyError, "should error when user declines")
-	assert.ContainsString(t, err.Error(), "aborted")
-	assert.That(t, !stashed, "should not stash when user declines")
+	assert.That(t, errors.Is(err, errDirtyTreeAborted), "abort should match errDirtyTreeAborted")
+	assert.That(t, cleanup != nil, "cleanup must always be non-nil")
+	cleanup()
 
 	out := temp_repo.RunGit(t, dir, "status", "--porcelain")
 	assert.ContainsString(t, out, "README.md")

@@ -14,8 +14,11 @@ import (
 )
 
 // ReleaseCommand bumps the repo's VERSION (or falls back to the latest tag),
-// commits the bump, and creates an annotated tag. Refuses unless on main with
-// a clean working tree. Push is left manual so the result can be inspected.
+// commits the bump, and creates an annotated tag. The default branch is
+// detected dynamically (origin's HEAD, then "main"/"master" if present);
+// running off it prompts (default no). Tracked uncommitted changes prompt
+// to auto-stash (partial-hunk staging preserved on restore). Push is left
+// manual so the result can be inspected.
 type ReleaseCommand struct {
 	cmdIO
 	Args struct {
@@ -35,31 +38,33 @@ func (r *ReleaseCommand) Execute(args []string) error {
 	if err != nil {
 		return fmt.Errorf("get current branch: %w", err)
 	}
-	if branch != "main" {
-		confirmed, err := r.sel().Confirm(fmt.Sprintf("Not on main (current: %s). Release anyway?", branch), false)
+	defaultBranch, err := git.GetDefaultBranch()
+	if err != nil {
+		return fmt.Errorf("determine default branch: %w", err)
+	}
+	if branch != defaultBranch {
+		confirmed, err := r.sel().Confirm(fmt.Sprintf("Not on %s (current: %s). Release anyway?", defaultBranch, branch), false)
 		if err != nil {
 			return err
 		}
 		if !confirmed {
-			return fmt.Errorf("aborted: not on main branch")
+			return fmt.Errorf("aborted: not on %s branch", defaultBranch)
 		}
 	}
-	remote := mainPushRemote()
+	remote := defaultBranchPushRemote(defaultBranch)
 
 	if state, ok := alreadyReleased(); ok {
 		fmt.Fprintf(r.out(), "Already released: HEAD is %q (tag %s already at HEAD).\n", state.subject, state.tag)
 		fmt.Fprintf(r.out(), "Nothing to do. To publish:\n")
-		fmt.Fprintf(r.out(), "  git push %s main && git push %s %s\n", remote, remote, state.tag)
+		fmt.Fprintf(r.out(), "  git push %s %s && git push %s %s\n", remote, defaultBranch, remote, state.tag)
 		return nil
 	}
 
-	stashed, err := r.handleDirtyTree("release")
+	cleanup, err := handleDirtyTree(&r.cmdIO, "release")
 	if err != nil {
 		return err
 	}
-	if stashed {
-		defer r.restoreStash()
-	}
+	defer cleanup()
 
 	root, err := repoRoot()
 	if err != nil {
@@ -110,7 +115,7 @@ func (r *ReleaseCommand) Execute(args []string) error {
 	}
 
 	fmt.Fprintf(r.out(), "\nTagged %s. To publish:\n", strings.Join(tags, ", "))
-	fmt.Fprintf(r.out(), "  git push %s main && git push %s %s\n", remote, remote, strings.Join(tags, " "))
+	fmt.Fprintf(r.out(), "  git push %s %s && git push %s %s\n", remote, defaultBranch, remote, strings.Join(tags, " "))
 	fmt.Fprintln(r.out(), "\nTo fully undo (drops the commit and the tag(s)):")
 	fmt.Fprintf(r.out(), "  git reset --hard HEAD~1 && git tag -d %s\n", strings.Join(tags, " "))
 	return nil
@@ -181,11 +186,11 @@ func alreadyReleased() (releasedState, bool) {
 	return releasedState{tag: tag, subject: subject}, true
 }
 
-// mainPushRemote returns the remote main tracks. Falls back to the sole
-// configured remote, then "origin", so the suggested push command stays useful
-// even when main has no upstream yet.
-func mainPushRemote() string {
-	if r, _ := git.GetBranchTrackingRemote("main"); r != "" {
+// defaultBranchPushRemote returns the remote the default branch tracks.
+// Falls back to the sole configured remote, then "origin", so the suggested
+// push command stays useful even when the default branch has no upstream yet.
+func defaultBranchPushRemote(defaultBranch string) string {
+	if r, _ := git.GetBranchTrackingRemote(defaultBranch); r != "" {
 		return r
 	}
 	if remotes, _ := git.GetRemotes(); len(remotes) == 1 {
