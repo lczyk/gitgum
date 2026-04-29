@@ -20,6 +20,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -285,9 +286,25 @@ func (f *framebuf) set(x, y int, c liteCell) {
 // As a side effect, front is updated to match back so a subsequent flush
 // with no intervening changes emits an empty payload (modulo the
 // cursor-hide/show framing).
+// bufPool reuses output buffers across Show/Sync calls. The hot path emits
+// a few KB on diff redraws and ~width*height*10 on full repaints; without
+// pooling each call paid 1-2 allocs (the backing array, plus the prelude
+// scratch when it escaped through io.Writer.Write). With pooling, the same
+// backing slice is recycled until GC chooses to drop the pool entry.
+var bufPool = sync.Pool{
+	New: func() any { return new(bytes.Buffer) },
+}
+
 func (f *framebuf) flush(yOrigin, cx, cy int, cursorVisible bool) []byte {
 	var buf bytes.Buffer
+	f.flushTo(&buf, yOrigin, cx, cy, cursorVisible)
+	return buf.Bytes()
+}
 
+// flushTo writes the front-to-back transform into buf. Production callers
+// (Show, Sync) pass a pooled buffer; tests call the simpler flush wrapper
+// when they want a fresh []byte.
+func (f *framebuf) flushTo(buf *bytes.Buffer, yOrigin, cx, cy int, cursorVisible bool) {
 	// Hide cursor + disable auto-wrap (DECAWM) while drawing. Without ?7l,
 	// emitting a cell in the bottom-right corner advances the cursor to a
 	// new line — at the bottom of the terminal that triggers a scroll,
@@ -297,6 +314,11 @@ func (f *framebuf) flush(yOrigin, cx, cy int, cursorVisible bool) []byte {
 
 	var prevStyle tcell.Style
 	var styleSet bool
+	// Stack scratch for strconv.AppendInt. Reused across every CUP emit
+	// to avoid the per-call alloc that fmt.Fprintf("%d") incurs once
+	// either coordinate exceeds Go's small-int interface cache (~255) —
+	// the dominant alloc source on wide grids before this change.
+	var scratch [20]byte
 
 	for y := 0; y < f.height; y++ {
 		for x := 0; x < f.width; x++ {
@@ -313,7 +335,11 @@ func (f *framebuf) flush(yOrigin, cx, cy int, cursorVisible bool) []byte {
 
 			// Cursor positioning is 1-indexed and absolute. Add yOrigin to
 			// shift fb row 0 to the region's first terminal row.
-			fmt.Fprintf(&buf, "\x1b[%d;%dH", yOrigin+y+1, x+1)
+			buf.WriteString("\x1b[")
+			buf.Write(strconv.AppendInt(scratch[:0], int64(yOrigin+y+1), 10))
+			buf.WriteByte(';')
+			buf.Write(strconv.AppendInt(scratch[:0], int64(x+1), 10))
+			buf.WriteByte('H')
 
 			if !styleSet || c.style != prevStyle {
 				buf.WriteString("\x1b[m")
@@ -346,9 +372,12 @@ func (f *framebuf) flush(yOrigin, cx, cy int, cursorVisible bool) []byte {
 
 	buf.WriteString("\x1b[m\x1b[?7h") // restore auto-wrap
 	if cursorVisible {
-		fmt.Fprintf(&buf, "\x1b[%d;%dH\x1b[?25h", yOrigin+cy+1, cx+1)
+		buf.WriteString("\x1b[")
+		buf.Write(strconv.AppendInt(scratch[:0], int64(yOrigin+cy+1), 10))
+		buf.WriteByte(';')
+		buf.Write(strconv.AppendInt(scratch[:0], int64(cx+1), 10))
+		buf.WriteString("H\x1b[?25h")
 	}
-	return buf.Bytes()
 }
 
 // Options configure construction of a Screen with custom IO and/or size
@@ -687,7 +716,11 @@ func (s *Screen) ShowCursor(x, y int) {
 func (s *Screen) Show() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.out.Write(s.fb.flush(s.yOrigin, s.cursorX, s.cursorY, s.cursorVisible))
+	buf := bufPool.Get().(*bytes.Buffer)
+	defer bufPool.Put(buf)
+	buf.Reset()
+	s.fb.flushTo(buf, s.yOrigin, s.cursorX, s.cursorY, s.cursorVisible)
+	s.out.Write(buf.Bytes())
 }
 
 // Sync forces a full repaint: every back-buffer cell is re-emitted regardless
@@ -707,14 +740,26 @@ func (s *Screen) Sync() {
 			s.fb.front[y][x] = liteCell{mainc: -1}
 		}
 	}
+	buf := bufPool.Get().(*bytes.Buffer)
+	defer bufPool.Put(buf)
+	buf.Reset()
+	// Pre-size to the worst-case payload (~10 bytes/cell): every cell is
+	// about to be re-emitted, so one up-front grow beats the doubling
+	// pattern bytes.Buffer would otherwise walk through. After the first
+	// Sync the pool buffer's backing already covers this — Grow on a
+	// large-enough buffer is a no-op.
+	buf.Grow(s.fb.width*s.fb.height*10 + 64)
 	// Wipe the region (and anything below it in inline mode) before
 	// repainting. Without this, tearing left in cells outside the picker's
 	// own writes — or wrap residue from terminal scrolling — survives the
-	// repaint.
-	var prelude bytes.Buffer
-	fmt.Fprintf(&prelude, "\x1b[%d;1H\x1b[J", s.yOrigin+1)
-	s.out.Write(prelude.Bytes())
-	s.out.Write(s.fb.flush(s.yOrigin, s.cursorX, s.cursorY, s.cursorVisible))
+	// repaint. Coalesced into the same buffer as the repaint so we issue
+	// a single Write to the terminal.
+	var scratch [20]byte
+	buf.WriteString("\x1b[")
+	buf.Write(strconv.AppendInt(scratch[:0], int64(s.yOrigin+1), 10))
+	buf.WriteString(";1H\x1b[J")
+	s.fb.flushTo(buf, s.yOrigin, s.cursorX, s.cursorY, s.cursorVisible)
+	s.out.Write(buf.Bytes())
 }
 
 func cellEqual(a, b liteCell) bool {
