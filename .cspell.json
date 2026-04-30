@@ -3,6 +3,7 @@
   "language": "en",
   "ignorePaths": [
     "bin/**",
+    "vendor/**",
     "cover.html",
     "cover.out",
     "go.sum",

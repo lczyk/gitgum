@@ -78,7 +78,7 @@ cover-open: cover  ## Run coverage and open the HTML report in a browser
 	go tool cover -html=cover.out
 
 .PHONY: verify
-verify: lint test  ## Pre-commit gate: lint, test
+verify: lint test spellcheck  ## Pre-commit gate: lint, test, spellcheck
 	@echo "All checks passed."
 
 .PHONY: clean
