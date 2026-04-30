@@ -55,9 +55,9 @@ Print branches and a porcelain-formatted working-tree status with a header.
 
 ### `gitgum tree`
 
-Print a colored commit graph across all branches. Equivalent to:
+Print a colored commit graph across all branches, with the tip at the bottom (right above the next prompt) so it stays visible after the output scrolls. Roughly:
 ```bash
-git log --graph --oneline --all --decorate
+git log --graph --oneline --all --decorate   # then reverse + flip diagonals
 ```
 Defaults to the last two weeks. Override with `--since=<expr>` (any value `git log --since` accepts: `1m`, `yesterday`, `2024-01-01`, `"3 weeks ago"`). Pass `--since=` (empty) for the full history.
 
