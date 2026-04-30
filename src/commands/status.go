@@ -10,6 +10,7 @@ import (
 
 type StatusCommand struct {
 	cmdIO
+	Flat bool `long:"flat" description:"show changes as flat porcelain list instead of tree"`
 }
 
 func (s *StatusCommand) Execute(args []string) error {
@@ -49,9 +50,21 @@ func (s *StatusCommand) Execute(args []string) error {
 	}
 	lines := strings.Split(stdout, "\n")
 
-	if len(lines) > 1 {
+	changeLines := lines[1:]
+	hasChanges := false
+	for _, l := range changeLines {
+		if l != "" {
+			hasChanges = true
+			break
+		}
+	}
+	if hasChanges {
 		printHeader("--- CHANGES ----------------------------")
-		fmt.Fprintln(out, strings.Join(lines[1:], "\n"))
+		if s.Flat {
+			fmt.Fprintln(out, strings.Join(changeLines, "\n"))
+		} else {
+			renderTree(buildTree(parseChangeLines(changeLines)), out)
+		}
 	}
 
 	printHeader("--- STATUS -----------------------------")
