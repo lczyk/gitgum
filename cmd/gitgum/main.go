@@ -24,6 +24,7 @@ type Options struct {
 	ReplayList commands.ReplayListCommand `command:"replay-list" description:"List commits on branch A since divergence from trunk B"`
 	Empty      commands.EmptyCommand      `command:"empty" description:"Create an empty commit and optionally push it"`
 	Release    commands.ReleaseCommand    `command:"release" description:"Bump VERSION (or latest tag), commit, and tag"`
+	Tree       commands.TreeCommand       `command:"tree" description:"Print a colored commit graph across all branches"`
 }
 
 func main() {
@@ -37,7 +38,7 @@ func main() {
 
 	// If no command provided, use fuzzyfinder to select one
 	if len(os.Args) == 1 {
-		cmds := []string{"switch", "status", "push", "clean", "empty", "help"}
+		cmds := []string{"switch", "status", "tree", "push", "clean", "empty", "help"}
 		selected, err := ui.Select("Select command", cmds)
 		if err != nil {
 			if errors.Is(err, ui.ErrCancelled) {

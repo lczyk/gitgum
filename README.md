@@ -53,6 +53,14 @@ Pick a branch to switch to. Local and remote branches stream into the picker liv
 
 Print branches and a porcelain-formatted working-tree status with a header.
 
+### `gitgum tree`
+
+Print a colored commit graph across all branches. Equivalent to:
+```bash
+git log --graph --oneline --all --decorate
+```
+Defaults to the last two weeks. Override with `--since=<expr>` (any value `git log --since` accepts: `1m`, `yesterday`, `2024-01-01`, `"3 weeks ago"`). Pass `--since=` (empty) for the full history.
+
 ### `gitgum push`
 
 Push the current branch. Picks a remote interactively when the branch has no upstream, or confirms a push to the existing tracking branch.
