@@ -74,7 +74,7 @@ func TestTreeCommand_Execute(t *testing.T) {
 
 	t.Run("ancient since shows full history", func(t *testing.T) {
 		var buf bytes.Buffer
-		cmd := &TreeCommand{cmdIO: cmdIO{Out: &buf}, Since: "1970-01-01"}
+		cmd := &TreeCommand{cmdIO: cmdIO{Out: &buf}, Since: "2000-01-01"}
 		err := cmd.Execute(nil)
 		assert.NoError(t, err)
 
