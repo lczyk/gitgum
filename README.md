@@ -7,6 +7,10 @@
 
 A bunch of git commands with an interactive fuzzy-finder UI (used to be [gum](https://github.com/charmbracelet/gum), hence the name). The features are very tailored to the kind of workflows I have, but nothing work-specific is encoded in.
 
+## Requirements
+
+- `git` >= 2.35.2 (Mar 2022). gg checks the installed version on first use and fails loudly below the floor. Lower bound is driven by the `safe.directory` config gating gg uses to keep parsing stable across machines.
+
 The picker is the in-tree [`src/fuzzyfinder`](src/fuzzyfinder) library — a slimmed-down fork of [`ktr0731/go-fuzzyfinder`](https://github.com/ktr0731/go-fuzzyfinder). No external `fzf` binary is required.
 
 ## Build
