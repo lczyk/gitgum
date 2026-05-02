@@ -128,6 +128,10 @@ Flags: `-m`/`--multi`, `-q`/`--query`, `-p`/`--prompt`, `--header`, `-1`/`--sele
 - [`internal/strutil`](internal/strutil) — string helpers
 - [`internal/testutil/temp_repo`](internal/testutil/temp_repo) — test fixtures
 
+## Known gaps
+
+- **submodules**: not designed or tested with submodules in mind. behaviour is undefined when run inside a repo containing submodules — output may be incomplete or inconsistent. tracked as future work.
+
 ## Vendored licences
 
 - [`src/fuzzyfinder/`](src/fuzzyfinder) derives from a vendored copy of `github.com/ktr0731/go-fuzzyfinder` (MIT). Original licence at [LICENSE-go-fuzzyfinder](LICENSE-go-fuzzyfinder).
