@@ -1,12 +1,10 @@
 package git
 
 import (
-	"bytes"
+	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 
-	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/strutil"
 )
 
@@ -51,23 +49,22 @@ func parseFileStatus(statusCode string) FileStatus {
 	return FileUnknown
 }
 
+// run is a thin wrapper that calls runRead with a background context and
+// trims whitespace from stdout/stderr. Most existing callers expect
+// trimmed output (single-line refs, branch names); porcelain consumers
+// that need raw output call runRead directly.
 func (r Repo) run(args ...string) (string, string, error) {
-	return cmdrun.RunIn(r.Dir, "git", args...)
+	stdout, stderr, err := r.runRead(context.Background(), args...)
+	return strings.TrimSpace(stdout), strings.TrimSpace(stderr), err
 }
 
 // GetFileStatus returns the status of a file in git.
 func (r Repo) GetFileStatus(file string) (FileStatus, error) {
-	// Don't use cmdrun.Run because it trims whitespace, which we need for parsing status.
-	cmd := exec.Command("git", "status", "--porcelain", file)
-	cmd.Dir = r.Dir
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
-	err := cmd.Run()
-	output := stdout.String()
-	if err != nil || output == "" {
+	stdout, _, err := r.runRead(context.Background(), "status", "--porcelain", file)
+	if err != nil || stdout == "" {
 		return FileUnknown, err
 	}
-	return parseFileStatus(output), nil
+	return parseFileStatus(stdout), nil
 }
 
 // CheckInRepo verifies we're inside a git repository.
