@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/ui"
 )
@@ -34,7 +33,7 @@ func (p *PushCommand) Execute(args []string) error {
 		if !confirmed {
 			return nil
 		}
-		if err := cmdrun.RunWithOutput("git", "push"); err != nil {
+		if err := git.Push(); err != nil {
 			return fmt.Errorf("failed to push: %w", err)
 		}
 		fmt.Fprintf(p.out(), "Pushed to remote tracking branch '%s'.\n", remoteBranch)
@@ -99,7 +98,7 @@ func (p *PushCommand) Execute(args []string) error {
 			return nil
 		}
 
-		if err := cmdrun.RunWithOutput("git", "push", "-u", selectedRemote, currentBranch); err != nil {
+		if err := git.RunWriteStream("push", "-u", selectedRemote, currentBranch); err != nil {
 			return fmt.Errorf("failed to push: %w", err)
 		}
 		fmt.Fprintf(p.out(), "Created and set tracking reference for '%s' to '%s'.\n",
@@ -121,7 +120,7 @@ func (p *PushCommand) Execute(args []string) error {
 		fmt.Fprintf(p.out(), "No changes to push. Local branch '%s' is up to date with remote branch '%s'.\n",
 			currentBranch, expectedRemoteBranchName)
 		// set upstream since we're targeting this remote
-		if err := cmdrun.RunQuiet("git", "branch", "--set-upstream-to="+expectedRemoteBranchName, currentBranch); err != nil {
+		if _, _, err := git.RunWrite("branch", "--set-upstream-to="+expectedRemoteBranchName, currentBranch); err != nil {
 			return fmt.Errorf("failed to set upstream: %w", err)
 		}
 		fmt.Fprintf(p.out(), "Updated upstream to '%s'.\n", expectedRemoteBranchName)
@@ -140,7 +139,7 @@ func (p *PushCommand) Execute(args []string) error {
 		return nil
 	}
 
-	if err := cmdrun.RunWithOutput("git", "push", selectedRemote, currentBranch); err != nil {
+	if err := git.RunWriteStream("push", selectedRemote, currentBranch); err != nil {
 		return fmt.Errorf("failed to push: %w", err)
 	}
 	fmt.Fprintf(p.out(), "Pushed to remote branch '%s'.\n", expectedRemoteBranchName)
