@@ -150,14 +150,16 @@ func (r Repo) GetRemoteBranches(remote string) ([]string, error) {
 }
 
 // GetBranchUpstream returns the remote and branch name of the upstream for a local branch.
-// Returns ("", "", nil) if the branch has no upstream configured.
+// Returns ("", "", nil) if the branch has no upstream configured. Uses for-each-ref
+// rather than rev-parse @{u} so a "gone" upstream (config still set, remote ref pruned)
+// returns the configured names instead of erroring.
 func (r Repo) GetBranchUpstream(branch string) (remote string, remoteBranch string, err error) {
-	stdout, stderr, err := r.run("rev-parse", "--abbrev-ref", branch+"@{u}")
-	if err != nil && strings.Contains(stderr, "no upstream configured for branch") {
-		return "", "", nil
-	}
+	stdout, _, err := r.run("for-each-ref", "--format=%(upstream:short)", "refs/heads/"+branch)
 	if err != nil {
 		return "", "", err
+	}
+	if stdout == "" {
+		return "", "", nil
 	}
 	parts := strings.SplitN(stdout, "/", 2)
 	if len(parts) != 2 {
