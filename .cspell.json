@@ -84,6 +84,7 @@
     "keybind",
     "frontmatter",
     "refspec",
-    "pathspec"
+    "pathspec",
+    "serialise"
   ]
 }
