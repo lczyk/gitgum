@@ -147,6 +147,23 @@ func TestGetBranchUpstream(t *testing.T) {
 		assert.Equal(t, "origin", remote)
 		assert.Equal(t, "main", remoteBranch)
 	})
+
+	// Regression: when the remote-tracking ref is pruned but branch.<x>.remote
+	// config remains (shown as "[origin/x: gone]" in `git branch -vv`),
+	// `rev-parse --abbrev-ref x@{u}` exits non-zero. That used to break
+	// `gg switch` with "getting tracking remote: exit status 128".
+	t.Run("gone upstream", func(t *testing.T) {
+		t.Parallel()
+		dir := temp_repo.NewRepo(t)
+		temp_repo.RunGit(t, dir, "remote", "add", "origin", dir)
+		temp_repo.RunGit(t, dir, "fetch", "origin")
+		temp_repo.RunGit(t, dir, "branch", "--set-upstream-to=origin/main", "main")
+		temp_repo.RunGit(t, dir, "update-ref", "-d", "refs/remotes/origin/main")
+		remote, remoteBranch, err := git.Repo{Dir: dir}.GetBranchUpstream("main")
+		assert.NoError(t, err)
+		assert.Equal(t, "origin", remote)
+		assert.Equal(t, "main", remoteBranch)
+	})
 }
 
 func TestGetCurrentBranchUpstream(t *testing.T) {
