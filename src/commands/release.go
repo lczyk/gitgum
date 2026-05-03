@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/strutil"
 )
@@ -93,24 +92,28 @@ func (r *ReleaseCommand) Execute(args []string) error {
 
 	fmt.Fprintf(r.out(), "Bumping %s -> %s\n", current, next)
 
-	commitArgs := []string{"commit", "-m", "release: " + tags[0]}
 	if hasFile {
 		if err := writeVersion(versionPath, header, next); err != nil {
 			return err
 		}
-		if _, _, err := cmdrun.Run("git", "add", versionPath); err != nil {
+		if err := git.Add(versionPath); err != nil {
 			return fmt.Errorf("git add VERSION: %w", err)
 		}
-	} else {
-		commitArgs = append(commitArgs, "--allow-empty")
 	}
 
-	if err := cmdrun.RunWithOutput("git", commitArgs...); err != nil {
-		return fmt.Errorf("git commit: %w", err)
+	commitMsg := "release: " + tags[0]
+	if hasFile {
+		if err := git.Commit(commitMsg); err != nil {
+			return err
+		}
+	} else {
+		if err := git.CommitEmpty(commitMsg); err != nil {
+			return err
+		}
 	}
 	for _, t := range tags {
-		if err := cmdrun.RunWithOutput("git", "tag", "-a", t, "-m", "release "+t); err != nil {
-			return fmt.Errorf("git tag %s: %w", t, err)
+		if err := git.TagAnnotated(t, "release "+t); err != nil {
+			return err
 		}
 	}
 
@@ -132,7 +135,7 @@ func buildTags(next string, prefixes []string) []string {
 }
 
 func repoRoot() (string, error) {
-	out, _, err := cmdrun.Run("git", "rev-parse", "--show-toplevel")
+	out, _, err := git.Run("rev-parse", "--show-toplevel")
 	if err != nil {
 		return "", fmt.Errorf("find repo root: %w", err)
 	}
@@ -150,7 +153,7 @@ type releasedState struct {
 //   - touch only VERSION (or no files, for empty-commit releases)
 //   - have its tag peel to HEAD
 func alreadyReleased() (releasedState, bool) {
-	subject, _, err := cmdrun.Run("git", "log", "-1", "--format=%s")
+	subject, _, err := git.Run("log", "-1", "--format=%s")
 	if err != nil {
 		return releasedState{}, false
 	}
@@ -160,7 +163,7 @@ func alreadyReleased() (releasedState, bool) {
 	}
 
 	// Touched files must be empty or only VERSION.
-	files, _, err := cmdrun.Run("git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD")
+	files, _, err := git.Run("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD")
 	if err != nil {
 		return releasedState{}, false
 	}
@@ -172,11 +175,11 @@ func alreadyReleased() (releasedState, bool) {
 		return releasedState{}, false
 	}
 
-	tagSHA, _, err := cmdrun.Run("git", "rev-parse", tag+"^{commit}")
+	tagSHA, _, err := git.Run("rev-parse", tag+"^{commit}")
 	if err != nil {
 		return releasedState{}, false
 	}
-	headSHA, _, err := cmdrun.Run("git", "rev-parse", "HEAD")
+	headSHA, _, err := git.Run("rev-parse", "HEAD")
 	if err != nil {
 		return releasedState{}, false
 	}
@@ -200,17 +203,12 @@ func defaultBranchPushRemote(defaultBranch string) string {
 }
 
 func tagExists(tag string) (bool, error) {
-	_, _, err := cmdrun.Run("git", "rev-parse", "--verify", tag)
-	if err == nil {
-		return true, nil
-	}
-	// Non-zero exit means the ref doesn't exist; treat as "not present".
-	return false, nil
+	return git.TagExists(tag), nil
 }
 
 // latestSemverTag returns the highest vX.Y.Z tag, or "" if none exist.
 func latestSemverTag() string {
-	out, _, err := cmdrun.Run("git", "tag", "--list", "v*", "--sort=-v:refname")
+	out, _, err := git.Run("tag", "--list", "v*", "--sort=-v:refname")
 	if err != nil || out == "" {
 		return ""
 	}

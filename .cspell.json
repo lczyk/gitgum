@@ -83,6 +83,7 @@
     "CLICOLOR",
     "keybind",
     "frontmatter",
-    "refspec"
+    "refspec",
+    "pathspec"
   ]
 }
