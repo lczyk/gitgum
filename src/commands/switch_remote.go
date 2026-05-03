@@ -3,7 +3,6 @@ package commands
 import (
 	"fmt"
 
-	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/ui"
 )
@@ -13,7 +12,7 @@ import (
 // Otherwise offers to create a tracking branch.
 func (s *SwitchCommand) handleRemoteSelection(remote, branch string) error {
 	fmt.Fprintf(s.out(), "Fetching '%s/%s'...\n", remote, branch)
-	if err := cmdrun.RunQuiet("git", "fetch", remote, branch); err != nil {
+	if err := git.Fetch(remote, branch); err != nil {
 		return fmt.Errorf("fetching '%s/%s': %w", remote, branch, err)
 	}
 
@@ -53,7 +52,7 @@ func (s *SwitchCommand) retargetTracking(remote, branch string) error {
 		fmt.Fprintln(s.err(), "Not setting tracking reference. Aborting switch.")
 		return ui.ErrCancelled
 	}
-	if err := cmdrun.RunQuiet("git", "branch", "--set-upstream-to="+remote+"/"+branch, branch); err != nil {
+	if _, _, err := git.RunWrite("branch", "--set-upstream-to="+remote+"/"+branch, branch); err != nil {
 		return fmt.Errorf("setting tracking reference: %w", err)
 	}
 	fmt.Fprintf(s.out(), "Set tracking reference for local branch '%s' to remote branch '%s/%s'.\n",
@@ -89,7 +88,7 @@ func (s *SwitchCommand) alignWithRemote(remote, branch string) error {
 		fmt.Fprintf(s.out(), "Switched to branch '%s' (diverged from '%s/%s').\n", branch, remote, branch)
 		return nil
 	}
-	if err := cmdrun.RunQuiet("git", "reset", "--hard", remoteRef); err != nil {
+	if err := git.ResetHard(remoteRef); err != nil {
 		return fmt.Errorf("resetting local branch: %w", err)
 	}
 	fmt.Fprintf(s.out(), "Switched to branch '%s', reset to remote branch '%s/%s'.\n", branch, remote, branch)
@@ -105,7 +104,7 @@ func (s *SwitchCommand) createTrackingBranch(remote, branch string) error {
 		fmt.Fprintln(s.err(), "Not creating a local tracking branch. Aborting switch.")
 		return ui.ErrCancelled
 	}
-	if err := cmdrun.RunQuiet("git", "checkout", "-b", branch, remote+"/"+branch); err != nil {
+	if err := git.CheckoutNewBranch(branch, remote+"/"+branch); err != nil {
 		return fmt.Errorf("creating tracking branch: %w", err)
 	}
 	fmt.Fprintf(s.out(), "Created and switched to local branch '%s' tracking remote branch '%s/%s'.\n",
