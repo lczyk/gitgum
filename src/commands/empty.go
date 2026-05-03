@@ -1,9 +1,9 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 
-	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/git"
 )
 
@@ -41,24 +41,17 @@ func (e *EmptyCommand) Execute(args []string) error {
 		}
 	}
 
-	dirty, err := git.IsDirty()
+	cleanup, err := handleDirtyTree(&e.cmdIO, "empty")
 	if err != nil {
-		return fmt.Errorf("checking if working tree is dirty: %w", err)
-	}
-	if dirty {
-		fmt.Fprintln(e.out(), "Working tree has uncommitted changes. Stashing them before creating empty commit.")
-		if err := cmdrun.RunWithOutput("git", "stash", "--include-untracked"); err != nil {
-			return fmt.Errorf("stashing changes: %w", err)
+		if errors.Is(err, errDirtyTreeAborted) {
+			fmt.Fprintln(e.out(), "Aborted.")
+			return nil
 		}
-		defer func() {
-			fmt.Fprintln(e.out(), "Restoring stashed changes.")
-			if err := cmdrun.RunWithOutput("git", "stash", "pop"); err != nil {
-				fmt.Fprintf(e.err(), "Warning: failed to pop stash: %v\n", err)
-			}
-		}()
+		return err
 	}
+	defer cleanup()
 
-	if err := cmdrun.RunWithOutput("git", "commit", "--allow-empty", "-m", "chore: empty commit"); err != nil {
+	if err := git.CommitEmpty("chore: empty commit"); err != nil {
 		return fmt.Errorf("creating empty commit: %w", err)
 	}
 
@@ -70,7 +63,7 @@ func (e *EmptyCommand) Execute(args []string) error {
 			return err
 		}
 		if confirmed {
-			if err := cmdrun.RunWithOutput("git", "push"); err != nil {
+			if err := git.Push(); err != nil {
 				return fmt.Errorf("pushing: %w", err)
 			}
 			fmt.Fprintln(e.out(), "Pushed to remote.")
