@@ -1,12 +1,12 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
 	"strconv"
 
-	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/strutil"
 )
@@ -74,7 +74,7 @@ func (c *CheckoutPRCommand) Execute(args []string) error {
 
 func (c *CheckoutPRCommand) getPRRefs(remote string) ([]PRRef, error) {
 	fmt.Fprintln(c.out(), "Fetching pull request references from remote:", remote)
-	stdout, _, err := cmdrun.Run("git", "ls-remote", remote)
+	stdout, err := git.LsRemote(remote)
 	if err != nil {
 		return nil, fmt.Errorf("listing remote refs: %w", err)
 	}
@@ -144,7 +144,7 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 			return err
 		}
 		if !confirmed {
-			if err := cmdrun.RunWithOutput("git", "checkout", branchName); err != nil {
+			if err := git.Checkout(branchName); err != nil {
 				return fmt.Errorf("checking out existing branch '%s': %w", branchName, err)
 			}
 			fmt.Fprintf(c.out(), "Switched to existing branch '%s'.\n", branchName)
@@ -152,15 +152,15 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 		}
 
 		fmt.Fprintf(c.out(), "Fetching PR #%d from %s...\n", prNumber, remote)
-		if err := cmdrun.RunWithOutput("git", "fetch", remote, prRef); err != nil {
+		if err := git.Fetch(remote, prRef); err != nil {
 			return fmt.Errorf("fetching PR: %w", err)
 		}
 
-		if err := cmdrun.RunWithOutput("git", "checkout", branchName); err != nil {
+		if err := git.Checkout(branchName); err != nil {
 			return fmt.Errorf("checking out branch '%s': %w", branchName, err)
 		}
 
-		if err := cmdrun.RunWithOutput("git", "reset", "--hard", "FETCH_HEAD"); err != nil {
+		if err := git.ResetHard("FETCH_HEAD"); err != nil {
 			return fmt.Errorf("resetting branch: %w", err)
 		}
 
@@ -168,21 +168,22 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 		return nil
 	}
 
-	dirty, err := git.IsDirty()
+	cleanup, err := handleDirtyTree(&c.cmdIO, "checkout-pr")
 	if err != nil {
-		return fmt.Errorf("checking git status: %w", err)
+		if errors.Is(err, errDirtyTreeAborted) {
+			fmt.Fprintln(c.out(), "Aborted.")
+			return nil
+		}
+		return err
 	}
-	if dirty {
-		fmt.Fprintln(c.err(), "You have local changes that would be overwritten. Please commit or stash them before checking out a PR.")
-		return fmt.Errorf("local changes would be overwritten")
-	}
+	defer cleanup()
 
 	fmt.Fprintf(c.out(), "Fetching PR #%d from %s...\n", prNumber, remote)
-	if err := cmdrun.RunWithOutput("git", "fetch", remote, prRef); err != nil {
+	if err := git.Fetch(remote, prRef); err != nil {
 		return fmt.Errorf("fetching PR: %w", err)
 	}
 
-	if err := cmdrun.RunWithOutput("git", "checkout", "-b", branchName, "FETCH_HEAD"); err != nil {
+	if err := git.CheckoutNewBranch(branchName, "FETCH_HEAD"); err != nil {
 		return fmt.Errorf("creating and checking out branch: %w", err)
 	}
 

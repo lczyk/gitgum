@@ -82,6 +82,7 @@
     "stdlib",
     "CLICOLOR",
     "keybind",
-    "frontmatter"
+    "frontmatter",
+    "refspec"
   ]
 }
