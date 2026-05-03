@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-
-	"github.com/lczyk/gitgum/internal/git"
 )
 
 type TreeCommand struct {
@@ -21,7 +19,7 @@ type TreeCommand struct {
 // swap is local to this function. The reverse-and-flip dance below also goes
 // away once we render natively — we'll just emit oldest-first directly.
 func (t *TreeCommand) Execute(args []string) error {
-	if err := git.CheckInRepo(); err != nil {
+	if err := t.repo().CheckInRepo(); err != nil {
 		return err
 	}
 
@@ -30,7 +28,7 @@ func (t *TreeCommand) Execute(args []string) error {
 		gitArgs = append(gitArgs, "--since", t.Since)
 	}
 
-	stdout, _, err := git.Run(gitArgs...)
+	stdout, _, err := t.repo().Run(gitArgs...)
 	if err != nil {
 		return fmt.Errorf("git log: %w", err)
 	}

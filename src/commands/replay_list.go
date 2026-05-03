@@ -16,14 +16,14 @@ type ReplayListCommand struct {
 }
 
 // returns commits on branchA since divergence from branchB, oldest-first
-func listCommits(branchA, branchB string) ([]string, error) {
-	mergeBase, _, err := git.Run("merge-base", branchA, branchB)
+func listCommits(repo git.Repo, branchA, branchB string) ([]string, error) {
+	mergeBase, _, err := repo.Run("merge-base", branchA, branchB)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find merge base between '%s' and '%s': %w", branchA, branchB, err)
 	}
 
 	// --reverse flips git rev-list from newest-first to chronological order
-	output, _, err := git.Run("rev-list", mergeBase+".."+branchA, "--reverse")
+	output, _, err := repo.Run("rev-list", mergeBase+".."+branchA, "--reverse")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list commits: %w", err)
 	}
@@ -36,11 +36,12 @@ func listCommits(branchA, branchB string) ([]string, error) {
 }
 
 func (r *ReplayListCommand) Execute(args []string) error {
-	if err := git.CheckInRepo(); err != nil {
+	repo := r.repo()
+	if err := repo.CheckInRepo(); err != nil {
 		return err
 	}
 
-	commits, err := listCommits(r.Args.BranchA, r.Args.BranchB)
+	commits, err := listCommits(repo, r.Args.BranchA, r.Args.BranchB)
 	if err != nil {
 		return err
 	}

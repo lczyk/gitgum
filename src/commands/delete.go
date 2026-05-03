@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/ui"
 )
 
@@ -13,11 +12,11 @@ type DeleteCommand struct {
 }
 
 func (d *DeleteCommand) Execute(args []string) error {
-	if err := git.CheckInRepo(); err != nil {
+	if err := d.repo().CheckInRepo(); err != nil {
 		return err
 	}
 
-	branches, err := git.GetLocalBranches()
+	branches, err := d.repo().GetLocalBranches()
 	if err != nil {
 		return fmt.Errorf("getting local branches: %w", err)
 	}
@@ -51,7 +50,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 	}
 
 	// if user wants to delete their current branch, offer to switch first
-	currentBranch, err := git.GetCurrentBranch()
+	currentBranch, err := d.repo().GetCurrentBranch()
 	if err != nil {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
@@ -89,14 +88,14 @@ func (d *DeleteCommand) Execute(args []string) error {
 			return err
 		}
 
-		if err := git.RunWriteStream("checkout", otherBranch); err != nil {
+		if err := d.repo().RunWriteStream("checkout", otherBranch); err != nil {
 			return fmt.Errorf("switching to branch '%s': %w", otherBranch, err)
 		}
 		fmt.Fprintf(d.out(), "Switched to branch '%s'.\n", otherBranch)
 	}
 
 	// non-fatal: skip remote deletion if upstream lookup fails
-	remoteName, remoteBranchName, _ := git.GetBranchUpstream(branch)
+	remoteName, remoteBranchName, _ := d.repo().GetBranchUpstream(branch)
 
 	needsToDeleteRemote := false
 
@@ -112,7 +111,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 	}
 
 	// try safe delete first, fall back to force delete with confirmation
-	_, _, err = git.RunWrite("branch", "-d", branch)
+	_, _, err = d.repo().RunWrite("branch", "-d", branch)
 	if err != nil {
 		var confirmMsg string
 		if needsToDeleteRemote {
@@ -130,7 +129,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 			return nil
 		}
 
-		if err := git.RunWriteStream("branch", "-D", branch); err != nil {
+		if err := d.repo().RunWriteStream("branch", "-D", branch); err != nil {
 			return fmt.Errorf("force deleting branch '%s': %w", branch, err)
 		}
 		fmt.Fprintf(d.out(), "Force deleted local branch '%s'.\n", branch)
@@ -139,7 +138,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 	}
 
 	if needsToDeleteRemote {
-		if err := git.RunWriteStream("push", "--delete", remoteName, remoteBranchName); err != nil {
+		if err := d.repo().RunWriteStream("push", "--delete", remoteName, remoteBranchName); err != nil {
 			return fmt.Errorf("deleting remote branch: %w", err)
 		}
 		fmt.Fprintf(d.out(), "Deleted remote branch '%s/%s'.\n", remoteName, remoteBranchName)

@@ -3,8 +3,6 @@ package commands
 import (
 	"errors"
 	"fmt"
-
-	"github.com/lczyk/gitgum/internal/git"
 )
 
 type EmptyCommand struct {
@@ -12,16 +10,17 @@ type EmptyCommand struct {
 }
 
 func (e *EmptyCommand) Execute(args []string) error {
-	if err := git.CheckInRepo(); err != nil {
+	r := e.repo()
+	if err := r.CheckInRepo(); err != nil {
 		return err
 	}
 
-	currentBranch, err := git.GetCurrentBranch()
+	currentBranch, err := r.GetCurrentBranch()
 	if err != nil {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
 
-	upstream, err := git.GetCurrentBranchUpstream()
+	upstream, err := r.GetCurrentBranchUpstream()
 	if err != nil {
 		return fmt.Errorf("getting current branch upstream: %w", err)
 	}
@@ -32,7 +31,7 @@ func (e *EmptyCommand) Execute(args []string) error {
 	}
 
 	if hasUpstream {
-		ahead, err := git.IsBranchAheadOfRemote(currentBranch, upstream)
+		ahead, err := r.IsBranchAheadOfRemote(currentBranch, upstream)
 		if err != nil {
 			return fmt.Errorf("checking if branch is ahead of remote: %w", err)
 		}
@@ -51,7 +50,7 @@ func (e *EmptyCommand) Execute(args []string) error {
 	}
 	defer cleanup()
 
-	if err := git.CommitEmpty("chore: empty commit"); err != nil {
+	if err := r.CommitEmpty("chore: empty commit"); err != nil {
 		return fmt.Errorf("creating empty commit: %w", err)
 	}
 
@@ -63,7 +62,7 @@ func (e *EmptyCommand) Execute(args []string) error {
 			return err
 		}
 		if confirmed {
-			if err := git.Push(); err != nil {
+			if err := r.Push(); err != nil {
 				return fmt.Errorf("pushing: %w", err)
 			}
 			fmt.Fprintln(e.out(), "Pushed to remote.")

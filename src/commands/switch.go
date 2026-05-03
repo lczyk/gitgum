@@ -18,8 +18,8 @@ type SwitchCommand struct {
 // remote, and a human-readable status line for display. In detached HEAD,
 // returns currentBranch="" so downstream branch filters don't match the literal
 // string "HEAD" (which can't be a real branch but is what rev-parse returns).
-func resolveCurrentBranchContext() (currentBranch, trackingRemote, statusLine string, err error) {
-	currentBranch, err = git.GetCurrentBranch()
+func resolveCurrentBranchContext(r git.Repo) (currentBranch, trackingRemote, statusLine string, err error) {
+	currentBranch, err = r.GetCurrentBranch()
 	if err != nil {
 		return "", "", "", fmt.Errorf("getting current branch: %w", err)
 	}
@@ -30,7 +30,7 @@ func resolveCurrentBranchContext() (currentBranch, trackingRemote, statusLine st
 		return "", "", "Currently in detached HEAD state.", nil
 	}
 
-	trackingRemote, err = git.GetBranchTrackingRemote(currentBranch)
+	trackingRemote, err = r.GetBranchTrackingRemote(currentBranch)
 	if err != nil {
 		return "", "", "", fmt.Errorf("getting tracking remote: %w", err)
 	}
@@ -43,18 +43,19 @@ func resolveCurrentBranchContext() (currentBranch, trackingRemote, statusLine st
 }
 
 func (s *SwitchCommand) checkoutBranch(branch string) error {
-	if err := git.Checkout(branch); err != nil {
+	if err := s.repo().Checkout(branch); err != nil {
 		return fmt.Errorf("could not switch to branch '%s': %w", branch, err)
 	}
 	return nil
 }
 
 func (s *SwitchCommand) Execute(args []string) error {
-	if err := git.CheckInRepo(); err != nil {
+	r := s.repo()
+	if err := r.CheckInRepo(); err != nil {
 		return err
 	}
 
-	currentBranch, trackingRemote, statusLine, err := resolveCurrentBranchContext()
+	currentBranch, trackingRemote, statusLine, err := resolveCurrentBranchContext(r)
 	if err != nil {
 		return err
 	}
@@ -70,7 +71,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 	}
 	defer cleanup()
 
-	remotes, err := git.GetRemotes()
+	remotes, err := r.GetRemotes()
 	if err != nil {
 		return fmt.Errorf("getting remotes: %w", err)
 	}
@@ -78,7 +79,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	src := streamBranches(ctx, s.err(), currentBranch, trackingRemote, remotes)
+	src := streamBranches(ctx, r, s.err(), currentBranch, trackingRemote, remotes)
 
 	selected, err := s.sel().SelectStream(ctx, "Select a branch to switch to", src)
 	cancel()

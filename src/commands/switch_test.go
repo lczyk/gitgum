@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
 
@@ -62,7 +63,7 @@ func TestApplySelection_LocalRemote(t *testing.T) {
 func TestResolveCurrentBranchContext_OnBranch(t *testing.T) {
 	temp_repo.InitTempRepo(t)
 
-	currentBranch, trackingRemote, statusLine, err := resolveCurrentBranchContext()
+	currentBranch, trackingRemote, statusLine, err := resolveCurrentBranchContext(git.Repo{})
 	assert.NoError(t, err)
 	assert.Equal(t, trackingRemote, "")
 	assert.ContainsString(t, statusLine, "Current branch is:")
@@ -96,7 +97,7 @@ func TestResolveCurrentBranchContext_DetachedHEAD(t *testing.T) {
 	temp_repo.CreateCommit(t, dir, "a.txt", "a", "second")
 	temp_repo.RunGit(t, dir, "checkout", "--detach", "HEAD~1")
 
-	currentBranch, trackingRemote, statusLine, err := resolveCurrentBranchContext()
+	currentBranch, trackingRemote, statusLine, err := resolveCurrentBranchContext(git.Repo{})
 	assert.NoError(t, err)
 	assert.Equal(t, currentBranch, "")
 	assert.Equal(t, trackingRemote, "")

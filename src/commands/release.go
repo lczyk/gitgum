@@ -29,15 +29,16 @@ const versionFileName = "VERSION"
 
 func (r *ReleaseCommand) Execute(args []string) error {
 	bump := r.Args.Bump
+	repo := r.repo()
 
-	if err := git.CheckInRepo(); err != nil {
+	if err := repo.CheckInRepo(); err != nil {
 		return err
 	}
-	branch, err := git.GetCurrentBranch()
+	branch, err := repo.GetCurrentBranch()
 	if err != nil {
 		return fmt.Errorf("get current branch: %w", err)
 	}
-	defaultBranch, err := git.GetDefaultBranch()
+	defaultBranch, err := repo.GetDefaultBranch()
 	if err != nil {
 		return fmt.Errorf("determine default branch: %w", err)
 	}
@@ -50,9 +51,9 @@ func (r *ReleaseCommand) Execute(args []string) error {
 			return fmt.Errorf("aborted: not on %s branch", defaultBranch)
 		}
 	}
-	remote := defaultBranchPushRemote(defaultBranch)
+	remote := defaultBranchPushRemote(repo, defaultBranch)
 
-	if state, ok := alreadyReleased(); ok {
+	if state, ok := alreadyReleased(repo); ok {
 		fmt.Fprintf(r.out(), "Already released: HEAD is %q (tag %s already at HEAD).\n", state.subject, state.tag)
 		fmt.Fprintf(r.out(), "Nothing to do. To publish:\n")
 		fmt.Fprintf(r.out(), "  git push %s %s && git push %s %s\n", remote, defaultBranch, remote, state.tag)
@@ -65,13 +66,13 @@ func (r *ReleaseCommand) Execute(args []string) error {
 	}
 	defer cleanup()
 
-	root, err := repoRoot()
+	root, err := repoRoot(repo)
 	if err != nil {
 		return err
 	}
 
 	versionPath := filepath.Join(root, versionFileName)
-	header, prefixes, current, hasFile, err := readVersionOrFallback(versionPath)
+	header, prefixes, current, hasFile, err := readVersionOrFallback(repo, versionPath)
 	if err != nil {
 		return err
 	}
@@ -83,9 +84,7 @@ func (r *ReleaseCommand) Execute(args []string) error {
 	tags := buildTags(next, prefixes)
 
 	for _, t := range tags {
-		if exists, err := tagExists(t); err != nil {
-			return err
-		} else if exists {
+		if repo.TagExists(t) {
 			return fmt.Errorf("tag %s already exists", t)
 		}
 	}
@@ -96,23 +95,23 @@ func (r *ReleaseCommand) Execute(args []string) error {
 		if err := writeVersion(versionPath, header, next); err != nil {
 			return err
 		}
-		if err := git.Add(versionPath); err != nil {
+		if err := repo.Add(versionPath); err != nil {
 			return fmt.Errorf("git add VERSION: %w", err)
 		}
 	}
 
 	commitMsg := "release: " + tags[0]
 	if hasFile {
-		if err := git.Commit(commitMsg); err != nil {
+		if err := repo.Commit(commitMsg); err != nil {
 			return err
 		}
 	} else {
-		if err := git.CommitEmpty(commitMsg); err != nil {
+		if err := repo.CommitEmpty(commitMsg); err != nil {
 			return err
 		}
 	}
 	for _, t := range tags {
-		if err := git.TagAnnotated(t, "release "+t); err != nil {
+		if err := repo.TagAnnotated(t, "release "+t); err != nil {
 			return err
 		}
 	}
@@ -134,8 +133,8 @@ func buildTags(next string, prefixes []string) []string {
 	return tags
 }
 
-func repoRoot() (string, error) {
-	out, _, err := git.Run("rev-parse", "--show-toplevel")
+func repoRoot(r git.Repo) (string, error) {
+	out, _, err := r.Run("rev-parse", "--show-toplevel")
 	if err != nil {
 		return "", fmt.Errorf("find repo root: %w", err)
 	}
@@ -152,8 +151,8 @@ type releasedState struct {
 //   - have subject "release: vX.Y.Z"
 //   - touch only VERSION (or no files, for empty-commit releases)
 //   - have its tag peel to HEAD
-func alreadyReleased() (releasedState, bool) {
-	subject, _, err := git.Run("log", "-1", "--format=%s")
+func alreadyReleased(r git.Repo) (releasedState, bool) {
+	subject, _, err := r.Run("log", "-1", "--format=%s")
 	if err != nil {
 		return releasedState{}, false
 	}
@@ -163,7 +162,7 @@ func alreadyReleased() (releasedState, bool) {
 	}
 
 	// Touched files must be empty or only VERSION.
-	files, _, err := git.Run("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD")
+	files, _, err := r.Run("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD")
 	if err != nil {
 		return releasedState{}, false
 	}
@@ -175,11 +174,11 @@ func alreadyReleased() (releasedState, bool) {
 		return releasedState{}, false
 	}
 
-	tagSHA, _, err := git.Run("rev-parse", tag+"^{commit}")
+	tagSHA, _, err := r.Run("rev-parse", tag+"^{commit}")
 	if err != nil {
 		return releasedState{}, false
 	}
-	headSHA, _, err := git.Run("rev-parse", "HEAD")
+	headSHA, _, err := r.Run("rev-parse", "HEAD")
 	if err != nil {
 		return releasedState{}, false
 	}
@@ -192,23 +191,19 @@ func alreadyReleased() (releasedState, bool) {
 // defaultBranchPushRemote returns the remote the default branch tracks.
 // Falls back to the sole configured remote, then "origin", so the suggested
 // push command stays useful even when the default branch has no upstream yet.
-func defaultBranchPushRemote(defaultBranch string) string {
-	if r, _ := git.GetBranchTrackingRemote(defaultBranch); r != "" {
-		return r
+func defaultBranchPushRemote(r git.Repo, defaultBranch string) string {
+	if name, _ := r.GetBranchTrackingRemote(defaultBranch); name != "" {
+		return name
 	}
-	if remotes, _ := git.GetRemotes(); len(remotes) == 1 {
+	if remotes, _ := r.GetRemotes(); len(remotes) == 1 {
 		return remotes[0]
 	}
 	return "origin"
 }
 
-func tagExists(tag string) (bool, error) {
-	return git.TagExists(tag), nil
-}
-
 // latestSemverTag returns the highest vX.Y.Z tag, or "" if none exist.
-func latestSemverTag() string {
-	out, _, err := git.Run("tag", "--list", "v*", "--sort=-v:refname")
+func latestSemverTag(r git.Repo) string {
+	out, _, err := r.Run("tag", "--list", "v*", "--sort=-v:refname")
 	if err != nil || out == "" {
 		return ""
 	}
@@ -222,7 +217,7 @@ func latestSemverTag() string {
 
 // readVersionOrFallback reads VERSION at path, falling back to the latest
 // vX.Y.Z tag, then to "0.0.0". hasFile reports whether VERSION exists.
-func readVersionOrFallback(path string) (header, prefixes []string, current string, hasFile bool, err error) {
+func readVersionOrFallback(r git.Repo, path string) (header, prefixes []string, current string, hasFile bool, err error) {
 	header, prefixes, current, err = readVersion(path)
 	if err == nil {
 		return header, prefixes, current, true, nil
@@ -231,7 +226,7 @@ func readVersionOrFallback(path string) (header, prefixes []string, current stri
 		return nil, nil, "", false, err
 	}
 	// VERSION absent — fall back.
-	if tag := latestSemverTag(); tag != "" {
+	if tag := latestSemverTag(r); tag != "" {
 		return nil, nil, strings.TrimPrefix(tag, "v"), false, nil
 	}
 	return nil, nil, "0.0.0", false, nil

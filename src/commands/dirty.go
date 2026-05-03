@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
-	"github.com/lczyk/gitgum/internal/git"
 )
 
 // errDirtyTreeAborted is returned by handleDirtyTree when the user declines
@@ -29,7 +27,7 @@ var errDirtyTreeAborted = errors.New("aborted: working tree not clean")
 func handleDirtyTree(c *cmdIO, label string) (cleanup func(), err error) {
 	noop := func() {}
 
-	dirty, err := git.DirtyTrackedLines()
+	dirty, err := c.repo().DirtyTrackedLines()
 	if err != nil {
 		return noop, err
 	}
@@ -48,12 +46,12 @@ func handleDirtyTree(c *cmdIO, label string) (cleanup func(), err error) {
 	}
 
 	stashMsg := fmt.Sprintf("gitgum %s auto-stash", label)
-	if err := git.StashPush(stashMsg); err != nil {
+	if err := c.repo().StashPush(stashMsg); err != nil {
 		return noop, err
 	}
 
 	return func() {
-		if err := git.StashPopIndex(); err != nil {
+		if err := c.repo().StashPopIndex(); err != nil {
 			fmt.Fprintf(c.err(), "warning: %v\n", err)
 			fmt.Fprintf(c.err(), "your changes are still in the stash (%q); resolve and run `git stash pop --index` manually\n", stashMsg)
 		}

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
 
@@ -87,7 +88,7 @@ func TestListCommits(t *testing.T) {
 
 			branchA, branchB := tt.setup(t, dir)
 
-			commits, err := listCommits(branchA, branchB)
+			commits, err := listCommits(git.Repo{}, branchA, branchB)
 
 			if tt.expectError {
 				assert.Error(t, err, assert.AnyError, "expected error")

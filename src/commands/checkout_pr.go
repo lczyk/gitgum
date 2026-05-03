@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/strutil"
 )
 
@@ -26,11 +25,11 @@ type PRRef struct {
 }
 
 func (c *CheckoutPRCommand) Execute(args []string) error {
-	if err := git.CheckInRepo(); err != nil {
+	if err := c.repo().CheckInRepo(); err != nil {
 		return err
 	}
 
-	remotes, err := git.GetRemotes()
+	remotes, err := c.repo().GetRemotes()
 	if err != nil {
 		return fmt.Errorf("getting remotes: %w", err)
 	}
@@ -74,7 +73,7 @@ func (c *CheckoutPRCommand) Execute(args []string) error {
 
 func (c *CheckoutPRCommand) getPRRefs(remote string) ([]PRRef, error) {
 	fmt.Fprintln(c.out(), "Fetching pull request references from remote:", remote)
-	stdout, err := git.LsRemote(remote)
+	stdout, err := c.repo().LsRemote(remote)
 	if err != nil {
 		return nil, fmt.Errorf("listing remote refs: %w", err)
 	}
@@ -135,7 +134,7 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 	branchName := fmt.Sprintf("pr-%d", prNumber)
 	prRef := fmt.Sprintf("refs/pull/%d/%s", prNumber, prType)
 
-	if git.BranchExists(branchName) {
+	if c.repo().BranchExists(branchName) {
 		confirmed, err := c.sel().Confirm(
 			fmt.Sprintf("Branch '%s' already exists. Reset it to the latest PR state?", branchName),
 			false,
@@ -144,7 +143,7 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 			return err
 		}
 		if !confirmed {
-			if err := git.Checkout(branchName); err != nil {
+			if err := c.repo().Checkout(branchName); err != nil {
 				return fmt.Errorf("checking out existing branch '%s': %w", branchName, err)
 			}
 			fmt.Fprintf(c.out(), "Switched to existing branch '%s'.\n", branchName)
@@ -152,15 +151,15 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 		}
 
 		fmt.Fprintf(c.out(), "Fetching PR #%d from %s...\n", prNumber, remote)
-		if err := git.Fetch(remote, prRef); err != nil {
+		if err := c.repo().Fetch(remote, prRef); err != nil {
 			return fmt.Errorf("fetching PR: %w", err)
 		}
 
-		if err := git.Checkout(branchName); err != nil {
+		if err := c.repo().Checkout(branchName); err != nil {
 			return fmt.Errorf("checking out branch '%s': %w", branchName, err)
 		}
 
-		if err := git.ResetHard("FETCH_HEAD"); err != nil {
+		if err := c.repo().ResetHard("FETCH_HEAD"); err != nil {
 			return fmt.Errorf("resetting branch: %w", err)
 		}
 
@@ -179,11 +178,11 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 	defer cleanup()
 
 	fmt.Fprintf(c.out(), "Fetching PR #%d from %s...\n", prNumber, remote)
-	if err := git.Fetch(remote, prRef); err != nil {
+	if err := c.repo().Fetch(remote, prRef); err != nil {
 		return fmt.Errorf("fetching PR: %w", err)
 	}
 
-	if err := git.CheckoutNewBranch(branchName, "FETCH_HEAD"); err != nil {
+	if err := c.repo().CheckoutNewBranch(branchName, "FETCH_HEAD"); err != nil {
 		return fmt.Errorf("creating and checking out branch: %w", err)
 	}
 

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/ui"
 )
 
@@ -13,11 +12,11 @@ type PushCommand struct {
 }
 
 func (p *PushCommand) Execute(args []string) error {
-	if err := git.CheckInRepo(); err != nil {
+	if err := p.repo().CheckInRepo(); err != nil {
 		return err
 	}
 
-	remoteBranch, err := git.GetCurrentBranchUpstream()
+	remoteBranch, err := p.repo().GetCurrentBranchUpstream()
 	if err != nil {
 		return err
 	}
@@ -33,19 +32,19 @@ func (p *PushCommand) Execute(args []string) error {
 		if !confirmed {
 			return nil
 		}
-		if err := git.Push(); err != nil {
+		if err := p.repo().Push(); err != nil {
 			return fmt.Errorf("failed to push: %w", err)
 		}
 		fmt.Fprintf(p.out(), "Pushed to remote tracking branch '%s'.\n", remoteBranch)
 		return nil
 	}
 
-	currentBranch, err := git.GetCurrentBranch()
+	currentBranch, err := p.repo().GetCurrentBranch()
 	if err != nil {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
 
-	remotes, err := git.GetRemotes()
+	remotes, err := p.repo().GetRemotes()
 	if err != nil {
 		return fmt.Errorf("getting remotes: %w", err)
 	}
@@ -80,7 +79,7 @@ func (p *PushCommand) Execute(args []string) error {
 
 	expectedRemoteBranchName := selectedRemote + "/" + currentBranch
 
-	remoteBranchExists, err := git.RemoteBranchExists(selectedRemote, currentBranch)
+	remoteBranchExists, err := p.repo().RemoteBranchExists(selectedRemote, currentBranch)
 	if err != nil {
 		return fmt.Errorf("checking remote branch: %w", err)
 	}
@@ -98,7 +97,7 @@ func (p *PushCommand) Execute(args []string) error {
 			return nil
 		}
 
-		if err := git.RunWriteStream("push", "-u", selectedRemote, currentBranch); err != nil {
+		if err := p.repo().RunWriteStream("push", "-u", selectedRemote, currentBranch); err != nil {
 			return fmt.Errorf("failed to push: %w", err)
 		}
 		fmt.Fprintf(p.out(), "Created and set tracking reference for '%s' to '%s'.\n",
@@ -106,12 +105,12 @@ func (p *PushCommand) Execute(args []string) error {
 		return nil
 	}
 
-	localCommit, err := git.GetCommitHash(currentBranch)
+	localCommit, err := p.repo().GetCommitHash(currentBranch)
 	if err != nil {
 		return fmt.Errorf("getting local commit: %w", err)
 	}
 
-	remoteCommit, err := git.GetCommitHash(expectedRemoteBranchName)
+	remoteCommit, err := p.repo().GetCommitHash(expectedRemoteBranchName)
 	if err != nil {
 		return fmt.Errorf("could not find remote branch '%s': %w", expectedRemoteBranchName, err)
 	}
@@ -120,7 +119,7 @@ func (p *PushCommand) Execute(args []string) error {
 		fmt.Fprintf(p.out(), "No changes to push. Local branch '%s' is up to date with remote branch '%s'.\n",
 			currentBranch, expectedRemoteBranchName)
 		// set upstream since we're targeting this remote
-		if _, _, err := git.RunWrite("branch", "--set-upstream-to="+expectedRemoteBranchName, currentBranch); err != nil {
+		if _, _, err := p.repo().RunWrite("branch", "--set-upstream-to="+expectedRemoteBranchName, currentBranch); err != nil {
 			return fmt.Errorf("failed to set upstream: %w", err)
 		}
 		fmt.Fprintf(p.out(), "Updated upstream to '%s'.\n", expectedRemoteBranchName)
@@ -139,7 +138,7 @@ func (p *PushCommand) Execute(args []string) error {
 		return nil
 	}
 
-	if err := git.RunWriteStream("push", selectedRemote, currentBranch); err != nil {
+	if err := p.repo().RunWriteStream("push", selectedRemote, currentBranch); err != nil {
 		return fmt.Errorf("failed to push: %w", err)
 	}
 	fmt.Fprintf(p.out(), "Pushed to remote branch '%s'.\n", expectedRemoteBranchName)

@@ -3,8 +3,6 @@ package commands
 import (
 	"fmt"
 	"strings"
-
-	"github.com/lczyk/gitgum/internal/git"
 )
 
 type StatusCommand struct {
@@ -19,18 +17,18 @@ func (s *StatusCommand) Execute(args []string) error {
 		fmt.Fprintf(out, "\033[0;30m%s\033[0m\n", msg)
 	}
 
-	if err := git.CheckInRepo(); err != nil {
+	if err := s.repo().CheckInRepo(); err != nil {
 		return err
 	}
 
 	printHeader("--- BRANCHES ---------------------------")
-	stdout, _, err := git.Run("branch", "-vv")
+	stdout, _, err := s.repo().Run("branch", "-vv")
 	if err != nil {
 		return fmt.Errorf("getting branches: %w", err)
 	}
 	fmt.Fprintln(out, stdout)
 
-	stdout, _, err = git.Run("remote", "-v")
+	stdout, _, err = s.repo().Run("remote", "-v")
 	if err != nil {
 		return fmt.Errorf("getting remotes: %w", err)
 	}
@@ -43,7 +41,7 @@ func (s *StatusCommand) Execute(args []string) error {
 	}
 
 	// single call gets both branch status (line 0) and change lines (rest)
-	stdout, _, err = git.Run("status", "--short", "--branch")
+	stdout, _, err = s.repo().Run("status", "--short", "--branch")
 	if err != nil {
 		return fmt.Errorf("getting status: %w", err)
 	}
