@@ -70,6 +70,24 @@ func (r Repo) Run(args ...string) (string, string, error) {
 
 func Run(args ...string) (string, string, error) { return CWD().Run(args...) }
 
+// RunWrite is the exported, transitional write entry point. Output is
+// captured (not streamed); callers TrimSpace as needed. Use for write
+// invocations that don't need live progress (e.g. branch -d, reset --hard).
+func (r Repo) RunWrite(args ...string) (string, string, error) {
+	return r.runWrite(context.Background(), args...)
+}
+
+func RunWrite(args ...string) (string, string, error) { return CWD().RunWrite(args...) }
+
+// RunWriteStream is the streaming counterpart to RunWrite, for write
+// invocations whose progress / hook output the user wants live (push,
+// fetch, commit, tag).
+func (r Repo) RunWriteStream(args ...string) error {
+	return r.runWriteStreaming(context.Background(), args...)
+}
+
+func RunWriteStream(args ...string) error { return CWD().RunWriteStream(args...) }
+
 // GetFileStatus returns the status of a file in git.
 func (r Repo) GetFileStatus(file string) (FileStatus, error) {
 	stdout, _, err := r.runRead(context.Background(), "status", "--porcelain", file)
