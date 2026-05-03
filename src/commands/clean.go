@@ -80,15 +80,15 @@ func (c *CleanCommand) Execute(args []string) error {
 
 	if changes {
 		fmt.Fprintln(c.out(), "Discarding changes...")
-		if err := r.RunWriteStream("reset", "--hard"); err != nil {
-			return fmt.Errorf("failed to reset changes: %w", err)
+		if _, stderr, err := r.RunWrite("reset", "--hard"); err != nil {
+			return fmt.Errorf("failed to reset changes: %w: %s", err, strings.TrimSpace(stderr))
 		}
 	}
 
 	if untracked {
 		fmt.Fprintln(c.out(), "Removing untracked files...")
-		if err := r.RunWriteStream(gitCleanArgs(false, ignored)...); err != nil {
-			return fmt.Errorf("failed to clean untracked files: %w", err)
+		if _, stderr, err := r.RunWrite(gitCleanArgs(false, ignored)...); err != nil {
+			return fmt.Errorf("failed to clean untracked files: %w: %s", err, strings.TrimSpace(stderr))
 		}
 	}
 

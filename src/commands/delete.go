@@ -3,6 +3,7 @@ package commands
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/lczyk/gitgum/internal/ui"
 )
@@ -129,8 +130,8 @@ func (d *DeleteCommand) Execute(args []string) error {
 			return nil
 		}
 
-		if err := d.repo().RunWriteStream("branch", "-D", branch); err != nil {
-			return fmt.Errorf("force deleting branch '%s': %w", branch, err)
+		if _, stderr, err := d.repo().RunWrite("branch", "-D", branch); err != nil {
+			return fmt.Errorf("force deleting branch '%s': %w: %s", branch, err, strings.TrimSpace(stderr))
 		}
 		fmt.Fprintf(d.out(), "Force deleted local branch '%s'.\n", branch)
 	} else {

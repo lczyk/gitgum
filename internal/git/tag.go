@@ -3,13 +3,14 @@ package git
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
-// TagAnnotated creates an annotated tag with the given message. Output
-// streams so signing prompts (tag.gpgsign) and hook output reach the user.
+// TagAnnotated creates an annotated tag with the given message. Output is
+// captured; on error, stderr is included in the wrapped message.
 func (r Repo) TagAnnotated(name, message string) error {
-	if err := r.runWriteStreaming(context.Background(), "tag", "-a", name, "-m", message); err != nil {
-		return fmt.Errorf("git tag %s: %w", name, err)
+	if _, stderr, err := r.runWrite(context.Background(), "tag", "-a", name, "-m", message); err != nil {
+		return fmt.Errorf("git tag %s: %w: %s", name, err, strings.TrimSpace(stderr))
 	}
 	return nil
 }
