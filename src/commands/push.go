@@ -3,6 +3,7 @@ package commands
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/lczyk/gitgum/internal/ui"
 )
@@ -97,8 +98,8 @@ func (p *PushCommand) Execute(args []string) error {
 			return nil
 		}
 
-		if err := p.repo().RunWriteStream("push", "-u", selectedRemote, currentBranch); err != nil {
-			return fmt.Errorf("failed to push: %w", err)
+		if _, stderr, err := p.repo().RunWriteStream("push", "-u", selectedRemote, currentBranch); err != nil {
+			return fmt.Errorf("failed to push: %w: %s", err, strings.TrimSpace(stderr))
 		}
 		fmt.Fprintf(p.out(), "Created and set tracking reference for '%s' to '%s'.\n",
 			currentBranch, expectedRemoteBranchName)
@@ -138,8 +139,8 @@ func (p *PushCommand) Execute(args []string) error {
 		return nil
 	}
 
-	if err := p.repo().RunWriteStream("push", selectedRemote, currentBranch); err != nil {
-		return fmt.Errorf("failed to push: %w", err)
+	if _, stderr, err := p.repo().RunWriteStream("push", selectedRemote, currentBranch); err != nil {
+		return fmt.Errorf("failed to push: %w: %s", err, strings.TrimSpace(stderr))
 	}
 	fmt.Fprintf(p.out(), "Pushed to remote branch '%s'.\n", expectedRemoteBranchName)
 	return nil

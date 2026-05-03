@@ -81,12 +81,17 @@ func RunWrite(args ...string) (string, string, error) { return CWD().RunWrite(ar
 
 // RunWriteStream is the streaming counterpart to RunWrite, for write
 // invocations whose progress / hook output the user wants live (push,
-// fetch, commit, tag).
-func (r Repo) RunWriteStream(args ...string) error {
+// fetch, commit, tag). Returns (stdoutTail, stderrTail, err); the tails
+// are bounded captures of the streamed output so callers can include
+// them in error messages even though bytes also flowed live to the
+// user's terminal.
+func (r Repo) RunWriteStream(args ...string) (string, string, error) {
 	return r.runWriteStreaming(context.Background(), args...)
 }
 
-func RunWriteStream(args ...string) error { return CWD().RunWriteStream(args...) }
+func RunWriteStream(args ...string) (string, string, error) {
+	return CWD().RunWriteStream(args...)
+}
 
 // GetFileStatus returns the status of a file in git.
 func (r Repo) GetFileStatus(file string) (FileStatus, error) {

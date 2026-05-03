@@ -89,8 +89,8 @@ func (d *DeleteCommand) Execute(args []string) error {
 			return err
 		}
 
-		if err := d.repo().RunWriteStream("checkout", otherBranch); err != nil {
-			return fmt.Errorf("switching to branch '%s': %w", otherBranch, err)
+		if _, stderr, err := d.repo().RunWriteStream("checkout", otherBranch); err != nil {
+			return fmt.Errorf("switching to branch '%s': %w: %s", otherBranch, err, strings.TrimSpace(stderr))
 		}
 		fmt.Fprintf(d.out(), "Switched to branch '%s'.\n", otherBranch)
 	}
@@ -139,8 +139,8 @@ func (d *DeleteCommand) Execute(args []string) error {
 	}
 
 	if needsToDeleteRemote {
-		if err := d.repo().RunWriteStream("push", "--delete", remoteName, remoteBranchName); err != nil {
-			return fmt.Errorf("deleting remote branch: %w", err)
+		if _, stderr, err := d.repo().RunWriteStream("push", "--delete", remoteName, remoteBranchName); err != nil {
+			return fmt.Errorf("deleting remote branch: %w: %s", err, strings.TrimSpace(stderr))
 		}
 		fmt.Fprintf(d.out(), "Deleted remote branch '%s/%s'.\n", remoteName, remoteBranchName)
 	}

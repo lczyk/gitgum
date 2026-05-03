@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -133,11 +134,14 @@ func (r Repo) runWrite(ctx context.Context, args ...string) (string, string, err
 }
 
 // runWriteStreaming executes a write that needs live stderr passthrough --
-// fetch / push / clone progress that the user wants to see in real time.
-// stdout is also streamed to os.Stdout for symmetry.
-func (r Repo) runWriteStreaming(ctx context.Context, args ...string) error {
+// fetch / push / clone progress that the user wants to see in real time,
+// or hooks (pre-commit, post-checkout) whose output the user wants live.
+// Bytes still flow to os.Stdout / os.Stderr unchanged; in addition, the
+// last tailBufSize bytes of each stream are captured and returned so the
+// caller can include them in wrapped error messages.
+func (r Repo) runWriteStreaming(ctx context.Context, args ...string) (string, string, error) {
 	if err := ensureMinVersion(ctx); err != nil {
-		return err
+		return "", "", err
 	}
 	full := buildArgs(r.Dir, writePrelude, args, false)
 	return runStreaming(ctx, full, writeEnv())
@@ -170,12 +174,44 @@ func runCaptured(ctx context.Context, args, env []string) (string, string, error
 	return stdout.String(), stderr.String(), err
 }
 
-func runStreaming(ctx context.Context, args, env []string) error {
+// tailBufSize bounds the per-stream capture for runStreaming. 8 KiB is
+// enough to surface the last few lines of git output (typical error tail)
+// without holding multi-megabyte fetch / push payloads in memory.
+const tailBufSize = 8 * 1024
+
+// tailBuffer is an io.Writer that retains only the last n bytes written.
+// Used to capture a bounded tail of streamed git output for error context.
+type tailBuffer struct {
+	n   int
+	buf []byte
+}
+
+func (t *tailBuffer) Write(p []byte) (int, error) {
+	if len(p) >= t.n {
+		t.buf = append(t.buf[:0], p[len(p)-t.n:]...)
+		return len(p), nil
+	}
+	if len(t.buf)+len(p) <= t.n {
+		t.buf = append(t.buf, p...)
+		return len(p), nil
+	}
+	drop := len(t.buf) + len(p) - t.n
+	t.buf = append(t.buf[:0], t.buf[drop:]...)
+	t.buf = append(t.buf, p...)
+	return len(p), nil
+}
+
+func (t *tailBuffer) String() string { return string(t.buf) }
+
+func runStreaming(ctx context.Context, args, env []string) (string, string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = env
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	outTail := &tailBuffer{n: tailBufSize}
+	errTail := &tailBuffer{n: tailBufSize}
+	cmd.Stdout = io.MultiWriter(os.Stdout, outTail)
+	cmd.Stderr = io.MultiWriter(os.Stderr, errTail)
+	err := cmd.Run()
+	return outTail.String(), errTail.String(), err
 }
 
 var (

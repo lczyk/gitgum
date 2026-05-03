@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 // Fetch runs `git fetch <remote> <refspec>` with live progress streamed
@@ -12,8 +13,8 @@ func (r Repo) Fetch(remote, refspec string) error {
 	if refspec != "" {
 		args = append(args, refspec)
 	}
-	if err := r.runWriteStreaming(context.Background(), args...); err != nil {
-		return fmt.Errorf("git fetch: %w", err)
+	if _, stderr, err := r.runWriteStreaming(context.Background(), args...); err != nil {
+		return fmt.Errorf("git fetch: %w: %s", err, strings.TrimSpace(stderr))
 	}
 	return nil
 }
