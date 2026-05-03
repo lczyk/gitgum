@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/ui"
 )
@@ -44,9 +43,8 @@ func resolveCurrentBranchContext() (currentBranch, trackingRemote, statusLine st
 }
 
 func (s *SwitchCommand) checkoutBranch(branch string) error {
-	_, stderr, err := cmdrun.Run("git", "checkout", "--quiet", branch)
-	if err != nil {
-		return fmt.Errorf("could not switch to branch '%s': %s", branch, stderr)
+	if err := git.Checkout(branch); err != nil {
+		return fmt.Errorf("could not switch to branch '%s': %w", branch, err)
 	}
 	return nil
 }
@@ -62,14 +60,15 @@ func (s *SwitchCommand) Execute(args []string) error {
 	}
 	fmt.Fprintln(s.out(), statusLine)
 
-	dirty, err := git.IsDirty()
+	cleanup, err := handleDirtyTree(&s.cmdIO, "switch")
 	if err != nil {
-		return fmt.Errorf("checking git status: %w", err)
+		if errors.Is(err, errDirtyTreeAborted) {
+			fmt.Fprintln(s.out(), "Aborted.")
+			return nil
+		}
+		return err
 	}
-	if dirty {
-		fmt.Fprintln(s.err(), "You have local changes that would be overwritten by switching branches. Please commit or stash them before switching.")
-		return fmt.Errorf("local changes would be overwritten")
-	}
+	defer cleanup()
 
 	remotes, err := git.GetRemotes()
 	if err != nil {
