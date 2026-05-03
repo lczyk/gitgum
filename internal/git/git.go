@@ -242,7 +242,6 @@ func (r Repo) IsBranchAheadOfRemote(localBranch, remoteBranch string) (bool, err
 	return strings.TrimSpace(stdout) != "", nil
 }
 
-// IsDirty reports whether the repo has tracked changes (ignoring untracked files).
 // GetDefaultBranch returns the repo's default branch, e.g. "main" or
 // "master". Resolution order:
 //  1. Symbolic ref of any remote's HEAD (origin first if present, otherwise
@@ -278,22 +277,6 @@ func (r Repo) GetDefaultBranch() (string, error) {
 	return "", fmt.Errorf("could not determine default branch")
 }
 
-func (r Repo) IsDirty() (bool, error) {
-	stdout, _, err := r.run("status", "--porcelain=v1")
-	if err != nil {
-		return false, err
-	}
-	for _, file := range strings.Split(stdout, "\n") {
-		if strings.HasPrefix(file, "??") {
-			continue
-		}
-		if strings.TrimSpace(file) != "" {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
 // Free-function shims that operate on the current working directory. These
 // preserve the existing CLI command call sites — production binaries inherit
 // the user's CWD and these forward to Repo{}.
@@ -322,5 +305,4 @@ func RemoteBranchExists(remote, branch string) (bool, error) {
 func IsBranchAheadOfRemote(local, remote string) (bool, error) {
 	return CWD().IsBranchAheadOfRemote(local, remote)
 }
-func IsDirty() (bool, error)            { return CWD().IsDirty() }
 func GetDefaultBranch() (string, error) { return CWD().GetDefaultBranch() }

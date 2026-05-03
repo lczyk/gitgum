@@ -56,37 +56,6 @@ func TestGetCommitHash(t *testing.T) {
 	assert.That(t, len(hash) >= 7, "hash length plausible")
 }
 
-func TestIsDirty(t *testing.T) {
-	t.Parallel()
-
-	t.Run("tracked change", func(t *testing.T) {
-		t.Parallel()
-		dir := temp_repo.NewRepo(t)
-		assert.NoError(t, appendFile(dir+"/README.md", "extra"))
-		dirty, err := git.Repo{Dir: dir}.IsDirty()
-		assert.NoError(t, err)
-		assert.That(t, dirty, "repo should be dirty after tracked modification")
-	})
-
-	t.Run("clean", func(t *testing.T) {
-		t.Parallel()
-		dir := temp_repo.NewRepo(t)
-		dirty, err := git.Repo{Dir: dir}.IsDirty()
-		assert.NoError(t, err)
-		assert.That(t, !dirty, "clean repo should not be dirty")
-	})
-
-	// IsDirty ignores untracked files by design — only tracked changes count.
-	t.Run("untracked only", func(t *testing.T) {
-		t.Parallel()
-		dir := temp_repo.NewRepo(t)
-		temp_repo.WriteFile(t, dir, "new.txt", "content")
-		dirty, err := git.Repo{Dir: dir}.IsDirty()
-		assert.NoError(t, err)
-		assert.That(t, !dirty, "untracked file should not make repo dirty")
-	})
-}
-
 func TestGetFileStatus(t *testing.T) {
 	t.Parallel()
 
