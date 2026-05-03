@@ -58,6 +58,18 @@ func (r Repo) run(args ...string) (string, string, error) {
 	return strings.TrimSpace(stdout), strings.TrimSpace(stderr), err
 }
 
+// Run is the exported, transitional read-only entry point for command
+// callers migrating off cmdrun.Run("git", ...). Behaviour mirrors the old
+// cmdrun.Run: trimmed stdout/stderr, background context. Specific named
+// helpers (GetCurrentBranch, LsRemote, etc.) are preferred where they
+// exist; this exists so the chokepoint can be enforced even for one-off
+// invocations that don't yet have a dedicated helper.
+func (r Repo) Run(args ...string) (string, string, error) {
+	return r.run(args...)
+}
+
+func Run(args ...string) (string, string, error) { return CWD().Run(args...) }
+
 // GetFileStatus returns the status of a file in git.
 func (r Repo) GetFileStatus(file string) (FileStatus, error) {
 	stdout, _, err := r.runRead(context.Background(), "status", "--porcelain", file)

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/git"
 )
 
@@ -18,13 +17,13 @@ type ReplayListCommand struct {
 
 // returns commits on branchA since divergence from branchB, oldest-first
 func listCommits(branchA, branchB string) ([]string, error) {
-	mergeBase, _, err := cmdrun.Run("git", "merge-base", branchA, branchB)
+	mergeBase, _, err := git.Run("merge-base", branchA, branchB)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find merge base between '%s' and '%s': %w", branchA, branchB, err)
 	}
 
 	// --reverse flips git rev-list from newest-first to chronological order
-	output, _, err := cmdrun.Run("git", "rev-list", mergeBase+".."+branchA, "--reverse")
+	output, _, err := git.Run("rev-list", mergeBase+".."+branchA, "--reverse")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list commits: %w", err)
 	}

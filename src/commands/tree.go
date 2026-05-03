@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/git"
 )
 
@@ -31,7 +30,7 @@ func (t *TreeCommand) Execute(args []string) error {
 		gitArgs = append(gitArgs, "--since", t.Since)
 	}
 
-	stdout, _, err := cmdrun.Run("git", gitArgs...)
+	stdout, _, err := git.Run(gitArgs...)
 	if err != nil {
 		return fmt.Errorf("git log: %w", err)
 	}

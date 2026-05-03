@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/git"
 )
 
@@ -25,13 +24,13 @@ func (s *StatusCommand) Execute(args []string) error {
 	}
 
 	printHeader("--- BRANCHES ---------------------------")
-	stdout, _, err := cmdrun.Run("git", "--no-pager", "branch", "-vv")
+	stdout, _, err := git.Run("branch", "-vv")
 	if err != nil {
 		return fmt.Errorf("getting branches: %w", err)
 	}
 	fmt.Fprintln(out, stdout)
 
-	stdout, _, err = cmdrun.Run("git", "remote", "-v")
+	stdout, _, err = git.Run("remote", "-v")
 	if err != nil {
 		return fmt.Errorf("getting remotes: %w", err)
 	}
@@ -44,7 +43,7 @@ func (s *StatusCommand) Execute(args []string) error {
 	}
 
 	// single call gets both branch status (line 0) and change lines (rest)
-	stdout, _, err = cmdrun.Run("git", "status", "--short", "--branch")
+	stdout, _, err = git.Run("status", "--short", "--branch")
 	if err != nil {
 		return fmt.Errorf("getting status: %w", err)
 	}
