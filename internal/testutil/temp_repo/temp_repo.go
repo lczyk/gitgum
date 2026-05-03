@@ -99,3 +99,24 @@ func CreateCommit(t testing.TB, dir, filename, content, message string) {
 	RunGit(t, dir, "add", filename)
 	RunGit(t, dir, "commit", "-m", message)
 }
+
+// NewRepoWithRemote returns (local, remote) where local is a fresh repo with
+// origin pointing at remote (a bare repo). The remote already has one commit
+// on "main"; local's main tracks origin/main after the clone.
+//
+// Both dirs are t.TempDir-managed. Safe for parallel tests.
+func NewRepoWithRemote(t *testing.T) (local, remote string) {
+	t.Helper()
+	upstream := t.TempDir()
+	initRepoAt(t, upstream)
+	remote = t.TempDir()
+	RunGit(t, remote, "clone", "--bare", upstream, ".")
+
+	local = t.TempDir()
+	RunGit(t, local, "clone", remote, ".")
+	RunGit(t, local, "config", "user.name", "Test User")
+	RunGit(t, local, "config", "user.email", "test@example.com")
+	RunGit(t, local, "config", "commit.gpgsign", "false")
+	RunGit(t, local, "config", "tag.gpgsign", "false")
+	return local, remote
+}
