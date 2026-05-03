@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
 
@@ -35,16 +36,19 @@ func TestSwapGraphSlashes(t *testing.T) {
 }
 
 func TestTreeCommand_Execute(t *testing.T) {
-	dir := temp_repo.InitTempRepo(t)
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
 	temp_repo.CreateCommit(t, dir, "a.txt", "a\n", "Add A")
 	temp_repo.RunGit(t, dir, "checkout", "-b", "feature")
 	temp_repo.CreateCommit(t, dir, "b.txt", "b\n", "Add B on feature")
 	temp_repo.RunGit(t, dir, "checkout", "main")
 	temp_repo.CreateCommit(t, dir, "c.txt", "c\n", "Add C on main")
+	repo := git.Repo{Dir: dir}
 
 	t.Run("empty since shows full history across all branches", func(t *testing.T) {
+		t.Parallel()
 		var buf bytes.Buffer
-		cmd := &TreeCommand{cmdIO: cmdIO{Out: &buf}}
+		cmd := &TreeCommand{cmdIO: cmdIO{Out: &buf, Repo: repo}}
 		err := cmd.Execute(nil)
 		assert.NoError(t, err)
 
@@ -58,8 +62,9 @@ func TestTreeCommand_Execute(t *testing.T) {
 	})
 
 	t.Run("output is reversed: oldest at top, newest at bottom", func(t *testing.T) {
+		t.Parallel()
 		var buf bytes.Buffer
-		cmd := &TreeCommand{cmdIO: cmdIO{Out: &buf}}
+		cmd := &TreeCommand{cmdIO: cmdIO{Out: &buf, Repo: repo}}
 		err := cmd.Execute(nil)
 		assert.NoError(t, err)
 
@@ -73,8 +78,9 @@ func TestTreeCommand_Execute(t *testing.T) {
 	})
 
 	t.Run("ancient since shows full history", func(t *testing.T) {
+		t.Parallel()
 		var buf bytes.Buffer
-		cmd := &TreeCommand{cmdIO: cmdIO{Out: &buf}, Since: "2000-01-01"}
+		cmd := &TreeCommand{cmdIO: cmdIO{Out: &buf, Repo: repo}, Since: "2000-01-01"}
 		err := cmd.Execute(nil)
 		assert.NoError(t, err)
 
@@ -85,8 +91,9 @@ func TestTreeCommand_Execute(t *testing.T) {
 	})
 
 	t.Run("future since shows no commits", func(t *testing.T) {
+		t.Parallel()
 		var buf bytes.Buffer
-		cmd := &TreeCommand{cmdIO: cmdIO{Out: &buf}, Since: "2099-01-01"}
+		cmd := &TreeCommand{cmdIO: cmdIO{Out: &buf, Repo: repo}, Since: "2099-01-01"}
 		err := cmd.Execute(nil)
 		assert.NoError(t, err)
 

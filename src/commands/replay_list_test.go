@@ -84,11 +84,11 @@ func TestListCommits(t *testing.T) {
 
 	for name, tt := range cases {
 		t.Run(name, func(t *testing.T) {
-			dir := temp_repo.InitTempRepo(t)
+			dir := temp_repo.NewRepo(t)
 
 			branchA, branchB := tt.setup(t, dir)
 
-			commits, err := listCommits(git.Repo{}, branchA, branchB)
+			commits, err := listCommits(git.Repo{Dir: dir}, branchA, branchB)
 
 			if tt.expectError {
 				assert.Error(t, err, assert.AnyError, "expected error")
@@ -106,11 +106,12 @@ func TestListCommits(t *testing.T) {
 }
 
 func TestReplayListCommand_Execute(t *testing.T) {
-	dir := temp_repo.InitTempRepo(t)
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
 	temp_repo.RunGit(t, dir, "checkout", "-b", "feature")
 	temp_repo.CreateCommit(t, dir, "file.txt", "content\n", "Test commit")
 
-	cmd := &ReplayListCommand{}
+	cmd := &ReplayListCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
 	cmd.Args.BranchA = "feature"
 	cmd.Args.BranchB = "main"
 

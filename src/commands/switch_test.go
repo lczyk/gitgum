@@ -15,6 +15,7 @@ func currentBranchIn(t *testing.T, dir string) string {
 }
 
 func TestApplySelection_InvalidFormat(t *testing.T) {
+	t.Parallel()
 	s := &SwitchCommand{}
 	err := s.applySelection("no-colon-separator")
 	assert.Error(t, err, assert.AnyError)
@@ -22,6 +23,7 @@ func TestApplySelection_InvalidFormat(t *testing.T) {
 }
 
 func TestApplySelection_UnknownType(t *testing.T) {
+	t.Parallel()
 	s := &SwitchCommand{}
 	err := s.applySelection("unknown: foo")
 	assert.Error(t, err, assert.AnyError)
@@ -29,11 +31,12 @@ func TestApplySelection_UnknownType(t *testing.T) {
 }
 
 func TestApplySelection_Local(t *testing.T) {
-	dir := temp_repo.InitTempRepo(t)
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
 	temp_repo.RunGit(t, dir, "branch", "feature")
 
 	var buf strings.Builder
-	s := &SwitchCommand{cmdIO: cmdIO{Out: &buf}}
+	s := &SwitchCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}}
 	err := s.applySelection("local: feature")
 	assert.NoError(t, err)
 	assert.Equal(t, currentBranchIn(t, dir), "feature")
@@ -41,6 +44,7 @@ func TestApplySelection_Local(t *testing.T) {
 }
 
 func TestApplySelection_RemoteInvalidFormat(t *testing.T) {
+	t.Parallel()
 	s := &SwitchCommand{}
 	err := s.applySelection("remote: noslash")
 	assert.Error(t, err, assert.AnyError)
@@ -50,20 +54,22 @@ func TestApplySelection_RemoteInvalidFormat(t *testing.T) {
 // "local/remote" entries appear when a local branch already has a tracking
 // remote — selecting such an entry must check out the local branch, not error.
 func TestApplySelection_LocalRemote(t *testing.T) {
-	dir := temp_repo.InitTempRepo(t)
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
 	temp_repo.RunGit(t, dir, "branch", "feature")
 
 	var buf strings.Builder
-	s := &SwitchCommand{cmdIO: cmdIO{Out: &buf}}
+	s := &SwitchCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}}
 	err := s.applySelection("local/remote: feature")
 	assert.NoError(t, err)
 	assert.Equal(t, currentBranchIn(t, dir), "feature")
 }
 
 func TestResolveCurrentBranchContext_OnBranch(t *testing.T) {
-	temp_repo.InitTempRepo(t)
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
 
-	currentBranch, trackingRemote, statusLine, err := resolveCurrentBranchContext(git.Repo{})
+	currentBranch, trackingRemote, statusLine, err := resolveCurrentBranchContext(git.Repo{Dir: dir})
 	assert.NoError(t, err)
 	assert.Equal(t, trackingRemote, "")
 	assert.ContainsString(t, statusLine, "Current branch is:")
@@ -74,12 +80,13 @@ func TestResolveCurrentBranchContext_OnBranch(t *testing.T) {
 // real fuzzyfinder, so the streaming branch producers don't need to settle
 // before SelectStream returns.
 func TestSwitchCommand_Execute_PicksLocalBranch(t *testing.T) {
-	dir := temp_repo.InitTempRepo(t)
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
 	temp_repo.RunGit(t, dir, "branch", "feature")
 
 	var buf strings.Builder
 	stub := &stubSelector{selectAnswers: []string{"local: feature"}}
-	cmd := &SwitchCommand{cmdIO: cmdIO{Out: &buf, UI: stub}}
+	cmd := &SwitchCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: dir}}}
 
 	err := cmd.Execute(nil)
 	assert.NoError(t, err)
@@ -93,11 +100,12 @@ func TestSwitchCommand_Execute_PicksLocalBranch(t *testing.T) {
 // HEAD@{u} fails with "HEAD does not point to a branch". Previously this
 // propagated as a "getting tracking remote" error and broke `gg switch`.
 func TestResolveCurrentBranchContext_DetachedHEAD(t *testing.T) {
-	dir := temp_repo.InitTempRepo(t)
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
 	temp_repo.CreateCommit(t, dir, "a.txt", "a", "second")
 	temp_repo.RunGit(t, dir, "checkout", "--detach", "HEAD~1")
 
-	currentBranch, trackingRemote, statusLine, err := resolveCurrentBranchContext(git.Repo{})
+	currentBranch, trackingRemote, statusLine, err := resolveCurrentBranchContext(git.Repo{Dir: dir})
 	assert.NoError(t, err)
 	assert.Equal(t, currentBranch, "")
 	assert.Equal(t, trackingRemote, "")

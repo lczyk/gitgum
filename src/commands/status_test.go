@@ -5,13 +5,15 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
 
 func TestStatusCommand_NotInGitRepo(t *testing.T) {
-	temp_repo.ChdirTempDir(t)
+	t.Parallel()
+	dir := t.TempDir()
 
-	cmd := &StatusCommand{}
+	cmd := &StatusCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
 	err := cmd.Execute(nil)
 
 	assert.Error(t, err, assert.AnyError, "should error when not in git repo")
@@ -19,10 +21,11 @@ func TestStatusCommand_NotInGitRepo(t *testing.T) {
 }
 
 func TestStatusCommand_InGitRepo(t *testing.T) {
-	temp_repo.InitTempRepo(t)
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
 
 	var buf strings.Builder
-	cmd := &StatusCommand{cmdIO: cmdIO{Out: &buf}}
+	cmd := &StatusCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}}
 	err := cmd.Execute(nil)
 
 	assert.NoError(t, err, "should succeed in git repo")
@@ -36,13 +39,14 @@ func TestStatusCommand_InGitRepo(t *testing.T) {
 }
 
 func TestStatusCommand_WithChanges(t *testing.T) {
-	dir := temp_repo.InitTempRepo(t)
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
 
 	// untracked file triggers git status --short --branch to emit a change line
 	temp_repo.WriteFile(t, dir, "untracked.txt", "hello\n")
 
 	var buf strings.Builder
-	cmd := &StatusCommand{cmdIO: cmdIO{Out: &buf}}
+	cmd := &StatusCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}}
 	err := cmd.Execute(nil)
 
 	assert.NoError(t, err, "should succeed with pending changes")

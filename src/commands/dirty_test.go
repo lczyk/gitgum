@@ -8,18 +8,20 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
 
-func newDirtyTestIO(stub *stubSelector) *cmdIO {
-	return &cmdIO{Out: &strings.Builder{}, Err: &strings.Builder{}, UI: stub}
+func newDirtyTestIO(stub *stubSelector, dir string) *cmdIO {
+	return &cmdIO{Out: &strings.Builder{}, Err: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}
 }
 
 func TestHandleDirtyTree_Clean(t *testing.T) {
-	temp_repo.InitTempRepo(t)
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
 
 	stub := &stubSelector{}
-	c := newDirtyTestIO(stub)
+	c := newDirtyTestIO(stub, dir)
 
 	cleanup, err := handleDirtyTree(c, "test")
 	assert.NoError(t, err)
@@ -29,12 +31,13 @@ func TestHandleDirtyTree_Clean(t *testing.T) {
 }
 
 func TestHandleDirtyTree_UntrackedOnly(t *testing.T) {
-	dir := temp_repo.InitTempRepo(t)
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
 	err := os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("x"), 0o644)
 	assert.NoError(t, err)
 
 	stub := &stubSelector{}
-	c := newDirtyTestIO(stub)
+	c := newDirtyTestIO(stub, dir)
 
 	cleanup, err := handleDirtyTree(c, "test")
 	assert.NoError(t, err)
@@ -47,13 +50,14 @@ func TestHandleDirtyTree_UntrackedOnly(t *testing.T) {
 }
 
 func TestHandleDirtyTree_DirtyConfirmYes(t *testing.T) {
-	dir := temp_repo.InitTempRepo(t)
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
 	readme := filepath.Join(dir, "README.md")
 	err := os.WriteFile(readme, []byte("modified\n"), 0o644)
 	assert.NoError(t, err)
 
 	stub := &stubSelector{confirmAnswers: []bool{true}}
-	c := newDirtyTestIO(stub)
+	c := newDirtyTestIO(stub, dir)
 
 	cleanup, err := handleDirtyTree(c, "release")
 	assert.NoError(t, err)
@@ -80,7 +84,8 @@ func TestHandleDirtyTree_DirtyConfirmYes(t *testing.T) {
 // trigger the prompt. Earlier porcelain parsing risked confusing the leading
 // space of " M" status codes with the "?? " untracked prefix.
 func TestHandleDirtyTree_TrackedAndUntrackedMixed(t *testing.T) {
-	dir := temp_repo.InitTempRepo(t)
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
 
 	err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("changed\n"), 0o644)
 	assert.NoError(t, err)
@@ -88,7 +93,7 @@ func TestHandleDirtyTree_TrackedAndUntrackedMixed(t *testing.T) {
 	assert.NoError(t, err)
 
 	stub := &stubSelector{confirmAnswers: []bool{true}}
-	c := newDirtyTestIO(stub)
+	c := newDirtyTestIO(stub, dir)
 
 	cleanup, err := handleDirtyTree(c, "test")
 	assert.NoError(t, err)
@@ -101,7 +106,8 @@ func TestHandleDirtyTree_TrackedAndUntrackedMixed(t *testing.T) {
 }
 
 func TestHandleDirtyTree_RestoresIndexAfterPop(t *testing.T) {
-	dir := temp_repo.InitTempRepo(t)
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
 
 	stagedPath := filepath.Join(dir, "staged.txt")
 	err := os.WriteFile(stagedPath, []byte("staged\n"), 0o644)
@@ -113,7 +119,7 @@ func TestHandleDirtyTree_RestoresIndexAfterPop(t *testing.T) {
 	assert.NoError(t, err)
 
 	stub := &stubSelector{confirmAnswers: []bool{true}}
-	c := newDirtyTestIO(stub)
+	c := newDirtyTestIO(stub, dir)
 
 	cleanup, err := handleDirtyTree(c, "test")
 	assert.NoError(t, err)
@@ -137,7 +143,8 @@ func TestHandleDirtyTree_RestoresIndexAfterPop(t *testing.T) {
 // in porcelain). After stash + pop --index, the same byte-for-byte split
 // between index and worktree must hold.
 func TestHandleDirtyTree_PreservesPartialHunkStaging(t *testing.T) {
-	dir := temp_repo.InitTempRepo(t)
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
 
 	path := filepath.Join(dir, "file.txt")
 	err := os.WriteFile(path, []byte("a\nb\nc\nd\ne\n"), 0o644)
@@ -170,7 +177,7 @@ func TestHandleDirtyTree_PreservesPartialHunkStaging(t *testing.T) {
 	assert.NoError(t, err)
 
 	stub := &stubSelector{confirmAnswers: []bool{true}}
-	c := newDirtyTestIO(stub)
+	c := newDirtyTestIO(stub, dir)
 
 	cleanup, err := handleDirtyTree(c, "test")
 	assert.NoError(t, err)
@@ -188,13 +195,14 @@ func TestHandleDirtyTree_PreservesPartialHunkStaging(t *testing.T) {
 }
 
 func TestHandleDirtyTree_DirtyConfirmNo(t *testing.T) {
-	dir := temp_repo.InitTempRepo(t)
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
 	readme := filepath.Join(dir, "README.md")
 	err := os.WriteFile(readme, []byte("modified\n"), 0o644)
 	assert.NoError(t, err)
 
 	stub := &stubSelector{confirmAnswers: []bool{false}}
-	c := newDirtyTestIO(stub)
+	c := newDirtyTestIO(stub, dir)
 
 	cleanup, err := handleDirtyTree(c, "test")
 	assert.Error(t, err, assert.AnyError, "should error when user declines")

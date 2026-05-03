@@ -5,13 +5,15 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
 
 // End-to-end Execute test: stub Selector picks remote then PR; bare repo has
 // a synthetic refs/pull/1/head pointing at HEAD so ls-remote sees one PR.
 func TestCheckoutPRCommand_Execute_ChecksOutPR(t *testing.T) {
-	dir := temp_repo.InitTempRepo(t)
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
 
 	bareDir := t.TempDir()
 	temp_repo.RunGit(t, bareDir, "init", "--bare")
@@ -23,7 +25,7 @@ func TestCheckoutPRCommand_Execute_ChecksOutPR(t *testing.T) {
 	temp_repo.RunGit(t, bareDir, "update-ref", "refs/pull/1/head", headSHA)
 
 	stub := &stubSelector{selectAnswers: []string{"origin", "PR #1 (head)"}}
-	cmd := &CheckoutPRCommand{cmdIO: cmdIO{UI: stub}}
+	cmd := &CheckoutPRCommand{cmdIO: cmdIO{UI: stub, Repo: git.Repo{Dir: dir}}}
 
 	err := cmd.Execute(nil)
 	assert.NoError(t, err)

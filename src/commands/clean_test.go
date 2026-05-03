@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
 
@@ -31,9 +32,10 @@ func fileContent(t *testing.T, dir, filename, expected string) {
 }
 
 func TestCleanCommand_NotInGitRepo(t *testing.T) {
-	temp_repo.ChdirTempDir(t)
+	t.Parallel()
+	dir := t.TempDir()
 
-	cmd := &CleanCommand{}
+	cmd := &CleanCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
 	err := cmd.Execute(nil)
 
 	assert.Error(t, err, assert.AnyError, "should error when not in git repo")
@@ -139,12 +141,17 @@ func TestCleanCommand_Execute(t *testing.T) {
 
 	for name, tt := range cases {
 		t.Run(name, func(t *testing.T) {
-			dir := temp_repo.InitTempRepo(t)
+			t.Parallel()
+			dir := temp_repo.NewRepo(t)
 			if tt.setup != nil {
 				tt.setup(t, dir)
 			}
 
-			err := tt.cmd.Execute(nil)
+			// Per-iter copy so parallel sub-tests don't race on tt.cmd.Repo.
+			cmd := *tt.cmd
+			cmd.Repo = git.Repo{Dir: dir}
+
+			err := cmd.Execute(nil)
 			assert.NoError(t, err, "command should succeed")
 
 			if tt.verify != nil {

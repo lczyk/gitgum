@@ -59,6 +59,15 @@ func InitEmptyTempRepo(t *testing.T) string {
 	return dir
 }
 
+// NewEmptyRepo creates a temp git repo without any commits (no branches),
+// without chdir-ing, and returns its path. Safe for t.Parallel().
+func NewEmptyRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	initEmptyAt(t, dir)
+	return dir
+}
+
 func initEmptyAt(t testing.TB, dir string) {
 	t.Helper()
 	RunGit(t, dir, "init", "-b", "main")
