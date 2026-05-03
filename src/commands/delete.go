@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/lczyk/gitgum/internal/cmdrun"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/ui"
 )
@@ -90,7 +89,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 			return err
 		}
 
-		if err := cmdrun.RunWithOutput("git", "checkout", otherBranch); err != nil {
+		if err := git.RunWriteStream("checkout", otherBranch); err != nil {
 			return fmt.Errorf("switching to branch '%s': %w", otherBranch, err)
 		}
 		fmt.Fprintf(d.out(), "Switched to branch '%s'.\n", otherBranch)
@@ -113,7 +112,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 	}
 
 	// try safe delete first, fall back to force delete with confirmation
-	_, _, err = cmdrun.Run("git", "branch", "-d", branch)
+	_, _, err = git.RunWrite("branch", "-d", branch)
 	if err != nil {
 		var confirmMsg string
 		if needsToDeleteRemote {
@@ -131,7 +130,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 			return nil
 		}
 
-		if err := cmdrun.RunWithOutput("git", "branch", "-D", branch); err != nil {
+		if err := git.RunWriteStream("branch", "-D", branch); err != nil {
 			return fmt.Errorf("force deleting branch '%s': %w", branch, err)
 		}
 		fmt.Fprintf(d.out(), "Force deleted local branch '%s'.\n", branch)
@@ -140,7 +139,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 	}
 
 	if needsToDeleteRemote {
-		if err := cmdrun.RunWithOutput("git", "push", "--delete", remoteName, remoteBranchName); err != nil {
+		if err := git.RunWriteStream("push", "--delete", remoteName, remoteBranchName); err != nil {
 			return fmt.Errorf("deleting remote branch: %w", err)
 		}
 		fmt.Fprintf(d.out(), "Deleted remote branch '%s/%s'.\n", remoteName, remoteBranchName)
