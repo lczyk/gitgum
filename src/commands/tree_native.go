@@ -158,15 +158,18 @@ func nativeColorScheme() graph.ColorScheme {
 	if !colorEnabled() && !fc && nc {
 		return nil
 	}
-	// Placeholder: return a simple color scheme.
 	return func(k graph.GlyphKind, text string) string {
 		switch k {
 		case graph.KindGraph:
-			return ansiBlue + text + ansiReset
+			switch text {
+			case "|", "/", "\\":
+				return ansiRed + text + ansiReset
+			}
+			return text
 		case graph.KindHash:
 			return ansiYellow + text + ansiReset
 		case graph.KindRef:
-			return ansiCyan + text + ansiReset
+			return colorRefDecoration(text)
 		case graph.KindSubject:
 			return text
 		}
@@ -174,7 +177,66 @@ func nativeColorScheme() graph.ColorScheme {
 	}
 }
 
+// colorRefDecoration colors a "(refs...)" string per git's color.decorate
+// defaults: HEAD = bold cyan, local branch = bold green, remote branch =
+// bold red, tag = bold yellow, parens/separators = bold yellow.
+func colorRefDecoration(text string) string {
+	if len(text) < 2 || text[0] != '(' || text[len(text)-1] != ')' {
+		return text
+	}
+	inner := text[1 : len(text)-1]
+
+	var b strings.Builder
+	b.WriteString(ansiBoldYellow)
+	b.WriteByte('(')
+	b.WriteString(ansiReset)
+
+	// Split on ", " preserving order.
+	parts := strings.Split(inner, ", ")
+	for i, p := range parts {
+		if i > 0 {
+			b.WriteString(ansiBoldYellow)
+			b.WriteString(", ")
+			b.WriteString(ansiReset)
+		}
+		// Each part may be "HEAD -> branch", "tag: name", "branch", or "remote/branch".
+		if arrow := strings.Index(p, " -> "); arrow >= 0 {
+			head := p[:arrow]
+			branch := p[arrow+4:]
+			b.WriteString(ansiBoldCyan)
+			b.WriteString(head)
+			b.WriteString(ansiReset)
+			b.WriteString(ansiBoldYellow)
+			b.WriteString(" -> ")
+			b.WriteString(ansiReset)
+			b.WriteString(colorSingleRef(branch))
+		} else {
+			b.WriteString(colorSingleRef(p))
+		}
+	}
+
+	b.WriteString(ansiBoldYellow)
+	b.WriteByte(')')
+	b.WriteString(ansiReset)
+	return b.String()
+}
+
+func colorSingleRef(r string) string {
+	switch {
+	case strings.HasPrefix(r, "tag: "):
+		return ansiBoldYellow + r + ansiReset
+	case r == "HEAD":
+		return ansiBoldCyan + r + ansiReset
+	case strings.Contains(r, "/"):
+		return ansiBoldRed + r + ansiReset
+	default:
+		return ansiBoldGreen + r + ansiReset
+	}
+}
+
 const (
-	ansiBlue = "\033[34m"
-	ansiCyan = "\033[36m"
+	ansiBoldCyan   = "\033[1;36m"
+	ansiBoldGreen  = "\033[1;32m"
+	ansiBoldRed    = "\033[1;31m"
+	ansiBoldYellow = "\033[1;33m"
 )
