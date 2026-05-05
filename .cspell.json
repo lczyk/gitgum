@@ -85,6 +85,10 @@
     "frontmatter",
     "refspec",
     "pathspec",
+    "truecolor",
+    "SGRIs",
+    "mhello",
+    "strikethrough",
     "serialise"
   ]
 }
