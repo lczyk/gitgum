@@ -61,16 +61,16 @@ func buildTree(entries []changeEntry) *treeNode {
 	return root
 }
 
-// TODO: respect NO_COLOR / non-tty -- currently ansi escapes always emitted.
 const (
 	ansiReset  = "\033[0m"
 	ansiDim    = "\033[2m"
 	ansiRed    = "\033[31m"
 	ansiGreen  = "\033[32m"
 	ansiYellow = "\033[33m"
+	ansiBlack  = "\033[0;30m"
 )
 
-func dim(s string) string { return ansiDim + s + ansiReset }
+func dim(s string) string { return paint(ansiDim, s) }
 
 // colorCodeChar colors one porcelain status char. side==0 is X (staged),
 // side==1 is Y (worktree). Rules mirror git's own status colors.
@@ -80,25 +80,25 @@ func colorCodeChar(c byte, side int) string {
 	case ' ':
 		return dim(s)
 	case '?', '!':
-		return ansiRed + s + ansiReset
+		return paint(ansiRed, s)
 	}
 	if side == 0 {
 		switch c {
 		case 'M', 'A', 'R', 'C', 'T':
-			return ansiGreen + s + ansiReset
+			return paint(ansiGreen, s)
 		case 'D':
-			return ansiRed + s + ansiReset
+			return paint(ansiRed, s)
 		case 'U':
-			return ansiYellow + s + ansiReset
+			return paint(ansiYellow, s)
 		}
 	} else {
 		switch c {
 		case 'M', 'D', 'T':
-			return ansiRed + s + ansiReset
+			return paint(ansiRed, s)
 		case 'A':
-			return ansiGreen + s + ansiReset
+			return paint(ansiGreen, s)
 		case 'U':
-			return ansiYellow + s + ansiReset
+			return paint(ansiYellow, s)
 		}
 	}
 	return s
@@ -108,10 +108,10 @@ func colorCodeChar(c byte, side int) string {
 // rename markers `R<` (source) and `R>` (dest) get whole-code colors.
 func colorCode(code string) string {
 	if code == "R<" {
-		return ansiRed + code + ansiReset
+		return paint(ansiRed, code)
 	}
 	if code == "R>" {
-		return ansiGreen + code + ansiReset
+		return paint(ansiGreen, code)
 	}
 	if len(code) != 2 {
 		return code
