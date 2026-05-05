@@ -17,7 +17,7 @@ func (t *TreeCommand) renderNative(w io.Writer, sinceArg string, maxCount int) e
 	if colorEnabled() {
 		colorFlag = "--color=always"
 	}
-	gitArgs := []string{"log", "--all", "--format=%H %P%x00%h %d %s%x00%aI", "--date-order", colorFlag}
+	gitArgs := []string{"log", "--all", "--format=%H %P%x00%h%d %s%x00%aI", "--date-order", colorFlag}
 	if sinceArg != "" {
 		gitArgs = append(gitArgs, "--since", sinceArg)
 	}

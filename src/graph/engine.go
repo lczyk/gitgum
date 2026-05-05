@@ -87,52 +87,80 @@ type layoutState struct {
 // TODO: support --topo-order.
 
 func (st *layoutState) sort() {
-	sort.SliceStable(st.nodes, func(i, j int) bool {
-		a, b := st.nodes[i], st.nodes[j]
-		if a.Date != b.Date {
-			return a.Date < b.Date
-		}
-		return a.ID < b.ID
-	})
-
-	pos := make(map[string]int, len(st.nodes))
-	for i, ns := range st.nodes {
-		pos[ns.ID] = i
+	n := len(st.nodes)
+	if n == 0 {
+		return
 	}
 
-	// Ensure parent appears before child in oldest-first order.
-	changed := true
-	for changed {
-		changed = false
-		for _, ns := range st.nodes {
-			for _, child := range ns.children {
-				if pos[ns.ID] > pos[child.ID] {
-					if pos[child.ID] < pos[ns.ID]+1 {
-						pos[child.ID] = pos[ns.ID] + 1
-						changed = true
-					}
+	// indegree: count of children not yet placed.
+	indeg := make(map[string]int, n)
+	for _, ns := range st.nodes {
+		indeg[ns.ID] = len(ns.children)
+	}
+
+	// Ready set: nodes whose children are all placed (tips first).
+	ready := make([]*nodeState, 0)
+	for _, ns := range st.nodes {
+		if len(ns.children) == 0 {
+			ready = append(ready, ns)
+		}
+	}
+
+	placed := make(map[string]bool, n)
+	row := n - 1 // assign rows newest-first
+
+	// walk places ns and recurses into non-first-parent ancestors immediately,
+	// so second-parent branches appear right after the merge. first-parent
+	// continuations go through the ready queue keyed by date.
+	var walk func(ns *nodeState)
+	walk = func(ns *nodeState) {
+		if placed[ns.ID] {
+			return
+		}
+		placed[ns.ID] = true
+		ns.row = row
+		row--
+
+		// Non-first parents: process depth-first, immediately.
+		for i := 1; i < len(ns.Parents); i++ {
+			pid := ns.Parents[i]
+			p := st.idx[pid]
+			if p == nil {
+				continue
+			}
+			indeg[p.ID]--
+			if indeg[p.ID] == 0 && !placed[p.ID] {
+				walk(p)
+			}
+		}
+
+		// First parent: decrement indegree; add to ready queue if all children done.
+		if len(ns.Parents) > 0 {
+			pid := ns.Parents[0]
+			p := st.idx[pid]
+			if p != nil {
+				indeg[p.ID]--
+				if indeg[p.ID] == 0 && !placed[p.ID] {
+					ready = append(ready, p)
 				}
 			}
 		}
-		if changed {
-			type pair struct {
-				ns *nodeState
-				p  int
-			}
-			tmp := make([]pair, len(st.nodes))
-			for i, ns := range st.nodes {
-				tmp[i] = pair{ns, pos[ns.ID]}
-			}
-			sort.Slice(tmp, func(i, j int) bool { return tmp[i].p < tmp[j].p })
-			for i, pr := range tmp {
-				st.nodes[i] = pr.ns
-				pos[pr.ns.ID] = i
-			}
-		}
 	}
 
-	for i, ns := range st.nodes {
-		ns.row = i
+	for len(ready) > 0 {
+		// Pick newest ready node (date-ordered queue).
+		sort.Slice(ready, func(i, j int) bool { return ready[i].Date > ready[j].Date })
+		ns := ready[0]
+		ready = ready[1:]
+		walk(ns)
+	}
+
+	// Assign rows to any remaining unplaced nodes (valid DAG should never hit this).
+	for _, ns := range st.nodes {
+		if !placed[ns.ID] {
+			ns.row = row
+			row--
+		}
 	}
 }
 
@@ -198,7 +226,10 @@ func (st *layoutState) assignOne(ns *nodeState, colInfo []columnInfo) {
 
 // If a merge commit has two parents in the same column (because both
 // inherited from the merge child), give the second parent its own column.
-// Walk oldest→newest so the earlier sibling keeps the shared column.
+// Walk oldest->newest so the earlier sibling keeps the shared column.
+//
+// When a parent is moved, cascade the change up single-parent chains so
+// the entire branch stays in one column.
 
 func (st *layoutState) fixMergeSiblings() {
 	sorted := make([]*nodeState, len(st.nodes))
@@ -217,10 +248,28 @@ func (st *layoutState) fixMergeSiblings() {
 			}
 			if seen[p.col] {
 				// Conflict: two parents share a column. Give this parent a new one.
+				oldCol := p.col
 				p.col = st.numCols
 				st.numCols++
+				st.cascadeColumn(p, oldCol, p.col)
 			}
 			seen[p.col] = true
+		}
+	}
+}
+
+// cascadeColumn walks up the ancestor chain (following parents) and moves
+// nodes from oldCol to newCol. it stops at forks (multiple children) and
+// LayoutHint anchors.
+func (st *layoutState) cascadeColumn(ns *nodeState, oldCol, newCol int) {
+	for _, pid := range ns.Parents {
+		p := st.idx[pid]
+		if p == nil || p.LayoutHint != "" || p.col != oldCol {
+			continue
+		}
+		if len(p.children) == 1 {
+			p.col = newCol
+			st.cascadeColumn(p, oldCol, newCol)
 		}
 	}
 }
@@ -321,7 +370,8 @@ func (st *layoutState) buildStagger(ns *nodeState, baseRow int, active func(int,
 		return nil
 	}
 	if len(parents) == 1 {
-		return st.staggerSingle(ns.col, parents[0].col, baseRow, active)
+		// Flip direction: parent→child (fork) instead of child→parent.
+		return st.staggerSingle(parents[0].col, ns.col, baseRow, active)
 	}
 	return st.staggerMerge(ns.col, parents[0].col, parents[1].col, baseRow, active)
 }
@@ -345,11 +395,17 @@ func (st *layoutState) staggerSingle(src, dst, baseRow int, active func(int, int
 	cur := src
 	for range dist {
 		next := cur + dir
+		// Diagonal sits at the higher-numbered col; pipe at the lower
+		// (mainline-side) col. Matches `git log --graph` convention.
+		diagCol, straightCol := next, cur
+		if cur > next {
+			diagCol, straightCol = cur, next
+		}
 		glyphs := make([]Glyph, st.numCols)
 		for c := 0; c < st.numCols; c++ {
-			if c == cur {
+			if c == diagCol {
 				glyphs[c] = glyph
-			} else if c == next || active(baseRow+len(rows), c) {
+			} else if c == straightCol || active(baseRow+len(rows), c) {
 				glyphs[c] = GlyphPipe
 			} else {
 				glyphs[c] = GlyphSpace

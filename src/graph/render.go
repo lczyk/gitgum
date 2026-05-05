@@ -20,32 +20,47 @@ func Render(lr LayoutResult, cs ColorScheme) []string {
 func renderRow(row Row, numCols int, cs ColorScheme) string {
 	var b strings.Builder
 
-	firstNonSpace := -1
-	lastNonSpace := -1
+	// Build slot grid: each col occupies 2 chars (glyph + trailing space).
+	// Diagonals (`/`, `\`) slide left into the previous col's trailing space
+	// to render adjacent to a `|`, matching `git log --graph` output.
+	slots := make([]Glyph, 2*numCols)
+	for i := range slots {
+		slots[i] = GlyphSpace
+	}
 	for c := 0; c < numCols; c++ {
-		if row.Glyphs[c] != GlyphSpace {
-			if firstNonSpace == -1 {
-				firstNonSpace = c
-			}
-			lastNonSpace = c
+		g := row.Glyphs[c]
+		if g == GlyphSpace {
+			continue
 		}
-	}
-
-	if firstNonSpace == -1 {
-		return ""
-	}
-
-	for c := firstNonSpace; c <= lastNonSpace; c++ {
-		b.WriteString(cs(KindGraph, row.Glyphs[c].String()))
+		pos := 2 * c
+		if (g == GlyphSlash || g == GlyphBackslash) && c > 0 {
+			pos = 2*c - 1
+		}
+		slots[pos] = g
 	}
 
 	if row.Commit == nil {
+		// Stagger / continuation row: emit slots verbatim including trailing
+		// padding (matches git's fixed-width stagger lines).
+		for _, g := range slots {
+			b.WriteString(cs(KindGraph, g.String()))
+		}
 		return b.String()
 	}
 
-	// Append label after a space.
-	if b.Len() > 0 {
-		b.WriteByte(' ')
+	// Commit row: render up to rightmost active col only; label follows
+	// immediately after that col's trailing space.
+	lastActive := -1
+	for c := 0; c < numCols; c++ {
+		if row.Glyphs[c] != GlyphSpace {
+			lastActive = c
+		}
+	}
+	if lastActive < 0 {
+		lastActive = 0
+	}
+	for i := 0; i < 2*(lastActive+1); i++ {
+		b.WriteString(cs(KindGraph, slots[i].String()))
 	}
 
 	// Split label into hash, refs, and subject parts for coloring.

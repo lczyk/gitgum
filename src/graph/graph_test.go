@@ -154,7 +154,7 @@ func TestRender_ColorScheme(t *testing.T) {
 	lines := Render(lr, cs)
 
 	assert.Equal(t, len(lines), 1)
-	expected := "<g:*> <h:abc1234> <r:(HEAD -> main)> <s:hello world>"
+	expected := "<g:*><g: ><h:abc1234> <r:(HEAD -> main)> <s:hello world>"
 	assert.Equal(t, lines[0], expected)
 }
 
