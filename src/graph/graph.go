@@ -29,7 +29,7 @@ type Node struct {
 	ID         string
 	Label      string
 	Parents    []string // parent IDs (empty for roots)
-	Epoch      int64    // sort key (commonly unix epoch seconds; any monotonic int works)
+	Epoch      int64    // sort key (commonly unix epoch seconds; any monotonic int works). Optional -- when all Epochs are equal (incl. zero), nodes tiebreak by ID for deterministic layout.
 	LayoutHint string
 }
 

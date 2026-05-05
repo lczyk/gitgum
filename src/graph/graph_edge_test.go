@@ -89,6 +89,28 @@ func TestEdge_Determinism(t *testing.T) {
 	}
 }
 
+// TestEdge_NoEpoch: Layout works without per-node sort keys. With every
+// Epoch at zero the engine tiebreaks by ID, producing deterministic
+// output without falling over.
+func TestEdge_NoEpoch(t *testing.T) {
+	t.Parallel()
+	nodes := []graph.Node{
+		{ID: "base", Label: "base"},
+		{ID: "a", Label: "a", Parents: []string{"base"}},
+		{ID: "b", Label: "b", Parents: []string{"base"}},
+		{ID: "merge", Label: "merge", Parents: []string{"a", "b"}},
+	}
+	first := strings.Join(graph.Render(graph.Layout(nodes), graph.Style{}), "\n")
+	assert.That(t, strings.Contains(first, "base"), "base in output")
+	assert.That(t, strings.Contains(first, "merge"), "merge in output")
+	for i := 0; i < 20; i++ {
+		out := strings.Join(graph.Render(graph.Layout(nodes), graph.Style{}), "\n")
+		if out != first {
+			t.Fatalf("nondeterministic output without Epoch on iteration %d:\n%s", i, out)
+		}
+	}
+}
+
 // TestEdge_ConcurrentLayout: Layout has no shared state across calls and
 // must be safe to run from many goroutines on the same input.
 func TestEdge_ConcurrentLayout(t *testing.T) {
