@@ -53,10 +53,7 @@ func (e *Engine) Layout(g Graph) LayoutResult {
 	// Phase 2: column assignment (newest-first for branch continuity).
 	st.assignColumns()
 
-	// Phase 3: fix sibling conflicts at merges.
-	st.fixMergeSiblings()
-
-	// Phase 3b: compact non-mainline cols whose lifetimes don't overlap so
+	// Phase 3: compact non-mainline cols whose lifetimes don't overlap so
 	// short-lived side branches reuse a single lane (e.g. sequential feature
 	// branches both render in col 1).
 	st.compactColumns()
@@ -257,59 +254,7 @@ func (st *layoutState) assignOne(ns *nodeState, colInfo []columnInfo) {
 	st.numCols++
 }
 
-// ------ phase 3: fix merge siblings ----------------------------------------------------------------------
-
-// If a merge commit has two parents in the same column (because both
-// inherited from the merge child), give the second parent its own column.
-// Walk oldest->newest so the earlier sibling keeps the shared column.
-//
-// When a parent is moved, cascade the change up single-parent chains so
-// the entire branch stays in one column.
-
-func (st *layoutState) fixMergeSiblings() {
-	sorted := make([]*nodeState, len(st.nodes))
-	copy(sorted, st.nodes)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].row < sorted[j].row })
-
-	for _, ns := range sorted {
-		if len(ns.Parents) < 2 {
-			continue
-		}
-		seen := map[int]bool{}
-		for _, pid := range ns.Parents {
-			p, ok := st.idx[pid]
-			if !ok || p.col < 0 {
-				continue
-			}
-			if seen[p.col] {
-				// Conflict: two parents share a column. Give this parent a new one.
-				oldCol := p.col
-				p.col = st.numCols
-				st.numCols++
-				st.cascadeColumn(p, oldCol, p.col)
-			}
-			seen[p.col] = true
-		}
-	}
-}
-
-// cascadeColumn walks up the ancestor chain (following parents) and moves
-// nodes from oldCol to newCol. it stops at forks (multiple children) and
-// LayoutHint anchors.
-func (st *layoutState) cascadeColumn(ns *nodeState, oldCol, newCol int) {
-	for _, pid := range ns.Parents {
-		p := st.idx[pid]
-		if p == nil || p.LayoutHint != "" || p.col != oldCol {
-			continue
-		}
-		if len(p.children) == 1 {
-			p.col = newCol
-			st.cascadeColumn(p, oldCol, newCol)
-		}
-	}
-}
-
-// ------ phase 3b: column compaction ------------------------------------------------------
+// ------ phase 3: column compaction ------------------------------------------------------
 
 // compactColumns merges non-mainline cols whose commit-row ranges don't
 // overlap so sequential side branches share a lane. col 0 is left alone --
