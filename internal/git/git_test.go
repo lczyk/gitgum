@@ -89,7 +89,7 @@ func TestGetFileStatus(t *testing.T) {
 			setup: func(t *testing.T, dir string) string {
 				temp_repo.WriteFile(t, dir, "deleted.txt", "content")
 				temp_repo.RunGit(t, dir, "add", "deleted.txt")
-				temp_repo.RunGit(t, dir, "commit", "-m", "add file")
+				temp_repo.RunGit(t, dir, "commit", "-m", "chore: add file")
 				assert.NoError(t, os.Remove(dir+"/deleted.txt"))
 				temp_repo.RunGit(t, dir, "rm", "deleted.txt")
 				return "deleted.txt"
@@ -100,7 +100,7 @@ func TestGetFileStatus(t *testing.T) {
 			setup: func(t *testing.T, dir string) string {
 				temp_repo.WriteFile(t, dir, "clean.txt", "content")
 				temp_repo.RunGit(t, dir, "add", "clean.txt")
-				temp_repo.RunGit(t, dir, "commit", "-m", "add file")
+				temp_repo.RunGit(t, dir, "commit", "-m", "chore: add file")
 				return "clean.txt"
 			},
 			want: git.FileUnknown,

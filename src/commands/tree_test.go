@@ -134,7 +134,7 @@ func TestHandleFollowKey(t *testing.T) {
 
 func TestSnapshotRefs(t *testing.T) {
 	dir := temp_repo.NewRepo(t)
-	temp_repo.CreateCommit(t, dir, "a.txt", "a\n", "Add A")
+	temp_repo.CreateCommit(t, dir, "a.txt", "a\n", "chore: Add A")
 	cmd := &TreeCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
 
 	first, err := cmd.snapshotRefs()
@@ -147,7 +147,7 @@ func TestSnapshotRefs(t *testing.T) {
 	assert.Equal(t, first, second)
 
 	// new commit -> fingerprint changes
-	temp_repo.CreateCommit(t, dir, "b.txt", "b\n", "Add B")
+	temp_repo.CreateCommit(t, dir, "b.txt", "b\n", "chore: Add B")
 	third, err := cmd.snapshotRefs()
 	assert.NoError(t, err)
 	assert.That(t, first != third, "snapshot should change after new commit")
@@ -193,11 +193,11 @@ func TestSwapGraphSlashes(t *testing.T) {
 func TestTreeCommand_Execute(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)
-	temp_repo.CreateCommit(t, dir, "a.txt", "a\n", "Add A")
+	temp_repo.CreateCommit(t, dir, "a.txt", "a\n", "chore: Add A")
 	temp_repo.RunGit(t, dir, "checkout", "-b", "feature")
-	temp_repo.CreateCommit(t, dir, "b.txt", "b\n", "Add B on feature")
+	temp_repo.CreateCommit(t, dir, "b.txt", "b\n", "chore: Add B on feature")
 	temp_repo.RunGit(t, dir, "checkout", "main")
-	temp_repo.CreateCommit(t, dir, "c.txt", "c\n", "Add C on main")
+	temp_repo.CreateCommit(t, dir, "c.txt", "c\n", "chore: Add C on main")
 	repo := git.Repo{Dir: dir}
 
 	t.Run("empty since shows full history across all branches", func(t *testing.T) {
@@ -209,9 +209,9 @@ func TestTreeCommand_Execute(t *testing.T) {
 
 		out := buf.String()
 		assert.That(t, strings.Contains(out, "*"), "should contain graph node markers")
-		assert.ContainsString(t, out, "Add A")
-		assert.ContainsString(t, out, "Add B on feature")
-		assert.ContainsString(t, out, "Add C on main")
+		assert.ContainsString(t, out, "chore: Add A")
+		assert.ContainsString(t, out, "chore: Add B on feature")
+		assert.ContainsString(t, out, "chore: Add C on main")
 		assert.ContainsString(t, out, "main")
 		assert.ContainsString(t, out, "feature")
 	})
@@ -224,9 +224,9 @@ func TestTreeCommand_Execute(t *testing.T) {
 		assert.NoError(t, err)
 
 		out := buf.String()
-		idxInitial := strings.Index(out, "initial commit")
-		idxA := strings.Index(out, "Add A")
-		idxC := strings.Index(out, "Add C on main")
+		idxInitial := strings.Index(out, "chore: init")
+		idxA := strings.Index(out, "chore: Add A")
+		idxC := strings.Index(out, "chore: Add C on main")
 		assert.That(t, idxInitial >= 0 && idxA >= 0 && idxC >= 0, "all three commits should appear")
 		assert.That(t, idxInitial < idxA, "initial commit should come before Add A (oldest first)")
 		assert.That(t, idxA < idxC, "Add A should come before Add C on main (newest last)")
@@ -240,9 +240,9 @@ func TestTreeCommand_Execute(t *testing.T) {
 		assert.NoError(t, err)
 
 		out := buf.String()
-		assert.ContainsString(t, out, "Add A")
-		assert.ContainsString(t, out, "Add B on feature")
-		assert.ContainsString(t, out, "Add C on main")
+		assert.ContainsString(t, out, "chore: Add A")
+		assert.ContainsString(t, out, "chore: Add B on feature")
+		assert.ContainsString(t, out, "chore: Add C on main")
 	})
 
 	t.Run("future iso since shows no commits", func(t *testing.T) {
@@ -253,17 +253,17 @@ func TestTreeCommand_Execute(t *testing.T) {
 		assert.NoError(t, err)
 
 		out := strings.TrimSpace(buf.String())
-		assert.That(t, !strings.Contains(out, "Add A"), "should not contain commits dated before 2099")
-		assert.That(t, !strings.Contains(out, "Add B on feature"), "should not contain commits dated before 2099")
-		assert.That(t, !strings.Contains(out, "Add C on main"), "should not contain commits dated before 2099")
+		assert.That(t, !strings.Contains(out, "chore: Add A"), "should not contain commits dated before 2099")
+		assert.That(t, !strings.Contains(out, "chore: Add B on feature"), "should not contain commits dated before 2099")
+		assert.That(t, !strings.Contains(out, "chore: Add C on main"), "should not contain commits dated before 2099")
 	})
 }
 
 func TestTreeCommand_Reverse(t *testing.T) {
 	dir := temp_repo.NewRepo(t)
-	temp_repo.CreateCommit(t, dir, "a.txt", "a\n", "Add A")
-	temp_repo.CreateCommit(t, dir, "b.txt", "b\n", "Add B")
-	temp_repo.CreateCommit(t, dir, "c.txt", "c\n", "Add C")
+	temp_repo.CreateCommit(t, dir, "a.txt", "a\n", "chore: Add A")
+	temp_repo.CreateCommit(t, dir, "b.txt", "b\n", "chore: Add B")
+	temp_repo.CreateCommit(t, dir, "c.txt", "c\n", "chore: Add C")
 	repo := git.Repo{Dir: dir}
 
 	var buf bytes.Buffer
@@ -272,9 +272,9 @@ func TestTreeCommand_Reverse(t *testing.T) {
 	assert.NoError(t, err)
 
 	out := buf.String()
-	idxA := strings.Index(out, "Add A")
-	idxB := strings.Index(out, "Add B")
-	idxC := strings.Index(out, "Add C")
+	idxA := strings.Index(out, "chore: Add A")
+	idxB := strings.Index(out, "chore: Add B")
+	idxC := strings.Index(out, "chore: Add C")
 	assert.That(t, idxA >= 0 && idxB >= 0 && idxC >= 0, "all commits should appear")
 	assert.That(t, idxC < idxB, "with --reverse, newest (Add C) should come before older (Add B)")
 	assert.That(t, idxB < idxA, "with --reverse, Add B should come before Add A")
@@ -284,7 +284,7 @@ func TestTreeCommand_NoColor(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("FORCE_COLOR", "")
 	dir := temp_repo.NewRepo(t)
-	temp_repo.CreateCommit(t, dir, "a.txt", "a\n", "Add A")
+	temp_repo.CreateCommit(t, dir, "a.txt", "a\n", "chore: Add A")
 	repo := git.Repo{Dir: dir}
 
 	var buf bytes.Buffer

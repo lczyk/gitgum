@@ -84,7 +84,7 @@ func streamLocalBranches(ctx context.Context, r git.Repo, errOut io.Writer, queu
 		if branch == currentBranch {
 			continue
 		}
-		if checkedOut[branch] {
+		if branch != currentBranch && checkedOut[branch] {
 			continue
 		}
 		tr, err := r.GetBranchTrackingRemote(branch)
@@ -122,7 +122,7 @@ func streamRemoteBranches(ctx context.Context, r git.Repo, errOut io.Writer, que
 		if remote == trackingRemote && branch == currentBranch {
 			continue
 		}
-		if checkedOut[branch] {
+		if branch != currentBranch && checkedOut[branch] {
 			continue
 		}
 		select {

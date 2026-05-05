@@ -32,7 +32,7 @@ func TestFetch_UnknownRefspec(t *testing.T) {
 func TestPush_ToTrackingRemote(t *testing.T) {
 	t.Parallel()
 	local, remote := temp_repo.NewRepoWithRemote(t)
-	temp_repo.CreateCommit(t, local, "added.txt", "x", "add added.txt")
+	temp_repo.CreateCommit(t, local, "added.txt", "x", "chore: add added.txt")
 	localHEAD := strings.TrimSpace(temp_repo.RunGit(t, local, "rev-parse", "HEAD"))
 
 	assert.NoError(t, git.Repo{Dir: local}.Push())

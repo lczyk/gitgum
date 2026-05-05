@@ -150,7 +150,7 @@ func TestHandleDirtyTree_PreservesPartialHunkStaging(t *testing.T) {
 	err := os.WriteFile(path, []byte("a\nb\nc\nd\ne\n"), 0o644)
 	assert.NoError(t, err)
 	temp_repo.RunGit(t, dir, "add", "file.txt")
-	temp_repo.RunGit(t, dir, "commit", "-m", "add file")
+	temp_repo.RunGit(t, dir, "commit", "-m", "chore: add file")
 
 	err = os.WriteFile(path, []byte("A\nb\nc\nd\nE\n"), 0o644)
 	assert.NoError(t, err)

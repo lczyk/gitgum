@@ -86,7 +86,7 @@ func TestCleanCommand_Execute(t *testing.T) {
 			setup: func(t *testing.T, dir string) {
 				temp_repo.WriteFile(t, dir, ".gitignore", "*.log\n")
 				temp_repo.RunGit(t, dir, "add", ".gitignore")
-				temp_repo.RunGit(t, dir, "commit", "-m", "add gitignore")
+				temp_repo.RunGit(t, dir, "commit", "-m", "chore: add gitignore")
 				temp_repo.WriteFile(t, dir, "test.log", "log\n")
 				temp_repo.WriteFile(t, dir, "untracked.txt", "untracked\n")
 			},
@@ -100,7 +100,7 @@ func TestCleanCommand_Execute(t *testing.T) {
 			setup: func(t *testing.T, dir string) {
 				temp_repo.WriteFile(t, dir, ".gitignore", "*.log\n")
 				temp_repo.RunGit(t, dir, "add", ".gitignore")
-				temp_repo.RunGit(t, dir, "commit", "-m", "add gitignore")
+				temp_repo.RunGit(t, dir, "commit", "-m", "chore: add gitignore")
 				temp_repo.WriteFile(t, dir, "test.log", "log\n")
 				temp_repo.WriteFile(t, dir, "untracked.txt", "untracked\n")
 			},
@@ -114,7 +114,7 @@ func TestCleanCommand_Execute(t *testing.T) {
 			setup: func(t *testing.T, dir string) {
 				temp_repo.WriteFile(t, dir, ".gitignore", "*.log\n")
 				temp_repo.RunGit(t, dir, "add", ".gitignore")
-				temp_repo.RunGit(t, dir, "commit", "-m", "add gitignore")
+				temp_repo.RunGit(t, dir, "commit", "-m", "chore: add gitignore")
 				temp_repo.WriteFile(t, dir, "README.md", "modified\n")
 				temp_repo.WriteFile(t, dir, "untracked.txt", "untracked\n")
 				temp_repo.WriteFile(t, dir, "test.log", "log\n")

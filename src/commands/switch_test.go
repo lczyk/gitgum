@@ -102,7 +102,7 @@ func TestSwitchCommand_Execute_PicksLocalBranch(t *testing.T) {
 func TestResolveCurrentBranchContext_DetachedHEAD(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)
-	temp_repo.CreateCommit(t, dir, "a.txt", "a", "second")
+	temp_repo.CreateCommit(t, dir, "a.txt", "a", "chore: second")
 	temp_repo.RunGit(t, dir, "checkout", "--detach", "HEAD~1")
 
 	currentBranch, trackingRemote, statusLine, err := resolveCurrentBranchContext(git.Repo{Dir: dir})

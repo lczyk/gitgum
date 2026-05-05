@@ -82,7 +82,7 @@ func initRepoAt(t testing.TB, dir string) {
 	initEmptyAt(t, dir)
 	WriteFile(t, dir, "README.md", "# test repo\n")
 	RunGit(t, dir, "add", "README.md")
-	RunGit(t, dir, "commit", "-m", "initial commit")
+	RunGit(t, dir, "commit", "-m", "chore: init")
 }
 
 // RunGit runs a git command inside dir and returns its combined output.

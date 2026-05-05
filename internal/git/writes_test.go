@@ -34,26 +34,26 @@ func TestCommit_WithStagedFile(t *testing.T) {
 	temp_repo.WriteFile(t, dir, "foo.txt", "x")
 	temp_repo.RunGit(t, dir, "add", "foo.txt")
 
-	assert.NoError(t, git.Repo{Dir: dir}.Commit("add foo"))
+	assert.NoError(t, git.Repo{Dir: dir}.Commit("chore: add foo"))
 
 	subject := strings.TrimSpace(temp_repo.RunGit(t, dir, "log", "-1", "--format=%s"))
-	assert.Equal(t, subject, "add foo")
+	assert.Equal(t, subject, "chore: add foo")
 }
 
 func TestCommitEmpty_NoChanges(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)
 
-	assert.NoError(t, git.Repo{Dir: dir}.CommitEmpty("empty bump"))
+	assert.NoError(t, git.Repo{Dir: dir}.CommitEmpty("chore: empty bump"))
 
 	subject := strings.TrimSpace(temp_repo.RunGit(t, dir, "log", "-1", "--format=%s"))
-	assert.Equal(t, subject, "empty bump")
+	assert.Equal(t, subject, "chore: empty bump")
 }
 
 func TestResetHard_ToParent(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)
-	temp_repo.CreateCommit(t, dir, "second.txt", "x", "second")
+	temp_repo.CreateCommit(t, dir, "second.txt", "x", "chore: second")
 	firstSHA := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "HEAD~1"))
 
 	assert.NoError(t, git.Repo{Dir: dir}.ResetHard("HEAD~1"))

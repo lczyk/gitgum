@@ -15,7 +15,7 @@ func TestIsBranchAheadOfRemote(t *testing.T) {
 	t.Run("ahead", func(t *testing.T) {
 		t.Parallel()
 		local, _ := temp_repo.NewRepoWithRemote(t)
-		temp_repo.CreateCommit(t, local, "ahead.txt", "x", "ahead commit")
+		temp_repo.CreateCommit(t, local, "ahead.txt", "x", "chore: ahead commit")
 
 		ahead, err := git.Repo{Dir: local}.IsBranchAheadOfRemote("main", "origin/main")
 		assert.NoError(t, err)

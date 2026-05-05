@@ -26,7 +26,7 @@ func TestListCommits(t *testing.T) {
 				for i := 1; i <= 3; i++ {
 					temp_repo.CreateCommit(t, dir,
 						fmt.Sprintf("file%d.txt", i), "content\n",
-						fmt.Sprintf("Commit %d", i))
+						fmt.Sprintf("chore: Commit %d", i))
 				}
 
 				return "feature", "main"
@@ -71,7 +71,7 @@ func TestListCommits(t *testing.T) {
 			for i := range 3 {
 				temp_repo.CreateCommit(t, dir,
 					fmt.Sprintf("ordered%c.txt", 'a'+i), "content\n",
-					fmt.Sprintf("Ordered commit %c", 'A'+i))
+					fmt.Sprintf("chore: Ordered commit %c", 'A'+i))
 				sha := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "HEAD"))
 				wantSHAs = append(wantSHAs, sha)
 			}
@@ -109,7 +109,7 @@ func TestReplayListCommand_Execute(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)
 	temp_repo.RunGit(t, dir, "checkout", "-b", "feature")
-	temp_repo.CreateCommit(t, dir, "file.txt", "content\n", "Test commit")
+	temp_repo.CreateCommit(t, dir, "file.txt", "content\n", "chore: Test commit")
 
 	cmd := &ReplayListCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
 	cmd.Args.BranchA = "feature"
