@@ -130,16 +130,18 @@ func BenchmarkFindAll_Sweep(b *testing.B) {
 		}
 	}
 
-	// Single unicode sweep at one size — confirms order-of-magnitude cost
-	// versus ASCII without exploding the matrix.
-	haystackU := unicodeHaystack(1000)
-	b.Run("unicode/n=1000/single_word_hits_some", func(b *testing.B) {
-		b.ReportAllocs()
-		b.ResetTimer()
-		for b.Loop() {
-			_ = matching.FindAll("問題", haystackU)
-		}
-	})
+	// Unicode sweep at all sizes — non-ASCII haystacks exercise the
+	// containsFold fallback path.
+	for _, n := range sizes {
+		haystackU := unicodeHaystack(n)
+		b.Run(fmt.Sprintf("unicode/n=%d/single_word_hits_some", n), func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				_ = matching.FindAll("問題", haystackU)
+			}
+		})
+	}
 }
 
 // BenchmarkFindAllLower mirrors BenchmarkFindAll_Sweep with a pre-lowercased
