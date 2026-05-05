@@ -25,8 +25,16 @@ func (e *Engine) Layout(g Graph) LayoutResult {
 	}
 
 	// Slab-allocate nodeState in one shot, then hand out pointers into it.
-	// Replaces N small heap allocs with one.
+	// Replaces N small heap allocs with one. Same trick for the children
+	// slices: one shared backing array, each ns gets a zero-length sub-slice
+	// with cap == its child count so appends never realloc.
 	slab := make([]nodeState, len(g.Nodes))
+	totalChildren := 0
+	for _, n := range g.Nodes {
+		totalChildren += len(n.Parents)
+	}
+	childSlab := make([]*nodeState, totalChildren)
+	slabOff := 0
 	for i := range g.Nodes {
 		n := &g.Nodes[i]
 		ns := &slab[i]
@@ -34,7 +42,8 @@ func (e *Engine) Layout(g Graph) LayoutResult {
 		ns.row = -1
 		ns.col = -1
 		if c := childCount[n.ID]; c > 0 {
-			ns.children = make([]*nodeState, 0, c)
+			ns.children = childSlab[slabOff : slabOff : slabOff+c]
+			slabOff += c
 		}
 		st.idx[n.ID] = ns
 		st.nodes = append(st.nodes, ns)
