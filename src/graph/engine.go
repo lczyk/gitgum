@@ -24,9 +24,15 @@ func (e *Engine) Layout(g Graph) LayoutResult {
 		}
 	}
 
+	// Slab-allocate nodeState in one shot, then hand out pointers into it.
+	// Replaces N small heap allocs with one.
+	slab := make([]nodeState, len(g.Nodes))
 	for i := range g.Nodes {
 		n := &g.Nodes[i]
-		ns := &nodeState{Node: n, row: -1, col: -1}
+		ns := &slab[i]
+		ns.Node = n
+		ns.row = -1
+		ns.col = -1
 		if c := childCount[n.ID]; c > 0 {
 			ns.children = make([]*nodeState, 0, c)
 		}
