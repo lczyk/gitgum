@@ -111,7 +111,7 @@ func renderRow(row Row, numCols int, cs ColorScheme) string {
 			b.WriteByte(' ')
 			b.WriteString(cs(KindSubject, rest))
 		}
-	} else {
+	} else if rest != "" {
 		b.WriteByte(' ')
 		b.WriteString(cs(KindSubject, rest))
 	}

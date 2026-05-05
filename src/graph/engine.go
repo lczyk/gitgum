@@ -305,49 +305,52 @@ func (st *layoutState) compactColumns() {
 	if st.numCols < 2 {
 		return
 	}
-	type colRange struct {
-		min, max  int
-		mergedTo  int
-		hasCommit bool
+	// Build per-col activity (rows where a vertical line / commit exists)
+	// using current col assignments. Two cols can share a lane iff their
+	// activity sets are disjoint -- this is stricter than min/max overlap
+	// because it accounts for fork-extension rows above the first commit.
+	order := make([]*nodeState, len(st.nodes))
+	copy(order, st.nodes)
+	sort.Slice(order, func(i, j int) bool { return order[i].row < order[j].row })
+	activity := st.columnActivity(order)
+	mergedTo := make([]int, st.numCols)
+	for i := range mergedTo {
+		mergedTo[i] = i
 	}
-	ranges := make([]colRange, st.numCols)
-	for i := range ranges {
-		ranges[i].mergedTo = i
-	}
+	hasCommit := make([]bool, st.numCols)
 	for _, ns := range st.nodes {
-		c := ns.col
-		if !ranges[c].hasCommit || ns.row < ranges[c].min {
-			ranges[c].min = ns.row
+		hasCommit[ns.col] = true
+	}
+	overlaps := func(a, b map[int]bool) bool {
+		if len(a) > len(b) {
+			a, b = b, a
 		}
-		if !ranges[c].hasCommit || ns.row > ranges[c].max {
-			ranges[c].max = ns.row
+		for r := range a {
+			if b[r] {
+				return true
+			}
 		}
-		ranges[c].hasCommit = true
+		return false
 	}
 	for c := 1; c < st.numCols; c++ {
-		if ranges[c].mergedTo != c || !ranges[c].hasCommit {
+		if mergedTo[c] != c || !hasCommit[c] {
 			continue
 		}
 		for cp := 0; cp < c; cp++ {
-			if ranges[cp].mergedTo != cp || !ranges[cp].hasCommit {
+			if mergedTo[cp] != cp || !hasCommit[cp] {
 				continue
 			}
-			// Disjoint commit-row ranges can share a lane: sparse per-col
-			// activity prevents pipes from being drawn between them.
-			if ranges[cp].max < ranges[c].min || ranges[c].max < ranges[cp].min {
-				ranges[c].mergedTo = cp
-				if ranges[c].min < ranges[cp].min {
-					ranges[cp].min = ranges[c].min
-				}
-				if ranges[c].max > ranges[cp].max {
-					ranges[cp].max = ranges[c].max
+			if !overlaps(activity[c], activity[cp]) {
+				mergedTo[c] = cp
+				for r := range activity[c] {
+					activity[cp][r] = true
 				}
 				break
 			}
 		}
 	}
 	for _, ns := range st.nodes {
-		ns.col = ranges[ns.col].mergedTo
+		ns.col = mergedTo[ns.col]
 	}
 	used := map[int]bool{}
 	for _, ns := range st.nodes {
