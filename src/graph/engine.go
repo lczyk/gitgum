@@ -14,45 +14,46 @@ func (e *Engine) Layout(g Graph) LayoutResult {
 		nodes: make([]*nodeState, 0, len(g.Nodes)),
 	}
 
-	// Count children per parent ahead of time so we can pre-size each
-	// children slice exactly. Saves per-append slice-growth allocs in
-	// scenarios where parents have multiple children.
-	childCount := make(map[string]int, len(g.Nodes))
-	for _, n := range g.Nodes {
-		for _, pid := range n.Parents {
-			childCount[pid]++
-		}
-	}
-
 	// Slab-allocate nodeState in one shot, then hand out pointers into it.
-	// Replaces N small heap allocs with one. Same trick for the children
-	// slices: one shared backing array, each ns gets a zero-length sub-slice
-	// with cap == its child count so appends never realloc.
+	// Replaces N small heap allocs with one.
 	slab := make([]nodeState, len(g.Nodes))
-	totalChildren := 0
-	for _, n := range g.Nodes {
-		totalChildren += len(n.Parents)
-	}
-	childSlab := make([]*nodeState, totalChildren)
-	slabOff := 0
 	for i := range g.Nodes {
 		n := &g.Nodes[i]
 		ns := &slab[i]
 		ns.Node = n
 		ns.row = -1
 		ns.col = -1
-		if c := childCount[n.ID]; c > 0 {
-			ns.children = childSlab[slabOff : slabOff : slabOff+c]
-			slabOff += c
-		}
 		st.idx[n.ID] = ns
 		st.nodes = append(st.nodes, ns)
 	}
 
-	// Build child→parent reverse edges. Iterate st.nodes (deterministic
-	// order) instead of st.idx (random map iteration) so children land in
-	// a stable sequence; avoids needing the post-sort entirely for cases
-	// where Date/ID ordering already aligns.
+	// First reverse-edge pass: tally child-count per parent on its
+	// nodeState directly. Avoids a separate map[string]int.
+	totalChildren := 0
+	for _, ns := range st.nodes {
+		for _, pid := range ns.Parents {
+			if p, ok := st.idx[pid]; ok {
+				p.childCap++
+				totalChildren++
+			}
+		}
+	}
+
+	// Children slab: one shared backing array, each ns gets a zero-length
+	// sub-slice with cap == its child count so appends never realloc.
+	childSlab := make([]*nodeState, totalChildren)
+	slabOff := 0
+	for i := range slab {
+		ns := &slab[i]
+		if c := ns.childCap; c > 0 {
+			ns.children = childSlab[slabOff : slabOff : slabOff+c]
+			slabOff += c
+		}
+	}
+
+	// Second pass: actually append children. Iterate st.nodes (deterministic
+	// order) instead of st.idx (random map iteration) so children land in a
+	// stable sequence.
 	for _, ns := range st.nodes {
 		for _, pid := range ns.Parents {
 			if p, ok := st.idx[pid]; ok {
@@ -130,6 +131,7 @@ type nodeState struct {
 	*Node
 	row      int
 	col      int
+	childCap int
 	children []*nodeState
 }
 
