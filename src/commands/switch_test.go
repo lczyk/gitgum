@@ -1,8 +1,11 @@
 package commands
 
 import (
+	"bytes"
+	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lczyk/assert"
 	"github.com/lczyk/gitgum/internal/git"
@@ -94,6 +97,56 @@ func TestSwitchCommand_Execute_PicksLocalBranch(t *testing.T) {
 	assert.ContainsString(t, buf.String(), "Switched to branch 'feature'.")
 	assert.Equal(t, len(stub.selectCalls), 1)
 	assert.Equal(t, stub.selectCalls[0].Stream, true)
+}
+
+// Same-name branch on a different remote must appear even when the current
+// branch is checked out. Regression: checkedOut["main"] was true (current
+// branch is checked out), but the checkedOut filter in streamRemoteBranches
+// dropped origin/main when local main tracked other/main — the filter didn't
+// distinguish "checked out in another worktree" from "checked out here".
+func TestStreamBranches_SameNameOnOtherRemote(t *testing.T) {
+	t.Parallel()
+
+	local, remote1 := temp_repo.NewRepoWithRemote(t)
+
+	remote2 := t.TempDir()
+	temp_repo.RunGit(t, remote2, "clone", "--bare", remote1, ".")
+	temp_repo.RunGit(t, local, "remote", "add", "other", remote2)
+	temp_repo.RunGit(t, local, "fetch", "other")
+	temp_repo.RunGit(t, local, "branch", "--set-upstream-to=other/main", "main")
+
+	r := git.Repo{Dir: local}
+	trackingRemote, err := r.GetBranchTrackingRemote("main")
+	assert.NoError(t, err)
+	assert.Equal(t, trackingRemote, "other")
+
+	remotes, err := r.GetRemotes()
+	assert.NoError(t, err)
+
+	var errBuf bytes.Buffer
+	src := streamBranches(context.Background(), r, &errBuf, "main", trackingRemote, remotes)
+
+	var items []string
+	for i := 0; i < 50; i++ {
+		time.Sleep(10 * time.Millisecond)
+		items = src.Snapshot()
+		if len(items) >= 1 {
+			break
+		}
+	}
+
+	hasOriginMain := false
+	hasOtherMain := false
+	for _, item := range items {
+		if strings.Contains(item, "origin/main") {
+			hasOriginMain = true
+		}
+		if strings.Contains(item, "other/main") {
+			hasOtherMain = true
+		}
+	}
+	assert.That(t, hasOriginMain, "origin/main should appear when local main tracks other/main")
+	assert.That(t, !hasOtherMain, "other/main should not appear (current branch tracks it)")
 }
 
 // Regression: in detached HEAD, rev-parse --abbrev-ref returns "HEAD" and
