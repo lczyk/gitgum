@@ -89,6 +89,10 @@
     "SGRIs",
     "mhello",
     "strikethrough",
+    "smhdwy",
+    "approxidate",
+    "objectname",
+    "refname",
     "serialise"
   ]
 }
