@@ -132,6 +132,30 @@ func TestHandleFollowKey(t *testing.T) {
 	}
 }
 
+func TestSnapshotRefs(t *testing.T) {
+	dir := temp_repo.NewRepo(t)
+	temp_repo.CreateCommit(t, dir, "a.txt", "a\n", "Add A")
+	cmd := &TreeCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
+
+	first, err := cmd.snapshotRefs()
+	assert.NoError(t, err)
+	assert.That(t, first != "", "snapshot should be non-empty")
+
+	// no ref change -> identical fingerprint
+	second, err := cmd.snapshotRefs()
+	assert.NoError(t, err)
+	assert.Equal(t, first, second)
+
+	// new commit -> fingerprint changes
+	temp_repo.CreateCommit(t, dir, "b.txt", "b\n", "Add B")
+	third, err := cmd.snapshotRefs()
+	assert.NoError(t, err)
+	assert.That(t, first != third, "snapshot should change after new commit")
+}
+
+// writePlain / writeAnsi are tested via a headless litescreen.
+// litescreen.New requires /dev/tty; use NewWithOptions w/ a discard sink.
+
 // page-size clamp: tiny screens fall back to page=1 so PgDn / PgUp don't
 // stall on weird geometries.
 func TestHandleFollowKey_TinyScreen(t *testing.T) {

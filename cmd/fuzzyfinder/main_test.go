@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"strings"
@@ -52,6 +53,26 @@ func TestStreamItems_StripsAnsi(t *testing.T) {
 	assert.NoError(t, err)
 	want := []string{"red", "plain", "boldgreen"}
 	assert.EqualArrays(t, items, want)
+}
+
+func TestReadFirstLine_StripsAnsi(t *testing.T) {
+	r := bufio.NewReader(strings.NewReader("\x1b[31mred\x1b[0m\nplain\n"))
+	got, err := readFirstLine(r, true)
+	assert.NoError(t, err)
+	assert.Equal(t, got, "red")
+}
+
+func TestReadFirstLine_KeepsAnsiWhenStripDisabled(t *testing.T) {
+	r := bufio.NewReader(strings.NewReader("\x1b[31mred\x1b[0m\n"))
+	got, err := readFirstLine(r, false)
+	assert.NoError(t, err)
+	assert.That(t, strings.Contains(got, "\x1b["), "expected raw escape preserved, got %q", got)
+}
+
+func TestParseFlags_Ansi(t *testing.T) {
+	cfg, err := parseFlags([]string{"--ansi"}, &bytes.Buffer{})
+	assert.NoError(t, err)
+	assert.That(t, cfg.opt.Ansi, "Ansi should be true")
 }
 
 func TestStreamItems_KeepsAnsiWhenStripDisabled(t *testing.T) {
