@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"os"
 	"errors"
 	"fmt"
 	"io"
@@ -81,6 +82,9 @@ func (t *TreeCommand) Execute(args []string) error {
 }
 
 func (t *TreeCommand) renderOnce(w io.Writer, sinceArg string, maxCount int) error {
+	if os.Getenv("GG_TREE_NATIVE") == "1" {
+		return t.renderNative(w, sinceArg, maxCount)
+	}
 	colorFlag := "--color=never"
 	if colorEnabled() {
 		colorFlag = "--color=always"
