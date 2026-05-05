@@ -518,20 +518,16 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 			}
 		}
 
-		// Lane terminations: any lane whose endRow == rowNum-1 AND consumer
-		// at this row's commit (different col).
-		for c := 0; c < st.numCols; c++ {
-			for _, l := range st.lanes[c] {
-				if l.consumer == nil {
+		// Termination staggers: for each commit at rowNum, each non-first
+		// parent at a different col contributes a termination edge. Emit d
+		// stagger rows for col distance d.
+		for _, ns := range commitsAt[rowNum] {
+			for i := 1; i < len(ns.Parents); i++ {
+				p := st.idx[ns.Parents[i]]
+				if p == nil || p.col == ns.col {
 					continue
 				}
-				if l.consumer.row != rowNum {
-					continue
-				}
-				if l.endRow >= rowNum {
-					continue // commit at this row IS in the lane (consumer same col)
-				}
-				rows = append(rows, st.termRow(l, rowNum, active))
+				rows = append(rows, st.termRows(p, ns, rowNum, active)...)
 			}
 		}
 
@@ -597,32 +593,43 @@ func (st *layoutState) forkRows(l lane, rowNum int, active func(int, int) bool) 
 	return rows
 }
 
-// termRow renders the stagger row terminating lane l into l.consumer.
-// The diagonal sits at the higher-numbered col.
-func (st *layoutState) termRow(l lane, rowNum int, active func(int, int) bool) Row {
-	glyphs := make([]Glyph, st.numCols)
-	consumerCol := l.consumer.col
-	diagCol := l.col
-	straightCol := consumerCol
-	glyph := GlyphSlash
-	if consumerCol > l.col {
-		diagCol = consumerCol
-		straightCol = l.col
-		glyph = GlyphBackslash
+// termRows renders the stagger row(s) terminating an edge from parent p
+// into commit ns when they sit on different cols. The diagonal glyph
+// sits at the parent's col on step 0 and steps toward ns.col on later
+// steps; this matches git's `|/` (or `|\`) at the dying col.
+func (st *layoutState) termRows(p, ns *nodeState, rowNum int, active func(int, int) bool) []Row {
+	if p.col == ns.col {
+		return nil
 	}
-	for c := 0; c < st.numCols; c++ {
-		switch {
-		case c == diagCol:
-			glyphs[c] = glyph
-		case c == straightCol:
-			glyphs[c] = GlyphPipe
-		case active(rowNum, c) || active(rowNum-1, c):
-			glyphs[c] = GlyphPipe
-		default:
-			glyphs[c] = GlyphSpace
+	dir := 1
+	glyph := GlyphBackslash
+	if p.col > ns.col {
+		dir = -1
+		glyph = GlyphSlash
+	}
+	d := ns.col - p.col
+	if d < 0 {
+		d = -d
+	}
+	rows := make([]Row, 0, d)
+	for i := 0; i < d; i++ {
+		stepCol := p.col + dir*i
+		glyphs := make([]Glyph, st.numCols)
+		for c := 0; c < st.numCols; c++ {
+			switch {
+			case c == stepCol:
+				glyphs[c] = glyph
+			case c == p.col || c == ns.col:
+				glyphs[c] = GlyphPipe
+			case active(rowNum, c) || active(rowNum-1, c):
+				glyphs[c] = GlyphPipe
+			default:
+				glyphs[c] = GlyphSpace
+			}
 		}
+		rows = append(rows, Row{Glyphs: glyphs})
 	}
-	return Row{Glyphs: glyphs}
+	return rows
 }
 
 // ------ helpers ------------------------------------------------------------------------------------------------------------
