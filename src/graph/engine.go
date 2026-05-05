@@ -218,23 +218,10 @@ func (st *layoutState) assignColumns() {
 }
 
 func (st *layoutState) assignOne(ns *nodeState, colInfo []columnInfo) {
-	if ns.LayoutHint != "" {
-		// Match existing column claimed by this hint.
-		for c, ci := range colInfo {
-			if ci.hint == ns.LayoutHint {
-				ns.col = c
-				return
-			}
-		}
-		// No matching col yet. If a first-parent child has a col, inherit
-		// that (mid-history nodes carry hints from their branch but should
-		// stay on the mainline lane rather than starting a fresh col).
-		// Tip nodes with no first-parent child fall through to allocate.
-	}
-
-	// Child continuity: among first-parent children (those that descend from
-	// ns via mainline), pick the lowest col so ns stays on the canonical
-	// lane. Fall back to any child if no first-parent child has a col yet.
+	// Child continuity wins over hint matching: a node with first-parent
+	// children always belongs on the mainline lane that descends from it.
+	// Hint matching is for tips and side-branch heads where no first-parent
+	// child anchors the col yet.
 	bestCol := -1
 	for _, child := range ns.children {
 		if child.col < 0 {
@@ -252,9 +239,15 @@ func (st *layoutState) assignOne(ns *nodeState, colInfo []columnInfo) {
 		return
 	}
 
-	// New column. Reached when ns has no first-parent child with an
-	// assigned col -- typical for branch tips and side-branch nodes whose
-	// only descendant is a merge that doesn't continue the lane.
+	if ns.LayoutHint != "" {
+		for c, ci := range colInfo {
+			if ci.hint == ns.LayoutHint {
+				ns.col = c
+				return
+			}
+		}
+	}
+
 	ns.col = st.numCols
 	st.numCols++
 }
@@ -445,6 +438,19 @@ func (st *layoutState) buildLanes(order []*nodeState) {
 				introRow = prevEnd + 1
 			}
 		}
+		// Multi-step forks (col distance > 1) collapse the lane to a single
+		// row (the commit row) and emit d stagger rows in the gap right
+		// above. Otherwise the destination col would render a stray pipe
+		// at the rows between parent and commit.
+		if introCol >= 0 {
+			d := c - introCol
+			if d < 0 {
+				d = -d
+			}
+			if d > 1 {
+				introRow = ns.row
+			}
+		}
 		l := lane{col: c, introRow: introRow, endRow: ns.row, introCol: introCol}
 		st.lanes[c] = append(st.lanes[c], l)
 		openIdx[c] = len(st.lanes[c]) - 1
@@ -508,7 +514,7 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 				if l.introRow != rowNum || l.introCol < 0 {
 					continue
 				}
-				rows = append(rows, st.forkRow(l, rowNum, active))
+				rows = append(rows, st.forkRows(l, rowNum, active)...)
 			}
 		}
 
@@ -552,31 +558,43 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 	return rows
 }
 
-// forkRow renders the stagger row introducing lane l. The diagonal sits
-// at the higher-numbered col (l.col vs l.introCol).
-func (st *layoutState) forkRow(l lane, rowNum int, active func(int, int) bool) Row {
-	glyphs := make([]Glyph, st.numCols)
-	diagCol := l.col
-	straightCol := l.introCol
+// forkRows renders the stagger row(s) introducing lane l. For col distance
+// d > 1 (cross-routing), emits d rows: each step moves the diagonal one
+// col closer to l.col. The destination col is pre-rendered as a vertical
+// pipe in earlier steps so the line "appears" at l.col before the diagonal
+// physically arrives -- this is git's `|\|` then `| |\` pattern.
+func (st *layoutState) forkRows(l lane, rowNum int, active func(int, int) bool) []Row {
+	dir := 1
 	glyph := GlyphBackslash
 	if l.introCol > l.col {
-		diagCol = l.introCol
-		straightCol = l.col
+		dir = -1
 		glyph = GlyphSlash
 	}
-	for c := 0; c < st.numCols; c++ {
-		switch {
-		case c == diagCol:
-			glyphs[c] = glyph
-		case c == straightCol:
-			glyphs[c] = GlyphPipe
-		case active(rowNum, c) || active(rowNum-1, c):
-			glyphs[c] = GlyphPipe
-		default:
-			glyphs[c] = GlyphSpace
-		}
+	d := l.col - l.introCol
+	if d < 0 {
+		d = -d
 	}
-	return Row{Glyphs: glyphs}
+	rows := make([]Row, 0, d)
+	for i := 0; i < d; i++ {
+		stepCol := l.introCol + dir*(i+1)
+		glyphs := make([]Glyph, st.numCols)
+		for c := 0; c < st.numCols; c++ {
+			switch {
+			case c == stepCol:
+				glyphs[c] = glyph
+			case c == l.introCol:
+				glyphs[c] = GlyphPipe
+			case c == l.col:
+				glyphs[c] = GlyphPipe
+			case active(rowNum, c) || active(rowNum-1, c):
+				glyphs[c] = GlyphPipe
+			default:
+				glyphs[c] = GlyphSpace
+			}
+		}
+		rows = append(rows, Row{Glyphs: glyphs})
+	}
+	return rows
 }
 
 // termRow renders the stagger row terminating lane l into l.consumer.

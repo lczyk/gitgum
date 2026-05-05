@@ -20,23 +20,25 @@ func Render(lr LayoutResult, cs ColorScheme) []string {
 func renderRow(row Row, numCols int, cs ColorScheme) string {
 	var b strings.Builder
 
-	// Build slot grid: each col occupies 2 chars (glyph + trailing space).
-	// Diagonals (`/`, `\`) slide left into the previous col's trailing space
-	// to render adjacent to a `|`, matching `git log --graph` output.
-	slots := make([]Glyph, 2*numCols)
-	for i := range slots {
-		slots[i] = GlyphSpace
-	}
+	// Build slot grid by packing left-to-right. Diagonals (`/`, `\`) slide
+	// into the previous col's trailing-space slot, and the next col's
+	// primary slides up too -- this is git's compressed `|\|` cross-routing
+	// pattern. Without packing, multi-col layouts get extra whitespace.
+	slots := make([]Glyph, 0, 2*numCols)
 	for c := 0; c < numCols; c++ {
 		g := row.Glyphs[c]
-		if g == GlyphSpace {
+		if (g == GlyphSlash || g == GlyphBackslash) && len(slots) > 0 && slots[len(slots)-1] == GlyphSpace {
+			slots[len(slots)-1] = g
 			continue
 		}
-		pos := 2 * c
-		if (g == GlyphSlash || g == GlyphBackslash) && c > 0 {
-			pos = 2*c - 1
+		if g == GlyphSpace {
+			slots = append(slots, GlyphSpace, GlyphSpace)
+		} else {
+			slots = append(slots, g, GlyphSpace)
 		}
-		slots[pos] = g
+	}
+	for len(slots) < 2*numCols {
+		slots = append(slots, GlyphSpace)
 	}
 
 	if row.Commit == nil {
