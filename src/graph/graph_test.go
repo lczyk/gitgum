@@ -19,8 +19,7 @@ func TestRender_Linear(t *testing.T) {
 		{ID: "c", Label: "c third commit", Parents: []string{"b"}, Date: "2020-01-03T00:00:00Z"},
 	}
 
-	var e graph.Engine
-	lr := e.Layout(graph.Graph{Nodes: nodes})
+	lr := graph.Layout(nodes)
 	lines := graph.Render(lr, nil)
 
 	// Oldest first: a, then b, then c. No branching, so all in column 0.
@@ -56,8 +55,7 @@ func TestRender_Fork(t *testing.T) {
 		{ID: "c", Label: "c branch2", Parents: []string{"a"}, Date: "2020-01-02T00:00:01Z"},
 	}
 
-	var e graph.Engine
-	lr := e.Layout(graph.Graph{Nodes: nodes})
+	lr := graph.Layout(nodes)
 	lines := graph.Render(lr, nil)
 
 	// Two columns: main branch (a→b) in col 0, branch2 (c) in col 1.
@@ -84,8 +82,7 @@ func TestRender_Merge(t *testing.T) {
 		{ID: "d", Label: "d merge", Parents: []string{"b", "c"}, Date: "2020-01-03T00:00:00Z"},
 	}
 
-	var e graph.Engine
-	lr := e.Layout(graph.Graph{Nodes: nodes})
+	lr := graph.Layout(nodes)
 	lines := graph.Render(lr, nil)
 
 	// Should have 2 columns at the merge point.
@@ -120,8 +117,7 @@ func TestRender_ColorScheme(t *testing.T) {
 		return text
 	}
 
-	var e graph.Engine
-	lr := e.Layout(graph.Graph{Nodes: nodes})
+	lr := graph.Layout(nodes)
 	lines := graph.Render(lr, cs)
 
 	assert.Equal(t, len(lines), 1)
@@ -135,8 +131,7 @@ func TestRender_SingleNode(t *testing.T) {
 		{ID: "root", Label: "root initial", Parents: nil, Date: "2020-01-01T00:00:00Z"},
 	}
 
-	var e graph.Engine
-	lr := e.Layout(graph.Graph{Nodes: nodes})
+	lr := graph.Layout(nodes)
 	lines := graph.Render(lr, nil)
 
 	assert.Equal(t, len(lines), 1)

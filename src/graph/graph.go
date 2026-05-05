@@ -2,21 +2,31 @@
 // knowledge of git -- it takes abstract nodes with parent edges and produces
 // ASCII graph output. The layout algorithm is a simplified column-assignment
 // pass informed by git's graph.c, adapted for full-DAG (non-streaming) use.
+//
+// Typical usage:
+//
+//	lr := graph.Layout(nodes)
+//	lines := graph.Render(lr, nil) // or pass a ColorScheme
 package graph
 
-// Node represents a vertex in the commit DAG. Parents is a forward edge list
-// (this → parent). The graph engine builds reverse (child) edges internally.
+// Node is a vertex in the commit DAG. Parents is a forward edge list
+// (this -> parent). The engine builds reverse (child) edges internally.
+//
+// LayoutHint is an optional branch-name string used to keep tip commits on
+// a stable col across calls. Two nodes carrying the same non-empty hint are
+// pulled onto the same lane; mid-history nodes inherit from first-parent
+// children regardless of hint. Empty disables hinting.
+//
+// IDs must be unique within a single Layout call -- duplicates panic.
+// Cycles, self-parent edges, and parents that don't appear in the input
+// are accepted but the resulting layout is unspecified (see edge tests
+// for pinned behavior).
 type Node struct {
-	ID         string // opaque identifier
-	Label      string // display text appended after graph glyphs
+	ID         string
+	Label      string   // display text appended after graph glyphs
 	Parents    []string // parent IDs (empty for roots)
 	Date       string   // sortable date string (ISO 8601) for ordering
-	LayoutHint string   // optional hint for lane stability (empty = auto)
-}
-
-// Graph is the input to the layout engine.
-type Graph struct {
-	Nodes []Node
+	LayoutHint string
 }
 
 // Glyph is a single graph-drawing character in one column of one row.
@@ -30,6 +40,9 @@ const (
 	GlyphBackslash              // "\"
 )
 
+// String returns the single-character ASCII representation of g. Panics
+// on values outside the iota range -- those represent internal corruption
+// rather than user error.
 func (g Glyph) String() string {
 	switch g {
 	case GlyphSpace:
@@ -43,7 +56,7 @@ func (g Glyph) String() string {
 	case GlyphBackslash:
 		return "\\"
 	}
-	return " "
+	panic("graph: unknown Glyph value")
 }
 
 // GlyphKind classifies a piece of output text for the ColorScheme function.
@@ -56,18 +69,23 @@ const (
 	KindSubject                  // commit subject
 )
 
-// ColorScheme is called for each text fragment during rendering. Return the
-// text unchanged if color is not desired, or wrapped in ANSI SGR escapes.
+// ColorScheme is called for each text fragment during rendering. Return
+// the text unchanged for plain output, or wrap it in ANSI SGR escapes.
+// Called once per glyph (KindGraph), once per hash, once per ref block,
+// and once per subject -- callers should treat invocations as cheap.
 type ColorScheme func(kind GlyphKind, text string) string
 
-// Row is one output line. If Commit is nil, this is a continuation row
-// (only graph glyphs, no commit text).
+// Row is one output line. Commit is nil on stagger / continuation rows
+// (graph glyphs only). Commit, when non-nil, points back into the input
+// slice handed to Layout -- callers should not mutate the underlying
+// Node through it.
 type Row struct {
-	Commit *Node   // nil on continuation rows
+	Commit *Node
 	Glyphs []Glyph // len == LayoutResult.Columns
 }
 
-// LayoutResult is the computed output of the layout engine.
+// LayoutResult is the computed output of Layout. Rows is in oldest-first
+// display order. Columns is the maximum lane index used.
 type LayoutResult struct {
 	Rows    []Row
 	Columns int

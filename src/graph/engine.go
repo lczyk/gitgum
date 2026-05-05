@@ -2,23 +2,24 @@ package graph
 
 import "sort"
 
-type Engine struct{}
-
-func (e *Engine) Layout(g Graph) LayoutResult {
-	if len(g.Nodes) == 0 {
+// Layout takes a slice of Nodes and returns a layout result describing how
+// each commit maps to a (row, col) pair in the rendered output, plus any
+// stagger rows for fork / merge / catch-up edges.
+func Layout(nodes []Node) LayoutResult {
+	if len(nodes) == 0 {
 		return LayoutResult{}
 	}
 
 	st := &layoutState{
-		idx:   make(map[string]*nodeState, len(g.Nodes)),
-		nodes: make([]*nodeState, 0, len(g.Nodes)),
+		idx:   make(map[string]*nodeState, len(nodes)),
+		nodes: make([]*nodeState, 0, len(nodes)),
 	}
 
 	// Count children per parent ahead of time so we can pre-size each
 	// children slice exactly. Saves per-append slice-growth allocs in
 	// scenarios where parents have multiple children.
-	childCount := make(map[string]int, len(g.Nodes))
-	for _, n := range g.Nodes {
+	childCount := make(map[string]int, len(nodes))
+	for _, n := range nodes {
 		for _, pid := range n.Parents {
 			childCount[pid]++
 		}
@@ -28,15 +29,15 @@ func (e *Engine) Layout(g Graph) LayoutResult {
 	// Replaces N small heap allocs with one. Same trick for the children
 	// slices: one shared backing array, each ns gets a zero-length sub-slice
 	// with cap == its child count so appends never realloc.
-	slab := make([]nodeState, len(g.Nodes))
+	slab := make([]nodeState, len(nodes))
 	totalChildren := 0
-	for _, n := range g.Nodes {
+	for _, n := range nodes {
 		totalChildren += len(n.Parents)
 	}
 	childSlab := make([]*nodeState, totalChildren)
 	slabOff := 0
-	for i := range g.Nodes {
-		n := &g.Nodes[i]
+	for i := range nodes {
+		n := &nodes[i]
 		ns := &slab[i]
 		ns.Node = n
 		ns.row = -1
@@ -44,6 +45,9 @@ func (e *Engine) Layout(g Graph) LayoutResult {
 		if c := childCount[n.ID]; c > 0 {
 			ns.children = childSlab[slabOff : slabOff : slabOff+c]
 			slabOff += c
+		}
+		if _, dup := st.idx[n.ID]; dup {
+			panic("graph: duplicate Node.ID " + n.ID)
 		}
 		st.idx[n.ID] = ns
 		st.nodes = append(st.nodes, ns)
@@ -163,8 +167,6 @@ type lane struct {
 }
 
 // ------ phase 1: topological sort --------------------------------------------------------------------------
-
-// TODO: support --topo-order.
 
 func (st *layoutState) sort() {
 	n := len(st.nodes)
@@ -646,10 +648,6 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 		}
 	}
 
-	// Trim trailing empty rows.
-	for len(rows) > 0 && isEmptyRow(rows[len(rows)-1], st.numCols) {
-		rows = rows[:len(rows)-1]
-	}
 	return rows
 }
 
@@ -744,16 +742,3 @@ func (st *layoutState) termRows(p, ns *nodeState, rowNum int, active func(int, i
 	return rows
 }
 
-// ------ helpers ------------------------------------------------------------------------------------------------------------
-
-func isEmptyRow(r Row, numCols int) bool {
-	if r.Commit != nil {
-		return false
-	}
-	for c := 0; c < numCols; c++ {
-		if r.Glyphs[c] != GlyphSpace {
-			return false
-		}
-	}
-	return true
-}

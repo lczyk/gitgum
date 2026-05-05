@@ -81,16 +81,14 @@ func parallelBranches(k, length int) []graph.Node {
 func benchLayout(b *testing.B, nodes []graph.Node) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		var e graph.Engine
-		_ = e.Layout(graph.Graph{Nodes: nodes})
+		_ = graph.Layout(nodes)
 	}
 }
 
 func benchLayoutAndRender(b *testing.B, nodes []graph.Node) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		var e graph.Engine
-		lr := e.Layout(graph.Graph{Nodes: nodes})
+		lr := graph.Layout(nodes)
 		_ = graph.Render(lr, nil)
 	}
 }

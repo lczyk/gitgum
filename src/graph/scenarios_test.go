@@ -46,8 +46,7 @@ func itoa(n int) string {
 
 func assertGraph(t *testing.T, nodes []graph.Node, expected string) {
 	t.Helper()
-	var e graph.Engine
-	lr := e.Layout(graph.Graph{Nodes: nodes})
+	lr := graph.Layout(nodes)
 	lines := graph.Render(lr, nil)
 	got := stripTrailingSpaces(strings.Join(lines, "\n"))
 	expected = stripTrailingSpaces(strings.TrimRight(expected, "\n"))
@@ -184,8 +183,8 @@ func TestScenario_CrossMerge(t *testing.T) {
 		{ID: "a_merges_b", Label: "a_merges_b", Date: iso(4), Parents: []string{"a1", "b1"}, LayoutHint: "a"},
 		{ID: "main_merges_a", Label: "main_merges_a", Date: iso(5), Parents: []string{"base", "a_merges_b"}, LayoutHint: "main"},
 	}
-	// TODO: cross-merge layout requires `|\|` connector glyphs git produces;
-	// engine does not yet handle this column-routing case.
+	// Cross-merge: `|\|` cross-routing where col 2 opens lazily after a1's
+	// commit row, then `| |\` extends the diagonal one more col over.
 	expected := `* base
 |\
 | * a1
@@ -224,8 +223,7 @@ func TestScenario_Octopus(t *testing.T) {
 }
 
 func renderTo(nodes []graph.Node) string {
-	var e graph.Engine
-	lr := e.Layout(graph.Graph{Nodes: nodes})
+	lr := graph.Layout(nodes)
 	return strings.Join(graph.Render(lr, nil), "\n")
 }
 
@@ -295,18 +293,15 @@ func TestScenario_FastForward(t *testing.T) {
 
 func TestScenario_ThreeParallel(t *testing.T) {
 	t.Parallel()
-	// Three open branches forked from base, none merged. Git keeps a 2-col
-	// layout by reusing col 1 for each side branch (each gets its own |\
-	// fork stagger). Engine currently allocates separate cols for each
-	// since their fork-extension rows overlap.
+	// Three open branches forked from base, none merged. Each tip's lane on
+	// col 1 is independent (no overlap), so compaction reuses col 1 and
+	// each tip gets its own |\ fork stagger.
 	nodes := []graph.Node{
 		{ID: "base", Label: "base", Date: iso(1), LayoutHint: "main"},
 		{ID: "a1", Label: "a1", Date: iso(2), Parents: []string{"base"}, LayoutHint: "a"},
 		{ID: "b1", Label: "b1", Date: iso(3), Parents: []string{"base"}, LayoutHint: "b"},
 		{ID: "c1", Label: "c1", Date: iso(4), Parents: []string{"base"}, LayoutHint: "c"},
 	}
-	// TODO: engine: needs sequential col-1 reuse with separate fork
-	// staggers for each tip.
 	expected := `* base
 |\
 | * a1

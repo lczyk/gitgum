@@ -43,8 +43,7 @@ func (t *TreeCommand) renderNative(w io.Writer, sinceArg string, maxCount int) e
 	}
 
 	// Layout and render.
-	var eng graph.Engine
-	lr := eng.Layout(graph.Graph{Nodes: nodes})
+	lr := graph.Layout(nodes)
 
 	if os.Getenv("GG_DUMP_LAYOUT") == "1" {
 		fmt.Fprintf(os.Stderr, "columns=%d rows=%d\n", lr.Columns, len(lr.Rows))
