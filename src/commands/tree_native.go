@@ -160,8 +160,10 @@ func nativeColorScheme() graph.ColorScheme {
 	return func(k graph.GlyphKind, text string) string {
 		switch k {
 		case graph.KindGraph:
-			switch text {
-			case "|", "/", "\\":
+			// Render may pass a run of identical glyphs in one call. Wrap
+			// in red iff every byte is one of the line-drawing glyphs;
+			// otherwise leave plain (mixed runs include `*` or spaces).
+			if isAllLineGlyph(text) {
 				return ansiRed + text + ansiReset
 			}
 			return text
@@ -174,6 +176,22 @@ func nativeColorScheme() graph.ColorScheme {
 		}
 		return text
 	}
+}
+
+// isAllLineGlyph reports whether every byte of s is one of `|`, `/`, `\`.
+// Render may emit a run of identical line glyphs in one ColorScheme call.
+func isAllLineGlyph(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '|', '/', '\\':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // colorRefDecoration colors a "(refs...)" string per git's color.decorate
