@@ -280,7 +280,7 @@ func TestScenario_Tags(t *testing.T) {
 
 func TestScenario_FastForward(t *testing.T) {
 	t.Parallel()
-	// Plain linear chain — fast-forward looks identical to linear from the
+	// Plain linear chain -- fast-forward looks identical to linear from the
 	// graph engine's perspective (no merge commit).
 	nodes := []graph.Node{
 		{ID: "a", Label: "a", Date: iso(1)},
@@ -290,5 +290,171 @@ func TestScenario_FastForward(t *testing.T) {
 	expected := `* a
 * b
 * c`
+	assertGraph(t, nodes, expected)
+}
+
+func TestScenario_ThreeParallel(t *testing.T) {
+	t.Parallel()
+	// Three open branches forked from base, none merged. Git keeps a 2-col
+	// layout by reusing col 1 for each side branch (each gets its own |\
+	// fork stagger). Engine currently allocates separate cols for each
+	// since their fork-extension rows overlap.
+	nodes := []graph.Node{
+		{ID: "base", Label: "base", Date: iso(1), LayoutHint: "main"},
+		{ID: "a1", Label: "a1", Date: iso(2), Parents: []string{"base"}, LayoutHint: "a"},
+		{ID: "b1", Label: "b1", Date: iso(3), Parents: []string{"base"}, LayoutHint: "b"},
+		{ID: "c1", Label: "c1", Date: iso(4), Parents: []string{"base"}, LayoutHint: "c"},
+	}
+	// TODO: engine: needs sequential col-1 reuse with separate fork
+	// staggers for each tip.
+	expected := `* base
+|\
+| * a1
+|\
+| * b1
+* c1`
+	assertGraph(t, nodes, expected)
+}
+
+func TestScenario_BackMerge(t *testing.T) {
+	t.Parallel()
+	// main merges feat, then feat merges main back. Catch-up merge pattern.
+	nodes := []graph.Node{
+		{ID: "base", Label: "base", Date: iso(1), LayoutHint: "main"},
+		{ID: "feat1", Label: "feat1", Date: iso(2), Parents: []string{"base"}, LayoutHint: "feat"},
+		{ID: "main1", Label: "main1", Date: iso(3), Parents: []string{"base"}, LayoutHint: "main"},
+		{ID: "main_merges_feat", Label: "main_merges_feat", Date: iso(4), Parents: []string{"main1", "feat1"}, LayoutHint: "main"},
+		{ID: "feat_merges_main", Label: "feat_merges_main", Date: iso(5), Parents: []string{"feat1", "main_merges_feat"}, LayoutHint: "feat"},
+	}
+	// TODO: engine: row order differs from git -- engine recurses first
+	// parent before second on the outer walk, while git emits feat1 before
+	// main1 here. Plus needs `|\|` cross-routing for the catch-up.
+	expected := `* base
+|\
+| * main1
+* | feat1
+|\|
+| |\
+| |/
+| *   main_merges_feat
+|/
+*   feat_merges_main`
+	assertGraph(t, nodes, expected)
+}
+
+func TestScenario_MergeOldIntoNew(t *testing.T) {
+	t.Parallel()
+	// Long-lived old branch finally merged into a much-newer mainline.
+	nodes := []graph.Node{
+		{ID: "base", Label: "base", Date: iso(1), LayoutHint: "main"},
+		{ID: "old1", Label: "old1", Date: iso(2), Parents: []string{"base"}, LayoutHint: "old"},
+		{ID: "m1", Label: "m1", Date: iso(3), Parents: []string{"base"}, LayoutHint: "main"},
+		{ID: "m2", Label: "m2", Date: iso(4), Parents: []string{"m1"}, LayoutHint: "main"},
+		{ID: "m3", Label: "m3", Date: iso(5), Parents: []string{"m2"}, LayoutHint: "main"},
+		{ID: "m4", Label: "m4", Date: iso(6), Parents: []string{"m3"}, LayoutHint: "main"},
+		{ID: "m5", Label: "m5", Date: iso(7), Parents: []string{"m4"}, LayoutHint: "main"},
+		{ID: "m6", Label: "m6", Date: iso(8), Parents: []string{"m5"}, LayoutHint: "main"},
+		{ID: "merge_old", Label: "merge_old", Date: iso(9), Parents: []string{"m6", "old1"}, LayoutHint: "main"},
+	}
+	expected := `* base
+|\
+* | m1
+* | m2
+* | m3
+* | m4
+* | m5
+* | m6
+| * old1
+|/
+*   merge_old`
+	assertGraph(t, nodes, expected)
+}
+
+func TestScenario_DeepNested(t *testing.T) {
+	t.Parallel()
+	// 4 levels of nested merges.
+	nodes := []graph.Node{
+		{ID: "base", Label: "base", Date: iso(1), LayoutHint: "main"},
+		{ID: "l1a", Label: "l1a", Date: iso(2), Parents: []string{"base"}, LayoutHint: "L1"},
+		{ID: "l2a", Label: "l2a", Date: iso(3), Parents: []string{"l1a"}, LayoutHint: "L2"},
+		{ID: "l3a", Label: "l3a", Date: iso(4), Parents: []string{"l2a"}, LayoutHint: "L3"},
+		{ID: "L2_merges_L3", Label: "L2_merges_L3", Date: iso(5), Parents: []string{"l2a", "l3a"}, LayoutHint: "L2"},
+		{ID: "L1_merges_L2", Label: "L1_merges_L2", Date: iso(6), Parents: []string{"l1a", "L2_merges_L3"}, LayoutHint: "L1"},
+		{ID: "main_merges_L1", Label: "main_merges_L1", Date: iso(7), Parents: []string{"base", "L1_merges_L2"}, LayoutHint: "main"},
+	}
+	expected := `* base
+|\
+| * l1a
+| |\
+| | * l2a
+| | |\
+| | | * l3a
+| | |/
+| | *   L2_merges_L3
+| |/
+| *   L1_merges_L2
+|/
+*   main_merges_L1`
+	assertGraph(t, nodes, expected)
+}
+
+func TestScenario_EmptyLabel(t *testing.T) {
+	t.Parallel()
+	nodes := []graph.Node{
+		{ID: "n1", Label: "", Date: iso(1)},
+		{ID: "n2", Label: "n2 second", Date: iso(2), Parents: []string{"n1"}},
+	}
+	expected := `*
+* n2 second`
+	assertGraph(t, nodes, expected)
+}
+
+func TestScenario_TopoSkewMerge(t *testing.T) {
+	t.Parallel()
+	// Side branch dated BEFORE base (clock skew). Topology must override
+	// date when ordering rows.
+	nodes := []graph.Node{
+		{ID: "base", Label: "base", Date: iso(100), LayoutHint: "main"},
+		{ID: "side_old", Label: "side_old", Date: iso(1), Parents: []string{"base"}, LayoutHint: "side"},
+		{ID: "main1", Label: "main1", Date: iso(200), Parents: []string{"base"}, LayoutHint: "main"},
+		{ID: "merge_side", Label: "merge_side", Date: iso(300), Parents: []string{"main1", "side_old"}, LayoutHint: "main"},
+	}
+	expected := `* base
+|\
+* | main1
+| * side_old
+|/
+*   merge_side`
+	assertGraph(t, nodes, expected)
+}
+
+func TestScenario_DanglingTip(t *testing.T) {
+	t.Parallel()
+	// Feature branch never merged while main continues past.
+	nodes := []graph.Node{
+		{ID: "base", Label: "base", Date: iso(1), LayoutHint: "main"},
+		{ID: "feat1", Label: "feat1", Date: iso(2), Parents: []string{"base"}, LayoutHint: "feat"},
+		{ID: "m1", Label: "m1", Date: iso(3), Parents: []string{"base"}, LayoutHint: "main"},
+		{ID: "m2", Label: "m2", Date: iso(4), Parents: []string{"m1"}, LayoutHint: "main"},
+	}
+	expected := `* base
+|\
+| * feat1
+* m1
+* m2`
+	assertGraph(t, nodes, expected)
+}
+
+func TestScenario_OrphanWithTag(t *testing.T) {
+	t.Parallel()
+	// Main branch with two commits + an orphan branch carrying a tag.
+	nodes := []graph.Node{
+		{ID: "m1", Label: "m1", Date: iso(1), LayoutHint: "main"},
+		{ID: "m2", Label: "m2", Date: iso(2), Parents: []string{"m1"}, LayoutHint: "main"},
+		{ID: "orph1", Label: "orph1 (tag: v-orph)", Date: iso(3), LayoutHint: "orph"},
+	}
+	expected := `* m1
+* m2
+* orph1 (tag: v-orph)`
 	assertGraph(t, nodes, expected)
 }
