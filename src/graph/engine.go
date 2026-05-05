@@ -29,6 +29,23 @@ func (e *Engine) Layout(g Graph) LayoutResult {
 			}
 		}
 	}
+	// Sort children deterministically: first-parent children first (mainline
+	// continuity), then by date, then by ID. Map iteration above randomizes
+	// append order; without this every phase that iterates children is unstable.
+	for _, ns := range st.nodes {
+		sort.SliceStable(ns.children, func(i, j int) bool {
+			a, b := ns.children[i], ns.children[j]
+			aFirst := a.Parents[0] == ns.ID
+			bFirst := b.Parents[0] == ns.ID
+			if aFirst != bFirst {
+				return aFirst
+			}
+			if a.Date != b.Date {
+				return a.Date < b.Date
+			}
+			return a.ID < b.ID
+		})
+	}
 
 	// Phase 1: topological sort (oldest-first rows).
 	st.sort()
@@ -70,8 +87,12 @@ type layoutState struct {
 // TODO: support --topo-order.
 
 func (st *layoutState) sort() {
-	sort.Slice(st.nodes, func(i, j int) bool {
-		return st.nodes[i].Date < st.nodes[j].Date
+	sort.SliceStable(st.nodes, func(i, j int) bool {
+		a, b := st.nodes[i], st.nodes[j]
+		if a.Date != b.Date {
+			return a.Date < b.Date
+		}
+		return a.ID < b.ID
 	})
 
 	pos := make(map[string]int, len(st.nodes))
