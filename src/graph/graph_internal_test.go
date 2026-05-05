@@ -14,7 +14,7 @@ func TestRender_Empty(t *testing.T) {
 	lr := Layout(nil)
 	assert.Equal(t, len(lr.Rows), 0)
 	assert.Equal(t, lr.Columns, 0)
-	lines := Render(lr, nil)
+	lines := Render(lr, Style{})
 	assert.Equal(t, len(lines), 0)
 }
 

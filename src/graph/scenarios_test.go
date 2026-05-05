@@ -47,7 +47,7 @@ func itoa(n int) string {
 func assertGraph(t *testing.T, nodes []graph.Node, expected string) {
 	t.Helper()
 	lr := graph.Layout(nodes)
-	lines := graph.Render(lr, nil)
+	lines := graph.Render(lr, graph.Style{})
 	got := stripTrailingSpaces(strings.Join(lines, "\n"))
 	expected = stripTrailingSpaces(strings.TrimRight(expected, "\n"))
 	if got != expected {
@@ -224,7 +224,7 @@ func TestScenario_Octopus(t *testing.T) {
 
 func renderTo(nodes []graph.Node) string {
 	lr := graph.Layout(nodes)
-	return strings.Join(graph.Render(lr, nil), "\n")
+	return strings.Join(graph.Render(lr, graph.Style{}), "\n")
 }
 
 func TestScenario_WideStagger(t *testing.T) {

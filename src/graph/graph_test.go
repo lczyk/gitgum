@@ -20,7 +20,7 @@ func TestRender_Linear(t *testing.T) {
 	}
 
 	lr := graph.Layout(nodes)
-	lines := graph.Render(lr, nil)
+	lines := graph.Render(lr, graph.Style{})
 
 	// Oldest first: a, then b, then c. No branching, so all in column 0.
 	assert.Equal(t, lr.Columns, 1)
@@ -56,7 +56,7 @@ func TestRender_Fork(t *testing.T) {
 	}
 
 	lr := graph.Layout(nodes)
-	lines := graph.Render(lr, nil)
+	lines := graph.Render(lr, graph.Style{})
 
 	// Two columns: main branch (a→b) in col 0, branch2 (c) in col 1.
 	assert.Equal(t, lr.Columns, 2)
@@ -83,7 +83,7 @@ func TestRender_Merge(t *testing.T) {
 	}
 
 	lr := graph.Layout(nodes)
-	lines := graph.Render(lr, nil)
+	lines := graph.Render(lr, graph.Style{})
 
 	// Should have 2 columns at the merge point.
 	assert.Equal(t, lr.Columns, 2)
@@ -97,32 +97,27 @@ func TestRender_Merge(t *testing.T) {
 	assert.That(t, containsAny(lines, "\\") || containsAny(lines, "/"), "should have merge routing glyphs")
 }
 
-func TestRender_ColorScheme(t *testing.T) {
+func TestRender_Style(t *testing.T) {
 	t.Parallel()
+	// Style wraps the line/star glyphs; labels are emitted opaque (caller
+	// is expected to embed any per-segment ANSI before Layout).
 	nodes := []graph.Node{
-		{ID: "a", Label: "abc1234 (HEAD -> main) hello world", Parents: nil, Date: "2020-01-01T00:00:00Z"},
+		{ID: "base", Label: "base", Parents: nil, Date: "2020-01-01T00:00:00Z"},
+		{ID: "side", Label: "side", Parents: []string{"base"}, Date: "2020-01-01T00:00:01Z", LayoutHint: "side"},
+		{ID: "main", Label: "main", Parents: []string{"base", "side"}, Date: "2020-01-01T00:00:02Z", LayoutHint: "main"},
 	}
-
-	cs := func(kind graph.GlyphKind, text string) string {
-		switch kind {
-		case graph.KindGraph:
-			return "<g:" + text + ">"
-		case graph.KindHash:
-			return "<h:" + text + ">"
-		case graph.KindRef:
-			return "<r:" + text + ">"
-		case graph.KindSubject:
-			return "<s:" + text + ">"
-		}
-		return text
+	st := graph.Style{
+		LinePrefix: "<L>", LineSuffix: "</L>",
+		StarPrefix: "<S>", StarSuffix: "</S>",
 	}
-
 	lr := graph.Layout(nodes)
-	lines := graph.Render(lr, cs)
-
-	assert.Equal(t, len(lines), 1)
-	expected := "<g:*><g: ><h:abc1234> <r:(HEAD -> main)> <s:hello world>"
-	assert.Equal(t, lines[0], expected)
+	lines := graph.Render(lr, st)
+	assert.That(t, len(lines) >= 3, "at least 3 rows produced")
+	// First row: "* base" -> star wrapped, then ' base'.
+	assert.Equal(t, lines[0], "<S>*</S> base")
+	// Stagger row contains a wrapped line glyph (`|\`-ish).
+	stagger := lines[1]
+	assert.That(t, strings.Contains(stagger, "<L>"), "stagger row uses LinePrefix")
 }
 
 func TestRender_SingleNode(t *testing.T) {
@@ -132,7 +127,7 @@ func TestRender_SingleNode(t *testing.T) {
 	}
 
 	lr := graph.Layout(nodes)
-	lines := graph.Render(lr, nil)
+	lines := graph.Render(lr, graph.Style{})
 
 	assert.Equal(t, len(lines), 1)
 	assert.Equal(t, lr.Columns, 1)

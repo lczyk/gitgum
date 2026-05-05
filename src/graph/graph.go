@@ -6,7 +6,7 @@
 // Typical usage:
 //
 //	lr := graph.Layout(nodes)
-//	lines := graph.Render(lr, nil) // or pass a ColorScheme
+//	lines := graph.Render(lr, graph.Style{}) // or pass a populated Style
 package graph
 
 // Node is a vertex in the commit DAG. Parents is a forward edge list
@@ -17,13 +17,17 @@ package graph
 // pulled onto the same lane; mid-history nodes inherit from first-parent
 // children regardless of hint. Empty disables hinting.
 //
+// Label is appended verbatim after the graph glyphs and a single space.
+// Callers wanting per-segment coloring (hash, refs, subject) should embed
+// ANSI escapes directly in Label -- the graph package does not parse it.
+//
 // IDs must be unique within a single Layout call -- duplicates panic.
 // Cycles, self-parent edges, and parents that don't appear in the input
 // are accepted but the resulting layout is unspecified (see edge tests
 // for pinned behavior).
 type Node struct {
 	ID         string
-	Label      string   // display text appended after graph glyphs
+	Label      string
 	Parents    []string // parent IDs (empty for roots)
 	Date       string   // sortable date string (ISO 8601) for ordering
 	LayoutHint string
@@ -59,21 +63,15 @@ func (g Glyph) String() string {
 	panic("graph: unknown Glyph value")
 }
 
-// GlyphKind classifies a piece of output text for the ColorScheme function.
-type GlyphKind int
-
-const (
-	KindGraph   GlyphKind = iota // "|", "*", "/", "\"
-	KindHash                     // abbreviated commit hash
-	KindRef                      // "(HEAD -> main)"
-	KindSubject                  // commit subject
-)
-
-// ColorScheme is called for each text fragment during rendering. Return
-// the text unchanged for plain output, or wrap it in ANSI SGR escapes.
-// Called once per glyph (KindGraph), once per hash, once per ref block,
-// and once per subject -- callers should treat invocations as cheap.
-type ColorScheme func(kind GlyphKind, text string) string
+// Style controls the ANSI styling applied to graph glyphs. LinePrefix /
+// LineSuffix wrap the line glyphs (`|`, `/`, `\`). StarPrefix / StarSuffix
+// wrap commit markers (`*`). Spaces are written unwrapped.
+//
+// The zero Style produces plain ASCII output with no escapes.
+type Style struct {
+	LinePrefix, LineSuffix string
+	StarPrefix, StarSuffix string
+}
 
 // Row is one output line. Commit is nil on stagger / continuation rows
 // (graph glyphs only). Commit, when non-nil, points back into the input

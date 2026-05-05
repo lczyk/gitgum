@@ -33,8 +33,8 @@ func (t *TreeCommand) renderNative(w io.Writer, sinceArg string, maxCount int) e
 		return nil
 	}
 
-	// Parse commit records into []graph.Node.
-	nodes, err := parseNativeCommits(stdout)
+	useColor := nativeColorEnabled()
+	nodes, err := parseNativeCommits(stdout, useColor)
 	if err != nil {
 		return fmt.Errorf("parsing git log output: %w", err)
 	}
@@ -42,7 +42,6 @@ func (t *TreeCommand) renderNative(w io.Writer, sinceArg string, maxCount int) e
 		return nil
 	}
 
-	// Layout and render.
 	lr := graph.Layout(nodes)
 
 	if os.Getenv("GG_DUMP_LAYOUT") == "1" {
@@ -66,18 +65,30 @@ func (t *TreeCommand) renderNative(w io.Writer, sinceArg string, maxCount int) e
 		}
 	}
 
-	cs := nativeColorScheme()
-	lines := graph.Render(lr, cs)
+	st := graph.Style{}
+	if useColor {
+		st = graph.Style{LinePrefix: ansiRed, LineSuffix: ansiReset}
+	}
 
-	for _, line := range lines {
+	for _, line := range graph.Render(lr, st) {
 		fmt.Fprintln(w, line)
 	}
 	return nil
 }
 
-// parseNativeCommits parses null-delimited git log output. Each commit is
-// one line containing: "<hash> <parents>\x00<hash> <decorations> <subject>\x00<date>"
-func parseNativeCommits(raw string) ([]graph.Node, error) {
+// nativeColorEnabled mirrors the prior nativeColorScheme gating: color
+// is off only when stdout isn't a tty, FORCE_COLOR is unset, and
+// NO_COLOR is set. Otherwise color is on.
+func nativeColorEnabled() bool {
+	_, fc := os.LookupEnv("FORCE_COLOR")
+	_, nc := os.LookupEnv("NO_COLOR")
+	return colorEnabled() || fc || !nc
+}
+
+// parseNativeCommits parses null-delimited git log output and pre-formats
+// each Label with ANSI escapes when color is on. Each commit is one line:
+// "<hash> <parents>\x00<hash> <decorations> <subject>\x00<date>"
+func parseNativeCommits(raw string, useColor bool) ([]graph.Node, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, nil
@@ -92,9 +103,6 @@ func parseNativeCommits(raw string) ([]graph.Node, error) {
 		if len(seg) < 2 {
 			continue
 		}
-		// seg[0] = "<full-hash> <parent1> <parent2> ..."
-		// seg[1] = "<abbrev-hash> <decorations> <subject>"
-		// seg[2] = "<ISO-date>" (optional)
 		topo := strings.Fields(seg[0])
 		if len(topo) == 0 {
 			continue
@@ -104,12 +112,18 @@ func parseNativeCommits(raw string) ([]graph.Node, error) {
 		if len(topo) > 1 {
 			parents = topo[1:]
 		}
-		label := seg[1]
+		// Strip trailing whitespace -- empty %s leaves a trailing space
+		// after the hash that the old per-segment render dropped.
+		rawLabel := strings.TrimRight(seg[1], " ")
 		date := ""
 		if len(seg) > 2 {
 			date = strings.TrimSpace(seg[2])
 		}
-		hint := extractLayoutHint(label)
+		hint := extractLayoutHint(rawLabel)
+		label := rawLabel
+		if useColor {
+			label = colorLabel(rawLabel)
+		}
 		nodes = append(nodes, graph.Node{
 			ID:         id,
 			Label:      label,
@@ -121,25 +135,19 @@ func parseNativeCommits(raw string) ([]graph.Node, error) {
 	return nodes, nil
 }
 
-// nativeColorScheme returns a ColorScheme that mirrors git's default colors.
-// For now it returns nil (plain output). Colored output will be added when
-// we match git's exact ANSI scheme.
 // extractLayoutHint parses the first branch name from git's %d decoration
-// string. Format: "abc1234 (HEAD -> main, origin/main) subject" → "main".
+// string. Format: "abc1234 (HEAD -> main, origin/main) subject" -> "main".
 // Returns "" if no ref decoration is present.
 func extractLayoutHint(label string) string {
 	if idx := strings.Index(label, " ("); idx >= 0 {
 		rest := label[idx+2:]
 		if end := strings.Index(rest, ")"); end >= 0 {
 			refs := rest[:end]
-			// Skip "HEAD -> " if present.
 			refs = strings.TrimPrefix(refs, "HEAD -> ")
-			// Take the first ref (before comma).
 			if comma := strings.Index(refs, ","); comma >= 0 {
 				refs = refs[:comma]
 			}
 			refs = strings.TrimSpace(refs)
-			// Strip remote prefix to get the branch name. "origin/main" → "main".
 			if slash := strings.Index(refs, "/"); slash >= 0 && slash < len(refs)-1 {
 				refs = refs[slash+1:]
 			}
@@ -151,47 +159,40 @@ func extractLayoutHint(label string) string {
 	return ""
 }
 
-func nativeColorScheme() graph.ColorScheme {
-	_, fc := os.LookupEnv("FORCE_COLOR")
-	_, nc := os.LookupEnv("NO_COLOR")
-	if !colorEnabled() && !fc && nc {
-		return nil
+// colorLabel takes a raw "<hash> [(refs)] <subject>" string and returns
+// it with ANSI escapes baked in: hash yellow, refs decorated per git's
+// color.decorate defaults, subject plain.
+func colorLabel(label string) string {
+	hashEnd := strings.IndexByte(label, ' ')
+	if hashEnd < 0 {
+		return ansiYellow + label + ansiReset
 	}
-	return func(k graph.GlyphKind, text string) string {
-		switch k {
-		case graph.KindGraph:
-			// Render may pass a run of identical glyphs in one call. Wrap
-			// in red iff every byte is one of the line-drawing glyphs;
-			// otherwise leave plain (mixed runs include `*` or spaces).
-			if isAllLineGlyph(text) {
-				return ansiRed + text + ansiReset
-			}
-			return text
-		case graph.KindHash:
-			return ansiYellow + text + ansiReset
-		case graph.KindRef:
-			return colorRefDecoration(text)
-		case graph.KindSubject:
-			return text
-		}
-		return text
-	}
-}
+	hash := label[:hashEnd]
+	rest := label[hashEnd+1:]
 
-// isAllLineGlyph reports whether every byte of s is one of `|`, `/`, `\`.
-// Render may emit a run of identical line glyphs in one ColorScheme call.
-func isAllLineGlyph(s string) bool {
-	if s == "" {
-		return false
-	}
-	for i := 0; i < len(s); i++ {
-		switch s[i] {
-		case '|', '/', '\\':
-		default:
-			return false
+	var b strings.Builder
+	b.WriteString(ansiYellow)
+	b.WriteString(hash)
+	b.WriteString(ansiReset)
+
+	if len(rest) > 0 && rest[0] == '(' {
+		if refEnd := strings.IndexByte(rest, ')'); refEnd >= 0 {
+			refs := rest[:refEnd+1]
+			subject := strings.TrimLeft(rest[refEnd+1:], " ")
+			b.WriteByte(' ')
+			b.WriteString(colorRefDecoration(refs))
+			if subject != "" {
+				b.WriteByte(' ')
+				b.WriteString(subject)
+			}
+			return b.String()
 		}
 	}
-	return true
+	if rest != "" {
+		b.WriteByte(' ')
+		b.WriteString(rest)
+	}
+	return b.String()
 }
 
 // colorRefDecoration colors a "(refs...)" string per git's color.decorate
@@ -208,7 +209,6 @@ func colorRefDecoration(text string) string {
 	b.WriteByte('(')
 	b.WriteString(ansiReset)
 
-	// Split on ", " preserving order.
 	parts := strings.Split(inner, ", ")
 	for i, p := range parts {
 		if i > 0 {
@@ -216,7 +216,6 @@ func colorRefDecoration(text string) string {
 			b.WriteString(", ")
 			b.WriteString(ansiReset)
 		}
-		// Each part may be "HEAD -> branch", "tag: name", "branch", or "remote/branch".
 		if arrow := strings.Index(p, " -> "); arrow >= 0 {
 			head := p[:arrow]
 			branch := p[arrow+4:]

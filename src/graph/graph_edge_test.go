@@ -52,7 +52,7 @@ func TestEdge_MissingParent(t *testing.T) {
 		{ID: "child", Label: "child", Parents: []string{"phantom"}, Date: "2020-01-01T00:00:01Z"},
 	}
 	lr := graph.Layout(nodes)
-	lines := graph.Render(lr, nil)
+	lines := graph.Render(lr, graph.Style{})
 	assert.Equal(t, len(lines), 1)
 	assert.That(t, strings.Contains(lines[0], "child"), "child line present")
 }
@@ -80,9 +80,9 @@ func TestEdge_Determinism(t *testing.T) {
 		{ID: "b1", Label: "b1", Date: "2020-01-01T00:00:03Z", Parents: []string{"base"}, LayoutHint: "b"},
 		{ID: "merge", Label: "merge", Date: "2020-01-01T00:00:04Z", Parents: []string{"a1", "b1"}, LayoutHint: "a"},
 	}
-	first := strings.Join(graph.Render(graph.Layout(nodes), nil), "\n")
+	first := strings.Join(graph.Render(graph.Layout(nodes), graph.Style{}), "\n")
 	for i := 0; i < 50; i++ {
-		out := strings.Join(graph.Render(graph.Layout(nodes), nil), "\n")
+		out := strings.Join(graph.Render(graph.Layout(nodes), graph.Style{}), "\n")
 		if out != first {
 			t.Fatalf("nondeterministic output on iteration %d:\n--- first ---\n%s\n--- got ---\n%s", i, first, out)
 		}
@@ -99,13 +99,13 @@ func TestEdge_ConcurrentLayout(t *testing.T) {
 		{ID: "side1", Label: "side1", Date: "2020-01-01T00:00:03Z", Parents: []string{"base"}},
 		{ID: "merge", Label: "merge", Date: "2020-01-01T00:00:04Z", Parents: []string{"main1", "side1"}},
 	}
-	want := strings.Join(graph.Render(graph.Layout(nodes), nil), "\n")
+	want := strings.Join(graph.Render(graph.Layout(nodes), graph.Style{}), "\n")
 	var wg sync.WaitGroup
 	for i := 0; i < 64; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			got := strings.Join(graph.Render(graph.Layout(nodes), nil), "\n")
+			got := strings.Join(graph.Render(graph.Layout(nodes), graph.Style{}), "\n")
 			if got != want {
 				t.Errorf("concurrent layout produced different output:\n%s", got)
 			}

@@ -89,7 +89,7 @@ func benchLayoutAndRender(b *testing.B, nodes []graph.Node) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		lr := graph.Layout(nodes)
-		_ = graph.Render(lr, nil)
+		_ = graph.Render(lr, graph.Style{})
 	}
 }
 
@@ -113,40 +113,35 @@ func BenchmarkRender_Parallel100x10(b *testing.B) {
 // benchRenderOnly measures Render alone -- Layout is run once outside the
 // loop so regressions in the per-row formatter / slot packer surface
 // independently of layout work.
-func benchRenderOnly(b *testing.B, nodes []graph.Node, cs graph.ColorScheme) {
+func benchRenderOnly(b *testing.B, nodes []graph.Node, st graph.Style) {
 	lr := graph.Layout(nodes)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = graph.Render(lr, cs)
+		_ = graph.Render(lr, st)
 	}
 }
 
-func BenchmarkRenderOnly_Linear1000(b *testing.B)  { benchRenderOnly(b, linearChain(1000), nil) }
-func BenchmarkRenderOnly_Merges1000(b *testing.B)  { benchRenderOnly(b, mergeSeries(1000, 5), nil) }
+func BenchmarkRenderOnly_Linear1000(b *testing.B) {
+	benchRenderOnly(b, linearChain(1000), graph.Style{})
+}
+func BenchmarkRenderOnly_Merges1000(b *testing.B) {
+	benchRenderOnly(b, mergeSeries(1000, 5), graph.Style{})
+}
 func BenchmarkRenderOnly_Parallel100x10(b *testing.B) {
-	benchRenderOnly(b, parallelBranches(100, 10), nil)
+	benchRenderOnly(b, parallelBranches(100, 10), graph.Style{})
 }
 
-// idColorScheme wraps each fragment in a kind-prefixed marker. Cheap but
-// non-trivial -- exercises the call-per-fragment path real callers hit.
-func idColorScheme(kind graph.GlyphKind, text string) string {
-	switch kind {
-	case graph.KindGraph:
-		return "<g>" + text + "</>"
-	case graph.KindHash:
-		return "<h>" + text + "</>"
-	case graph.KindRef:
-		return "<r>" + text + "</>"
-	case graph.KindSubject:
-		return "<s>" + text + "</>"
-	}
-	return text
+// styled wraps line/star glyphs. Cheap markers exercise the styled
+// branch in writeSlots without simulating a full ANSI scheme.
+var styled = graph.Style{
+	LinePrefix: "<L>", LineSuffix: "</L>",
+	StarPrefix: "<S>", StarSuffix: "</S>",
 }
 
 func BenchmarkRenderOnly_Linear1000_Color(b *testing.B) {
-	benchRenderOnly(b, linearChain(1000), idColorScheme)
+	benchRenderOnly(b, linearChain(1000), styled)
 }
 func BenchmarkRenderOnly_Merges1000_Color(b *testing.B) {
-	benchRenderOnly(b, mergeSeries(1000, 5), idColorScheme)
+	benchRenderOnly(b, mergeSeries(1000, 5), styled)
 }
