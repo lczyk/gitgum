@@ -63,6 +63,14 @@ func renderRow(row Row, numCols int, cs ColorScheme) string {
 		b.WriteString(cs(KindGraph, slots[i].String()))
 	}
 
+	// Merge commits get (n-1)*2 extra space chars after the `*` slot to
+	// align with the stagger row above. Matches git's --graph output.
+	if extra := len(row.Commit.Parents) - 1; extra > 0 {
+		for i := 0; i < extra*2; i++ {
+			b.WriteString(cs(KindGraph, " "))
+		}
+	}
+
 	// Split label into hash, refs, and subject parts for coloring.
 	// Expected format: "<hash> <refs> <subject>" or "<hash> <subject>"
 	// where refs are wrapped in "(...)" if present.

@@ -56,6 +56,11 @@ func (e *Engine) Layout(g Graph) LayoutResult {
 	// Phase 3: fix sibling conflicts at merges.
 	st.fixMergeSiblings()
 
+	// Phase 3b: compact non-mainline cols whose lifetimes don't overlap so
+	// short-lived side branches reuse a single lane (e.g. sequential feature
+	// branches both render in col 1).
+	st.compactColumns()
+
 	// Build oldest-first order slice.
 	order := make([]*nodeState, len(st.nodes))
 	copy(order, st.nodes)
@@ -121,7 +126,9 @@ func (st *layoutState) sort() {
 		ns.row = row
 		row--
 
-		// Non-first parents: process depth-first, immediately.
+		// Non-first parents: process depth-first, immediately. This places
+		// side-branch commits in rows above the merge commit in newest-first
+		// order (= just below merge in oldest-first output).
 		for i := 1; i < len(ns.Parents); i++ {
 			pid := ns.Parents[i]
 			p := st.idx[pid]
@@ -134,14 +141,17 @@ func (st *layoutState) sort() {
 			}
 		}
 
-		// First parent: decrement indegree; add to ready queue if all children done.
+		// First parent: also recurse depth-first when ready, so the mainline
+		// chain stays contiguous and lands above the side branch in
+		// oldest-first output. Falls through to ready queue when not yet
+		// reachable (other children still pending).
 		if len(ns.Parents) > 0 {
 			pid := ns.Parents[0]
 			p := st.idx[pid]
 			if p != nil {
 				indeg[p.ID]--
 				if indeg[p.ID] == 0 && !placed[p.ID] {
-					ready = append(ready, p)
+					walk(p)
 				}
 			}
 		}
@@ -201,23 +211,35 @@ func (st *layoutState) assignOne(ns *nodeState, colInfo []columnInfo) {
 				return
 			}
 		}
-		// No existing column -- start a new one. Don't fall through
-		// to child continuity: a named branch keeps its own lane even
-		// if children (from merges) are in different columns.
-		ns.col = st.numCols
-		st.numCols++
+		// No matching col yet. If a first-parent child has a col, inherit
+		// that (mid-history nodes carry hints from their branch but should
+		// stay on the mainline lane rather than starting a fresh col).
+		// Tip nodes with no first-parent child fall through to allocate.
+	}
+
+	// Child continuity: among first-parent children (those that descend from
+	// ns via mainline), pick the lowest col so ns stays on the canonical
+	// lane. Fall back to any child if no first-parent child has a col yet.
+	bestCol := -1
+	for _, child := range ns.children {
+		if child.col < 0 {
+			continue
+		}
+		if len(child.Parents) > 0 && child.Parents[0] != ns.ID {
+			continue
+		}
+		if bestCol == -1 || child.col < bestCol {
+			bestCol = child.col
+		}
+	}
+	if bestCol >= 0 {
+		ns.col = bestCol
 		return
 	}
 
-	// Child continuity: reuse first child's column.
-	for _, child := range ns.children {
-		if child.col >= 0 {
-			ns.col = child.col
-			return
-		}
-	}
-
-	// New column.
+	// New column. Reached when ns has no first-parent child with an
+	// assigned col -- typical for branch tips and side-branch nodes whose
+	// only descendant is a merge that doesn't continue the lane.
 	ns.col = st.numCols
 	st.numCols++
 }
@@ -274,25 +296,126 @@ func (st *layoutState) cascadeColumn(ns *nodeState, oldCol, newCol int) {
 	}
 }
 
-// ------ phase 4: column lifetimes ------------------------------------------------------------------
+// ------ phase 3b: column compaction ------------------------------------------------------
 
-func (st *layoutState) columnLifetimes(order []*nodeState) (minRow, maxRow []int) {
-	minRow = make([]int, st.numCols)
-	maxRow = make([]int, st.numCols)
+// compactColumns merges non-mainline cols whose commit-row ranges don't
+// overlap so sequential side branches share a lane. col 0 is left alone --
+// it represents the mainline and always extends across the full history.
+func (st *layoutState) compactColumns() {
+	if st.numCols < 2 {
+		return
+	}
+	type colRange struct {
+		min, max  int
+		mergedTo  int
+		hasCommit bool
+	}
+	ranges := make([]colRange, st.numCols)
+	for i := range ranges {
+		ranges[i].mergedTo = i
+	}
+	for _, ns := range st.nodes {
+		c := ns.col
+		if !ranges[c].hasCommit || ns.row < ranges[c].min {
+			ranges[c].min = ns.row
+		}
+		if !ranges[c].hasCommit || ns.row > ranges[c].max {
+			ranges[c].max = ns.row
+		}
+		ranges[c].hasCommit = true
+	}
+	for c := 2; c < st.numCols; c++ {
+		if ranges[c].mergedTo != c || !ranges[c].hasCommit {
+			continue
+		}
+		for cp := 1; cp < c; cp++ {
+			if ranges[cp].mergedTo != cp || !ranges[cp].hasCommit {
+				continue
+			}
+			// Need a 1-row buffer between disjoint cols so the stagger row
+			// between merge-end of cp and fork-start of c doesn't collide.
+			if ranges[cp].max+1 < ranges[c].min || ranges[c].max+1 < ranges[cp].min {
+				ranges[c].mergedTo = cp
+				if ranges[c].min < ranges[cp].min {
+					ranges[cp].min = ranges[c].min
+				}
+				if ranges[c].max > ranges[cp].max {
+					ranges[cp].max = ranges[c].max
+				}
+				break
+			}
+		}
+	}
+	for _, ns := range st.nodes {
+		ns.col = ranges[ns.col].mergedTo
+	}
+	used := map[int]bool{}
+	for _, ns := range st.nodes {
+		used[ns.col] = true
+	}
+	cols := make([]int, 0, len(used))
+	for c := range used {
+		cols = append(cols, c)
+	}
+	sort.Ints(cols)
+	remap := make(map[int]int, len(cols))
+	for i, c := range cols {
+		remap[c] = i
+	}
+	for _, ns := range st.nodes {
+		ns.col = remap[ns.col]
+	}
+	st.numCols = len(cols)
+}
+
+// ------ phase 4: column activity ------------------------------------------------------------------
+
+// columnActivity returns, for each col, the set of integer rows at which a
+// vertical line is drawn. A row is active in col c if (a) a commit lives at
+// (c, row), (b) a vertical edge passes through (c, row) between a commit
+// and its same-col first parent, or (c) a diagonal edge from another col
+// terminates into / forks out of col c at row.
+//
+// Tracking active rows as a sparse set (instead of a [min, max] interval)
+// is what lets sequential side branches share a lane without drawing a
+// connecting pipe through the merge that separates them.
+func (st *layoutState) columnActivity(order []*nodeState) []map[int]bool {
+	active := make([]map[int]bool, st.numCols)
 	for c := 0; c < st.numCols; c++ {
-		minRow[c] = -1
-		maxRow[c] = -1
+		active[c] = map[int]bool{}
 	}
 	for _, ns := range order {
-		c := ns.col
-		if minRow[c] == -1 || ns.row < minRow[c] {
-			minRow[c] = ns.row
+		active[ns.col][ns.row] = true
+		// Vertical span between ns and its first parent when both share a col.
+		if len(ns.Parents) > 0 {
+			if p := st.idx[ns.Parents[0]]; p != nil {
+				if p.col == ns.col {
+					for r := p.row + 1; r < ns.row; r++ {
+						active[ns.col][r] = true
+					}
+				} else {
+					// Fork: col ns.col is introduced at p.row+1 and stays
+					// active down to ns (vertical line between fork point
+					// and first commit on this lane).
+					for r := p.row + 1; r < ns.row; r++ {
+						active[ns.col][r] = true
+					}
+				}
+			}
 		}
-		if ns.row > maxRow[c] {
-			maxRow[c] = ns.row
+		// Termination of a non-first parent's col at this merge.
+		for i := 1; i < len(ns.Parents); i++ {
+			p := st.idx[ns.Parents[i]]
+			if p == nil || p.col == ns.col {
+				continue
+			}
+			// p's col stays active down to one row above ns.
+			for r := p.row + 1; r < ns.row; r++ {
+				active[p.col][r] = true
+			}
 		}
 	}
-	return
+	return active
 }
 
 // ------ phase 5: row generation ------------------------------------------------------------------------
@@ -302,14 +425,14 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 		return nil
 	}
 
-	minRow, maxRow := st.columnLifetimes(order)
+	activeMap := st.columnActivity(order)
 	lastRow := order[len(order)-1].row
 
-	// A column is active from its newest entry (smallest row) to its
-	// oldest entry (largest row), inclusive, with no gaps. This keeps
-	// branch lines continuous across the full tree height.
 	active := func(row int, c int) bool {
-		return minRow[c] >= 0 && maxRow[c] >= minRow[c] && row >= minRow[c] && row <= maxRow[c]
+		if c < 0 || c >= len(activeMap) {
+			return false
+		}
+		return activeMap[c][row]
 	}
 
 	var rows []Row
@@ -320,9 +443,8 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 			ns := order[commitIdx]
 			commitIdx++
 
-			// Stagger rows route from ns.col to parent columns.
-			stagger := st.buildStagger(ns, rowNum, active)
-			rows = append(rows, stagger...)
+			// Pre-stagger: terminating cols (parents of ns at different cols).
+			rows = append(rows, st.buildStagger(ns, rowNum, active)...)
 
 			// Commit row.
 			glyphs := make([]Glyph, st.numCols)
@@ -336,6 +458,10 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 				}
 			}
 			rows = append(rows, Row{Commit: ns.Node, Glyphs: glyphs})
+
+			// Post-stagger: fork rows for children at different cols whose
+			// lane is introduced from ns.
+			rows = append(rows, st.buildForkStagger(ns, rowNum, active)...)
 		}
 	}
 
@@ -347,6 +473,51 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 }
 
 // ------ stagger rows ------------------------------------------------------------------------------------------------
+
+// buildForkStagger emits stagger rows immediately after ns's commit row for
+// each child whose first-parent is ns but whose col differs from ns.col.
+// These are the lane-introduction diagonals (`|\`) that git draws right
+// below a parent commit when its branch splits.
+func (st *layoutState) buildForkStagger(ns *nodeState, rowNum int, active func(int, int) bool) []Row {
+	var forkCols []int
+	for _, child := range ns.children {
+		if len(child.Parents) == 0 || child.Parents[0] != ns.ID {
+			continue
+		}
+		if child.col == ns.col {
+			continue
+		}
+		forkCols = append(forkCols, child.col)
+	}
+	if len(forkCols) == 0 {
+		return nil
+	}
+	glyphs := make([]Glyph, st.numCols)
+	for c := 0; c < st.numCols; c++ {
+		isFork := false
+		for _, fc := range forkCols {
+			if fc == c {
+				isFork = true
+				break
+			}
+		}
+		switch {
+		case c == ns.col:
+			glyphs[c] = GlyphPipe
+		case isFork:
+			if c > ns.col {
+				glyphs[c] = GlyphBackslash
+			} else {
+				glyphs[c] = GlyphSlash
+			}
+		case active(rowNum+1, c):
+			glyphs[c] = GlyphPipe
+		default:
+			glyphs[c] = GlyphSpace
+		}
+	}
+	return []Row{{Glyphs: glyphs}}
+}
 
 func (st *layoutState) buildStagger(ns *nodeState, baseRow int, active func(int, int) bool) []Row {
 	if len(ns.Parents) == 0 {
@@ -370,8 +541,8 @@ func (st *layoutState) buildStagger(ns *nodeState, baseRow int, active func(int,
 		return nil
 	}
 	if len(parents) == 1 {
-		// Flip direction: parent→child (fork) instead of child→parent.
-		return st.staggerSingle(parents[0].col, ns.col, baseRow, active)
+		// Single-parent forks now handled post-commit by buildForkStagger.
+		return nil
 	}
 	return st.staggerMerge(ns.col, parents[0].col, parents[1].col, baseRow, active)
 }
@@ -418,11 +589,15 @@ func (st *layoutState) staggerSingle(src, dst, baseRow int, active func(int, int
 }
 
 func (st *layoutState) staggerMerge(commitCol, p1Col, p2Col, baseRow int, active func(int, int) bool) []Row {
+	// Stagger drawn before merge row: parents sit ABOVE (older rows) and
+	// terminate INTO ns (commit) below. Flow direction is parent.col → ns.col
+	// downward. Pass parent col first so the glyph (/ or \) matches the
+	// down-flow visual.
 	if p1Col == commitCol {
-		return st.staggerSingle(commitCol, p2Col, baseRow, active)
+		return st.staggerSingle(p2Col, commitCol, baseRow, active)
 	}
 	if p2Col == commitCol {
-		return st.staggerSingle(commitCol, p1Col, baseRow, active)
+		return st.staggerSingle(p1Col, commitCol, baseRow, active)
 	}
 	d1 := p1Col - commitCol
 	if d1 < 0 {
@@ -436,7 +611,7 @@ func (st *layoutState) staggerMerge(commitCol, p1Col, p2Col, baseRow int, active
 	if d2 > d1 {
 		farCol = p2Col
 	}
-	return st.staggerSingle(commitCol, farCol, baseRow, active)
+	return st.staggerSingle(farCol, commitCol, baseRow, active)
 }
 
 // ------ helpers ------------------------------------------------------------------------------------------------------------
