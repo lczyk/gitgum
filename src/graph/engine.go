@@ -14,15 +14,31 @@ func (e *Engine) Layout(g Graph) LayoutResult {
 		nodes: make([]*nodeState, 0, len(g.Nodes)),
 	}
 
+	// Count children per parent ahead of time so we can pre-size each
+	// children slice exactly. Saves per-append slice-growth allocs in
+	// scenarios where parents have multiple children.
+	childCount := make(map[string]int, len(g.Nodes))
+	for _, n := range g.Nodes {
+		for _, pid := range n.Parents {
+			childCount[pid]++
+		}
+	}
+
 	for i := range g.Nodes {
 		n := &g.Nodes[i]
 		ns := &nodeState{Node: n, row: -1, col: -1}
+		if c := childCount[n.ID]; c > 0 {
+			ns.children = make([]*nodeState, 0, c)
+		}
 		st.idx[n.ID] = ns
 		st.nodes = append(st.nodes, ns)
 	}
 
-	// Build child→parent reverse edges.
-	for _, ns := range st.idx {
+	// Build child→parent reverse edges. Iterate st.nodes (deterministic
+	// order) instead of st.idx (random map iteration) so children land in
+	// a stable sequence; avoids needing the post-sort entirely for cases
+	// where Date/ID ordering already aligns.
+	for _, ns := range st.nodes {
 		for _, pid := range ns.Parents {
 			if p, ok := st.idx[pid]; ok {
 				p.children = append(p.children, ns)
@@ -32,19 +48,13 @@ func (e *Engine) Layout(g Graph) LayoutResult {
 	// Sort children deterministically: first-parent children first (mainline
 	// continuity), then by date, then by ID. Map iteration above randomizes
 	// append order; without this every phase that iterates children is unstable.
+	// Using sort.Sort with a typed interface avoids the per-call closure
+	// allocation that sort.SliceStable would incur.
 	for _, ns := range st.nodes {
-		sort.SliceStable(ns.children, func(i, j int) bool {
-			a, b := ns.children[i], ns.children[j]
-			aFirst := a.Parents[0] == ns.ID
-			bFirst := b.Parents[0] == ns.ID
-			if aFirst != bFirst {
-				return aFirst
-			}
-			if a.Date != b.Date {
-				return a.Date < b.Date
-			}
-			return a.ID < b.ID
-		})
+		if len(ns.children) < 2 {
+			continue
+		}
+		sort.Stable(childSorter{children: ns.children, parentID: ns.ID})
 	}
 
 	// Phase 1: topological sort (oldest-first rows).
@@ -75,6 +85,28 @@ func (e *Engine) Layout(g Graph) LayoutResult {
 	rows := st.generateRows(order)
 
 	return LayoutResult{Rows: rows, Columns: st.numCols}
+}
+
+// childSorter implements sort.Interface for ordering a parent's children
+// without allocating a closure per Layout call.
+type childSorter struct {
+	children []*nodeState
+	parentID string
+}
+
+func (s childSorter) Len() int      { return len(s.children) }
+func (s childSorter) Swap(i, j int) { s.children[i], s.children[j] = s.children[j], s.children[i] }
+func (s childSorter) Less(i, j int) bool {
+	a, b := s.children[i], s.children[j]
+	aFirst := a.Parents[0] == s.parentID
+	bFirst := b.Parents[0] == s.parentID
+	if aFirst != bFirst {
+		return aFirst
+	}
+	if a.Date != b.Date {
+		return a.Date < b.Date
+	}
+	return a.ID < b.ID
 }
 
 // ------ internal state ------------------------------------------------------------------------------------------------
@@ -485,8 +517,9 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 		return false
 	}
 
-	// Index commits by row.
-	commitsAt := make(map[int][]*nodeState)
+	// Index commits by row. Rows are dense [0, lastRow] so a slice indexed
+	// by row beats a map[int][]*nodeState on alloc count.
+	commitsAt := make([][]*nodeState, lastRow+1)
 	for _, ns := range order {
 		commitsAt[ns.row] = append(commitsAt[ns.row], ns)
 	}
