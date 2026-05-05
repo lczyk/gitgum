@@ -65,16 +65,9 @@ func TestEdge_DuplicateID(t *testing.T) {
 		{ID: "a", Label: "a-first", Date: "2020-01-01T00:00:01Z"},
 		{ID: "a", Label: "a-second", Date: "2020-01-01T00:00:02Z"},
 	}
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Fatal("expected panic on duplicate ID, got none")
-		}
-		if !strings.Contains(r.(string), "duplicate") {
-			t.Errorf("panic message should mention duplicate, got %q", r)
-		}
-	}()
-	graph.Layout(nodes)
+	assert.Panic(t, func() { graph.Layout(nodes) }, func(t testing.TB, rec any) {
+		assert.That(t, strings.Contains(rec.(string), "duplicate"), "panic should mention duplicate, got %q", rec)
+	})
 }
 
 // TestEdge_Determinism: Layout(nodes) twice must produce byte-identical
