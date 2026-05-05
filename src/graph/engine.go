@@ -119,11 +119,22 @@ type nodeState struct {
 }
 
 type layoutState struct {
-	idx       map[string]*nodeState
-	nodes     []*nodeState
-	numCols   int
-	lanes     [][]lane // lanes per col, sorted by introRow
-	crossings map[*nodeState]map[string]int
+	idx        map[string]*nodeState
+	nodes      []*nodeState
+	numCols    int
+	lanes      [][]lane // lanes per col, sorted by introRow
+	crossings  map[*nodeState]map[string]int
+	glyphArena []Glyph // flat backing for per-row Glyph slices
+	arenaOff   int
+}
+
+// nextRowGlyphs hands out a numCols-wide sub-slice of the pre-allocated
+// glyph arena. All slots come back zero-initialized (= GlyphSpace) since
+// the arena was zero-initialized on allocation.
+func (st *layoutState) nextRowGlyphs() []Glyph {
+	g := st.glyphArena[st.arenaOff : st.arenaOff+st.numCols : st.arenaOff+st.numCols]
+	st.arenaOff += st.numCols
+	return g
 }
 
 // lane is one continuous span of a column's life. A col can host multiple
@@ -504,6 +515,52 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 
 	lastRow := order[len(order)-1].row
 
+	// Pre-count total rows (commits + stagger rows) so we can allocate a
+	// single flat backing array for all per-row Glyph slices. Each
+	// fork/term/crossing emits a known number of stagger rows based on
+	// col distance.
+	totalRows := len(order)
+	for c := 0; c < len(st.lanes); c++ {
+		for _, l := range st.lanes[c] {
+			if l.introCol < 0 {
+				continue
+			}
+			d := l.col - l.introCol
+			if d < 0 {
+				d = -d
+			}
+			totalRows += d
+		}
+	}
+	for _, ns := range order {
+		for i := 1; i < len(ns.Parents); i++ {
+			p := st.idx[ns.Parents[i]]
+			if p == nil || p.col == ns.col {
+				continue
+			}
+			if rc, ok := st.crossings[ns][ns.Parents[i]]; ok {
+				d1 := rc - p.col
+				if d1 < 0 {
+					d1 = -d1
+				}
+				d2 := rc - ns.col
+				if d2 < 0 {
+					d2 = -d2
+				}
+				totalRows += d1 + d2
+			} else {
+				d := ns.col - p.col
+				if d < 0 {
+					d = -d
+				}
+				totalRows += d
+			}
+		}
+	}
+	if totalRows > 0 && st.numCols > 0 {
+		st.glyphArena = make([]Glyph, totalRows*st.numCols)
+	}
+
 	// Active: row is in some lane's [introRow, endRow] span in col c.
 	active := func(row int, c int) bool {
 		if c < 0 || c >= len(st.lanes) {
@@ -560,7 +617,7 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 
 		// Commit rows.
 		for _, ns := range commitsAt[rowNum] {
-			glyphs := make([]Glyph, st.numCols)
+			glyphs := st.nextRowGlyphs()
 			for c := 0; c < st.numCols; c++ {
 				if c == ns.col {
 					glyphs[c] = GlyphStar
@@ -600,7 +657,7 @@ func (st *layoutState) forkRows(l lane, rowNum int, active func(int, int) bool) 
 	rows := make([]Row, 0, d)
 	for i := 0; i < d; i++ {
 		stepCol := l.introCol + dir*(i+1)
-		glyphs := make([]Glyph, st.numCols)
+		glyphs := st.nextRowGlyphs()
 		for c := 0; c < st.numCols; c++ {
 			switch {
 			case c == stepCol:
@@ -654,7 +711,7 @@ func (st *layoutState) termRows(p, ns *nodeState, rowNum int, active func(int, i
 	rows := make([]Row, 0, d)
 	for i := 0; i < d; i++ {
 		stepCol := p.col + dir*i
-		glyphs := make([]Glyph, st.numCols)
+		glyphs := st.nextRowGlyphs()
 		for c := 0; c < st.numCols; c++ {
 			switch {
 			case c == stepCol:
