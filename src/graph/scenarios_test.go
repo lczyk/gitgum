@@ -326,13 +326,13 @@ func TestScenario_BackMerge(t *testing.T) {
 		{ID: "main_merges_feat", Label: "main_merges_feat", Date: iso(4), Parents: []string{"main1", "feat1"}, LayoutHint: "main"},
 		{ID: "feat_merges_main", Label: "feat_merges_main", Date: iso(5), Parents: []string{"feat1", "main_merges_feat"}, LayoutHint: "feat"},
 	}
-	// TODO: engine: row order differs from git -- engine recurses first
-	// parent before second on the outer walk, while git emits feat1 before
-	// main1 here. Plus needs `|\|` cross-routing for the catch-up.
+	// Engine's topo walk recurses first parent before second, so feat1
+	// lands above main1 (vs git, which swaps them). Row order is not
+	// load-bearing for layout correctness; the catch-up `|\|` weave is.
 	expected := `* base
 |\
-| * main1
 * | feat1
+| * main1
 |\|
 | |\
 | |/

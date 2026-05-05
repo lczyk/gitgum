@@ -70,6 +70,10 @@ func (e *Engine) Layout(g Graph) LayoutResult {
 	// staggers and reuse cols across non-overlapping lanes.
 	st.buildLanes(order)
 
+	// Phase 4b: detect catch-up edges (non-first-parent edges where the
+	// source col stays alive past the parent), allocate routing cols.
+	st.detectCrossings(order)
+
 	// Phase 5: row generation.
 	rows := st.generateRows(order)
 
@@ -86,10 +90,11 @@ type nodeState struct {
 }
 
 type layoutState struct {
-	idx     map[string]*nodeState
-	nodes   []*nodeState
-	numCols int
-	lanes   [][]lane // lanes per col, sorted by introRow
+	idx       map[string]*nodeState
+	nodes     []*nodeState
+	numCols   int
+	lanes     [][]lane // lanes per col, sorted by introRow
+	crossings map[*nodeState]map[string]int
 }
 
 // lane is one continuous span of a column's life. A col can host multiple
@@ -477,6 +482,42 @@ func (st *layoutState) buildLanes(order []*nodeState) {
 	}
 }
 
+// detectCrossings finds non-first-parent edges that cross an active lane
+// and allocates a routing col for each. The catch-up edge will be drawn
+// as a fork from the source col out to the routing col, then a
+// termination from the routing col into the destination col.
+func (st *layoutState) detectCrossings(order []*nodeState) {
+	st.crossings = map[*nodeState]map[string]int{}
+	for _, ns := range order {
+		for i := 1; i < len(ns.Parents); i++ {
+			pid := ns.Parents[i]
+			p := st.idx[pid]
+			if p == nil || p.col == ns.col {
+				continue
+			}
+			// Find p's lane in p.col.
+			var pLane *lane
+			for li := range st.lanes[p.col] {
+				l := &st.lanes[p.col][li]
+				if l.introRow <= p.row && l.endRow >= p.row {
+					pLane = l
+					break
+				}
+			}
+			if pLane == nil || pLane.endRow <= p.row {
+				continue
+			}
+			// Source col stays alive past p -- need routing col.
+			routingCol := st.numCols
+			st.numCols++
+			if st.crossings[ns] == nil {
+				st.crossings[ns] = map[string]int{}
+			}
+			st.crossings[ns][pid] = routingCol
+		}
+	}
+}
+
 // ------ phase 5: row generation ------------------------------------------------------------------------
 
 func (st *layoutState) generateRows(order []*nodeState) []Row {
@@ -509,7 +550,9 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 	for rowNum := 0; rowNum <= lastRow; rowNum++ {
 		// Lane introductions at this row: a lane in col c with introRow == rowNum
 		// AND introCol >= 0 (i.e., forks from another col, not a root).
-		for c := 0; c < st.numCols; c++ {
+		// Iterate only commit cols; routing cols (beyond len(st.lanes)) have
+		// no lanes.
+		for c := 0; c < len(st.lanes); c++ {
 			for _, l := range st.lanes[c] {
 				if l.introRow != rowNum || l.introCol < 0 {
 					continue
@@ -519,15 +562,21 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 		}
 
 		// Termination staggers: for each commit at rowNum, each non-first
-		// parent at a different col contributes a termination edge. Emit d
-		// stagger rows for col distance d.
+		// parent at a different col contributes a termination edge. Crossing
+		// edges (where the source col stays alive past the parent) route via
+		// a temp col -- emitted as a fork to the routing col plus a
+		// termination from it to the commit's col.
 		for _, ns := range commitsAt[rowNum] {
 			for i := 1; i < len(ns.Parents); i++ {
 				p := st.idx[ns.Parents[i]]
 				if p == nil || p.col == ns.col {
 					continue
 				}
-				rows = append(rows, st.termRows(p, ns, rowNum, active)...)
+				if rc, ok := st.crossings[ns][ns.Parents[i]]; ok {
+					rows = append(rows, st.crossingStagger(p, ns, rc, rowNum, active)...)
+				} else {
+					rows = append(rows, st.termRows(p, ns, rowNum, active)...)
+				}
 			}
 		}
 
@@ -590,6 +639,19 @@ func (st *layoutState) forkRows(l lane, rowNum int, active func(int, int) bool) 
 		}
 		rows = append(rows, Row{Glyphs: glyphs})
 	}
+	return rows
+}
+
+// crossingStagger renders a catch-up termination via a routing col: a
+// fork from p.col out to routingCol, then a term from routingCol back to
+// ns.col. Used when the source col stays alive past p so the natural
+// `|/` would collide with the source col's vertical lane.
+func (st *layoutState) crossingStagger(p, ns *nodeState, routingCol, rowNum int, active func(int, int) bool) []Row {
+	rows := []Row{}
+	forkLane := lane{col: routingCol, introCol: p.col, introRow: rowNum, endRow: rowNum}
+	rows = append(rows, st.forkRows(forkLane, rowNum, active)...)
+	fakeP := &nodeState{col: routingCol}
+	rows = append(rows, st.termRows(fakeP, ns, rowNum, active)...)
 	return rows
 }
 
