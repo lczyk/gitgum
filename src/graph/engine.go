@@ -270,7 +270,7 @@ func (st *layoutState) sort() {
 // over child continuity for column-matching.
 
 type columnInfo struct {
-	hint string
+	hint int64
 }
 
 func (st *layoutState) assignColumns() {
@@ -285,8 +285,8 @@ func (st *layoutState) assignColumns() {
 		for ns.col >= len(colInfo) {
 			colInfo = append(colInfo, columnInfo{})
 		}
-		if ns.LayoutHint != "" {
-			colInfo[ns.col].hint = ns.LayoutHint
+		if ns.Lane != 0 {
+			colInfo[ns.col].hint = ns.Lane
 		}
 	}
 }
@@ -313,9 +313,9 @@ func (st *layoutState) assignOne(ns *nodeState, colInfo []columnInfo) {
 		return
 	}
 
-	if ns.LayoutHint != "" {
+	if ns.Lane != 0 {
 		for c, ci := range colInfo {
-			if ci.hint == ns.LayoutHint {
+			if ci.hint == ns.Lane {
 				ns.col = c
 				return
 			}

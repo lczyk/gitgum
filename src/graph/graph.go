@@ -12,10 +12,12 @@ package graph
 // Node is a vertex in the commit DAG. Parents is a forward edge list
 // (this -> parent). The engine builds reverse (child) edges internally.
 //
-// LayoutHint is an optional branch-name string used to keep tip commits on
-// a stable col across calls. Two nodes carrying the same non-empty hint are
-// pulled onto the same lane; mid-history nodes inherit from first-parent
-// children regardless of hint. Empty disables hinting.
+// Lane is an opaque int64 grouping nodes that should land on the same
+// column. Two nodes with the same non-zero Lane are pulled onto one
+// col; mid-history nodes inherit from first-parent children regardless
+// of Lane. Zero disables grouping. Callers typically intern branch-name
+// strings into int64s (sequential ids, fnv hashes, etc.) before
+// calling Layout.
 //
 // Label is appended verbatim after the graph glyphs and a single space.
 // Callers wanting per-segment coloring (hash, refs, subject) should embed
@@ -30,7 +32,7 @@ type Node struct {
 	Label      string
 	Parents    []string // parent IDs (empty for roots)
 	Epoch      int64    // sort key (commonly unix epoch seconds; any monotonic int works). Optional -- when all Epochs are equal (incl. zero), nodes tiebreak by ID for deterministic layout.
-	LayoutHint string
+	Lane int64
 }
 
 // Glyph is a single graph-drawing character in one column of one row.

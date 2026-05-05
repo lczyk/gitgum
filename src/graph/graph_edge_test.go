@@ -76,9 +76,9 @@ func TestEdge_Determinism(t *testing.T) {
 	t.Parallel()
 	nodes := []graph.Node{
 		{ID: "base", Label: "base", Epoch: 1},
-		{ID: "a1", Label: "a1", Epoch: 2, Parents: []string{"base"}, LayoutHint: "a"},
-		{ID: "b1", Label: "b1", Epoch: 3, Parents: []string{"base"}, LayoutHint: "b"},
-		{ID: "merge", Label: "merge", Epoch: 4, Parents: []string{"a1", "b1"}, LayoutHint: "a"},
+		{ID: "a1", Label: "a1", Epoch: 2, Parents: []string{"base"}, Lane: h("a")},
+		{ID: "b1", Label: "b1", Epoch: 3, Parents: []string{"base"}, Lane: h("b")},
+		{ID: "merge", Label: "merge", Epoch: 4, Parents: []string{"a1", "b1"}, Lane: h("a")},
 	}
 	first := strings.Join(graph.Render(graph.Layout(nodes), graph.Style{}), "\n")
 	for i := 0; i < 50; i++ {

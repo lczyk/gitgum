@@ -103,8 +103,8 @@ func TestRender_Style(t *testing.T) {
 	// is expected to embed any per-segment ANSI before Layout).
 	nodes := []graph.Node{
 		{ID: "base", Label: "base", Parents: nil, Epoch: 1},
-		{ID: "side", Label: "side", Parents: []string{"base"}, Epoch: 1, LayoutHint: "side"},
-		{ID: "main", Label: "main", Parents: []string{"base", "side"}, Epoch: 2, LayoutHint: "main"},
+		{ID: "side", Label: "side", Parents: []string{"base"}, Epoch: 1, Lane: h("side")},
+		{ID: "main", Label: "main", Parents: []string{"base", "side"}, Epoch: 2, Lane: h("main")},
 	}
 	st := graph.Style{
 		LinePrefix: "<L>", LineSuffix: "</L>",

@@ -88,7 +88,10 @@ func nativeColorEnabled() bool {
 
 // parseNativeCommits parses null-delimited git log output and pre-formats
 // each Label with ANSI escapes when color is on. Each commit is one line:
-// "<hash> <parents>\x00<hash> <decorations> <subject>\x00<date>"
+// "<hash> <parents>\x00<hash> <decorations> <subject>\x00<epoch>"
+//
+// Branch-name hints are interned into int64 lane ids via a per-call map
+// so repeated names share a lane.
 func parseNativeCommits(raw string, useColor bool) ([]graph.Node, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -96,6 +99,7 @@ func parseNativeCommits(raw string, useColor bool) ([]graph.Node, error) {
 	}
 	lines := strings.Split(raw, "\n")
 	nodes := make([]graph.Node, 0, len(lines))
+	laneIds := map[string]int64{}
 	for _, line := range lines {
 		if line == "" {
 			continue
@@ -120,26 +124,34 @@ func parseNativeCommits(raw string, useColor bool) ([]graph.Node, error) {
 		if len(seg) > 2 {
 			epoch, _ = strconv.ParseInt(strings.TrimSpace(seg[2]), 10, 64)
 		}
-		hint := extractLayoutHint(rawLabel)
+		var lane int64
+		if name := extractLaneName(rawLabel); name != "" {
+			lid, ok := laneIds[name]
+			if !ok {
+				lid = int64(len(laneIds) + 1)
+				laneIds[name] = lid
+			}
+			lane = lid
+		}
 		label := rawLabel
 		if useColor {
 			label = colorLabel(rawLabel)
 		}
 		nodes = append(nodes, graph.Node{
-			ID:         id,
-			Label:      label,
-			Parents:    parents,
-			Epoch:      epoch,
-			LayoutHint: hint,
+			ID:      id,
+			Label:   label,
+			Parents: parents,
+			Epoch:   epoch,
+			Lane:    lane,
 		})
 	}
 	return nodes, nil
 }
 
-// extractLayoutHint parses the first branch name from git's %d decoration
+// extractLaneName parses the first branch name from git's %d decoration
 // string. Format: "abc1234 (HEAD -> main, origin/main) subject" -> "main".
 // Returns "" if no ref decoration is present.
-func extractLayoutHint(label string) string {
+func extractLaneName(label string) string {
 	if idx := strings.Index(label, " ("); idx >= 0 {
 		rest := label[idx+2:]
 		if end := strings.Index(rest, ")"); end >= 0 {
