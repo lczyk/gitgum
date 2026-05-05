@@ -29,7 +29,7 @@ type Node struct {
 	ID         string
 	Label      string
 	Parents    []string // parent IDs (empty for roots)
-	Date       string   // sortable date string (ISO 8601) for ordering
+	Epoch      int64    // sort key (commonly unix epoch seconds; any monotonic int works)
 	LayoutHint string
 }
 

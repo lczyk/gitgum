@@ -18,7 +18,7 @@ func linearChain(n int) []graph.Node {
 		nodes[i] = graph.Node{
 			ID:      fmt.Sprintf("c%d", i),
 			Label:   fmt.Sprintf("c%d", i),
-			Date:    fmt.Sprintf("2020-01-01T00:00:%02dZ", i%60),
+			Epoch:   int64(i),
 			Parents: parents,
 		}
 	}
@@ -38,18 +38,18 @@ func mergeSeries(n, every int) []graph.Node {
 		}
 		nodes = append(nodes, graph.Node{
 			ID: mainID, Label: mainID,
-			Date: fmt.Sprintf("2020-01-01T%02d:00:00Z", i%24), Parents: p,
+			Epoch: int64(i * 100), Parents: p,
 		})
 		if i > 0 && i%every == 0 {
 			sideID := fmt.Sprintf("s%d", i)
 			nodes = append(nodes, graph.Node{
 				ID: sideID, Label: sideID,
-				Date: fmt.Sprintf("2020-01-01T%02d:30:00Z", i%24), Parents: []string{prevMain},
+				Epoch: int64(i*100 + 30), Parents: []string{prevMain},
 			})
 			mergeID := fmt.Sprintf("M%d", i)
 			nodes = append(nodes, graph.Node{
 				ID: mergeID, Label: mergeID,
-				Date: fmt.Sprintf("2020-01-01T%02d:45:00Z", i%24), Parents: []string{mainID, sideID},
+				Epoch: int64(i*100 + 45), Parents: []string{mainID, sideID},
 			})
 			prevMain = mergeID
 		} else {
@@ -62,14 +62,14 @@ func mergeSeries(n, every int) []graph.Node {
 // parallelBranches builds k branches of length len each, all forking from a
 // shared root. Stresses col allocation + compaction.
 func parallelBranches(k, length int) []graph.Node {
-	nodes := []graph.Node{{ID: "root", Label: "root", Date: "2020-01-01T00:00:00Z"}}
+	nodes := []graph.Node{{ID: "root", Label: "root", Epoch: 0}}
 	for b := 0; b < k; b++ {
 		prev := "root"
 		for i := 0; i < length; i++ {
 			id := fmt.Sprintf("b%dc%d", b, i)
 			nodes = append(nodes, graph.Node{
 				ID: id, Label: id,
-				Date:    fmt.Sprintf("2020-01-%02dT00:00:%02dZ", b+1, i%60),
+				Epoch:   int64((b+1)*1000 + i),
 				Parents: []string{prev},
 			})
 			prev = id

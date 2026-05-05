@@ -122,8 +122,8 @@ func (s childSorter) Less(i, j int) bool {
 	if aFirst != bFirst {
 		return aFirst
 	}
-	if a.Date != b.Date {
-		return a.Date < b.Date
+	if a.Epoch != b.Epoch {
+		return a.Epoch < b.Epoch
 	}
 	return a.ID < b.ID
 }
@@ -236,7 +236,7 @@ func (st *layoutState) sort() {
 
 	for len(ready) > 0 {
 		// Pick newest ready node (date-ordered queue).
-		sort.Slice(ready, func(i, j int) bool { return ready[i].Date > ready[j].Date })
+		sort.Slice(ready, func(i, j int) bool { return ready[i].Epoch > ready[j].Epoch })
 		ns := ready[0]
 		ready = ready[1:]
 		walk(ns)

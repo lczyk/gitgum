@@ -22,8 +22,8 @@ func TestRender_TopologicalCorrection(t *testing.T) {
 	t.Parallel()
 	// Child dated before parent due to clock skew. Layout must correct.
 	nodes := []Node{
-		{ID: "parent", Label: "p parent", Parents: nil, Date: "2020-01-02T00:00:00Z"},
-		{ID: "child", Label: "c child", Parents: []string{"parent"}, Date: "2020-01-01T00:00:00Z"},
+		{ID: "parent", Label: "p parent", Parents: nil, Epoch: 100},
+		{ID: "child", Label: "c child", Parents: []string{"parent"}, Epoch: 0},
 	}
 
 	lr := Layout(nodes)

@@ -14,9 +14,9 @@ import (
 func TestRender_Linear(t *testing.T) {
 	t.Parallel()
 	nodes := []graph.Node{
-		{ID: "a", Label: "a first commit", Parents: nil, Date: "2020-01-01T00:00:00Z"},
-		{ID: "b", Label: "b second commit", Parents: []string{"a"}, Date: "2020-01-02T00:00:00Z"},
-		{ID: "c", Label: "c third commit", Parents: []string{"b"}, Date: "2020-01-03T00:00:00Z"},
+		{ID: "a", Label: "a first commit", Parents: nil, Epoch: 1},
+		{ID: "b", Label: "b second commit", Parents: []string{"a"}, Epoch: 2},
+		{ID: "c", Label: "c third commit", Parents: []string{"b"}, Epoch: 200},
 	}
 
 	lr := graph.Layout(nodes)
@@ -50,9 +50,9 @@ func TestRender_Fork(t *testing.T) {
 	//  \
 	//   c
 	nodes := []graph.Node{
-		{ID: "a", Label: "a base", Parents: nil, Date: "2020-01-01T00:00:00Z"},
-		{ID: "b", Label: "b branch1", Parents: []string{"a"}, Date: "2020-01-02T00:00:00Z"},
-		{ID: "c", Label: "c branch2", Parents: []string{"a"}, Date: "2020-01-02T00:00:01Z"},
+		{ID: "a", Label: "a base", Parents: nil, Epoch: 1},
+		{ID: "b", Label: "b branch1", Parents: []string{"a"}, Epoch: 2},
+		{ID: "c", Label: "c branch2", Parents: []string{"a"}, Epoch: 101},
 	}
 
 	lr := graph.Layout(nodes)
@@ -76,10 +76,10 @@ func TestRender_Merge(t *testing.T) {
 	// a -- b -- d (merge)
 	//   \-- c -/
 	nodes := []graph.Node{
-		{ID: "a", Label: "a base", Parents: nil, Date: "2020-01-01T00:00:00Z"},
-		{ID: "b", Label: "b main", Parents: []string{"a"}, Date: "2020-01-02T00:00:00Z"},
-		{ID: "c", Label: "c feature", Parents: []string{"a"}, Date: "2020-01-02T00:00:01Z"},
-		{ID: "d", Label: "d merge", Parents: []string{"b", "c"}, Date: "2020-01-03T00:00:00Z"},
+		{ID: "a", Label: "a base", Parents: nil, Epoch: 1},
+		{ID: "b", Label: "b main", Parents: []string{"a"}, Epoch: 2},
+		{ID: "c", Label: "c feature", Parents: []string{"a"}, Epoch: 101},
+		{ID: "d", Label: "d merge", Parents: []string{"b", "c"}, Epoch: 200},
 	}
 
 	lr := graph.Layout(nodes)
@@ -102,9 +102,9 @@ func TestRender_Style(t *testing.T) {
 	// Style wraps the line/star glyphs; labels are emitted opaque (caller
 	// is expected to embed any per-segment ANSI before Layout).
 	nodes := []graph.Node{
-		{ID: "base", Label: "base", Parents: nil, Date: "2020-01-01T00:00:00Z"},
-		{ID: "side", Label: "side", Parents: []string{"base"}, Date: "2020-01-01T00:00:01Z", LayoutHint: "side"},
-		{ID: "main", Label: "main", Parents: []string{"base", "side"}, Date: "2020-01-01T00:00:02Z", LayoutHint: "main"},
+		{ID: "base", Label: "base", Parents: nil, Epoch: 1},
+		{ID: "side", Label: "side", Parents: []string{"base"}, Epoch: 1, LayoutHint: "side"},
+		{ID: "main", Label: "main", Parents: []string{"base", "side"}, Epoch: 2, LayoutHint: "main"},
 	}
 	st := graph.Style{
 		LinePrefix: "<L>", LineSuffix: "</L>",
@@ -123,7 +123,7 @@ func TestRender_Style(t *testing.T) {
 func TestRender_SingleNode(t *testing.T) {
 	t.Parallel()
 	nodes := []graph.Node{
-		{ID: "root", Label: "root initial", Parents: nil, Date: "2020-01-01T00:00:00Z"},
+		{ID: "root", Label: "root initial", Parents: nil, Epoch: 1},
 	}
 
 	lr := graph.Layout(nodes)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/lczyk/gitgum/src/graph"
@@ -17,7 +18,7 @@ func (t *TreeCommand) renderNative(w io.Writer, sinceArg string, maxCount int) e
 	if colorEnabled() {
 		colorFlag = "--color=always"
 	}
-	gitArgs := []string{"log", "--all", "--format=%H %P%x00%h%d %s%x00%aI", "--date-order", colorFlag}
+	gitArgs := []string{"log", "--all", "--format=%H %P%x00%h%d %s%x00%at", "--date-order", colorFlag}
 	if sinceArg != "" {
 		gitArgs = append(gitArgs, "--since", sinceArg)
 	}
@@ -115,9 +116,9 @@ func parseNativeCommits(raw string, useColor bool) ([]graph.Node, error) {
 		// Strip trailing whitespace -- empty %s leaves a trailing space
 		// after the hash that the old per-segment render dropped.
 		rawLabel := strings.TrimRight(seg[1], " ")
-		date := ""
+		var epoch int64
 		if len(seg) > 2 {
-			date = strings.TrimSpace(seg[2])
+			epoch, _ = strconv.ParseInt(strings.TrimSpace(seg[2]), 10, 64)
 		}
 		hint := extractLayoutHint(rawLabel)
 		label := rawLabel
@@ -128,7 +129,7 @@ func parseNativeCommits(raw string, useColor bool) ([]graph.Node, error) {
 			ID:         id,
 			Label:      label,
 			Parents:    parents,
-			Date:       date,
+			Epoch:      epoch,
 			LayoutHint: hint,
 		})
 	}

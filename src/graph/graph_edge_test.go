@@ -19,8 +19,8 @@ import (
 func TestEdge_CyclicGraph(t *testing.T) {
 	t.Parallel()
 	nodes := []graph.Node{
-		{ID: "a", Label: "a", Parents: []string{"b"}, Date: "2020-01-01T00:00:01Z"},
-		{ID: "b", Label: "b", Parents: []string{"a"}, Date: "2020-01-01T00:00:02Z"},
+		{ID: "a", Label: "a", Parents: []string{"b"}, Epoch: 1},
+		{ID: "b", Label: "b", Parents: []string{"a"}, Epoch: 2},
 	}
 	lr := graph.Layout(nodes)
 	commitRows := 0
@@ -37,7 +37,7 @@ func TestEdge_CyclicGraph(t *testing.T) {
 func TestEdge_SelfParent(t *testing.T) {
 	t.Parallel()
 	nodes := []graph.Node{
-		{ID: "a", Label: "a", Parents: []string{"a"}, Date: "2020-01-01T00:00:01Z"},
+		{ID: "a", Label: "a", Parents: []string{"a"}, Epoch: 1},
 	}
 	lr := graph.Layout(nodes)
 	assert.That(t, len(lr.Rows) >= 1, "at least one row")
@@ -49,7 +49,7 @@ func TestEdge_SelfParent(t *testing.T) {
 func TestEdge_MissingParent(t *testing.T) {
 	t.Parallel()
 	nodes := []graph.Node{
-		{ID: "child", Label: "child", Parents: []string{"phantom"}, Date: "2020-01-01T00:00:01Z"},
+		{ID: "child", Label: "child", Parents: []string{"phantom"}, Epoch: 1},
 	}
 	lr := graph.Layout(nodes)
 	lines := graph.Render(lr, graph.Style{})
@@ -62,8 +62,8 @@ func TestEdge_MissingParent(t *testing.T) {
 func TestEdge_DuplicateID(t *testing.T) {
 	t.Parallel()
 	nodes := []graph.Node{
-		{ID: "a", Label: "a-first", Date: "2020-01-01T00:00:01Z"},
-		{ID: "a", Label: "a-second", Date: "2020-01-01T00:00:02Z"},
+		{ID: "a", Label: "a-first", Epoch: 1},
+		{ID: "a", Label: "a-second", Epoch: 2},
 	}
 	assert.Panic(t, func() { graph.Layout(nodes) }, func(t testing.TB, rec any) {
 		assert.That(t, strings.Contains(rec.(string), "duplicate"), "panic should mention duplicate, got %q", rec)
@@ -75,10 +75,10 @@ func TestEdge_DuplicateID(t *testing.T) {
 func TestEdge_Determinism(t *testing.T) {
 	t.Parallel()
 	nodes := []graph.Node{
-		{ID: "base", Label: "base", Date: "2020-01-01T00:00:01Z"},
-		{ID: "a1", Label: "a1", Date: "2020-01-01T00:00:02Z", Parents: []string{"base"}, LayoutHint: "a"},
-		{ID: "b1", Label: "b1", Date: "2020-01-01T00:00:03Z", Parents: []string{"base"}, LayoutHint: "b"},
-		{ID: "merge", Label: "merge", Date: "2020-01-01T00:00:04Z", Parents: []string{"a1", "b1"}, LayoutHint: "a"},
+		{ID: "base", Label: "base", Epoch: 1},
+		{ID: "a1", Label: "a1", Epoch: 2, Parents: []string{"base"}, LayoutHint: "a"},
+		{ID: "b1", Label: "b1", Epoch: 3, Parents: []string{"base"}, LayoutHint: "b"},
+		{ID: "merge", Label: "merge", Epoch: 4, Parents: []string{"a1", "b1"}, LayoutHint: "a"},
 	}
 	first := strings.Join(graph.Render(graph.Layout(nodes), graph.Style{}), "\n")
 	for i := 0; i < 50; i++ {
@@ -94,10 +94,10 @@ func TestEdge_Determinism(t *testing.T) {
 func TestEdge_ConcurrentLayout(t *testing.T) {
 	t.Parallel()
 	nodes := []graph.Node{
-		{ID: "base", Label: "base", Date: "2020-01-01T00:00:01Z"},
-		{ID: "main1", Label: "main1", Date: "2020-01-01T00:00:02Z", Parents: []string{"base"}},
-		{ID: "side1", Label: "side1", Date: "2020-01-01T00:00:03Z", Parents: []string{"base"}},
-		{ID: "merge", Label: "merge", Date: "2020-01-01T00:00:04Z", Parents: []string{"main1", "side1"}},
+		{ID: "base", Label: "base", Epoch: 1},
+		{ID: "main1", Label: "main1", Epoch: 2, Parents: []string{"base"}},
+		{ID: "side1", Label: "side1", Epoch: 3, Parents: []string{"base"}},
+		{ID: "merge", Label: "merge", Epoch: 4, Parents: []string{"main1", "side1"}},
 	}
 	want := strings.Join(graph.Render(graph.Layout(nodes), graph.Style{}), "\n")
 	var wg sync.WaitGroup
