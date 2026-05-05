@@ -19,6 +19,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/lczyk/gitgum/src/fuzzyfinder/matching"
 	"github.com/lczyk/gitgum/src/litescreen"
+	"github.com/lczyk/gitgum/src/litescreen/ansi"
 	runewidth "github.com/mattn/go-runewidth"
 )
 
@@ -41,9 +42,10 @@ var (
 )
 
 type state struct {
-	items      []string // All item names.
-	itemsLower []string // Lowercased view of items for matching's hot path.
-	matched    []int    // Matched items against the input.
+	items       []string            // All item names (stripped of ansi when Opt.Ansi).
+	itemsLower  []string            // Lowercased view of items for matching's hot path.
+	itemsStyled [][]ansi.StyledRune // Per-item parsed runes; non-nil only when Opt.Ansi.
+	matched     []int               // Matched items against the input.
 
 	// x is the current index of the prompt line.
 	x int
@@ -139,9 +141,15 @@ func (f *finder) initFinder(items []string, opt Opt) error {
 		f.state.selectionIdx = 1
 	}
 
-	f.state.items = items
-	f.state.itemsLower = lowerHaystack(nil, nil, items)
-	f.state.matched = makeMatched(len(items))
+	if opt.Ansi {
+		stripped, styled := parseAnsiItems(items)
+		f.state.items = stripped
+		f.state.itemsStyled = styled
+	} else {
+		f.state.items = items
+	}
+	f.state.itemsLower = lowerHaystack(nil, nil, f.state.items)
+	f.state.matched = makeMatched(len(f.state.items))
 
 	if !isInTesting() {
 		f.drawTimer = time.AfterFunc(0, func() {
@@ -176,14 +184,20 @@ func (f *finder) updateItems(items []string) {
 	selKeys, selOrders := f.selectionIdentitiesLocked()
 
 	prevItems := f.state.items
-	f.state.items = items
-	f.state.itemsLower = lowerHaystack(f.state.itemsLower, prevItems, items)
+	if f.opt != nil && f.opt.Ansi {
+		stripped, styled := parseAnsiItems(items)
+		f.state.items = stripped
+		f.state.itemsStyled = styled
+	} else {
+		f.state.items = items
+	}
+	f.state.itemsLower = lowerHaystack(f.state.itemsLower, prevItems, f.state.items)
 
 	// Recompute matched against current input. Mirrors filter() but assumes
 	// the lock is held — callers from the resync goroutine want one atomic
 	// transition without dropping the lock mid-way.
 	if len(f.state.input) == 0 {
-		f.resetMatchedIdentity(len(items))
+		f.resetMatchedIdentity(len(f.state.items))
 	} else {
 		f.state.matched = matching.FindAllLower(strings.ToLower(string(f.state.input)), f.state.itemsLower)
 	}
@@ -193,7 +207,7 @@ func (f *finder) updateItems(items []string) {
 	if len(selKeys) > 0 {
 		newSel := make(map[int]int, len(selKeys))
 		for i, k := range selKeys {
-			if newIdx, ok := findKey(items, k); ok {
+			if newIdx, ok := findKey(f.state.items, k); ok {
 				newSel[newIdx] = selOrders[i]
 			}
 		}
@@ -447,9 +461,17 @@ func (f *finder) _draw() {
 			}
 		}
 
+		var styled []ansi.StyledRune
+		if f.state.itemsStyled != nil && m < len(f.state.itemsStyled) {
+			styled = f.state.itemsStyled[m]
+		}
+
 		w := 2
 		for j, r := range itemRunes {
 			style := tcell.StyleDefault.Foreground(tcell.ColorDefault).Background(tcell.ColorDefault)
+			if styled != nil && j < len(styled) {
+				style = styled[j].Style
+			}
 			hasHighlighted := highlightPositions[j]
 			if hasHighlighted {
 				style = tcell.StyleDefault.Foreground(tcell.ColorGreen).Background(tcell.ColorDefault)
@@ -900,6 +922,19 @@ func makeMatched(n int) []int {
 }
 
 // lowerHaystack updates dst so dst[i] == strings.ToLower(items[i]) for all i.
+// parseAnsiItems converts raw ANSI-coloured input items into stripped
+// match-friendly strings + parallel styled-rune slices for drawing. Both
+// outputs are parallel-indexed with the input.
+func parseAnsiItems(items []string) ([]string, [][]ansi.StyledRune) {
+	stripped := make([]string, len(items))
+	styled := make([][]ansi.StyledRune, len(items))
+	for i, raw := range items {
+		styled[i] = ansi.Parse(raw, tcell.StyleDefault)
+		stripped[i] = ansi.Strip(raw)
+	}
+	return stripped, styled
+}
+
 // Reuses dst when its capacity allows and only re-lowers entries that differ
 // from prevItems (the previously-cached source). Pass prevItems=nil to force
 // a full rebuild. ASCII-lowercase items get aliased (Go's strings.ToLower

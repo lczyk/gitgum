@@ -36,7 +36,7 @@ func TestStreamItems(t *testing.T) {
 		lock  sync.Mutex
 		items []string
 	)
-	err := streamItems(context.Background(), strings.NewReader("a\nb\r\n\nc\n"), &lock, &items, 0)
+	err := streamItems(context.Background(), strings.NewReader("a\nb\r\n\nc\n"), &lock, &items, 0, true)
 	assert.NoError(t, err)
 	want := []string{"a", "b", "c"}
 	assert.EqualArrays(t, items, want)
@@ -48,10 +48,22 @@ func TestStreamItems_StripsAnsi(t *testing.T) {
 		items []string
 	)
 	input := "\x1b[31mred\x1b[0m\nplain\n\x1b[1;32mboldgreen\x1b[m\n"
-	err := streamItems(context.Background(), strings.NewReader(input), &lock, &items, 0)
+	err := streamItems(context.Background(), strings.NewReader(input), &lock, &items, 0, true)
 	assert.NoError(t, err)
 	want := []string{"red", "plain", "boldgreen"}
 	assert.EqualArrays(t, items, want)
+}
+
+func TestStreamItems_KeepsAnsiWhenStripDisabled(t *testing.T) {
+	var (
+		lock  sync.Mutex
+		items []string
+	)
+	input := "\x1b[31mred\x1b[0m\n"
+	err := streamItems(context.Background(), strings.NewReader(input), &lock, &items, 0, false)
+	assert.NoError(t, err)
+	assert.Equal(t, len(items), 1)
+	assert.That(t, strings.Contains(items[0], "\x1b["), "expected raw escape preserved")
 }
 
 func TestRun_EmptyStdin(t *testing.T) {

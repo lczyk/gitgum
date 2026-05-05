@@ -95,7 +95,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// Read synchronously until we have at least one item (or EOF). This avoids
 	// launching the picker — and opening /dev/tty — when stdin is closed empty.
 	br := bufio.NewReader(stdin)
-	first, err := readFirstLine(br)
+	first, err := readFirstLine(br, !cfg.opt.Ansi)
 	if err != nil {
 		fmt.Fprintf(stderr, "fuzzyfinder: read stdin: %v\n", err)
 		return exitUsage
@@ -126,7 +126,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if cfg.fast {
 		delay = 0
 	}
-	go func() { readErrCh <- streamItems(ctx, br, &lock, &items, delay) }()
+	go func() { readErrCh <- streamItems(ctx, br, &lock, &items, delay, !cfg.opt.Ansi) }()
 
 	idxs, findErr := ff.Find(ctx, &items, &lock, cfg.opt)
 	cancel()
@@ -156,13 +156,15 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 }
 
 // readFirstLine returns the first non-empty line from r, or "" if r reaches
-// EOF without yielding one. Trailing \r is trimmed and ansi escapes are
-// stripped so the picker doesn't render raw `\x1b[...m` runs as items.
-func readFirstLine(r *bufio.Reader) (string, error) {
+// EOF without yielding one. Trailing \r is trimmed and ANSI escapes are
+// stripped unless stripAnsi is false.
+func readFirstLine(r *bufio.Reader, stripAnsi bool) (string, error) {
 	for {
 		line, err := r.ReadString('\n')
 		line = strings.TrimRight(strings.TrimSuffix(line, "\n"), "\r")
-		line = ansi.Strip(line)
+		if stripAnsi {
+			line = ansi.Strip(line)
+		}
 		if line != "" {
 			return line, nil
 		}
@@ -176,8 +178,10 @@ func readFirstLine(r *bufio.Reader) (string, error) {
 }
 
 // streamItems reads lines from r and appends them to *items under lock until
-// EOF or ctx is cancelled.
-func streamItems(ctx context.Context, r io.Reader, lock *sync.Mutex, items *[]string, delay time.Duration) error {
+// EOF or ctx is cancelled. ANSI escapes are stripped on ingest unless
+// stripAnsi is false (i.e. caller wants the picker to render colour via
+// Opt.Ansi downstream).
+func streamItems(ctx context.Context, r io.Reader, lock *sync.Mutex, items *[]string, delay time.Duration, stripAnsi bool) error {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	for scanner.Scan() {
@@ -187,7 +191,9 @@ func streamItems(ctx context.Context, r io.Reader, lock *sync.Mutex, items *[]st
 		default:
 		}
 		line := strings.TrimRight(scanner.Text(), "\r")
-		line = ansi.Strip(line)
+		if stripAnsi {
+			line = ansi.Strip(line)
+		}
 		if line == "" {
 			continue
 		}
@@ -219,6 +225,7 @@ func parseFlags(args []string, stderr io.Writer) (config, error) {
 	fs.BoolVar(&cfg.fast, "fast", false, "disable streaming delay (append items as fast as stdin produces them)")
 	fs.BoolVar(&cfg.opt.Reverse, "reverse", false, "render prompt at the top with items growing downward")
 	fs.IntVar(&cfg.opt.Height, "height", 0, "occupy only N rows of the terminal instead of fullscreen; preserves prior terminal output above the picker. 0 = fullscreen, N>0 = exact rows, N<0 = terminal_rows + N")
+	fs.BoolVar(&cfg.opt.Ansi, "ansi", false, "render ANSI SGR colour escapes from input items in the picker (default: strip)")
 	fs.StringVar(&cfg.completion, "completion", "", "print shell completion script for the given shell (bash, fish, zsh, or nu) and exit")
 
 	if err := fs.Parse(args); err != nil {

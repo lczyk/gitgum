@@ -32,6 +32,12 @@ type Opt struct {
 	// stderr "permission denied" lines tear the picker). Cost is a few KB
 	// of ANSI per frame; safe to leave off otherwise.
 	RedrawAggressive bool
+	// Ansi treats item strings as carrying ANSI SGR escape sequences.
+	// Items are parsed once, drawn with their native style, and stripped
+	// for matching. The cursor and search-highlight overrides still apply
+	// (and win) over the per-rune ansi style. When false (default), items
+	// are drawn as plain text and any escapes render as literal cells.
+	Ansi bool
 }
 
 func (o Opt) withDefaults() Opt {
