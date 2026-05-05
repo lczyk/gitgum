@@ -324,17 +324,17 @@ func (st *layoutState) compactColumns() {
 		}
 		ranges[c].hasCommit = true
 	}
-	for c := 2; c < st.numCols; c++ {
+	for c := 1; c < st.numCols; c++ {
 		if ranges[c].mergedTo != c || !ranges[c].hasCommit {
 			continue
 		}
-		for cp := 1; cp < c; cp++ {
+		for cp := 0; cp < c; cp++ {
 			if ranges[cp].mergedTo != cp || !ranges[cp].hasCommit {
 				continue
 			}
-			// Need a 1-row buffer between disjoint cols so the stagger row
-			// between merge-end of cp and fork-start of c doesn't collide.
-			if ranges[cp].max+1 < ranges[c].min || ranges[c].max+1 < ranges[cp].min {
+			// Disjoint commit-row ranges can share a lane: sparse per-col
+			// activity prevents pipes from being drawn between them.
+			if ranges[cp].max < ranges[c].min || ranges[c].max < ranges[cp].min {
 				ranges[c].mergedTo = cp
 				if ranges[c].min < ranges[cp].min {
 					ranges[cp].min = ranges[c].min

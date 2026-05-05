@@ -40,10 +40,20 @@ func renderRow(row Row, numCols int, cs ColorScheme) string {
 	}
 
 	if row.Commit == nil {
-		// Stagger / continuation row: emit slots verbatim including trailing
-		// padding (matches git's fixed-width stagger lines).
-		for _, g := range slots {
-			b.WriteString(cs(KindGraph, g.String()))
+		// Stagger / continuation row: render up to the rightmost col with
+		// non-space content (primary or slid diagonal), full 2-char slot
+		// width. Matches git's stagger-row trim-to-active behavior.
+		lastCol := -1
+		for c := 0; c < numCols; c++ {
+			if row.Glyphs[c] != GlyphSpace {
+				lastCol = c
+			}
+		}
+		if lastCol < 0 {
+			return ""
+		}
+		for i := 0; i < 2*(lastCol+1); i++ {
+			b.WriteString(cs(KindGraph, slots[i].String()))
 		}
 		return b.String()
 	}
