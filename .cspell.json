@@ -93,6 +93,10 @@
     "approxidate",
     "objectname",
     "refname",
+    "behaviours",
+    "pkgs",
+    "setcontent",
+    "generalises",
     "serialise"
   ]
 }
