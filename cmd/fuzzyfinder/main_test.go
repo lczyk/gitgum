@@ -42,6 +42,18 @@ func TestStreamItems(t *testing.T) {
 	assert.EqualArrays(t, items, want)
 }
 
+func TestStreamItems_StripsAnsi(t *testing.T) {
+	var (
+		lock  sync.Mutex
+		items []string
+	)
+	input := "\x1b[31mred\x1b[0m\nplain\n\x1b[1;32mboldgreen\x1b[m\n"
+	err := streamItems(context.Background(), strings.NewReader(input), &lock, &items, 0)
+	assert.NoError(t, err)
+	want := []string{"red", "plain", "boldgreen"}
+	assert.EqualArrays(t, items, want)
+}
+
 func TestRun_EmptyStdin(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run(nil, strings.NewReader(""), &stdout, &stderr)

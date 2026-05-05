@@ -20,6 +20,7 @@ import (
 
 	"github.com/lczyk/gitgum/src/completions"
 	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
+	"github.com/lczyk/gitgum/src/litescreen/ansi"
 	vinfo "github.com/lczyk/gitgum/src/version"
 	ver "github.com/lczyk/version/go"
 )
@@ -155,11 +156,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 }
 
 // readFirstLine returns the first non-empty line from r, or "" if r reaches
-// EOF without yielding one. Trailing \r is trimmed.
+// EOF without yielding one. Trailing \r is trimmed and ansi escapes are
+// stripped so the picker doesn't render raw `\x1b[...m` runs as items.
 func readFirstLine(r *bufio.Reader) (string, error) {
 	for {
 		line, err := r.ReadString('\n')
 		line = strings.TrimRight(strings.TrimSuffix(line, "\n"), "\r")
+		line = ansi.Strip(line)
 		if line != "" {
 			return line, nil
 		}
@@ -184,6 +187,7 @@ func streamItems(ctx context.Context, r io.Reader, lock *sync.Mutex, items *[]st
 		default:
 		}
 		line := strings.TrimRight(scanner.Text(), "\r")
+		line = ansi.Strip(line)
 		if line == "" {
 			continue
 		}
