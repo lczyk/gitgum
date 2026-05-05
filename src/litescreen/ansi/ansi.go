@@ -12,6 +12,7 @@
 package ansi
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -227,6 +228,66 @@ func applySGR(params string, cur, base tcell.Style) tcell.Style {
 		}
 	}
 	return st
+}
+
+// StyleToSGR encodes a tcell.Style as the corresponding SGR escape sequence.
+// Returns "" for the default style (no attrs, default fg+bg) so callers can
+// skip writes when nothing needs to change. Inverse of the Parse direction.
+func StyleToSGR(st tcell.Style) string {
+	fg, bg, attr := st.Decompose()
+	var params []string
+	if attr&tcell.AttrBold != 0 {
+		params = append(params, "1")
+	}
+	if attr&tcell.AttrDim != 0 {
+		params = append(params, "2")
+	}
+	if attr&tcell.AttrItalic != 0 {
+		params = append(params, "3")
+	}
+	if attr&tcell.AttrUnderline != 0 {
+		params = append(params, "4")
+	}
+	if attr&tcell.AttrBlink != 0 {
+		params = append(params, "5")
+	}
+	if attr&tcell.AttrReverse != 0 {
+		params = append(params, "7")
+	}
+	if attr&tcell.AttrStrikeThrough != 0 {
+		params = append(params, "9")
+	}
+	switch {
+	case fg == tcell.ColorDefault:
+	case fg > tcell.Color255:
+		r, g, b := fg.RGB()
+		params = append(params, fmt.Sprintf("38;2;%d;%d;%d", r, g, b))
+	default:
+		params = append(params, fmt.Sprintf("38;5;%d", fg-tcell.ColorValid))
+	}
+	switch {
+	case bg == tcell.ColorDefault:
+	case bg > tcell.Color255:
+		r, g, b := bg.RGB()
+		params = append(params, fmt.Sprintf("48;2;%d;%d;%d", r, g, b))
+	default:
+		params = append(params, fmt.Sprintf("48;5;%d", bg-tcell.ColorValid))
+	}
+	if len(params) == 0 {
+		return ""
+	}
+	return "\x1b[" + strings.Join(params, ";") + "m"
+}
+
+// Strip removes ANSI escape sequences from s, returning only the rune
+// payload. Convenience for callers that want plain text without styling.
+func Strip(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	walk(s, tcell.StyleDefault, func(r rune, _ tcell.Style) {
+		b.WriteRune(r)
+	})
+	return b.String()
 }
 
 // readExtendedColor parses the tail of a 38/48 color specifier. Accepts:

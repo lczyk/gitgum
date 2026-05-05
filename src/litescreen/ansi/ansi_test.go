@@ -261,6 +261,66 @@ func itoa(n int) string {
 	return string(b[i:])
 }
 
+func TestStyleToSGR(t *testing.T) {
+	tests := []struct {
+		name  string
+		style tcell.Style
+		want  string
+	}{
+		{"default", tcell.StyleDefault, ""},
+		{"bold", tcell.StyleDefault.Bold(true), "\x1b[1m"},
+		// ColorBlue's palette index in tcell is 12 (16-color VGA order:
+		// black, maroon, green, olive, navy, ..., red=9, ..., blue=12).
+		{"fg blue palette", tcell.StyleDefault.Foreground(tcell.ColorBlue), "\x1b[38;5;12m"},
+		{"fg+bg", tcell.StyleDefault.Foreground(tcell.ColorRed).Background(tcell.ColorBlack),
+			"\x1b[38;5;9;48;5;0m"},
+		{"bold+reverse", tcell.StyleDefault.Bold(true).Reverse(true), "\x1b[1;7m"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ansi.StyleToSGR(tc.style)
+			assert.Equal(t, got, tc.want)
+		})
+	}
+}
+
+func TestStyleToSGR_TrueColor(t *testing.T) {
+	st := tcell.StyleDefault.Foreground(tcell.NewRGBColor(255, 128, 0))
+	got := ansi.StyleToSGR(st)
+	assert.That(t, strings.Contains(got, "38;2;255;128;0"), "expected 24-bit fg sequence, got %q", got)
+}
+
+func TestStyleToSGR_RoundTrip(t *testing.T) {
+	// SGR encode -> parse should reproduce the original style.
+	cases := []tcell.Style{
+		tcell.StyleDefault.Bold(true),
+		tcell.StyleDefault.Foreground(tcell.PaletteColor(3)).Background(tcell.PaletteColor(5)),
+		tcell.StyleDefault.Italic(true).Underline(true).Reverse(true),
+		tcell.StyleDefault.Foreground(tcell.NewRGBColor(10, 20, 30)),
+	}
+	for i, st := range cases {
+		t.Run(itoa(i), func(t *testing.T) {
+			sgr := ansi.StyleToSGR(st)
+			runes := ansi.Parse(sgr+"X", tcell.StyleDefault)
+			assert.Equal(t, len(runes), 1)
+			assert.Equal(t, runes[0].Style, st)
+		})
+	}
+}
+
+func TestStrip(t *testing.T) {
+	got := ansi.Strip("\x1b[31mhello\x1b[0m world")
+	assert.Equal(t, got, "hello world")
+}
+
+func TestStrip_NoEscapes(t *testing.T) {
+	assert.Equal(t, ansi.Strip("plain text"), "plain text")
+}
+
+func TestStrip_OnlyEscapes(t *testing.T) {
+	assert.Equal(t, ansi.Strip("\x1b[31m\x1b[0m"), "")
+}
+
 func TestParse_MalformedCSI_NoFinalByte(t *testing.T) {
 	// No final byte; parser should consume to end without crashing.
 	got := ansi.Parse("a\x1b[31", tcell.StyleDefault)

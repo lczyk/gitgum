@@ -1,10 +1,8 @@
 package fuzzyfinder
 
 import (
-	"fmt"
-	"strings"
-
 	"github.com/gdamore/tcell/v2"
+	"github.com/lczyk/gitgum/src/litescreen/ansi"
 	runewidth "github.com/mattn/go-runewidth"
 )
 
@@ -52,13 +50,19 @@ func (m *TerminalMock) GetResult() string {
 
 		for w := 0; w < width; w++ {
 			cell := cells[h*width+w]
-			fg, bg, attr := cell.Style.Decompose()
+			fg, bg, _ := cell.Style.Decompose()
 			if fg != prevFg || bg != prevBg {
 				prevFg, prevBg = fg, bg
 
 				s += ansiReset
-				v := parseAttr(fg, bg, attr)
-				s += v
+				if sgr := ansi.StyleToSGR(cell.Style); sgr != "" {
+					s += sgr
+				} else {
+					// historical: emit a bare reset for the default style
+					// so transitions back to default produce a visible
+					// SGR boundary in golden snapshots.
+					s += ansiReset
+				}
 			}
 
 			// tcell >= v2.7 leaves Runes empty for cells that were never written;
@@ -78,50 +82,4 @@ func (m *TerminalMock) GetResult() string {
 	s += ansiReset
 
 	return s
-}
-
-// parseAttr parses color and attribute for testing.
-func parseAttr(fg, bg tcell.Color, attr tcell.AttrMask) string {
-	var params []string
-	if attr&tcell.AttrBold != 0 {
-		params = append(params, "1")
-	}
-	if attr&tcell.AttrBlink != 0 {
-		params = append(params, "5")
-	}
-	if attr&tcell.AttrReverse != 0 {
-		params = append(params, "7")
-	}
-	if attr&tcell.AttrUnderline != 0 {
-		params = append(params, "4")
-	}
-	if attr&tcell.AttrDim != 0 {
-		params = append(params, "2")
-	}
-	if attr&tcell.AttrItalic != 0 {
-		params = append(params, "3")
-	}
-	if attr&tcell.AttrStrikeThrough != 0 {
-		params = append(params, "9")
-	}
-
-	switch {
-	case fg == tcell.ColorDefault: // caller emits \x1b[m reset first, so nothing extra needed
-	case fg > tcell.Color255:
-		r, g, b := fg.RGB()
-		params = append(params, fmt.Sprintf("38;2;%d;%d;%d", r, g, b))
-	default:
-		params = append(params, fmt.Sprintf("38;5;%d", fg-tcell.ColorValid))
-	}
-
-	switch {
-	case bg == tcell.ColorDefault: // caller emits \x1b[m reset first, so nothing extra needed
-	case bg > tcell.Color255:
-		r, g, b := bg.RGB()
-		params = append(params, fmt.Sprintf("48;2;%d;%d;%d", r, g, b))
-	default:
-		params = append(params, fmt.Sprintf("48;5;%d", bg-tcell.ColorValid))
-	}
-
-	return fmt.Sprintf("\x1b[%sm", strings.Join(params, ";"))
 }

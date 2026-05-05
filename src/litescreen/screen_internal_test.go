@@ -230,37 +230,6 @@ func TestParseEscape_CSIArrow(t *testing.T) {
 	assert.Equal(t, ev.Key(), tcell.KeyUp)
 }
 
-func TestStyleToSGR(t *testing.T) {
-	tests := []struct {
-		name  string
-		style tcell.Style
-		want  string
-	}{
-		{"default", tcell.StyleDefault, ""},
-		{"bold", tcell.StyleDefault.Bold(true), "\x1b[1m"},
-		// ColorBlue's palette index in tcell is 12 (the 16-color enum is
-		// in VGA order: black, maroon, green, olive, navy, ..., red=9,
-		// ..., blue=12). Don't assume index = ANSI base color.
-		{"fg blue (palette)", tcell.StyleDefault.Foreground(tcell.ColorBlue), "\x1b[38;5;12m"},
-		{"fg+bg", tcell.StyleDefault.Foreground(tcell.ColorRed).Background(tcell.ColorBlack),
-			"\x1b[38;5;9;48;5;0m"},
-		{"bold+reverse", tcell.StyleDefault.Bold(true).Reverse(true), "\x1b[1;7m"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := styleToSGR(tc.style)
-			assert.Equal(t, got, tc.want)
-		})
-	}
-}
-
-func TestStyleToSGR_TrueColor(t *testing.T) {
-	// 24-bit color path: tcell.NewRGBColor returns a Color > Color255.
-	st := tcell.StyleDefault.Foreground(tcell.NewRGBColor(255, 128, 0))
-	got := styleToSGR(st)
-	assert.That(t, strings.Contains(got, "38;2;255;128;0"), "expected 24-bit fg sequence, got %q", got)
-}
-
 func TestCellEqual(t *testing.T) {
 	a := liteCell{mainc: 'x', style: tcell.StyleDefault}
 	b := liteCell{mainc: 'x', style: tcell.StyleDefault}

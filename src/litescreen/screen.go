@@ -28,6 +28,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/lczyk/gitgum/src/litescreen/ansi"
 	"github.com/mattn/go-runewidth"
 	"golang.org/x/term"
 )
@@ -343,7 +344,7 @@ func (f *framebuf) flushTo(buf *bytes.Buffer, yOrigin, cx, cy int, cursorVisible
 
 			if !styleSet || c.style != prevStyle {
 				buf.WriteString("\x1b[m")
-				buf.WriteString(styleToSGR(c.style))
+				buf.WriteString(ansi.StyleToSGR(c.style))
 				prevStyle = c.style
 				styleSet = true
 			}
@@ -772,54 +773,6 @@ func cellEqual(a, b liteCell) bool {
 		}
 	}
 	return true
-}
-
-// styleToSGR converts a tcell.Style to the corresponding ANSI SGR sequence.
-// Mirrors mock.go's parseAttr; keeping the two in sync is intentional.
-func styleToSGR(st tcell.Style) string {
-	fg, bg, attr := st.Decompose()
-	var params []string
-	if attr&tcell.AttrBold != 0 {
-		params = append(params, "1")
-	}
-	if attr&tcell.AttrDim != 0 {
-		params = append(params, "2")
-	}
-	if attr&tcell.AttrItalic != 0 {
-		params = append(params, "3")
-	}
-	if attr&tcell.AttrUnderline != 0 {
-		params = append(params, "4")
-	}
-	if attr&tcell.AttrBlink != 0 {
-		params = append(params, "5")
-	}
-	if attr&tcell.AttrReverse != 0 {
-		params = append(params, "7")
-	}
-	if attr&tcell.AttrStrikeThrough != 0 {
-		params = append(params, "9")
-	}
-	switch {
-	case fg == tcell.ColorDefault:
-	case fg > tcell.Color255:
-		r, g, b := fg.RGB()
-		params = append(params, fmt.Sprintf("38;2;%d;%d;%d", r, g, b))
-	default:
-		params = append(params, fmt.Sprintf("38;5;%d", fg-tcell.ColorValid))
-	}
-	switch {
-	case bg == tcell.ColorDefault:
-	case bg > tcell.Color255:
-		r, g, b := bg.RGB()
-		params = append(params, fmt.Sprintf("48;2;%d;%d;%d", r, g, b))
-	default:
-		params = append(params, fmt.Sprintf("48;5;%d", bg-tcell.ColorValid))
-	}
-	if len(params) == 0 {
-		return ""
-	}
-	return "\x1b[" + strings.Join(params, ";") + "m"
 }
 
 // ChannelEvents reads from /dev/tty in raw mode, parses keystrokes and
