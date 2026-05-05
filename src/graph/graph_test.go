@@ -1,33 +1,27 @@
-package graph
+package graph_test
 
 import (
 	"strings"
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/gitgum/src/graph"
 )
 
-func TestRender_Empty(t *testing.T) {
-	t.Parallel()
-	var e Engine
-	lr := e.Layout(Graph{})
-	assert.Equal(t, len(lr.Rows), 0)
-	assert.Equal(t, lr.Columns, 0)
-	lines := Render(lr, nil)
-	assert.Equal(t, len(lines), 0)
-}
+// graph_test.go holds black-box tests using only the graph package's public
+// API. White-box tests with access to internals live in graph_internal_test.go.
 
 func TestRender_Linear(t *testing.T) {
 	t.Parallel()
-	nodes := []Node{
+	nodes := []graph.Node{
 		{ID: "a", Label: "a first commit", Parents: nil, Date: "2020-01-01T00:00:00Z"},
 		{ID: "b", Label: "b second commit", Parents: []string{"a"}, Date: "2020-01-02T00:00:00Z"},
 		{ID: "c", Label: "c third commit", Parents: []string{"b"}, Date: "2020-01-03T00:00:00Z"},
 	}
 
-	var e Engine
-	lr := e.Layout(Graph{Nodes: nodes})
-	lines := Render(lr, nil)
+	var e graph.Engine
+	lr := e.Layout(graph.Graph{Nodes: nodes})
+	lines := graph.Render(lr, nil)
 
 	// Oldest first: a, then b, then c. No branching, so all in column 0.
 	assert.Equal(t, lr.Columns, 1)
@@ -56,23 +50,18 @@ func TestRender_Fork(t *testing.T) {
 	// a
 	//  \
 	//   c
-	nodes := []Node{
+	nodes := []graph.Node{
 		{ID: "a", Label: "a base", Parents: nil, Date: "2020-01-01T00:00:00Z"},
 		{ID: "b", Label: "b branch1", Parents: []string{"a"}, Date: "2020-01-02T00:00:00Z"},
 		{ID: "c", Label: "c branch2", Parents: []string{"a"}, Date: "2020-01-02T00:00:01Z"},
 	}
 
-	var e Engine
-	lr := e.Layout(Graph{Nodes: nodes})
-	lines := Render(lr, nil)
+	var e graph.Engine
+	lr := e.Layout(graph.Graph{Nodes: nodes})
+	lines := graph.Render(lr, nil)
 
 	// Two columns: main branch (a→b) in col 0, branch2 (c) in col 1.
 	assert.Equal(t, lr.Columns, 2)
-
-	// Line 0: commit a in col 0, col 1 empty.
-	// Line 1: stagger or pipe? After a, we have b and c. The fork from a to
-	// two children means we should see a split.
-	// Expected: a at bottom (oldest), then a split showing both branches.
 
 	assert.That(t, strings.Contains(lines[0], "a base"), "commit a visible")
 
@@ -88,21 +77,20 @@ func TestRender_Merge(t *testing.T) {
 	t.Parallel()
 	// a -- b -- d (merge)
 	//   \-- c -/
-	nodes := []Node{
+	nodes := []graph.Node{
 		{ID: "a", Label: "a base", Parents: nil, Date: "2020-01-01T00:00:00Z"},
 		{ID: "b", Label: "b main", Parents: []string{"a"}, Date: "2020-01-02T00:00:00Z"},
 		{ID: "c", Label: "c feature", Parents: []string{"a"}, Date: "2020-01-02T00:00:01Z"},
 		{ID: "d", Label: "d merge", Parents: []string{"b", "c"}, Date: "2020-01-03T00:00:00Z"},
 	}
 
-	var e Engine
-	lr := e.Layout(Graph{Nodes: nodes})
-	lines := Render(lr, nil)
+	var e graph.Engine
+	lr := e.Layout(graph.Graph{Nodes: nodes})
+	lines := graph.Render(lr, nil)
 
 	// Should have 2 columns at the merge point.
 	assert.Equal(t, lr.Columns, 2)
 
-	// All commits visible.
 	assert.That(t, containsAny(lines, "a base"), "commit a")
 	assert.That(t, containsAny(lines, "b main"), "commit b")
 	assert.That(t, containsAny(lines, "c feature"), "commit c")
@@ -112,46 +100,29 @@ func TestRender_Merge(t *testing.T) {
 	assert.That(t, containsAny(lines, "\\") || containsAny(lines, "/"), "should have merge routing glyphs")
 }
 
-func TestRender_TopologicalCorrection(t *testing.T) {
-	t.Parallel()
-	// Child dated before parent due to clock skew. Layout must correct.
-	nodes := []Node{
-		{ID: "parent", Label: "p parent", Parents: nil, Date: "2020-01-02T00:00:00Z"},
-		{ID: "child", Label: "c child", Parents: []string{"parent"}, Date: "2020-01-01T00:00:00Z"},
-	}
-
-	var e Engine
-	lr := e.Layout(Graph{Nodes: nodes})
-	lines := Render(lr, nil)
-
-	idxParent := indexOf(lines, "p parent")
-	idxChild := indexOf(lines, "c child")
-	assert.That(t, idxParent < idxChild, "parent before child despite date ordering")
-}
-
 func TestRender_ColorScheme(t *testing.T) {
 	t.Parallel()
-	nodes := []Node{
+	nodes := []graph.Node{
 		{ID: "a", Label: "abc1234 (HEAD -> main) hello world", Parents: nil, Date: "2020-01-01T00:00:00Z"},
 	}
 
-	cs := func(kind GlyphKind, text string) string {
+	cs := func(kind graph.GlyphKind, text string) string {
 		switch kind {
-		case KindGraph:
+		case graph.KindGraph:
 			return "<g:" + text + ">"
-		case KindHash:
+		case graph.KindHash:
 			return "<h:" + text + ">"
-		case KindRef:
+		case graph.KindRef:
 			return "<r:" + text + ">"
-		case KindSubject:
+		case graph.KindSubject:
 			return "<s:" + text + ">"
 		}
 		return text
 	}
 
-	var e Engine
-	lr := e.Layout(Graph{Nodes: nodes})
-	lines := Render(lr, cs)
+	var e graph.Engine
+	lr := e.Layout(graph.Graph{Nodes: nodes})
+	lines := graph.Render(lr, cs)
 
 	assert.Equal(t, len(lines), 1)
 	expected := "<g:*><g: ><h:abc1234> <r:(HEAD -> main)> <s:hello world>"
@@ -160,20 +131,20 @@ func TestRender_ColorScheme(t *testing.T) {
 
 func TestRender_SingleNode(t *testing.T) {
 	t.Parallel()
-	nodes := []Node{
+	nodes := []graph.Node{
 		{ID: "root", Label: "root initial", Parents: nil, Date: "2020-01-01T00:00:00Z"},
 	}
 
-	var e Engine
-	lr := e.Layout(Graph{Nodes: nodes})
-	lines := Render(lr, nil)
+	var e graph.Engine
+	lr := e.Layout(graph.Graph{Nodes: nodes})
+	lines := graph.Render(lr, nil)
 
 	assert.Equal(t, len(lines), 1)
 	assert.Equal(t, lr.Columns, 1)
 	assert.That(t, strings.HasPrefix(lines[0], "* root initial"), "single root commit")
 }
 
-// ------ helpers ------------------------------------------------------------------------------------------------------------------------
+// ------ helpers ----------------------------------------------------------
 
 func indexOf(lines []string, substr string) int {
 	for i, line := range lines {
