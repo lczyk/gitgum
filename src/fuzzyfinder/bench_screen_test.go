@@ -1,10 +1,8 @@
 package fuzzyfinder
 
-// cspell:ignore simscreen serialises
+// cspell:ignore simscreen
 
 import (
-	"sync"
-
 	"github.com/gdamore/tcell/v2"
 )
 
@@ -14,15 +12,13 @@ import (
 // closer to a real terminal than tcell.SimulationScreen, which
 // allocates inside drawCell + CellBuffer.Fill on every flush.
 //
-// not goroutine-safe; the finder serialises Show/Sync on its render
-// timer and SetContent only happens during draw.
+// not goroutine-safe; the finder is single-reader on the event chan
+// and SetContent only happens during draw.
 type BenchScreen struct {
-	w, h   int
-	cells  []benchCell // len == w*h
-	cursor struct{ x, y int }
-
-	eventsMu sync.Mutex
-	events   []tcell.Event
+	w, h       int
+	cells      []benchCell // len == w*h
+	cursor     struct{ x, y int }
+	eventsChan chan<- tcell.Event
 }
 
 type benchCell struct {
@@ -60,29 +56,26 @@ func (s *BenchScreen) ShowCursor(x, y int) { s.cursor.x, s.cursor.y = x, y }
 func (s *BenchScreen) Show()               {}
 func (s *BenchScreen) Sync()               {}
 
-// ChannelEvents drains injected events into ch then returns. the finder
-// treats a quiet events channel as the input being idle (real-terminal
-// equivalent: nothing typed). bench drives termination via the trailing
-// Esc key, same as the simscreen-based tests.
-func (s *BenchScreen) ChannelEvents(ch chan<- tcell.Event, quit <-chan struct{}) {
-	s.eventsMu.Lock()
-	evs := s.events
-	s.events = nil
-	s.eventsMu.Unlock()
-	for _, e := range evs {
-		select {
-		case ch <- e:
-		case <-quit:
-			return
-		}
+// ChannelEvents satisfies the screen interface. unused on this path
+// because NewWithBenchScreen wires SetEvents straight into the finder's
+// event chan, so initFinder's `f.term == nil` branch (which is the only
+// caller of ChannelEvents) never runs. blocks on quit so the contract
+// matches a real screen if anyone ever does call it.
+func (s *BenchScreen) ChannelEvents(_ chan<- tcell.Event, quit <-chan struct{}) {
+	if quit != nil {
+		<-quit
 	}
 }
 
-// SetEvents stages events to be delivered when ChannelEvents runs.
+// SetEvents pushes events into the finder's event chan. async send so a
+// caller staging more events than the chan buffer can hold does not
+// deadlock against a finder that hasn't started reading yet.
 func (s *BenchScreen) SetEvents(events ...tcell.Event) {
-	s.eventsMu.Lock()
-	s.events = append(s.events, events...)
-	s.eventsMu.Unlock()
+	go func() {
+		for _, e := range events {
+			s.eventsChan <- e
+		}
+	}()
 }
 
 // NewWithBenchScreen builds a finder wired to a BenchScreen. mirrors
@@ -94,7 +87,7 @@ func NewWithBenchScreen() (*finder, *BenchScreen) {
 	f := &finder{}
 	f.termEventsChan = eventsChan
 	bs := newBenchScreen(60, 10)
+	bs.eventsChan = eventsChan
 	f.term = bs
-	go bs.ChannelEvents(eventsChan, nil)
 	return f, bs
 }
