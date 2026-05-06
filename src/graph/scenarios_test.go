@@ -446,3 +446,26 @@ func TestScenario_OrphanWithTag(t *testing.T) {
 * orph1 (tag: v-orph)`
 	assertGraph(t, nodes, expected)
 }
+
+func TestScenario_StashWithIndex(t *testing.T) {
+	t.Parallel()
+	// Mirrors git's `refs/stash` shape: the stash commit C has two parents,
+	// the mainline tip A and an "index" commit B (which itself parents off A).
+	// `git log --graph --all` renders this with a `|\|` weave between B and C
+	// to convey C's second-parent edge into B's now-dead lane -- not a plain
+	// `|\` fork. Repro of the discrepancy seen running `gg tree` on a real
+	// repo with an active auto-stash entry.
+	nodes := []graph.Node{
+		{ID: "A", Label: "A", Epoch: iso(1), Lane: h("main")},
+		{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}, Lane: h("stash-idx")},
+		{ID: "C", Label: "C", Epoch: iso(3), Parents: []string{"A", "B"}, Lane: h("stash")},
+		{ID: "M", Label: "M", Epoch: iso(4), Parents: []string{"A"}, Lane: h("main")},
+	}
+	expected := `* A
+|\
+| * B
+|\|
+| * C
+* M`
+	assertGraph(t, nodes, expected)
+}
