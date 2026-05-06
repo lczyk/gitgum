@@ -89,7 +89,27 @@ func (r *ReleaseCommand) Execute(args []string) error {
 		}
 	}
 
+	mentions, err := scanVersionMentions(repo, root, current)
+	if err != nil {
+		return err
+	}
+	picks, err := pickVersionEdits(r.sel(), mentions, current)
+	if err != nil {
+		return err
+	}
+
 	fmt.Fprintf(r.out(), "Bumping %s -> %s\n", current, next)
+
+	editedPaths, err := applyVersionEdits(root, picks, current, next)
+	if err != nil {
+		return err
+	}
+	for _, p := range editedPaths {
+		fmt.Fprintf(r.out(), "  updated %s\n", p)
+		if err := repo.Add(filepath.Join(root, p)); err != nil {
+			return fmt.Errorf("git add %s: %w", p, err)
+		}
+	}
 
 	if hasFile {
 		if err := writeVersion(versionPath, header, next); err != nil {
@@ -101,7 +121,8 @@ func (r *ReleaseCommand) Execute(args []string) error {
 	}
 
 	commitMsg := "release: " + tags[0]
-	if hasFile {
+	staged := hasFile || len(editedPaths) > 0
+	if staged {
 		if err := repo.Commit(commitMsg); err != nil {
 			return err
 		}
@@ -147,10 +168,11 @@ type releasedState struct {
 }
 
 // alreadyReleased reports whether HEAD is a release commit whose tag is at HEAD.
-// The commit must:
-//   - have subject "release: vX.Y.Z"
-//   - touch only VERSION (or no files, for empty-commit releases)
-//   - have its tag peel to HEAD
+// The commit must have subject "release: vX.Y.Z" and have its tag peel to HEAD.
+// Touched files are not constrained -- the scanner offers any tracked text
+// file for auto-bump, so a release commit can legitimately edit anything.
+// Tag-at-HEAD is the strong signal: a stray "release: ..." subject won't
+// also have its corresponding tag pointing to that commit.
 func alreadyReleased(r git.Repo) (releasedState, bool) {
 	subject, _, err := r.Run("log", "-1", "--format=%s")
 	if err != nil {
@@ -158,19 +180,6 @@ func alreadyReleased(r git.Repo) (releasedState, bool) {
 	}
 	tag, ok := strings.CutPrefix(subject, "release: ")
 	if !ok || !strings.HasPrefix(tag, "v") {
-		return releasedState{}, false
-	}
-
-	// Touched files must be empty or only VERSION.
-	files, _, err := r.Run("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD")
-	if err != nil {
-		return releasedState{}, false
-	}
-	touched := strings.Fields(files)
-	if len(touched) > 1 {
-		return releasedState{}, false
-	}
-	if len(touched) == 1 && touched[0] != versionFileName {
 		return releasedState{}, false
 	}
 

@@ -12,11 +12,13 @@ import (
 // from its queue; running out fails the call so missing scripted answers
 // surface as test failures rather than hangs.
 type stubSelector struct {
-	selectAnswers  []string
-	confirmAnswers []bool
+	selectAnswers      []string
+	multiSelectAnswers [][]string
+	confirmAnswers     []bool
 
-	selectCalls  []selectCall
-	confirmCalls []confirmCall
+	selectCalls      []selectCall
+	multiSelectCalls []selectCall
+	confirmCalls     []confirmCall
 }
 
 type selectCall struct {
@@ -47,6 +49,16 @@ func (s *stubSelector) SelectStream(ctx context.Context, prompt string, src *ff.
 	}
 	answer := s.selectAnswers[0]
 	s.selectAnswers = s.selectAnswers[1:]
+	return answer, nil
+}
+
+func (s *stubSelector) MultiSelect(prompt string, options []string) ([]string, error) {
+	s.multiSelectCalls = append(s.multiSelectCalls, selectCall{Prompt: prompt, Options: options})
+	if len(s.multiSelectAnswers) == 0 {
+		return nil, fmt.Errorf("stubSelector: unexpected MultiSelect call %q", prompt)
+	}
+	answer := s.multiSelectAnswers[0]
+	s.multiSelectAnswers = s.multiSelectAnswers[1:]
 	return answer, nil
 }
 

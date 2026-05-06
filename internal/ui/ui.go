@@ -83,7 +83,31 @@ func Confirm(prompt string, defaultYes bool) (bool, error) {
 type Selector interface {
 	Select(prompt string, options []string, initialQuery ...string) (string, error)
 	SelectStream(ctx context.Context, prompt string, src *ff.SliceSource) (string, error)
+	MultiSelect(prompt string, options []string) ([]string, error)
 	Confirm(prompt string, defaultYes bool) (bool, error)
+}
+
+// MultiSelect presents options via the fuzzyfinder library with multi-select
+// enabled (Tab to mark, Enter to confirm). Returns the selected items in
+// selection order, or ErrCancelled if the user aborts (Esc/Ctrl+C).
+func MultiSelect(prompt string, options []string) ([]string, error) {
+	if len(options) == 0 {
+		return nil, fmt.Errorf("no options provided")
+	}
+	height := min(10, len(options))
+	opt := ff.Opt{Prompt: prompt + ": ", Height: height, Reverse: true, Multi: true}
+	idxs, err := ff.Find(context.Background(), &options, nil, opt)
+	if err != nil {
+		if errors.Is(err, ff.ErrAbort) {
+			return nil, ErrCancelled
+		}
+		return nil, fmt.Errorf("running picker: %w", err)
+	}
+	out := make([]string, len(idxs))
+	for i, idx := range idxs {
+		out[i] = options[idx]
+	}
+	return out, nil
 }
 
 // RealSelector is the production Selector. Methods delegate to ui.Select,
@@ -96,6 +120,10 @@ func (RealSelector) Select(prompt string, options []string, initialQuery ...stri
 
 func (RealSelector) SelectStream(ctx context.Context, prompt string, src *ff.SliceSource) (string, error) {
 	return SelectStream(ctx, prompt, src)
+}
+
+func (RealSelector) MultiSelect(prompt string, options []string) ([]string, error) {
+	return MultiSelect(prompt, options)
 }
 
 func (RealSelector) Confirm(prompt string, defaultYes bool) (bool, error) {

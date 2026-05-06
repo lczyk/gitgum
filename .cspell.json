@@ -111,6 +111,10 @@
     "respinning",
     "gopls",
     "userspace",
-    "syscalls"
+    "syscalls",
+    "basenames",
+    "lockfiles",
+    "pyproject",
+    "serde"
   ]
 }
