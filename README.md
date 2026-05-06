@@ -55,7 +55,7 @@ Pick a branch to switch to. Local and remote branches stream into the picker liv
 
 ### `gitgum status`
 
-Print branches and a porcelain-formatted working-tree status with a header.
+Print branches, remotes, and a tree-formatted view of the working-tree changes (modified files get an inline `(+a,-d)` line-change count). Pass `--flat` for a porcelain list instead of the tree. Pass `--follow` / `-f` (optional `=N` interval, default 2s, min 1) to refresh in an alt-screen with `j/k g/G PgUp/PgDn` scroll and `q` to exit; in follow mode the branches and remotes sections are suppressed and no remote ops run -- only `git status` is called.
 
 ### `gitgum tree`
 
@@ -63,7 +63,7 @@ Print a colored commit graph across all branches, with the tip at the bottom (ri
 ```bash
 git log --graph --oneline --all --decorate   # then reverse + flip diagonals
 ```
-Defaults to the last two weeks. Override with `--since=<expr>` (any value `git log --since` accepts: `1m`, `yesterday`, `2024-01-01`, `"3 weeks ago"`). Pass `--since=` (empty) for the full history.
+Defaults to the last two weeks. Override with `--since=<expr>` (any value `git log --since` accepts: `1m`, `yesterday`, `2024-01-01`, `"3 weeks ago"`). Pass `--since=` (empty) for the full history. Pass `--follow` / `-f` (optional `=N` interval) for an auto-refreshing alt-screen view with `j/k g/G` scroll.
 
 ### `gitgum push`
 
@@ -101,6 +101,8 @@ Useful for identifying the feature commits on a branch that need to be replayed 
 ### `gitgum release patch|minor|major`
 
 Bump `VERSION` (or fall back to the latest `vX.Y.Z` tag), commit, and create an annotated tag. Prompts (default no) when not on `main`. If the working tree has tracked uncommitted changes, prompts to auto-stash them (untracked files are left alone, partial-hunk staging is preserved on restore). Push is left manual so the result can be inspected.
+
+Before committing, scans every tracked text file for lines mentioning the current version (line contains the word "version" + a boundaried token match), and offers them in a multi-select picker. Picked lines get a plain string-replace bump (no language-specific parsing) and ride in the release commit. Esc / no picks skips the auto-edits; the release proceeds either way. Binary files and files larger than 4 MiB are soft-skipped.
 
 ### `gitgum completion fish|bash|zsh`
 
