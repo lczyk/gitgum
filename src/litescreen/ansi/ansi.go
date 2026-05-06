@@ -13,7 +13,6 @@ package ansi
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -155,77 +154,126 @@ func handleOSC(s string) int {
 // applySGR processes a semicolon-separated parameter string from a CSI ... m
 // sequence and mutates the carried style accordingly. Empty params
 // (e.g. "\x1b[m") are treated as SGR 0 / reset.
+//
+// Single-pass: parses ints directly out of params w/out allocating an
+// intermediate []string or []int. Extended-color (38/48) sub-sequences
+// consume the following 1+1 (5;N) or 1+3 (2;R;G;B) params via a small
+// state machine kept on the stack.
 func applySGR(params string, cur, base tcell.Style) tcell.Style {
 	if params == "" {
 		return base
 	}
-	parts := strings.Split(params, ";")
-	nums := make([]int, 0, len(parts))
-	for _, p := range parts {
-		n, err := strconv.Atoi(p)
-		if err != nil {
-			n = 0 // empty / non-numeric -> 0 per ANSI convention
-		}
-		nums = append(nums, n)
-	}
-
 	st := cur
-	for i := 0; i < len(nums); i++ {
-		n := nums[i]
-		switch {
-		case n == 0:
-			st = base
-		case n == 1:
-			st = st.Bold(true)
-		case n == 2:
-			st = st.Dim(true)
-		case n == 3:
-			st = st.Italic(true)
-		case n == 4:
-			st = st.Underline(true)
-		case n == 5, n == 6:
-			st = st.Blink(true)
-		case n == 7:
-			st = st.Reverse(true)
-		case n == 9:
-			st = st.StrikeThrough(true)
-		case n == 22:
-			st = st.Bold(false).Dim(false)
-		case n == 23:
-			st = st.Italic(false)
-		case n == 24:
-			st = st.Underline(false)
-		case n == 25:
-			st = st.Blink(false)
-		case n == 27:
-			st = st.Reverse(false)
-		case n == 29:
-			st = st.StrikeThrough(false)
-		case n >= 30 && n <= 37:
-			st = st.Foreground(tcell.PaletteColor(n - 30))
-		case n == 38:
-			color, consumed, ok := readExtendedColor(nums[i+1:])
-			if ok {
-				st = st.Foreground(color)
-				i += consumed
+	// extended-color state: when role != 0 the next params feed a 38/48
+	// (fg/bg) sub-sequence rather than the top-level switch.
+	//   role:    1 = fg (38), 2 = bg (48), 0 = none
+	//   mode:    5 = 256-color, 2 = truecolor, 0 = awaiting selector
+	//   need:    params still expected for current sub-sequence
+	//   buf:     accumulated R,G,B (mode 2) or N (mode 5)
+	var role, mode, need, bufLen int
+	var buf [3]int
+	// scan params: parse decimal ints separated by ';'. Empty / non-numeric -> 0.
+	n := 0
+	for i := 0; i <= len(params); i++ {
+		if i < len(params) {
+			c := params[i]
+			if c >= '0' && c <= '9' {
+				n = n*10 + int(c-'0')
+				continue
 			}
-		case n == 39:
-			st = st.Foreground(tcell.ColorDefault)
-		case n >= 40 && n <= 47:
-			st = st.Background(tcell.PaletteColor(n - 40))
-		case n == 48:
-			color, consumed, ok := readExtendedColor(nums[i+1:])
-			if ok {
-				st = st.Background(color)
-				i += consumed
+			if c != ';' {
+				// non-numeric, non-separator byte: skip silently
+				continue
 			}
-		case n == 49:
-			st = st.Background(tcell.ColorDefault)
-		case n >= 90 && n <= 97:
-			st = st.Foreground(tcell.PaletteColor(n - 90 + 8))
-		case n >= 100 && n <= 107:
-			st = st.Background(tcell.PaletteColor(n - 100 + 8))
 		}
+		// boundary: process accumulated n
+		if role != 0 {
+			if mode == 0 {
+				switch n {
+				case 5:
+					mode, need = 5, 1
+				case 2:
+					mode, need = 2, 3
+				default:
+					role, mode, need, bufLen = 0, 0, 0, 0
+				}
+			} else {
+				buf[bufLen] = n
+				bufLen++
+				need--
+				if need == 0 {
+					var color tcell.Color
+					ok := true
+					switch mode {
+					case 5:
+						v := buf[0]
+						if v < 0 || v > 255 {
+							ok = false
+						} else {
+							color = tcell.PaletteColor(v)
+						}
+					case 2:
+						color = tcell.NewRGBColor(int32(buf[0]), int32(buf[1]), int32(buf[2]))
+					}
+					if ok {
+						if role == 1 {
+							st = st.Foreground(color)
+						} else {
+							st = st.Background(color)
+						}
+					}
+					role, mode, need, bufLen = 0, 0, 0, 0
+				}
+			}
+		} else {
+			switch {
+			case n == 0:
+				st = base
+			case n == 1:
+				st = st.Bold(true)
+			case n == 2:
+				st = st.Dim(true)
+			case n == 3:
+				st = st.Italic(true)
+			case n == 4:
+				st = st.Underline(true)
+			case n == 5, n == 6:
+				st = st.Blink(true)
+			case n == 7:
+				st = st.Reverse(true)
+			case n == 9:
+				st = st.StrikeThrough(true)
+			case n == 22:
+				st = st.Bold(false).Dim(false)
+			case n == 23:
+				st = st.Italic(false)
+			case n == 24:
+				st = st.Underline(false)
+			case n == 25:
+				st = st.Blink(false)
+			case n == 27:
+				st = st.Reverse(false)
+			case n == 29:
+				st = st.StrikeThrough(false)
+			case n >= 30 && n <= 37:
+				st = st.Foreground(tcell.PaletteColor(n - 30))
+			case n == 38:
+				role, mode, need, bufLen = 1, 0, 1, 0
+			case n == 39:
+				st = st.Foreground(tcell.ColorDefault)
+			case n >= 40 && n <= 47:
+				st = st.Background(tcell.PaletteColor(n - 40))
+			case n == 48:
+				role, mode, need, bufLen = 2, 0, 1, 0
+			case n == 49:
+				st = st.Background(tcell.ColorDefault)
+			case n >= 90 && n <= 97:
+				st = st.Foreground(tcell.PaletteColor(n - 90 + 8))
+			case n >= 100 && n <= 107:
+				st = st.Background(tcell.PaletteColor(n - 100 + 8))
+			}
+		}
+		n = 0
 	}
 	return st
 }
@@ -290,33 +338,3 @@ func Strip(s string) string {
 	return b.String()
 }
 
-// readExtendedColor parses the tail of a 38/48 color specifier. Accepts:
-//
-//	5;N         -> 256-color palette index
-//	2;R;G;B     -> truecolor RGB
-//
-// Returns the parsed Color, number of params consumed (after the 38/48),
-// and whether parsing succeeded. Caller advances its loop index by the
-// returned count.
-func readExtendedColor(rest []int) (tcell.Color, int, bool) {
-	if len(rest) == 0 {
-		return tcell.ColorDefault, 0, false
-	}
-	switch rest[0] {
-	case 5:
-		if len(rest) < 2 {
-			return tcell.ColorDefault, 0, false
-		}
-		n := rest[1]
-		if n < 0 || n > 255 {
-			return tcell.ColorDefault, 2, false
-		}
-		return tcell.PaletteColor(n), 2, true
-	case 2:
-		if len(rest) < 4 {
-			return tcell.ColorDefault, 0, false
-		}
-		return tcell.NewRGBColor(int32(rest[1]), int32(rest[2]), int32(rest[3])), 4, true
-	}
-	return tcell.ColorDefault, 0, false
-}
