@@ -1,5 +1,7 @@
 package fuzzyfinder
 
+// cspell:ignore simscreen serialises
+
 import (
 	"sync"
 
