@@ -108,6 +108,12 @@ type finder struct {
 	// drawWords; we invalidate by element-wise compare.
 	drawWordsBuf []rune
 	drawWords    []string
+
+	// filterDone is a non-blocking signal sent by the bg event-loop
+	// goroutine after a full filter+draw cycle. only used by tests to
+	// sync on event processing without a fixed sleep. buffered 1 so
+	// the goroutine never blocks when no test is waiting.
+	filterDone chan struct{}
 }
 
 // chromeRows returns the count of non-item rows the picker draws around the
@@ -169,6 +175,7 @@ func (f *finder) initFinder(items []string, opt Opt) error {
 		f.drawTimer.Stop()
 	}
 	f.eventCh = make(chan struct{}, 30) // A large value
+	f.filterDone = make(chan struct{}, 1)
 
 	if opt.Query != "" {
 		f.state.input = []rune(opt.Query)
@@ -1020,6 +1027,14 @@ func (f *finder) runLoop(ctx context.Context, opt *Opt) ([]int, error) {
 			case <-f.eventCh:
 				f.filter()
 				f.draw(0)
+				// non-blocking signal so tests can sync on a fully
+				// processed event (filter + draw). buffered 1 +
+				// non-blocking send means production never stalls
+				// here when nothing is waiting.
+				select {
+				case f.filterDone <- struct{}{}:
+				default:
+				}
 			}
 		}
 	}()
@@ -1031,10 +1046,28 @@ func (f *finder) runLoop(ctx context.Context, opt *Opt) ([]int, error) {
 		default:
 			f.draw(10 * time.Millisecond)
 
+			f.stateMu.RLock()
+			prevInputLen := len(f.state.input)
+			f.stateMu.RUnlock()
+
 			err := f.readKey(ctx)
-			// hack for earning time to filter exec
+
+			// in tests, sync on filter completion so subsequent reads
+			// of state.matched (snapshot tests) and the next iteration
+			// observe a consistent state. only wait when input changed,
+			// matching the eventCh push in readKey's defer; otherwise
+			// the bg goroutine wouldn't be running filter and we'd
+			// block on a signal that won't come.
 			if isInTesting() {
-				time.Sleep(50 * time.Millisecond)
+				f.stateMu.RLock()
+				curInputLen := len(f.state.input)
+				f.stateMu.RUnlock()
+				if prevInputLen != curInputLen {
+					select {
+					case <-f.filterDone:
+					case <-time.After(100 * time.Millisecond):
+					}
+				}
 			}
 			switch {
 			case errors.Is(err, ErrAbort):
