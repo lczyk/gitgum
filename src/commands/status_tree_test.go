@@ -61,6 +61,37 @@ func TestRenderTree_Flat(t *testing.T) {
 	assert.EqualLineByLine(t, got, expected)
 }
 
+func TestParseNumstat(t *testing.T) {
+	in := "12\t3\tfoo.go\n0\t5\tbar.go\n-\t-\timg.png\n7\t1\tnested/baz.go\n"
+	got := parseNumstat(in)
+	assert.Equal(t, len(got), 3) // binary line skipped
+	assert.Equal(t, got["foo.go"].added, 12)
+	assert.Equal(t, got["foo.go"].deleted, 3)
+	assert.Equal(t, got["bar.go"].added, 0)
+	assert.Equal(t, got["bar.go"].deleted, 5)
+	assert.Equal(t, got["nested/baz.go"].added, 7)
+}
+
+func TestFormatNumstat(t *testing.T) {
+	got := stripAnsi(formatNumstat(numstat{added: 5, deleted: 2}))
+	assert.Equal(t, got, "(+5,-2)")
+}
+
+func TestRenderTree_WithNumstat(t *testing.T) {
+	ns := numstat{added: 4, deleted: 1}
+	entries := []changeEntry{
+		{code: " M", path: "go.mod", numstat: &ns},
+		{code: "??", path: "untracked.txt"}, // no numstat
+	}
+	var buf strings.Builder
+	renderTree(buildTree(entries), &buf)
+	got := stripAnsi(buf.String())
+	expected := "" +
+		"[ M] go.mod (+4,-1)\n" +
+		"[??] untracked.txt\n"
+	assert.EqualLineByLine(t, got, expected)
+}
+
 func TestRenderTree_Nested(t *testing.T) {
 	entries := []changeEntry{
 		{code: " M", path: "internal/git/git.go"},

@@ -84,7 +84,9 @@ func (s *StatusCommand) renderBody(out io.Writer) error {
 		if s.Flat {
 			fmt.Fprintln(out, strings.Join(changeLines, "\n"))
 		} else {
-			renderTree(buildTree(parseChangeLines(changeLines)), out)
+			entries := parseChangeLines(changeLines)
+			annotateNumstats(s.repo(), entries)
+			renderTree(buildTree(entries), out)
 		}
 	}
 

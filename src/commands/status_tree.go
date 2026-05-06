@@ -4,12 +4,62 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
+
+	"github.com/lczyk/gitgum/internal/git"
 )
 
 type changeEntry struct {
-	code string // 2-char porcelain XY, or "R<"/"R>" for rename source/dest
-	path string
+	code    string // 2-char porcelain XY, or "R<"/"R>" for rename source/dest
+	path    string
+	numstat *numstat // nil if unavailable (untracked, binary, or no HEAD)
+}
+
+type numstat struct {
+	added, deleted int
+}
+
+// annotateNumstats fills the numstat field on each entry whose path has a
+// matching `git diff --numstat HEAD --no-renames` line. Untracked files,
+// binary diffs, rename markers, and empty repos (no HEAD) get nil -- the
+// renderer simply omits the count for those.
+func annotateNumstats(repo git.Repo, entries []changeEntry) {
+	out, _, err := repo.Run("diff", "--numstat", "--no-renames", "HEAD")
+	if err != nil {
+		return
+	}
+	stats := parseNumstat(out)
+	for i := range entries {
+		if ns, ok := stats[entries[i].path]; ok {
+			entries[i].numstat = &ns
+		}
+	}
+}
+
+// parseNumstat parses `git diff --numstat` output into a path-keyed map.
+// Binary diffs (added/deleted == "-") are skipped.
+func parseNumstat(out string) map[string]numstat {
+	m := map[string]numstat{}
+	for line := range strings.SplitSeq(out, "\n") {
+		if line == "" {
+			continue
+		}
+		fields := strings.SplitN(line, "\t", 3)
+		if len(fields) < 3 {
+			continue
+		}
+		if fields[0] == "-" || fields[1] == "-" {
+			continue
+		}
+		a, errA := strconv.Atoi(fields[0])
+		d, errD := strconv.Atoi(fields[1])
+		if errA != nil || errD != nil {
+			continue
+		}
+		m[fields[2]] = numstat{added: a, deleted: d}
+	}
+	return m
 }
 
 type treeNode struct {
@@ -119,7 +169,19 @@ func colorCode(code string) string {
 }
 
 func formatLeaf(e *changeEntry, name string) string {
-	return dim("[") + colorCode(e.code) + dim("]") + " " + name
+	out := dim("[") + colorCode(e.code) + dim("]") + " " + name
+	if e.numstat != nil {
+		out += " " + formatNumstat(*e.numstat)
+	}
+	return out
+}
+
+func formatNumstat(n numstat) string {
+	return dim("(") +
+		paint(ansiGreen, fmt.Sprintf("+%d", n.added)) +
+		dim(",") +
+		paint(ansiRed, fmt.Sprintf("-%d", n.deleted)) +
+		dim(")")
 }
 
 func renderTree(root *treeNode, w io.Writer) {
