@@ -581,29 +581,60 @@ func TestFindMulti(t *testing.T) {
 	}
 }
 
+// BenchmarkFind drives the full finder loop once per iteration, typing
+// "adrele!!" then Esc.
+//
+// "sim" uses tcell.SimulationScreen -- same backend as the unit tests,
+// alloc profile is dominated by tcell internals (drawCell,
+// CellBuffer.Fill on every flush). "bench" uses BenchScreen --
+// preallocated cell buffer, zero per-frame allocs on the screen side,
+// so reported allocs reflect finder code rather than the mock backend.
+// closer to a real terminal where the screen-side buffer is reused
+// across frames.
 func BenchmarkFind(b *testing.B) {
-	b.Run("normal", func(b *testing.B) {
+	b.Run("sim/normal", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for b.Loop() {
 			f, term := ff.NewWithMockedTerminal()
 			events := append(runes("adrele!!"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 			term.SetEvents(events...)
-
 			names := trackNames()
 			_, err := f.Find(context.Background(), &names, nil, ff.Opt{})
 			assert.Error(b, err, ff.ErrAbort)
 		}
 	})
-
-	b.Run("hotreload", func(b *testing.B) {
+	b.Run("bench/normal", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			f, term := ff.NewWithBenchScreen()
+			events := append(runes("adrele!!"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
+			term.SetEvents(events...)
+			names := trackNames()
+			_, err := f.Find(context.Background(), &names, nil, ff.Opt{})
+			assert.Error(b, err, ff.ErrAbort)
+		}
+	})
+	b.Run("sim/hotreload", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for b.Loop() {
 			f, term := ff.NewWithMockedTerminal()
 			events := append(runes("adrele!!"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 			term.SetEvents(events...)
-
+			names := trackNames()
+			_, err := f.Find(context.Background(), &names, &sync.Mutex{}, ff.Opt{})
+			assert.Error(b, err, ff.ErrAbort)
+		}
+	})
+	b.Run("bench/hotreload", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			f, term := ff.NewWithBenchScreen()
+			events := append(runes("adrele!!"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
+			term.SetEvents(events...)
 			names := trackNames()
 			_, err := f.Find(context.Background(), &names, &sync.Mutex{}, ff.Opt{})
 			assert.Error(b, err, ff.ErrAbort)
