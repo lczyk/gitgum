@@ -54,18 +54,30 @@ func renderRow(row Row, numCols int, st Style) string {
 		lastActive = 0
 	}
 
-	writeSlots(&b, slots[:2*(lastActive+1)], st)
+	slotEnd := 2 * (lastActive + 1)
+	// Tail decorations sit immediately after the last non-space slot, used
+	// by stagger rows needing a transient extra glyph (e.g. the trailing
+	// `|` in git's `|\|` weave) without growing numCols. Trim col-pad
+	// spaces so the tail abuts the last meaningful slot.
+	if len(row.Tail) > 0 {
+		for slotEnd > 0 && slots[slotEnd-1] == GlyphSpace {
+			slotEnd--
+		}
+	}
+	writeSlots(&b, slots[:slotEnd], st)
+	if len(row.Tail) > 0 {
+		writeSlots(&b, row.Tail, st)
+	}
 
 	if row.Commit == nil {
 		return b.String()
 	}
 
-	// Merge commits get (n-1)*2 extra space chars after the `*` slot to
-	// align with the stagger row above. Matches git's --graph output.
-	if extra := len(row.Commit.Parents) - 1; extra > 0 {
-		for range extra * 2 {
-			b.WriteByte(' ')
-		}
+	// Merge commits get extra alignment slots after the `*` to line up with
+	// fan-out cols above (each fan-out parent contributes 2 chars). Layout
+	// pre-computes this from actual parent col positions.
+	for range row.Extras * 2 {
+		b.WriteByte(' ')
 	}
 
 	// Label is opaque -- callers embed ANSI codes pre-Layout if they want

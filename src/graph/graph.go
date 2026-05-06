@@ -82,6 +82,17 @@ type Style struct {
 type Row struct {
 	Commit *Node
 	Glyphs []Glyph // len == LayoutResult.Columns
+	// Extras is the number of `*-to-label` alignment-padding slots a merge
+	// commit needs. Computed by Layout from how many non-first parents end
+	// up in cols different from the commit's own col -- matches git's
+	// `--graph` alignment which only widens the gap when parents actually
+	// fan out further to the side.
+	Extras int
+	// Tail is appended verbatim to the rendered row, after the col-grid
+	// slots, before any extras/label. Used for transient single-row
+	// decorations (e.g. the trailing `|` that turns a fork stagger `|\`
+	// into git's `|\|` shape) without widening LayoutResult.Columns.
+	Tail []Glyph
 }
 
 // LayoutResult is the computed output of Layout. Rows is in oldest-first

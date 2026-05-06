@@ -100,6 +100,13 @@ func Layout(nodes []Node) LayoutResult {
 	// source col stays alive past the parent), allocate routing cols.
 	st.detectCrossings(order)
 
+	// Phase 4c: detect "merge preview" cases -- a 2-parent commit whose
+	// non-first parent sits in the same col as the commit but in a different
+	// (already-ended) lane. git renders this with a `|\|` stagger above the
+	// commit; we mirror it by allocating a preview col that's only filled in
+	// the fork-intro stagger row.
+	st.detectMergePreviews(order)
+
 	// Phase 5: row generation.
 	rows := st.generateRows(order)
 
@@ -146,7 +153,8 @@ type layoutState struct {
 	numCols    int
 	lanes      [][]lane // lanes per col, sorted by introRow
 	crossings  map[*nodeState]map[string]int
-	glyphArena []Glyph // flat backing for per-row Glyph slices
+	previews   map[*nodeState]int // commit -> preview col for `|\|` stagger when 2nd parent shares col
+	glyphArena []Glyph            // flat backing for per-row Glyph slices
 	arenaOff   int
 }
 
@@ -535,6 +543,38 @@ func (st *layoutState) detectCrossings(order []*nodeState) {
 	}
 }
 
+// detectMergePreviews finds 2+ parent commits with a non-first parent in the
+// same col as the commit but in a different (already-terminated) lane. git's
+// `--graph` output emits a `|/|` (newest-first) / `|\|` (oldest-first) above
+// such commits to convey the dead-lane merge edge. We mark the commit so the
+// fork-intro stagger row picks up a trailing `|` glyph; numCols stays put,
+// so other rows aren't padded out.
+func (st *layoutState) detectMergePreviews(order []*nodeState) {
+	st.previews = map[*nodeState]int{}
+	for _, ns := range order {
+		for i := 1; i < len(ns.Parents); i++ {
+			pid := ns.Parents[i]
+			p := st.idx[pid]
+			if p == nil || p.col != ns.col {
+				continue
+			}
+			var pLane *lane
+			for li := range st.lanes[p.col] {
+				l := &st.lanes[p.col][li]
+				if l.introRow <= p.row && l.endRow >= p.row {
+					pLane = l
+					break
+				}
+			}
+			if pLane == nil || pLane.endRow >= ns.row {
+				continue
+			}
+			st.previews[ns] = 1 // marker; value unused
+			break
+		}
+	}
+}
+
 // ------ phase 5: row generation ------------------------------------------------------------------------
 
 func (st *layoutState) generateRows(order []*nodeState) []Row {
@@ -621,7 +661,23 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 				if l.introRow != rowNum || l.introCol < 0 {
 					continue
 				}
-				rows = append(rows, st.forkRows(l, rowNum, active)...)
+				forkResult := st.forkRows(l, rowNum, active)
+				// Merge-preview decoration: if the commit owning this fork
+				// has a same-col 2nd-parent in a different (dead) lane,
+				// append a trailing `|` to the stagger row immediately above
+				// the commit -- this is git's `|\|` shape.
+				if len(forkResult) > 0 {
+					for _, ns := range commitsAt[l.endRow] {
+						if ns.col != l.col {
+							continue
+						}
+						if _, ok := st.previews[ns]; ok {
+							last := &forkResult[len(forkResult)-1]
+							last.Tail = append(last.Tail, GlyphPipe, GlyphSpace)
+						}
+					}
+				}
+				rows = append(rows, forkResult...)
 			}
 		}
 
@@ -656,7 +712,21 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 					glyphs[c] = GlyphSpace
 				}
 			}
-			rows = append(rows, Row{Commit: ns.Node, Glyphs: glyphs})
+			// Extras: count non-first parents that fan out to a different col.
+			// Same-col parents (resolved as `|\|` previews above) don't widen
+			// the commit row -- git's `--graph` only pads when parents
+			// actually live in further-out cols.
+			extras := 0
+			for i := 1; i < len(ns.Parents); i++ {
+				p := st.idx[ns.Parents[i]]
+				if p == nil {
+					continue
+				}
+				if p.col != ns.col {
+					extras++
+				}
+			}
+			rows = append(rows, Row{Commit: ns.Node, Glyphs: glyphs, Extras: extras})
 		}
 	}
 
