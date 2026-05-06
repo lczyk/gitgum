@@ -337,4 +337,3 @@ func Strip(s string) string {
 	})
 	return b.String()
 }
-
