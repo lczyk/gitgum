@@ -76,23 +76,6 @@ func TestStatusCommand_RenderBody_SuppressesBranchesAndRemotes(t *testing.T) {
 	}
 }
 
-func TestStatusCommand_SnapshotStatus(t *testing.T) {
-	t.Parallel()
-	dir := temp_repo.NewRepo(t)
-
-	cmd := &StatusCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
-	before, err := cmd.snapshotStatus()
-	assert.NoError(t, err)
-
-	temp_repo.WriteFile(t, dir, "new.txt", "x\n")
-	after, err := cmd.snapshotStatus()
-	assert.NoError(t, err)
-
-	if before == after {
-		t.Errorf("snapshotStatus should change after a working-tree mutation; got identical:\n%s", before)
-	}
-}
-
 func TestStatusCommand_FollowRequiresTTY(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)

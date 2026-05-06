@@ -95,13 +95,6 @@ func (s *StatusCommand) renderBody(out io.Writer) error {
 	return nil
 }
 
-// snapshotStatus returns a cheap fingerprint of the working-tree state.
-// Used to skip redraws when nothing changed between ticks.
-func (s *StatusCommand) snapshotStatus() (string, error) {
-	out, _, err := s.repo().Run("status", "--porcelain=v2", "--branch")
-	return out, err
-}
-
 func (s *StatusCommand) runFollow() error {
 	if !stdoutIsTTY() {
 		return errors.New("--follow requires a tty")
@@ -129,26 +122,24 @@ func (s *StatusCommand) runFollow() error {
 	defer tick.Stop()
 
 	var (
-		cachedFp     string
 		cachedLines  []string
 		cachedErr    error
-		forceRender  = true
 		scrollOffset = 0
 		tailMode     = true
 	)
 
+	// Render every tick. Working-tree edits don't show up in any cheap
+	// fingerprint (porcelain v2 SHAs track index/HEAD, not the working
+	// tree), so any cache keyed on a fingerprint silently misses content
+	// changes -- the numstat counts would only refresh when the *set* of
+	// changed files changed, not when an existing file's diff size did.
 	refreshCache := func() {
-		fp, fpErr := s.snapshotStatus()
-		if forceRender || fpErr != nil || fp != cachedFp {
-			var buf bytes.Buffer
-			cachedErr = s.renderBody(&buf)
-			body := strings.Trim(buf.String(), "\n")
-			cachedLines = nil
-			if body != "" {
-				cachedLines = strings.Split(body, "\n")
-			}
-			cachedFp = fp
-			forceRender = false
+		var buf bytes.Buffer
+		cachedErr = s.renderBody(&buf)
+		body := strings.Trim(buf.String(), "\n")
+		cachedLines = nil
+		if body != "" {
+			cachedLines = strings.Split(body, "\n")
 		}
 	}
 
