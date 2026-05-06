@@ -118,6 +118,8 @@
     "serde",
     "boundaried",
     "autotools",
-    "docstrings"
+    "docstrings",
+    "numstat",
+    "numstats"
   ]
 }
