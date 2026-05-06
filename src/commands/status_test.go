@@ -55,6 +55,59 @@ func TestStatusCommand_WithChanges(t *testing.T) {
 	assert.ContainsString(t, output, "STATUS")
 }
 
+func TestStatusCommand_RenderBody_SuppressesBranchesAndRemotes(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.WriteFile(t, dir, "untracked.txt", "hello\n")
+
+	var buf strings.Builder
+	cmd := &StatusCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}}
+	err := cmd.renderBody(&buf)
+
+	assert.NoError(t, err)
+	output := buf.String()
+	assert.ContainsString(t, output, "CHANGES")
+	assert.ContainsString(t, output, "STATUS")
+	if strings.Contains(output, "BRANCHES") {
+		t.Errorf("renderBody must not emit BRANCHES section, got:\n%s", output)
+	}
+	if strings.Contains(output, "REMOTES") {
+		t.Errorf("renderBody must not emit REMOTES section, got:\n%s", output)
+	}
+}
+
+func TestStatusCommand_SnapshotStatus(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+
+	cmd := &StatusCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
+	before, err := cmd.snapshotStatus()
+	assert.NoError(t, err)
+
+	temp_repo.WriteFile(t, dir, "new.txt", "x\n")
+	after, err := cmd.snapshotStatus()
+	assert.NoError(t, err)
+
+	if before == after {
+		t.Errorf("snapshotStatus should change after a working-tree mutation; got identical:\n%s", before)
+	}
+}
+
+func TestStatusCommand_FollowRequiresTTY(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+
+	interval := 2.0
+	cmd := &StatusCommand{
+		cmdIO:  cmdIO{Out: &strings.Builder{}, Repo: git.Repo{Dir: dir}},
+		Follow: &interval,
+	}
+	err := cmd.Execute(nil)
+
+	assert.Error(t, err, assert.AnyError, "follow without tty should error")
+	assert.ContainsString(t, err.Error(), "tty")
+}
+
 func TestParseRemotes(t *testing.T) {
 	cases := map[string]struct {
 		input    string
