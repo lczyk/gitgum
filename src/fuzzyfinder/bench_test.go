@@ -47,11 +47,14 @@ func BenchmarkSliceSource_Version(b *testing.B) {
 
 func BenchmarkSliceSource_RemoveFunc(b *testing.B) {
 	for _, n := range []int{100, 1000, 10_000} {
+		items := benchItems(n)
 		b.Run(fmt.Sprintf("n=%d_remove_half", n), func(b *testing.B) {
 			b.ReportAllocs()
-			for b.Loop() {
+			// NOTE: legacy b.N loop -- b.Loop() is incompatible with
+			// StopTimer/StartTimer (the adaptive scaler never converges).
+			for i := 0; i < b.N; i++ {
 				b.StopTimer()
-				src := NewSliceSourceFrom(benchItems(n))
+				src := NewSliceSourceFrom(items)
 				b.StartTimer()
 				src.RemoveFunc(func(s string) bool {
 					// Drop every other item.
@@ -120,7 +123,9 @@ func BenchmarkUpdateItems_Removal(b *testing.B) {
 		smaller := items[1:]
 		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
 			b.ReportAllocs()
-			for b.Loop() {
+			// NOTE: legacy b.N loop -- b.Loop() is incompatible with
+			// StopTimer/StartTimer (the adaptive scaler never converges).
+			for i := 0; i < b.N; i++ {
 				b.StopTimer()
 				f := newTestFinder(items, true)
 				f.state.y = n / 2
