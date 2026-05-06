@@ -107,6 +107,10 @@
     "indeg",
     "goldens",
     "octo",
-    "orph"
+    "orph",
+    "respinning",
+    "gopls",
+    "userspace",
+    "syscalls"
   ]
 }
