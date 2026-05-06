@@ -100,6 +100,14 @@ type finder struct {
 	multi     bool
 
 	termEventsChan <-chan tcell.Event
+
+	// PERF: cache strings.Fields(state.input) across draws. state.input
+	// rarely changes between redraws but _draw runs many times per
+	// keystroke, so recomputing fields per draw dominates the alloc
+	// profile. drawWordsBuf holds a copy of the input that produced
+	// drawWords; we invalidate by element-wise compare.
+	drawWordsBuf []rune
+	drawWords    []string
 }
 
 // chromeRows returns the count of non-item rows the picker draws around the
@@ -312,6 +320,29 @@ func (f *finder) clampCursorLocked() {
 	}
 }
 
+// cachedDrawWords returns strings.Fields(string(state.input)), reusing
+// the previous result when state.input hasn't changed. _draw runs many
+// times per keystroke; recomputing the fields each time was the
+// dominant alloc in the finder render loop.
+func (f *finder) cachedDrawWords() []string {
+	in := f.state.input
+	if len(in) == len(f.drawWordsBuf) {
+		eq := true
+		for i, r := range in {
+			if r != f.drawWordsBuf[i] {
+				eq = false
+				break
+			}
+		}
+		if eq {
+			return f.drawWords
+		}
+	}
+	f.drawWordsBuf = append(f.drawWordsBuf[:0], in...)
+	f.drawWords = strings.Fields(string(in))
+	return f.drawWords
+}
+
 // _draw is used from draw with a timer.
 func (f *finder) _draw() {
 	width, height := f.term.Size()
@@ -415,7 +446,7 @@ func (f *finder) _draw() {
 
 	// Item lines: i=0 is the row closest to the prompt.
 	matched := f.state.matched[topIdx:]
-	words := strings.Fields(string(f.state.input))
+	words := f.cachedDrawWords()
 
 	for i, m := range matched {
 		if i > itemAreaHeight {
