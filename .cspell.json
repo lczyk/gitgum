@@ -115,6 +115,9 @@
     "basenames",
     "lockfiles",
     "pyproject",
-    "serde"
+    "serde",
+    "boundaried",
+    "autotools",
+    "docstrings"
   ]
 }
