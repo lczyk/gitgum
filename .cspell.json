@@ -102,6 +102,11 @@
     "pkgs",
     "setcontent",
     "generalises",
-    "serialise"
+    "serialise",
+    "indegree",
+    "indeg",
+    "goldens",
+    "octo",
+    "orph"
   ]
 }

@@ -3,7 +3,6 @@ package commands
 import (
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 
@@ -34,7 +33,7 @@ func (t *TreeCommand) renderNative(w io.Writer, sinceArg string, maxCount int) e
 		return nil
 	}
 
-	useColor := nativeColorEnabled()
+	useColor := colorEnabled()
 	nodes, err := parseNativeCommits(stdout, useColor)
 	if err != nil {
 		return fmt.Errorf("parsing git log output: %w", err)
@@ -45,27 +44,6 @@ func (t *TreeCommand) renderNative(w io.Writer, sinceArg string, maxCount int) e
 
 	lr := graph.Layout(nodes)
 
-	if os.Getenv("GG_DUMP_LAYOUT") == "1" {
-		fmt.Fprintf(os.Stderr, "columns=%d rows=%d\n", lr.Columns, len(lr.Rows))
-		for i, row := range lr.Rows {
-			if i >= 30 {
-				break
-			}
-			var gs string
-			for _, g := range row.Glyphs {
-				gs += g.String()
-			}
-			label := ""
-			if row.Commit != nil {
-				label = row.Commit.Label
-				if len(label) > 50 {
-					label = label[:50]
-				}
-			}
-			fmt.Fprintf(os.Stderr, "  row %2d: %-8s %s\n", i, gs, label)
-		}
-	}
-
 	st := graph.Style{}
 	if useColor {
 		st = graph.Style{LinePrefix: ansiRed, LineSuffix: ansiReset}
@@ -75,15 +53,6 @@ func (t *TreeCommand) renderNative(w io.Writer, sinceArg string, maxCount int) e
 		fmt.Fprintln(w, line)
 	}
 	return nil
-}
-
-// nativeColorEnabled mirrors the prior nativeColorScheme gating: color
-// is off only when stdout isn't a tty, FORCE_COLOR is unset, and
-// NO_COLOR is set. Otherwise color is on.
-func nativeColorEnabled() bool {
-	_, fc := os.LookupEnv("FORCE_COLOR")
-	_, nc := os.LookupEnv("NO_COLOR")
-	return colorEnabled() || fc || !nc
 }
 
 // parseNativeCommits parses null-delimited git log output and pre-formats

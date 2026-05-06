@@ -28,11 +28,11 @@ package graph
 // are accepted but the resulting layout is unspecified (see edge tests
 // for pinned behavior).
 type Node struct {
-	ID         string
-	Label      string
-	Parents    []string // parent IDs (empty for roots)
-	Epoch      int64    // sort key (commonly unix epoch seconds; any monotonic int works). Optional -- when all Epochs are equal (incl. zero), nodes tiebreak by ID for deterministic layout.
-	Lane int64
+	ID      string
+	Label   string
+	Parents []string // parent IDs (empty for roots)
+	Epoch   int64    // sort key (commonly unix epoch seconds; any monotonic int works). Optional -- when all Epochs are equal (incl. zero), nodes tiebreak by ID for deterministic layout.
+	Lane    int64
 }
 
 // Glyph is a single graph-drawing character in one column of one row.

@@ -753,4 +753,3 @@ func (st *layoutState) termRows(p, ns *nodeState, rowNum int, active func(int, i
 	}
 	return rows
 }
-

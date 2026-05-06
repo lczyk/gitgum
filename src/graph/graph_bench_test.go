@@ -104,8 +104,8 @@ func BenchmarkLayout_Parallel10x10(b *testing.B)  { benchLayout(b, parallelBranc
 func BenchmarkLayout_Parallel100x10(b *testing.B) { benchLayout(b, parallelBranches(100, 10)) }
 func BenchmarkLayout_Parallel10x100(b *testing.B) { benchLayout(b, parallelBranches(10, 100)) }
 
-func BenchmarkRender_Linear1000(b *testing.B)  { benchLayoutAndRender(b, linearChain(1000)) }
-func BenchmarkRender_Merges1000(b *testing.B)  { benchLayoutAndRender(b, mergeSeries(1000, 5)) }
+func BenchmarkRender_Linear1000(b *testing.B) { benchLayoutAndRender(b, linearChain(1000)) }
+func BenchmarkRender_Merges1000(b *testing.B) { benchLayoutAndRender(b, mergeSeries(1000, 5)) }
 func BenchmarkRender_Parallel100x10(b *testing.B) {
 	benchLayoutAndRender(b, parallelBranches(100, 10))
 }
