@@ -42,3 +42,7 @@ complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from replay-list' -f -a '(
 complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from release' -f -a 'patch' -d 'Patch version bump'
 complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from release' -f -a 'minor' -d 'Minor version bump'
 complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from release' -f -a 'major' -d 'Major version bump'
+
+# status flags
+complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from status' -l flat -d 'Flat porcelain list instead of tree'
+complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from status' -s f -l follow -d 'Follow mode: refresh every N seconds (default 2)'

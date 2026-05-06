@@ -31,6 +31,8 @@ module completions {
   ]
 
   export extern "__GITGUM_CMD__ status" [
+    --flat                   # Flat porcelain list instead of tree
+    --follow(-f): float      # Follow mode: refresh every N seconds (default 2)
     --help(-h)               # Show help
   ]
 

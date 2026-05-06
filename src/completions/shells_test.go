@@ -60,6 +60,8 @@ var bins = []binSpec{
 			"clean", "delete", "replay-list", "empty", "release",
 			// clean flag names (bare so fish's `-l changes` matches too)
 			"changes", "untracked", "ignored",
+			// status flag names
+			"flat", "follow",
 			// release bumps
 			"patch", "minor", "major",
 			// completion shell choices
@@ -68,6 +70,7 @@ var bins = []binSpec{
 		cases: []completionCase{
 			{"top-level", []string{""}, []string{"switch", "clean", "release", "replay-list"}},
 			{"clean flags", []string{"clean", "--"}, []string{"--changes", "--untracked", "--ignored", "--all", "--yes"}},
+			{"status flags", []string{"status", "--"}, []string{"--flat", "--follow"}},
 			{"completion shells", []string{"completion", ""}, []string{"bash", "fish", "zsh", "nu"}},
 			{"release bumps", []string{"release", ""}, []string{"patch", "minor", "major"}},
 		},

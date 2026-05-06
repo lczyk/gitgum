@@ -41,8 +41,15 @@ _gitgum() {
                         '1:bump:(patch minor major)' \
                         && ret=0
                     ;;
-                switch|checkout-pr|status|push|delete|empty)
+                switch|checkout-pr|push|delete|empty)
                     _arguments \
+                        '(-h --help)'{-h,--help}'[Show help]' \
+                        && ret=0
+                    ;;
+                status)
+                    _arguments \
+                        '--flat[Flat porcelain list instead of tree]' \
+                        '(-f --follow)'{-f,--follow}'[Follow mode: refresh every N seconds]' \
                         '(-h --help)'{-h,--help}'[Show help]' \
                         && ret=0
                     ;;

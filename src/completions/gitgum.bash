@@ -53,8 +53,13 @@ _gitgum_completion() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        gitgum_switch|gitgum_checkout_pr|gitgum_status|gitgum_push|gitgum_delete|gitgum_empty)
+        gitgum_switch|gitgum_checkout_pr|gitgum_push|gitgum_delete|gitgum_empty)
             opts="-h --help"
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gitgum_status)
+            opts="--flat -f --follow -h --help"
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
