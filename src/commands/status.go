@@ -32,7 +32,7 @@ func (s *StatusCommand) Execute(args []string) error {
 // changes, status. Used by the non-follow path.
 func (s *StatusCommand) renderFull(out io.Writer) error {
 	printHeader := func(msg string) {
-		fmt.Fprintln(out, paint(ansiBlack, msg))
+		fmt.Fprintln(out, paint(ansiDim, msg))
 	}
 
 	printHeader("--- BRANCHES ---------------------------")
@@ -62,7 +62,7 @@ func (s *StatusCommand) renderFull(out io.Writer) error {
 // no fetch, no remote ops.
 func (s *StatusCommand) renderBody(out io.Writer) error {
 	printHeader := func(msg string) {
-		fmt.Fprintln(out, paint(ansiBlack, msg))
+		fmt.Fprintln(out, paint(ansiDim, msg))
 	}
 
 	stdout, _, err := s.repo().Run("status", "--short", "--branch")
