@@ -121,7 +121,7 @@ const (
 	ansiBlue    = "\033[34m"
 	ansiMagenta = "\033[35m"
 	ansiCyan    = "\033[36m"
-	ansiOrange  = "\033[38;5;208m"
+	ansiPurple  = "\033[38;5;97m"
 )
 
 func dim(s string) string { return paint(ansiDim, s) }

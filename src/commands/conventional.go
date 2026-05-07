@@ -25,16 +25,16 @@ var conventionalSubjectRe = regexp.MustCompile(
 // `!` (intentional breakage) or `?` (unverified) suffix.
 var typeColor = map[string]string{
 	"feat":     ansiGreen,
-	"fix":      ansiRed,
+	"fix":      ansiBoldRed,
 	"revert":   ansiRed,
 	"perf":     ansiYellow,
-	"refactor": ansiYellow,
+	"refactor": ansiPurple,
 	"bench":    ansiYellow,
 	"docs":     ansiCyan,
 	"test":     ansiCyan,
 	"ci":       ansiCyan,
 	"chore":    ansiBlue,
-	"release":  ansiBoldOrange,
+	"release":  ansiBoldYellow,
 }
 
 var typeBoldColor = map[string]string{
@@ -42,13 +42,13 @@ var typeBoldColor = map[string]string{
 	"fix":      ansiBoldRed,
 	"revert":   ansiBoldRed,
 	"perf":     ansiBoldYellow,
-	"refactor": ansiBoldYellow,
+	"refactor": ansiBoldPurple,
 	"bench":    ansiBoldYellow,
 	"docs":     ansiBoldCyan,
 	"test":     ansiBoldCyan,
 	"ci":       ansiBoldCyan,
 	"chore":    ansiBoldBlue,
-	"release":  ansiBoldOrange,
+	"release":  ansiBoldYellow,
 }
 
 // colorCommitSubject colors the conventional-commit prefix of a subject
@@ -94,7 +94,7 @@ func colorCommitSubject(s string, tags []string) string {
 	}
 	b.WriteString(col + sep + ansiReset)
 	if typ == "release" && matchesAnyTag(rest, tags) {
-		b.WriteString(ansiBoldOrange + rest + ansiReset)
+		b.WriteString(ansiBoldYellow + rest + ansiReset)
 	} else {
 		b.WriteString(rest)
 	}

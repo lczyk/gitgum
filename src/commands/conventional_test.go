@@ -14,16 +14,16 @@ func TestColorCommitSubject_Types(t *testing.T) {
 		color string
 	}{
 		{"feat", ansiGreen},
-		{"fix", ansiRed},
+		{"fix", ansiBoldRed},
 		{"revert", ansiRed},
 		{"perf", ansiYellow},
-		{"refactor", ansiYellow},
+		{"refactor", ansiPurple},
 		{"bench", ansiYellow},
 		{"docs", ansiCyan},
 		{"test", ansiCyan},
 		{"ci", ansiCyan},
 		{"chore", ansiBlue},
-		{"release", ansiBoldOrange},
+		{"release", ansiBoldYellow},
 	}
 	for _, tc := range cases {
 		in := tc.typ + ": something"
@@ -62,8 +62,8 @@ func TestColorCommitSubject_QuestionSuffix(t *testing.T) {
 func TestColorCommitSubject_ScopeAndBang(t *testing.T) {
 	t.Setenv("FORCE_COLOR", "1")
 	got := colorCommitSubject("refactor(api)!: drop old method", nil)
-	assert.ContainsString(t, got, ansiBoldYellow+"refactor"+ansiReset)
-	assert.ContainsString(t, got, ansiBoldYellow+"("+ansiReset)
+	assert.ContainsString(t, got, ansiBoldPurple+"refactor"+ansiReset)
+	assert.ContainsString(t, got, ansiBoldPurple+"("+ansiReset)
 	assert.ContainsString(t, got, ansiDim+ansiItalic+"api"+ansiReset)
 	assert.ContainsString(t, got, ansiBoldRed+"!"+ansiReset)
 	assert.Equal(t, stripAnsi(got), "refactor(api)!: drop old method")
@@ -104,7 +104,7 @@ func TestColorCommitSubject_SeparatorMatchesType(t *testing.T) {
 	got := colorCommitSubject("feat: thing", nil)
 	assert.ContainsString(t, got, ansiGreen+": "+ansiReset)
 	got = colorCommitSubject("fix(api): thing", nil)
-	assert.ContainsString(t, got, ansiRed+": "+ansiReset)
+	assert.ContainsString(t, got, ansiBoldRed+": "+ansiReset)
 }
 
 func TestColorTreeLine_PlainSubjectAfterAnsi(t *testing.T) {
@@ -146,23 +146,23 @@ func TestColorTreeLine_NoAnsi(t *testing.T) {
 func TestColorCommitSubject_ReleaseTagMatch(t *testing.T) {
 	t.Setenv("FORCE_COLOR", "1")
 	got := colorCommitSubject("release: v0.17.0", []string{"v0.17.0"})
-	assert.ContainsString(t, got, ansiBoldOrange+"release"+ansiReset)
-	assert.ContainsString(t, got, ansiBoldOrange+"v0.17.0"+ansiReset)
+	assert.ContainsString(t, got, ansiBoldYellow+"release"+ansiReset)
+	assert.ContainsString(t, got, ansiBoldYellow+"v0.17.0"+ansiReset)
 }
 
 func TestColorCommitSubject_ReleaseNoTagMatch(t *testing.T) {
 	t.Setenv("FORCE_COLOR", "1")
 	got := colorCommitSubject("release: v0.17.0", []string{"v0.16.0"})
-	assert.ContainsString(t, got, ansiBoldOrange+"release"+ansiReset)
+	assert.ContainsString(t, got, ansiBoldYellow+"release"+ansiReset)
 	// rest should not get the bold-orange highlight
-	assert.Equal(t, strings.Contains(got, ansiBoldOrange+"v0.17.0"+ansiReset), false)
+	assert.Equal(t, strings.Contains(got, ansiBoldYellow+"v0.17.0"+ansiReset), false)
 }
 
 func TestColorCommitSubject_ReleaseNoTags(t *testing.T) {
 	t.Setenv("FORCE_COLOR", "1")
 	got := colorCommitSubject("release: v0.17.0", nil)
-	assert.ContainsString(t, got, ansiBoldOrange+"release"+ansiReset)
-	assert.Equal(t, strings.Contains(got, ansiBoldOrange+"v0.17.0"+ansiReset), false)
+	assert.ContainsString(t, got, ansiBoldYellow+"release"+ansiReset)
+	assert.Equal(t, strings.Contains(got, ansiBoldYellow+"v0.17.0"+ansiReset), false)
 }
 
 func TestExtractTags(t *testing.T) {
@@ -188,8 +188,8 @@ func TestColorTreeLine_ReleaseTagMatch(t *testing.T) {
 		" \x1b[33m(\x1b[m\x1b[1;33m" + "tag: v0.17.0" + "\x1b[m\x1b[33m, \x1b[m\x1b[1;31m" + "origin/main" + "\x1b[m\x1b[33m)\x1b[m" +
 		" release: v0.17.0"
 	got := colorTreeLine(in)
-	assert.ContainsString(t, got, ansiBoldOrange+"release"+ansiReset)
-	assert.ContainsString(t, got, ansiBoldOrange+"v0.17.0"+ansiReset)
+	assert.ContainsString(t, got, ansiBoldYellow+"release"+ansiReset)
+	assert.ContainsString(t, got, ansiBoldYellow+"v0.17.0"+ansiReset)
 	assert.Equal(t, stripAnsi(got), "abc1234 (tag: v0.17.0, origin/main) release: v0.17.0")
 }
 

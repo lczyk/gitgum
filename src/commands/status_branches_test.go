@@ -31,7 +31,7 @@ func TestColorBranchLine_CurrentWithUpstream(t *testing.T) {
 	assert.ContainsString(t, got, ansiBoldYellow+"["+ansiReset)
 	assert.ContainsString(t, got, ansiBoldYellow+"]"+ansiReset)
 	// subject is colour-treated as a conventional commit
-	assert.ContainsString(t, got, ansiBoldOrange+"release"+ansiReset)
+	assert.ContainsString(t, got, ansiBoldYellow+"release"+ansiReset)
 	assert.ContainsString(t, got, "v0.17.0")
 	// strip ansi -> identical to input
 	assert.Equal(t, stripAnsi(got), "* main               26c3916 [origin/main] release: v0.17.0")
