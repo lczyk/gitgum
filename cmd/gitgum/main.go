@@ -25,6 +25,7 @@ type Options struct {
 	Empty      commands.EmptyCommand      `command:"empty" description:"Create an empty commit and optionally push it"`
 	Release    commands.ReleaseCommand    `command:"release" description:"Bump VERSION (or latest tag), commit, and tag"`
 	Tree       commands.TreeCommand       `command:"tree" description:"Print a colored commit graph across all branches"`
+	Diff       commands.DiffCommand       `command:"diff" description:"Show working-tree diff with --compact-summary"`
 }
 
 func main() {
