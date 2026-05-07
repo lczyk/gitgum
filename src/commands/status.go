@@ -36,11 +36,11 @@ func (s *StatusCommand) renderFull(out io.Writer) error {
 	}
 
 	printHeader("--- BRANCHES ---------------------------")
-	stdout, _, err := s.repo().Run("branch", "-vv")
+	stdout, _, err := s.repo().Run("branch", "-vv", "--color=never")
 	if err != nil {
 		return fmt.Errorf("getting branches: %w", err)
 	}
-	fmt.Fprintln(out, stdout)
+	fmt.Fprintln(out, renderBranchList(stdout))
 
 	stdout, _, err = s.repo().Run("remote", "-v")
 	if err != nil {
