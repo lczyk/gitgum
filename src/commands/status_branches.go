@@ -61,7 +61,7 @@ func colorBranchLine(line string) string {
 		b.WriteByte(' ')
 		b.WriteString(colorBranchTracking(tracking))
 	}
-	b.WriteString(trail)
+	b.WriteString(colorCommitSubject(trail))
 	return b.String()
 }
 

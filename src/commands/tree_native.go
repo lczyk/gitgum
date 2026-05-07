@@ -165,14 +165,14 @@ func colorLabel(label string) string {
 			b.WriteString(colorRefDecoration(refs))
 			if subject != "" {
 				b.WriteByte(' ')
-				b.WriteString(subject)
+				b.WriteString(colorCommitSubject(subject))
 			}
 			return b.String()
 		}
 	}
 	if rest != "" {
 		b.WriteByte(' ')
-		b.WriteString(rest)
+		b.WriteString(colorCommitSubject(rest))
 	}
 	return b.String()
 }
