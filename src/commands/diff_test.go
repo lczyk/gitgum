@@ -40,16 +40,6 @@ func assertParity(t *testing.T, repo git.Repo) string {
 	return pt
 }
 
-func TestDiffCommand_Parity_EmptyDiff(t *testing.T) {
-	t.Setenv("NO_COLOR", "1")
-	t.Setenv("FORCE_COLOR", "")
-	dir := temp_repo.NewRepo(t)
-	repo := git.Repo{Dir: dir}
-
-	out := assertParity(t, repo)
-	assert.Equal(t, out, "")
-}
-
 func TestDiffCommand_Parity_ModifiedFile(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("FORCE_COLOR", "")
@@ -62,17 +52,19 @@ func TestDiffCommand_Parity_ModifiedFile(t *testing.T) {
 	assert.ContainsString(t, out, "a.txt")
 }
 
-func TestDiffCommand_Parity_UntrackedFileShowsEmpty(t *testing.T) {
+func TestDiffCommand_Parity_UntrackedOnlyFallsBackToLastCommit(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("FORCE_COLOR", "")
 	dir := temp_repo.NewRepo(t)
+	temp_repo.CreateCommit(t, dir, "tracked.txt", "v1\n", "chore: add tracked")
+	// untracked file -- git diff (working vs index) ignores it, --cached
+	// shows nothing either, so we cascade to HEAD~1..HEAD.
 	temp_repo.WriteFile(t, dir, "new.txt", "fresh\n")
 	repo := git.Repo{Dir: dir}
 
-	// `git diff` (no --cached) ignores untracked files, so output is empty.
-	// the point of this case is parity in the empty-but-not-trivially-empty path.
 	out := assertParity(t, repo)
-	assert.Equal(t, out, "")
+	// last commit added tracked.txt -- should appear.
+	assert.ContainsString(t, out, "tracked.txt")
 }
 
 func TestDiffCommand_Parity_DeletedFile(t *testing.T) {
@@ -121,7 +113,6 @@ func TestDiffCommand_Parity_BinaryModified(t *testing.T) {
 	assert.NoError(t, os.WriteFile(filepath.Join(dir, "blob.bin"), bin, 0o644))
 	temp_repo.RunGit(t, dir, "add", "blob.bin")
 	temp_repo.RunGit(t, dir, "commit", "-m", "chore: add blob")
-	// modify the binary in the working tree so it shows up in `git diff`.
 	bin2 := []byte{0xde, 0xad, 0xbe, 0xef, 0x00, 0x11, 0x22, 0x33}
 	assert.NoError(t, os.WriteFile(filepath.Join(dir, "blob.bin"), bin2, 0o644))
 	repo := git.Repo{Dir: dir}
@@ -136,9 +127,7 @@ func TestDiffCommand_Parity_MultiFileMix(t *testing.T) {
 	dir := temp_repo.NewRepo(t)
 	temp_repo.CreateCommit(t, dir, "keep.txt", "one\ntwo\nthree\n", "chore: add keep")
 	temp_repo.CreateCommit(t, dir, "drop.txt", "gone\n", "chore: add drop")
-	// modify keep.txt
 	temp_repo.WriteFile(t, dir, "keep.txt", "one\ntwo\nthree\nfour\n")
-	// delete drop.txt
 	assert.NoError(t, os.Remove(filepath.Join(dir, "drop.txt")))
 	repo := git.Repo{Dir: dir}
 
@@ -147,21 +136,68 @@ func TestDiffCommand_Parity_MultiFileMix(t *testing.T) {
 	assert.ContainsString(t, out, "drop.txt")
 }
 
-func TestDiffCommand_Parity_StagedOnlyShowsEmpty(t *testing.T) {
+// when there are no unstaged changes but staged changes exist, fall back
+// to the --cached diff.
+func TestDiffCommand_Parity_StagedOnlyFallsBackToCached(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("FORCE_COLOR", "")
 	dir := temp_repo.NewRepo(t)
-	temp_repo.WriteFile(t, dir, "staged.txt", "stuff\n")
-	temp_repo.RunGit(t, dir, "add", "staged.txt")
-	temp_repo.RunGit(t, dir, "commit", "-m", "chore: add staged")
-	// now stage a change but the working tree matches the index
-	temp_repo.WriteFile(t, dir, "staged.txt", "more stuff\n")
-	temp_repo.RunGit(t, dir, "add", "staged.txt")
+	temp_repo.CreateCommit(t, dir, "a.txt", "v1\n", "chore: add a")
+	// modify and stage; working tree now matches the index, so unstaged
+	// diff is empty and we cascade to --cached.
+	temp_repo.WriteFile(t, dir, "a.txt", "v2 staged\n")
+	temp_repo.RunGit(t, dir, "add", "a.txt")
 	repo := git.Repo{Dir: dir}
 
-	// `gg diff` shows working-tree-vs-index, so a fully-staged change is empty.
+	out := assertParity(t, repo)
+	assert.ContainsString(t, out, "a.txt")
+	assert.That(t, out != "", "expected --cached fallback to produce non-empty output")
+}
+
+// when the tree is fully clean, fall back to HEAD~1..HEAD.
+func TestDiffCommand_Parity_CleanFallsBackToLastCommit(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "")
+	dir := temp_repo.NewRepo(t)
+	temp_repo.CreateCommit(t, dir, "first.txt", "first\n", "chore: add first")
+	temp_repo.CreateCommit(t, dir, "second.txt", "second\n", "chore: add second")
+	repo := git.Repo{Dir: dir}
+
+	out := assertParity(t, repo)
+	// HEAD~1..HEAD should show the second commit's file.
+	assert.ContainsString(t, out, "second.txt")
+	assert.That(t, !contains(out, "first.txt"), "first.txt was added in HEAD~1, should not appear in HEAD~1..HEAD")
+}
+
+// edge case: single-commit repo with clean tree -- HEAD~1 doesn't exist, so
+// the cascade falls off the end and returns empty. parity must still hold.
+func TestDiffCommand_Parity_CleanSingleCommitRepoIsEmpty(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "")
+	dir := temp_repo.NewRepo(t) // creates one initial "chore: init" commit
+	repo := git.Repo{Dir: dir}
+
 	out := assertParity(t, repo)
 	assert.Equal(t, out, "")
+}
+
+// unstaged changes win over staged changes in the cascade.
+func TestDiffCommand_Parity_UnstagedWinsOverStaged(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "")
+	dir := temp_repo.NewRepo(t)
+	temp_repo.CreateCommit(t, dir, "a.txt", "v1\n", "chore: add a")
+	temp_repo.CreateCommit(t, dir, "b.txt", "v1\n", "chore: add b")
+	// stage a change to a.txt, then leave a further unstaged change to b.txt
+	temp_repo.WriteFile(t, dir, "a.txt", "v2 staged\n")
+	temp_repo.RunGit(t, dir, "add", "a.txt")
+	temp_repo.WriteFile(t, dir, "b.txt", "v2 unstaged\n")
+	repo := git.Repo{Dir: dir}
+
+	out := assertParity(t, repo)
+	// working-tree diff shows only b.txt (a.txt working = a.txt index).
+	assert.ContainsString(t, out, "b.txt")
+	assert.That(t, !contains(out, "a.txt"), "a.txt is staged-only, should not appear in unstaged diff")
 }
 
 func TestDiffCommand_Parity_WithColor(t *testing.T) {
@@ -173,7 +209,6 @@ func TestDiffCommand_Parity_WithColor(t *testing.T) {
 	repo := git.Repo{Dir: dir}
 
 	out := assertParity(t, repo)
-	// FORCE_COLOR=1 + non-empty diff should contain ANSI.
 	assert.That(t, len(out) > 0, "expected non-empty output with FORCE_COLOR")
 }
 
@@ -184,4 +219,8 @@ func TestDiffCommand_RejectsArgs(t *testing.T) {
 	cmd := &DiffCommand{cmdIO: cmdIO{Out: &buf, Repo: repo}}
 	err := cmd.Execute([]string{"unexpected"})
 	assert.That(t, err != nil, "expected error for positional args")
+}
+
+func contains(haystack, needle string) bool {
+	return bytes.Contains([]byte(haystack), []byte(needle))
 }
