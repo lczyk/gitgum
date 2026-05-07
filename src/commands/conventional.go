@@ -2,6 +2,7 @@ package commands
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -16,11 +17,27 @@ import (
 // reject what git happily stored. The canonical type list mirrors the
 // commit-msg hook in dotfiles.
 var conventionalSubjectRe = regexp.MustCompile(
-	`^(feat|fix|docs|test|refactor|chore|bench|revert|ci|perf)(\([^)]+\))?(!|\?)?(: )(.*)$`,
+	`^(feat|fix|docs|test|refactor|chore|bench|revert|ci|perf|release)(\([^)]+\))?(!|\?)?(: )(.*)$`,
 )
 
-// typeColor maps each conventional-commit type to its ANSI escape.
+// typeColor maps each conventional-commit type to its non-bold ANSI escape.
+// The bold variant from typeBoldColor is used when the subject carries a
+// `!` (intentional breakage) or `?` (unverified) suffix.
 var typeColor = map[string]string{
+	"feat":     ansiGreen,
+	"fix":      ansiRed,
+	"revert":   ansiRed,
+	"perf":     ansiYellow,
+	"refactor": ansiYellow,
+	"bench":    ansiYellow,
+	"docs":     ansiCyan,
+	"test":     ansiCyan,
+	"ci":       ansiCyan,
+	"chore":    ansiBlue,
+	"release":  ansiBoldOrange,
+}
+
+var typeBoldColor = map[string]string{
 	"feat":     ansiBoldGreen,
 	"fix":      ansiBoldRed,
 	"revert":   ansiBoldRed,
@@ -30,13 +47,18 @@ var typeColor = map[string]string{
 	"docs":     ansiBoldCyan,
 	"test":     ansiBoldCyan,
 	"ci":       ansiBoldCyan,
-	"chore":    ansiDim,
+	"chore":    ansiBoldBlue,
+	"release":  ansiBoldOrange,
 }
 
 // colorCommitSubject colors the conventional-commit prefix of a subject
 // line. Non-conventional subjects pass through unchanged. Leading whitespace
 // is preserved so callers can pass a "<gap><subject>" trail directly.
-func colorCommitSubject(s string) string {
+//
+// For `release:` commits, if the subject text after `release: ` matches one
+// of the supplied tag names, that text is also rendered in bold orange.
+// Pass nil tags when no tag info is available.
+func colorCommitSubject(s string, tags []string) string {
 	if !colorEnabled() {
 		return s
 	}
@@ -48,22 +70,73 @@ func colorCommitSubject(s string) string {
 	}
 	typ, scope, suffix, sep, rest := m[1], m[2], m[3], m[4], m[5]
 
+	col := typeColor[typ]
+	if suffix == "!" || suffix == "?" {
+		col = typeBoldColor[typ]
+	}
+
 	var b strings.Builder
 	b.WriteString(lead)
-	b.WriteString(typeColor[typ] + typ + ansiReset)
+	b.WriteString(col + typ + ansiReset)
 	if scope != "" {
-		b.WriteString(ansiDim + scope + ansiReset)
+		// parens in the type colour, inner text dim (matches the
+		// `gg tree --follow` timer styling).
+		inner := scope[1 : len(scope)-1]
+		b.WriteString(col + "(" + ansiReset)
+		b.WriteString(ansiDim + ansiItalic + inner + ansiReset)
+		b.WriteString(col + ")" + ansiReset)
 	}
 	switch suffix {
 	case "!":
 		b.WriteString(ansiBoldRed + "!" + ansiReset)
 	case "?":
-		b.WriteString(ansiYellow + "?" + ansiReset)
+		b.WriteString(ansiBoldYellow + "?" + ansiReset)
 	}
-	b.WriteString(typeColor[typ] + sep + ansiReset)
-	b.WriteString(rest)
+	b.WriteString(col + sep + ansiReset)
+	if typ == "release" && matchesAnyTag(rest, tags) {
+		b.WriteString(ansiBoldOrange + rest + ansiReset)
+	} else {
+		b.WriteString(rest)
+	}
 	return b.String()
 }
+
+// matchesAnyTag reports whether rest (trimmed) equals any of the supplied
+// tag names. Used to highlight `release:` subjects whose text matches one
+// of the tags decorating the same commit.
+func matchesAnyTag(rest string, tags []string) bool {
+	r := strings.TrimSpace(rest)
+	if r == "" {
+		return false
+	}
+	return slices.Contains(tags, r)
+}
+
+// extractTags pulls "tag: <name>" entries out of the first parenthesised
+// decoration block of a `git log --decorate` line. ANSI escapes are stripped
+// before parsing, so this works on colored and uncolored input alike.
+func extractTags(line string) []string {
+	plain := ansiSeq.ReplaceAllString(line, "")
+	open := strings.Index(plain, "(")
+	if open < 0 {
+		return nil
+	}
+	rel := strings.Index(plain[open:], ")")
+	if rel < 0 {
+		return nil
+	}
+	inner := plain[open+1 : open+rel]
+	var tags []string
+	for p := range strings.SplitSeq(inner, ", ") {
+		p = strings.TrimSpace(p)
+		if t, ok := strings.CutPrefix(p, "tag: "); ok {
+			tags = append(tags, t)
+		}
+	}
+	return tags
+}
+
+var ansiSeq = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 // colorTreeLine post-processes a single line of `git log --graph --oneline
 // --decorate --color=always` output, applying conventional-commit coloring
@@ -78,7 +151,7 @@ func colorTreeLine(line string) string {
 	if last < 0 {
 		return line
 	}
-	return line[:last] + colorCommitSubject(line[last:])
+	return line[:last] + colorCommitSubject(line[last:], extractTags(line[:last]))
 }
 
 // colorTreeLines applies colorTreeLine to every line in s, preserving the

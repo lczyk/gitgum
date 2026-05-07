@@ -112,11 +112,16 @@ func buildTree(entries []changeEntry) *treeNode {
 }
 
 const (
-	ansiReset  = "\033[0m"
-	ansiDim    = "\033[2m"
-	ansiRed    = "\033[31m"
-	ansiGreen  = "\033[32m"
-	ansiYellow = "\033[33m"
+	ansiReset   = "\033[0m"
+	ansiDim     = "\033[2m"
+	ansiItalic  = "\033[3m"
+	ansiRed     = "\033[31m"
+	ansiGreen   = "\033[32m"
+	ansiYellow  = "\033[33m"
+	ansiBlue    = "\033[34m"
+	ansiMagenta = "\033[35m"
+	ansiCyan    = "\033[36m"
+	ansiOrange  = "\033[38;5;208m"
 )
 
 func dim(s string) string { return paint(ansiDim, s) }

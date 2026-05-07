@@ -165,14 +165,14 @@ func colorLabel(label string) string {
 			b.WriteString(colorRefDecoration(refs))
 			if subject != "" {
 				b.WriteByte(' ')
-				b.WriteString(colorCommitSubject(subject))
+				b.WriteString(colorCommitSubject(subject, extractTags(refs)))
 			}
 			return b.String()
 		}
 	}
 	if rest != "" {
 		b.WriteByte(' ')
-		b.WriteString(colorCommitSubject(rest))
+		b.WriteString(colorCommitSubject(rest, nil))
 	}
 	return b.String()
 }
@@ -233,8 +233,11 @@ func colorSingleRef(r string) string {
 }
 
 const (
-	ansiBoldCyan   = "\033[1;36m"
-	ansiBoldGreen  = "\033[1;32m"
-	ansiBoldRed    = "\033[1;31m"
-	ansiBoldYellow = "\033[1;33m"
+	ansiBoldBlue    = "\033[1;34m"
+	ansiBoldCyan    = "\033[1;36m"
+	ansiBoldGreen   = "\033[1;32m"
+	ansiBoldMagenta = "\033[1;35m"
+	ansiBoldOrange  = "\033[1;38;5;208m"
+	ansiBoldRed     = "\033[1;31m"
+	ansiBoldYellow  = "\033[1;33m"
 )
