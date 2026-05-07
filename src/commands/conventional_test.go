@@ -93,6 +93,49 @@ func TestColorCommitSubject_PermissiveScope(t *testing.T) {
 	assert.Equal(t, stripAnsi(got), "feat(weird scope!): subject")
 }
 
+func TestColorCommitSubject_SeparatorMatchesType(t *testing.T) {
+	t.Setenv("FORCE_COLOR", "1")
+	got := colorCommitSubject("feat: thing")
+	assert.ContainsString(t, got, ansiBoldGreen+": "+ansiReset)
+	got = colorCommitSubject("fix(api): thing")
+	assert.ContainsString(t, got, ansiBoldRed+": "+ansiReset)
+}
+
+func TestColorTreeLine_PlainSubjectAfterAnsi(t *testing.T) {
+	t.Setenv("FORCE_COLOR", "1")
+	in := "\x1b[33m" + "abc1234" + "\x1b[m" + " feat: hello"
+	got := colorTreeLine(in)
+	assert.ContainsString(t, got, ansiBoldGreen+"feat"+ansiReset)
+	assert.ContainsString(t, got, ansiBoldGreen+": "+ansiReset)
+	assert.Equal(t, stripAnsi(got), "abc1234 feat: hello")
+}
+
+func TestColorTreeLine_WithDecoration(t *testing.T) {
+	t.Setenv("FORCE_COLOR", "1")
+	in := "\x1b[31m" + "*" + "\x1b[m" + " \x1b[33m" + "abc1234" + "\x1b[m" +
+		" \x1b[33m(\x1b[m\x1b[1;32m" + "main" + "\x1b[m\x1b[33m)\x1b[m" +
+		" fix(x)!: ouch"
+	got := colorTreeLine(in)
+	assert.ContainsString(t, got, ansiBoldRed+"fix"+ansiReset)
+	assert.ContainsString(t, got, ansiDim+"(x)"+ansiReset)
+	assert.ContainsString(t, got, ansiBoldRed+"!"+ansiReset)
+	assert.Equal(t, stripAnsi(got), "* abc1234 (main) fix(x)!: ouch")
+}
+
+func TestColorTreeLine_NonConventional(t *testing.T) {
+	t.Setenv("FORCE_COLOR", "1")
+	in := "\x1b[33m" + "abc1234" + "\x1b[m" + " just a plain subject"
+	got := colorTreeLine(in)
+	assert.Equal(t, got, in)
+}
+
+func TestColorTreeLine_NoAnsi(t *testing.T) {
+	t.Setenv("FORCE_COLOR", "1")
+	in := "abc1234 feat: thing"
+	got := colorTreeLine(in)
+	assert.Equal(t, got, in)
+}
+
 func TestColorCommitSubject_NoColor(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	in := "feat(x): y"

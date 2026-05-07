@@ -60,7 +60,50 @@ func colorCommitSubject(s string) string {
 	case "?":
 		b.WriteString(ansiYellow + "?" + ansiReset)
 	}
-	b.WriteString(sep)
+	b.WriteString(typeColor[typ] + sep + ansiReset)
 	b.WriteString(rest)
 	return b.String()
+}
+
+// colorTreeLine post-processes a single line of `git log --graph --oneline
+// --decorate --color=always` output, applying conventional-commit coloring
+// to the subject. The subject is the trailing plain-text portion after the
+// last ANSI escape on the line (git colors the hash and decoration but not
+// %s, so the subject contains no ANSI).
+func colorTreeLine(line string) string {
+	if !colorEnabled() {
+		return line
+	}
+	last := lastAnsiEnd(line)
+	if last < 0 {
+		return line
+	}
+	return line[:last] + colorCommitSubject(line[last:])
+}
+
+// colorTreeLines applies colorTreeLine to every line in s, preserving the
+// trailing newline shape.
+func colorTreeLines(s string) string {
+	if !colorEnabled() {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = colorTreeLine(line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// lastAnsiEnd returns the byte offset immediately after the last ANSI SGR
+// escape (\x1b[...m) in s, or -1 if there is none.
+func lastAnsiEnd(s string) int {
+	i := strings.LastIndex(s, "\x1b[")
+	if i < 0 {
+		return -1
+	}
+	j := strings.IndexByte(s[i:], 'm')
+	if j < 0 {
+		return -1
+	}
+	return i + j + 1
 }

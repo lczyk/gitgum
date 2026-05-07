@@ -105,11 +105,12 @@ func (t *TreeCommand) renderOnce(w io.Writer, sinceArg string, maxCount int) err
 		return nil
 	}
 
-	if t.Reverse {
-		fmt.Fprintln(w, stdout)
-	} else {
-		fmt.Fprintln(w, reverseGraph(stdout))
+	out := stdout
+	if !t.Reverse {
+		out = reverseGraph(out)
 	}
+	out = colorTreeLines(out)
+	fmt.Fprintln(w, out)
 	return nil
 }
 
