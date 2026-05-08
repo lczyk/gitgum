@@ -20,7 +20,7 @@ func TestColorCommitSubject_Types(t *testing.T) {
 		{"refactor", ansiPurple},
 		{"bench", ansiYellow},
 		{"docs", ansiCyan},
-		{"test", ansiCyan},
+		{"test", ansiGreen},
 		{"ci", ansiCyan},
 		{"chore", ansiBlue},
 		{"release", ansiBoldYellow},
@@ -46,7 +46,7 @@ func TestColorCommitSubject_Scope(t *testing.T) {
 func TestColorCommitSubject_BangSuffix(t *testing.T) {
 	t.Setenv("FORCE_COLOR", "1")
 	got := colorCommitSubject("test!: failing on purpose", nil)
-	assert.ContainsString(t, got, ansiBoldCyan+"test"+ansiReset)
+	assert.ContainsString(t, got, ansiBoldGreen+"test"+ansiReset)
 	assert.ContainsString(t, got, ansiBoldRed+"!"+ansiReset)
 	assert.Equal(t, stripAnsi(got), "test!: failing on purpose")
 }
