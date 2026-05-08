@@ -122,6 +122,14 @@
     "numstat",
     "numstats",
     "backtab",
-    "fallover"
+    "fallover",
+    "goroutines",
+    "hypothesised",
+    "journalctl",
+    "localised",
+    "printk",
+    "SIGABRT",
+    "defence",
+    "ABRT"
   ]
 }
