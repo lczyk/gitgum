@@ -1052,6 +1052,8 @@ func mapCSI(params string, final byte) tcell.Event {
 		return tcell.NewEventKey(tcell.KeyHome, 0, mod)
 	case 'F':
 		return tcell.NewEventKey(tcell.KeyEnd, 0, mod)
+	case 'Z':
+		return tcell.NewEventKey(tcell.KeyBacktab, 0, tcell.ModShift)
 	case '~':
 		switch params {
 		case "1", "7":

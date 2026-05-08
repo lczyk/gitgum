@@ -105,10 +105,11 @@ func TestParseCSI(t *testing.T) {
 	}
 }
 
-func TestParseCSI_Unknown(t *testing.T) {
-	// CSI Z (Shift-Tab) — we don't map it. parseCSI should return nil
-	// rather than crash.
-	assert.That(t, parseCSI(preloaded('Z')) == nil, "unknown CSI returns nil")
+func TestParseCSI_BackTab(t *testing.T) {
+	ev := parseCSI(preloaded('Z'))
+	assert.That(t, ev != nil, "CSI Z should produce backtab event")
+	kev := ev.(*tcell.EventKey)
+	assert.Equal(t, kev.Key(), tcell.KeyBacktab)
 }
 
 func TestParseSS3(t *testing.T) {
@@ -145,7 +146,7 @@ func TestParseCSI_Malformed(t *testing.T) {
 	}{
 		{"DSR response (CSI R)", []byte{'1', ';', '1', 'R'}}, // \x1b[1;1R — terminal's reply to \e[6n
 		{"Mouse intro (CSI <)", []byte{'<'}},
-		{"Unknown final", []byte{'1', 'Z'}},
+		{"Unknown final", []byte{'1', 'X'}},
 		{"Extra param after ~", []byte{'3', ';', '3', '~', '1'}},
 	}
 	for _, tc := range tests {
