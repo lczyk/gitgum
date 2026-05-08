@@ -7,7 +7,7 @@ import (
 )
 
 func (d *DiffCommand) renderNative(w io.Writer) error {
-	out, err := d.collectOutput()
+	out, _, err := d.collectOutput()
 	if err != nil {
 		return err
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/lczyk/assert"
@@ -219,6 +220,105 @@ func TestDiffCommand_RejectsArgs(t *testing.T) {
 	cmd := &DiffCommand{cmdIO: cmdIO{Out: &buf, Repo: repo}}
 	err := cmd.Execute([]string{"unexpected"})
 	assert.That(t, err != nil, "expected error for positional args")
+}
+
+func TestDiffCommand_FollowRequiresTTY(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+
+	interval := 2.0
+	cmd := &DiffCommand{
+		cmdIO:  cmdIO{Out: &strings.Builder{}, Repo: git.Repo{Dir: dir}},
+		Follow: &interval,
+	}
+	err := cmd.Execute(nil)
+
+	assert.Error(t, err, assert.AnyError, "follow without tty should error")
+	assert.ContainsString(t, err.Error(), "tty")
+}
+
+func TestDiffCommand_RejectsInvalidMode(t *testing.T) {
+	dir := temp_repo.NewRepo(t)
+	var buf bytes.Buffer
+	cmd := &DiffCommand{
+		cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}},
+		Mode:  "bogus",
+	}
+	err := cmd.Execute(nil)
+	assert.Error(t, err, assert.AnyError, "invalid mode should error")
+	assert.ContainsString(t, err.Error(), "work, index, head")
+}
+
+func TestCollectDiff_Work(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "")
+	dir := temp_repo.NewRepo(t)
+	temp_repo.CreateCommit(t, dir, "a.txt", "v1\n", "chore: add a")
+	temp_repo.WriteFile(t, dir, "a.txt", "v2\n")
+
+	cmd := &DiffCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
+	out, err := cmd.collectDiff("work")
+	assert.NoError(t, err)
+	assert.ContainsString(t, out, "a.txt")
+}
+
+func TestCollectDiff_Index(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "")
+	dir := temp_repo.NewRepo(t)
+	temp_repo.CreateCommit(t, dir, "a.txt", "v1\n", "chore: add a")
+	temp_repo.WriteFile(t, dir, "a.txt", "v2\n")
+	temp_repo.RunGit(t, dir, "add", "a.txt")
+
+	cmd := &DiffCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
+	out, err := cmd.collectDiff("index")
+	assert.NoError(t, err)
+	assert.ContainsString(t, out, "a.txt")
+}
+
+func TestCollectDiff_Head(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "")
+	dir := temp_repo.NewRepo(t)
+	temp_repo.CreateCommit(t, dir, "a.txt", "v1\n", "chore: add a")
+	temp_repo.CreateCommit(t, dir, "b.txt", "v1\n", "chore: add b")
+
+	cmd := &DiffCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
+	out, err := cmd.collectDiff("head")
+	assert.NoError(t, err)
+	assert.ContainsString(t, out, "b.txt")
+}
+
+func TestCollectOutput_WithMode(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "")
+	dir := temp_repo.NewRepo(t)
+	temp_repo.CreateCommit(t, dir, "a.txt", "v1\n", "chore: add a")
+	temp_repo.WriteFile(t, dir, "a.txt", "v2\n")
+	temp_repo.RunGit(t, dir, "add", "a.txt")
+	// unstaged is empty (work == index), but mode=index forces that level
+	cmd := &DiffCommand{
+		cmdIO: cmdIO{Repo: git.Repo{Dir: dir}},
+		Mode:  "index",
+	}
+	out, level, err := cmd.collectOutput()
+	assert.NoError(t, err)
+	assert.Equal(t, level, "index")
+	assert.ContainsString(t, out, "a.txt")
+}
+
+func TestCollectOutput_CascadeReturnsLevel(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "")
+	dir := temp_repo.NewRepo(t)
+	temp_repo.CreateCommit(t, dir, "a.txt", "v1\n", "chore: add a")
+	temp_repo.WriteFile(t, dir, "a.txt", "v2\n")
+
+	cmd := &DiffCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
+	out, level, err := cmd.collectOutput()
+	assert.NoError(t, err)
+	assert.Equal(t, level, "work")
+	assert.ContainsString(t, out, "a.txt")
 }
 
 func contains(haystack, needle string) bool {
