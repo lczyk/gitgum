@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/lczyk/gitgum/src/litescreen"
+	"golang.org/x/term"
 )
 
 type StatusCommand struct {
@@ -30,12 +32,25 @@ func (s *StatusCommand) Execute(args []string) error {
 
 // renderFull writes the standard four-section status: branches, remotes,
 // changes, status. Used by the non-follow path.
+func statusHeader(label string) string {
+	prefix := "- " + label + " "
+	w, _, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || w <= 0 {
+		w = 80
+	}
+	pad := w - len(prefix)
+	if pad < 3 {
+		pad = 3
+	}
+	return prefix + strings.Repeat("-", pad)
+}
+
 func (s *StatusCommand) renderFull(out io.Writer) error {
-	printHeader := func(msg string) {
-		fmt.Fprintln(out, paint(ansiDim, msg))
+	printHeader := func(label string) {
+		fmt.Fprintln(out, paint(ansiDim, statusHeader(label)))
 	}
 
-	printHeader("--- BRANCHES ---------------------------")
+	printHeader("BRANCHES")
 	stdout, _, err := s.repo().Run("branch", "-vv", "--color=never")
 	if err != nil {
 		return fmt.Errorf("getting branches: %w", err)
@@ -48,7 +63,7 @@ func (s *StatusCommand) renderFull(out io.Writer) error {
 	}
 	remotes := parseRemotes(stdout)
 	if len(remotes) > 0 {
-		printHeader("--- REMOTES ----------------------------")
+		printHeader("REMOTES")
 		for _, remote := range remotes {
 			fmt.Fprintln(out, remote)
 		}
@@ -61,8 +76,8 @@ func (s *StatusCommand) renderFull(out io.Writer) error {
 // non-follow render and the follow-loop redraw. Runs `git status` only --
 // no fetch, no remote ops.
 func (s *StatusCommand) renderBody(out io.Writer) error {
-	printHeader := func(msg string) {
-		fmt.Fprintln(out, paint(ansiDim, msg))
+	printHeader := func(label string) {
+		fmt.Fprintln(out, paint(ansiDim, statusHeader(label)))
 	}
 
 	stdout, _, err := s.repo().Run("status", "--short", "--branch")
@@ -80,7 +95,7 @@ func (s *StatusCommand) renderBody(out io.Writer) error {
 		}
 	}
 	if hasChanges {
-		printHeader("--- CHANGES ----------------------------")
+		printHeader("CHANGES")
 		if s.Flat {
 			fmt.Fprintln(out, strings.Join(changeLines, "\n"))
 		} else {
@@ -90,7 +105,7 @@ func (s *StatusCommand) renderBody(out io.Writer) error {
 		}
 	}
 
-	printHeader("--- STATUS -----------------------------")
+	printHeader("STATUS")
 	fmt.Fprintln(out, lines[0])
 	return nil
 }

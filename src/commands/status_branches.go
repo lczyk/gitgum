@@ -15,23 +15,33 @@ import (
 var branchLineRe = regexp.MustCompile(`^([*+ ]) +(\([^)]*\)|\S+)( +)([0-9a-f]{7,40})(?: +(\[[^\]]*\]))?( +.*)?$`)
 
 // renderBranchList parses the plain output of `git branch -vv` and re-renders
-// it with the same color scheme as the tree view: bold cyan for HEAD/detached,
-// bold green for local branch names, yellow for short hashes, bold red for
-// upstream ref names, bold yellow for brackets and separators.
+// it as a multi-row layout to avoid terminal overflow:
 //
-// Lines that don't match the expected shape pass through unchanged.
+//	row 1: marker name hash
+//	row 2: tracking info (indented, skipped when absent)
+//	row 3: commit subject (indented)
 func renderBranchList(raw string) string {
-	if !colorEnabled() {
-		return strings.TrimRight(raw, "\n")
-	}
 	lines := strings.Split(strings.TrimRight(raw, "\n"), "\n")
-	for i, line := range lines {
-		lines[i] = colorBranchLine(line)
+	if len(lines) > 0 && len(lines[0]) > 0 && lines[0][0] != '*' && lines[0][0] != '+' && lines[0][0] != ' ' {
+		lines[0] = "  " + lines[0]
 	}
-	return strings.Join(lines, "\n")
+	color := colorEnabled()
+	multiRow := !quirkEnabled("normal-branches")
+	var out []string
+	for _, line := range lines {
+		if multiRow {
+			out = append(out, formatBranchRows(line, color)...)
+		} else {
+			out = append(out, formatBranchSingleLine(line, color))
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
-func colorBranchLine(line string) string {
+func formatBranchSingleLine(line string, color bool) string {
+	if !color {
+		return line
+	}
 	m := branchLineRe.FindStringSubmatch(line)
 	if m == nil {
 		return line
@@ -48,7 +58,6 @@ func colorBranchLine(line string) string {
 		b.WriteByte(' ')
 	}
 	b.WriteByte(' ')
-
 	if strings.HasPrefix(name, "(") && strings.HasSuffix(name, ")") {
 		b.WriteString(ansiBoldCyan + name + ansiReset)
 	} else {
@@ -56,13 +65,63 @@ func colorBranchLine(line string) string {
 	}
 	b.WriteString(gap1)
 	b.WriteString(ansiYellow + hash + ansiReset)
-
 	if tracking != "" {
 		b.WriteByte(' ')
 		b.WriteString(colorBranchTracking(tracking))
 	}
 	b.WriteString(colorCommitSubject(trail, nil))
 	return b.String()
+}
+
+func formatBranchRows(line string, color bool) []string {
+	m := branchLineRe.FindStringSubmatch(line)
+	if m == nil {
+		return []string{line}
+	}
+	marker, name, hash, tracking, trail := m[1], m[2], m[4], m[5], m[6]
+	subject := strings.TrimSpace(trail)
+
+	var row1 strings.Builder
+	if color {
+		switch marker {
+		case "*":
+			row1.WriteString(ansiBoldCyan + "*" + ansiReset)
+		case "+":
+			row1.WriteString(ansiBoldYellow + "+" + ansiReset)
+		default:
+			row1.WriteByte(' ')
+		}
+		row1.WriteByte(' ')
+		if strings.HasPrefix(name, "(") && strings.HasSuffix(name, ")") {
+			row1.WriteString(ansiBoldCyan + name + ansiReset)
+		} else {
+			row1.WriteString(ansiBoldGreen + name + ansiReset)
+		}
+		row1.WriteByte(' ')
+		row1.WriteString(ansiYellow + hash + ansiReset)
+	} else {
+		row1.WriteString(marker + " " + name + " " + hash)
+	}
+
+	rows := []string{row1.String()}
+
+	if tracking != "" {
+		if color {
+			rows = append(rows, "    "+colorBranchTracking(tracking))
+		} else {
+			rows = append(rows, "    "+tracking)
+		}
+	}
+
+	if subject != "" {
+		if color {
+			rows = append(rows, "    "+colorCommitSubject(subject, nil))
+		} else {
+			rows = append(rows, "    "+subject)
+		}
+	}
+
+	return rows
 }
 
 // colorBranchTracking colors a "[upstream]" or "[upstream: ahead N, behind M]"
