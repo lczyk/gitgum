@@ -245,6 +245,7 @@ const (
 	ansiBoldCyan    = "\033[1;36m"
 	ansiBoldGreen   = "\033[1;32m"
 	ansiBoldMagenta = "\033[1;35m"
+	ansiBoldPink    = "\033[1;38;5;205m"
 	ansiBoldPurple  = "\033[1;38;5;97m"
 	ansiBoldRed     = "\033[1;31m"
 	ansiBoldYellow  = "\033[1;33m"

@@ -20,6 +20,10 @@ var conventionalSubjectRe = regexp.MustCompile(
 	`^(feat|fix|docs|test|refactor|chore|bench|revert|ci|perf|release)(\([^)]+\))?(!|\?)?(: )(.*)$`,
 )
 
+var conventionalFallbackRe = regexp.MustCompile(
+	`^([a-z]+)(\([^)]+\))?(!|\?)?(: )(.*)$`,
+)
+
 // typeColor maps each conventional-commit type to its non-bold ANSI escape.
 // The bold variant from typeBoldColor is used when the subject carries a
 // `!` (intentional breakage) or `?` (unverified) suffix.
@@ -31,7 +35,7 @@ var typeColor = map[string]string{
 	"refactor": ansiPurple,
 	"bench":    ansiYellow,
 	"docs":     ansiCyan,
-	"test":     ansiGreen,
+	"test":     ansiCyan,
 	"ci":       ansiCyan,
 	"chore":    ansiBlue,
 	"release":  ansiBoldYellow,
@@ -45,7 +49,7 @@ var typeBoldColor = map[string]string{
 	"refactor": ansiBoldPurple,
 	"bench":    ansiBoldYellow,
 	"docs":     ansiBoldCyan,
-	"test":     ansiBoldGreen,
+	"test":     ansiBoldCyan,
 	"ci":       ansiBoldCyan,
 	"chore":    ansiBoldBlue,
 	"release":  ansiBoldYellow,
@@ -65,14 +69,27 @@ func colorCommitSubject(s string, tags []string) string {
 	lead := s[:len(s)-len(strings.TrimLeft(s, " \t"))]
 	body := s[len(lead):]
 	m := conventionalSubjectRe.FindStringSubmatch(body)
+	unknown := false
 	if m == nil {
-		return s
+		m = conventionalFallbackRe.FindStringSubmatch(body)
+		if m == nil {
+			return s
+		}
+		unknown = true
 	}
 	typ, scope, suffix, sep, rest := m[1], m[2], m[3], m[4], m[5]
 
-	col := typeColor[typ]
-	if suffix == "!" || suffix == "?" {
-		col = typeBoldColor[typ]
+	var col string
+	if unknown {
+		col = ansiPink
+		if suffix == "!" || suffix == "?" {
+			col = ansiBoldPink
+		}
+	} else {
+		col = typeColor[typ]
+		if suffix == "!" || suffix == "?" {
+			col = typeBoldColor[typ]
+		}
 	}
 
 	var b strings.Builder

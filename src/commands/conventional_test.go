@@ -73,13 +73,34 @@ func TestColorCommitSubject_NonConventional(t *testing.T) {
 	t.Setenv("FORCE_COLOR", "1")
 	cases := []string{
 		"just a subject",
-		"unknown: not a real type",
 		"feat without colon",
 		"",
+		"UPPER: capitalised type",
+		"two words: not a type",
 	}
 	for _, in := range cases {
 		assert.Equal(t, colorCommitSubject(in, nil), in)
 	}
+}
+
+func TestColorCommitSubject_UnknownType(t *testing.T) {
+	t.Setenv("FORCE_COLOR", "1")
+	got := colorCommitSubject("deps: bump something", nil)
+	assert.ContainsString(t, got, ansiPink+"deps"+ansiReset)
+	assert.ContainsString(t, got, ansiPink+": "+ansiReset)
+}
+
+func TestColorCommitSubject_UnknownTypeWithScope(t *testing.T) {
+	t.Setenv("FORCE_COLOR", "1")
+	got := colorCommitSubject("deps(core): bump something", nil)
+	assert.ContainsString(t, got, ansiPink+"deps"+ansiReset)
+	assert.ContainsString(t, got, ansiPink+"("+ansiReset)
+}
+
+func TestColorCommitSubject_UnknownTypeBang(t *testing.T) {
+	t.Setenv("FORCE_COLOR", "1")
+	got := colorCommitSubject("deps!: breaking change", nil)
+	assert.ContainsString(t, got, ansiBoldPink+"deps"+ansiReset)
 }
 
 func TestColorCommitSubject_LeadingWhitespace(t *testing.T) {
