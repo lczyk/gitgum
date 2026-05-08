@@ -120,6 +120,8 @@
     "autotools",
     "docstrings",
     "numstat",
-    "numstats"
+    "numstats",
+    "backtab",
+    "fallover"
   ]
 }

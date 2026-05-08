@@ -135,18 +135,48 @@ func (d *DiffCommand) runFollow() error {
 	tick := time.NewTicker(time.Duration(interval * float64(time.Second)))
 	defer tick.Stop()
 
-	currentMode := d.Mode
-	if currentMode == "" {
+	// primary: the mode tab cycles from. shown with <> braces.
+	// pinned: modes that stay visible across tab switches. shown bold.
+	// 1/2/3: set primary, clear all pins.
+	// tab: advance primary to next, clear all pins.
+	// shift+tab: pin current primary, advance primary to next.
+	// !/@ /#: toggle pin on that specific mode.
+	primaryMode := d.Mode
+	if primaryMode == "" {
 		for _, level := range diffModes {
 			out, err := d.collectDiff(level)
 			if err == nil && out != "" {
-				currentMode = level
+				primaryMode = level
 				break
 			}
 		}
-		if currentMode == "" {
-			currentMode = "work"
+		if primaryMode == "" {
+			primaryMode = "work"
 		}
+	}
+	pinned := map[string]bool{}
+
+	nextMode := func(from string) string {
+		for i, m := range diffModes {
+			if m == from {
+				return diffModes[(i+1)%len(diffModes)]
+			}
+		}
+		return diffModes[0]
+	}
+
+	isActive := func(m string) bool {
+		return m == primaryMode || pinned[m]
+	}
+
+	activeCount := func() int {
+		n := 1
+		for _, m := range diffModes {
+			if m != primaryMode && pinned[m] {
+				n++
+			}
+		}
+		return n
 	}
 
 	var (
@@ -157,17 +187,33 @@ func (d *DiffCommand) runFollow() error {
 	)
 
 	refreshCache := func() {
-		out, cErr := d.collectDiff(currentMode)
-		cachedErr = cErr
-		if cErr != nil {
-			cachedLines = nil
-			return
-		}
-		body := strings.TrimSpace(out)
-		if body == "" {
-			cachedLines = []string{emptyModeMessages[currentMode]}
-		} else {
-			cachedLines = strings.Split(body, "\n")
+		cachedErr = nil
+		cachedLines = nil
+		multi := activeCount() > 1
+		first := true
+		for _, m := range diffModes {
+			if !isActive(m) {
+				continue
+			}
+			out, cErr := d.collectDiff(m)
+			if cErr != nil {
+				cachedErr = cErr
+				cachedLines = nil
+				return
+			}
+			if !first && multi {
+				cachedLines = append(cachedLines, "")
+			}
+			if multi {
+				cachedLines = append(cachedLines, ansiDim+"--- "+m+" ---"+ansiReset)
+			}
+			first = false
+			body := strings.TrimSpace(out)
+			if body == "" {
+				cachedLines = append(cachedLines, emptyModeMessages[m])
+			} else {
+				cachedLines = append(cachedLines, strings.Split(body, "\n")...)
+			}
 		}
 	}
 
@@ -188,13 +234,21 @@ func (d *DiffCommand) runFollow() error {
 				writePlain(scr, x, 1, " ", dimStyle, w, h)
 				x++
 			}
-			label := fmt.Sprintf("%d:%s", i+1, m)
-			if m == currentMode {
-				label = fmt.Sprintf("[%d:%s]", i+1, m)
-				writePlain(scr, x, 1, label, boldDimStyle, w, h)
-			} else {
-				writePlain(scr, x, 1, label, dimStyle, w, h)
+			n := i + 1
+			var label string
+			var style tcell.Style
+			switch {
+			case m == primaryMode:
+				label = fmt.Sprintf("<%d:%s>", n, m)
+				style = boldDimStyle
+			case pinned[m]:
+				label = fmt.Sprintf("%d:%s", n, m)
+				style = boldDimStyle
+			default:
+				label = fmt.Sprintf("%d:%s", n, m)
+				style = dimStyle
 			}
+			writePlain(scr, x, 1, label, style, w, h)
 			x += len(label)
 		}
 
@@ -219,6 +273,8 @@ func (d *DiffCommand) runFollow() error {
 		scr.Show()
 	}
 
+	shiftedNum := map[rune]string{'!': "work", '@': "index", '#': "head"}
+
 	refreshCache()
 	redraw()
 	for {
@@ -234,20 +290,42 @@ func (d *DiffCommand) runFollow() error {
 				_, h := scr.Size()
 				switch {
 				case ev.Rune() == '1':
-					currentMode = "work"
+					primaryMode = "work"
+					clear(pinned)
 					refreshCache()
 				case ev.Rune() == '2':
-					currentMode = "index"
+					primaryMode = "index"
+					clear(pinned)
 					refreshCache()
 				case ev.Rune() == '3':
-					currentMode = "head"
+					primaryMode = "head"
+					clear(pinned)
 					refreshCache()
 				case ev.Key() == tcell.KeyTab:
-					for i, m := range diffModes {
-						if m == currentMode {
-							currentMode = diffModes[(i+1)%len(diffModes)]
-							break
+					clear(pinned)
+					primaryMode = nextMode(primaryMode)
+					refreshCache()
+				case ev.Key() == tcell.KeyBacktab:
+					pinned[primaryMode] = true
+					primaryMode = nextMode(primaryMode)
+					refreshCache()
+				case shiftedNum[ev.Rune()] != "":
+					// TODO: primary-fallover UX when shift+number deselects
+					// the active primary feels clunky. revisit.
+					m := shiftedNum[ev.Rune()]
+					if m == primaryMode && activeCount() > 1 {
+						delete(pinned, m)
+						for _, candidate := range diffModes {
+							if pinned[candidate] {
+								primaryMode = candidate
+								delete(pinned, candidate)
+								break
+							}
 						}
+					} else if pinned[m] {
+						delete(pinned, m)
+					} else {
+						pinned[m] = true
 					}
 					refreshCache()
 				default:
