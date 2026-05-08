@@ -100,7 +100,6 @@ func (d *DiffCommand) collectOutput() (string, string, error) {
 	return "", "", nil
 }
 
-
 var emptyModeMessages = map[string]string{
 	"work":  "(no work changes)",
 	"index": "(no index changes)",

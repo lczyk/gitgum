@@ -142,10 +142,10 @@ func (t *TreeCommand) runFollow(sinceArg string, maxCount int) error {
 
 	const fullRefreshEvery = 60 * time.Second
 	var (
-		cachedRefs   string
-		cachedLines  []string
-		cachedAt     time.Time
-		cachedErr    error
+		cachedRefs    string
+		cachedLines   []string
+		cachedAt      time.Time
+		cachedErr     error
 		forceRender   = true
 		scrollOffset  = 0
 		tailMode      = true
