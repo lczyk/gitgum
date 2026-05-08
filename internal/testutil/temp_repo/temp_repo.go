@@ -75,6 +75,9 @@ func initEmptyAt(t testing.TB, dir string) {
 	RunGit(t, dir, "config", "user.email", "test@example.com")
 	RunGit(t, dir, "config", "commit.gpgsign", "false")
 	RunGit(t, dir, "config", "tag.gpgsign", "false")
+	// Use local .git/hooks so tests are not affected by global hooks
+	// (e.g. agent-blocking pre-push guards set via core.hooksPath).
+	RunGit(t, dir, "config", "core.hooksPath", ".git/hooks")
 }
 
 func initRepoAt(t testing.TB, dir string) {
@@ -127,5 +130,6 @@ func NewRepoWithRemote(t *testing.T) (local, remote string) {
 	RunGit(t, local, "config", "user.email", "test@example.com")
 	RunGit(t, local, "config", "commit.gpgsign", "false")
 	RunGit(t, local, "config", "tag.gpgsign", "false")
+	RunGit(t, local, "config", "core.hooksPath", ".git/hooks")
 	return local, remote
 }

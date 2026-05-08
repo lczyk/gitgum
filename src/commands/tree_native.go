@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -49,7 +50,14 @@ func (t *TreeCommand) renderNative(w io.Writer, sinceArg string, maxCount int) e
 		st = graph.Style{LinePrefix: ansiRed, LineSuffix: ansiReset}
 	}
 
-	for _, line := range graph.Render(lr, st) {
+	lines := graph.Render(lr, st)
+	if t.Reverse {
+		slices.Reverse(lines)
+		for i, line := range lines {
+			lines[i] = swapGraphSlashes(line)
+		}
+	}
+	for _, line := range lines {
 		fmt.Fprintln(w, line)
 	}
 	return nil
