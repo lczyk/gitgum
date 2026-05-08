@@ -81,6 +81,29 @@ func TestPushCommand_DeclinesCreateRemoteBranch(t *testing.T) {
 	assert.Error(t, upstreamCmd.Run(), assert.AnyError, "upstream must not be set when user declines")
 }
 
+// when upstream is configured and local matches remote, push exits without
+// prompting.
+func TestPushCommand_UpstreamSet_AlreadyUpToDate(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+
+	bareDir := t.TempDir()
+	temp_repo.RunGit(t, bareDir, "init", "--bare")
+	temp_repo.RunGit(t, dir, "remote", "add", "origin", bareDir)
+
+	branch := currentBranchIn(t, dir)
+	temp_repo.RunGit(t, dir, "push", "-u", "origin", branch)
+
+	var buf strings.Builder
+	stub := &stubSelector{}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	err := cmd.Execute(nil)
+	assert.NoError(t, err)
+	assert.ContainsString(t, buf.String(), "No changes to push")
+	assert.Equal(t, len(stub.confirmCalls), 0)
+}
+
 // when local matches remote but no tracking is configured, push sets the
 // upstream without prompting (no UI interaction needed).
 func TestPushCommand_AlreadyUpToDate_SetsUpstream(t *testing.T) {

@@ -22,6 +22,24 @@ func (p *PushCommand) Execute(args []string) error {
 		return err
 	}
 	if remoteBranch != "" {
+		currentBranch, err := p.repo().GetCurrentBranch()
+		if err != nil {
+			return fmt.Errorf("getting current branch: %w", err)
+		}
+		localCommit, err := p.repo().GetCommitHash(currentBranch)
+		if err != nil {
+			return fmt.Errorf("getting local commit: %w", err)
+		}
+		remoteCommit, err := p.repo().GetCommitHash(remoteBranch)
+		if err != nil {
+			return fmt.Errorf("getting remote commit: %w", err)
+		}
+		if localCommit == remoteCommit {
+			fmt.Fprintf(p.out(), "No changes to push. Local branch '%s' is up to date with '%s'.\n",
+				currentBranch, remoteBranch)
+			return nil
+		}
+
 		fmt.Fprintf(p.out(), "Current branch already has a remote tracking branch: %s\n", remoteBranch)
 		confirmed, err := p.sel().Confirm("Do you want to push to the remote tracking branch?", true)
 		if err != nil {
