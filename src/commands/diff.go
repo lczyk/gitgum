@@ -37,10 +37,19 @@ func (d *DiffCommand) Execute(args []string) error {
 }
 
 func (d *DiffCommand) render(w io.Writer) error {
-	if os.Getenv("GG_DIFF_NATIVE") == "1" {
-		return d.renderNative(w)
+	out, level, err := d.collectOutput()
+	if err != nil {
+		return err
 	}
-	return d.renderPassthrough(w)
+	if out == "" {
+		return nil
+	}
+	fmt.Fprintln(w, dim("--- "+level+" ---"))
+	if os.Getenv("GG_DIFF_NATIVE") == "1" {
+		return d.renderCollected(w, out)
+	}
+	fmt.Fprintln(w, out)
+	return nil
 }
 
 func (d *DiffCommand) collectDiff(level string) (string, error) {
@@ -91,17 +100,6 @@ func (d *DiffCommand) collectOutput() (string, string, error) {
 	return "", "", nil
 }
 
-func (d *DiffCommand) renderPassthrough(w io.Writer) error {
-	out, _, err := d.collectOutput()
-	if err != nil {
-		return err
-	}
-	if out == "" {
-		return nil
-	}
-	fmt.Fprintln(w, out)
-	return nil
-}
 
 var emptyModeMessages = map[string]string{
 	"work":  "(no work changes)",
