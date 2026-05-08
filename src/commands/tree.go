@@ -146,9 +146,10 @@ func (t *TreeCommand) runFollow(sinceArg string, maxCount int) error {
 		cachedLines  []string
 		cachedAt     time.Time
 		cachedErr    error
-		forceRender  = true
-		scrollOffset = 0
-		tailMode     = true
+		forceRender   = true
+		scrollOffset  = 0
+		tailMode      = true
+		lastMaxOffset = 0
 	)
 
 	refreshCache := func() {
@@ -188,10 +189,14 @@ func (t *TreeCommand) runFollow(sinceArg string, maxCount int) error {
 		}
 
 		maxOffset := max(len(cachedLines)-visible, 0)
+		if !tailMode && scrollOffset >= lastMaxOffset {
+			tailMode = true
+		}
 		if tailMode {
 			scrollOffset = maxOffset
 		}
 		scrollOffset = max(0, min(scrollOffset, maxOffset))
+		lastMaxOffset = maxOffset
 		end := min(scrollOffset+visible, len(cachedLines))
 		for i, line := range cachedLines[scrollOffset:end] {
 			writeAnsi(scr, 0, 1+i, line, tcell.StyleDefault, w, h)
