@@ -555,8 +555,18 @@ func (st *layoutState) detectCrossings(order []*nodeState) {
 			// Reusing avoids a spurious extra col when the layout already
 			// contains a side col that's idle here (e.g. a parallel branch
 			// further down the history).
+			// Search bounded by len(st.lanes), not st.numCols: numCols may
+			// have been bumped earlier in this loop by another crossing
+			// allocation, but those routing cols have no lanes entry and
+			// must not be considered "free for reuse" (they're not real
+			// commit cols). Routing cols can't host lanes, so reusing one
+			// would mis-render.
 			routingCol := -1
-			for c := p.col + 1; c < st.numCols; c++ {
+			maxC := st.numCols
+			if len(st.lanes) < maxC {
+				maxC = len(st.lanes)
+			}
+			for c := p.col + 1; c < maxC; c++ {
 				if c == ns.col {
 					continue
 				}
