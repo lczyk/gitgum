@@ -704,16 +704,32 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 	}
 
 	// Active: row is in some lane's [introRow, endRow] span in col c.
-	active := func(row int, c int) bool {
-		if c < 0 || c >= len(st.lanes) {
-			return false
-		}
+	// Pre-compute a [row][col] bitmap once instead of scanning lanes on
+	// every call. forkRows/termRows hit active() O(numCols) times per
+	// stagger row, which is the dominant cost for large histories with
+	// many merges. Trades O(rows * numCols) memory for O(1) lookup.
+	activeBits := make([]bool, (lastRow+1)*len(st.lanes))
+	stride := len(st.lanes)
+	for c := 0; c < len(st.lanes); c++ {
 		for _, l := range st.lanes[c] {
-			if row >= l.introRow && row <= l.endRow {
-				return true
+			lo := l.introRow
+			if lo < 0 {
+				lo = 0
+			}
+			hi := l.endRow
+			if hi > lastRow {
+				hi = lastRow
+			}
+			for r := lo; r <= hi; r++ {
+				activeBits[r*stride+c] = true
 			}
 		}
-		return false
+	}
+	active := func(row int, c int) bool {
+		if c < 0 || c >= stride || row < 0 || row > lastRow {
+			return false
+		}
+		return activeBits[row*stride+c]
 	}
 
 	// Index commits by row. Rows are dense [0, lastRow] so a slice indexed
@@ -723,34 +739,47 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 		commitsAt[ns.row] = append(commitsAt[ns.row], ns)
 	}
 
-	var rows []Row
+	// Index lane intros by row. Without this the row loop scans every
+	// lane in every col per row -- O(rows * total_lanes). For large
+	// histories with many short-lived side branches that scan dominates
+	// generateRows. Pre-bucket by introRow so the per-row loop only walks
+	// the lanes that actually introduce there.
+	introsAt := make([][]lane, lastRow+1)
+	for c := 0; c < len(st.lanes); c++ {
+		for _, l := range st.lanes[c] {
+			if l.introCol < 0 {
+				continue
+			}
+			if l.introRow >= 0 && l.introRow <= lastRow {
+				introsAt[l.introRow] = append(introsAt[l.introRow], l)
+			}
+		}
+	}
+
+	// Pre-allocate rows slice with the exact count computed above so the
+	// append loop never grows-and-copies. For large histories this saves
+	// a pile of growslice / GC pressure.
+	rows := make([]Row, 0, totalRows)
 	for rowNum := 0; rowNum <= lastRow; rowNum++ {
 		// Lane introductions at this row: a lane in col c with introRow == rowNum
 		// AND introCol >= 0 (i.e., forks from another col, not a root).
-		// Iterate only commit cols; routing cols (beyond len(st.lanes)) have
-		// no lanes.
-		for c := 0; c < len(st.lanes); c++ {
-			for _, l := range st.lanes[c] {
-				if l.introRow != rowNum || l.introCol < 0 {
-					continue
-				}
-				forkResult := st.forkRows(l, rowNum, active)
-				// Merge-preview decoration: if the commit owning this fork
-				// has a same-col 2nd-parent in a different (dead) lane,
-				// append a trailing `|` to the stagger row immediately above
-				// the commit -- this is git's `|\|` shape.
-				if len(forkResult) > 0 {
-					for _, ns := range commitsAt[l.endRow] {
-						if ns.col != l.col {
-							continue
-						}
-						if _, ok := st.previews[ns]; ok {
-							last := &forkResult[len(forkResult)-1]
-							last.Tail = append(last.Tail, GlyphPipe, GlyphSpace)
-						}
+		for _, l := range introsAt[rowNum] {
+			var start int
+			rows, start = st.forkRows(rows, l, rowNum, active)
+			// Merge-preview decoration: if the commit owning this fork
+			// has a same-col 2nd-parent in a different (dead) lane,
+			// append a trailing `|` to the stagger row immediately above
+			// the commit -- this is git's `|\|` shape.
+			if len(rows) > start {
+				for _, ns := range commitsAt[l.endRow] {
+					if ns.col != l.col {
+						continue
+					}
+					if _, ok := st.previews[ns]; ok {
+						last := &rows[len(rows)-1]
+						last.Tail = append(last.Tail, GlyphPipe, GlyphSpace)
 					}
 				}
-				rows = append(rows, forkResult...)
 			}
 		}
 
@@ -759,34 +788,38 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 		// edges (where the source col stays alive past the parent) route via
 		// a temp col -- emitted as a fork to the routing col plus a
 		// termination from it to the commit's col.
+		// Dedup buffer for non-first parents sharing a source col (octopus
+		// siblings in a compacted col, etc). Most commits have 0 or 1
+		// non-first parents -- skip the map entirely in that case.
+		var seen map[[2]int]bool
 		for _, ns := range commitsAt[rowNum] {
-			// Multiple non-first parents can land in the same source col
-			// (e.g. an octopus merge whose siblings all share a compacted
-			// col, or sequential single-commit branches off the same root).
-			// Each parent edge is semantically distinct, but visually the
-			// term stagger from a given source col is identical regardless
-			// of which parent it represents -- emitting one per parent
-			// produces N-1 redundant duplicate rows. Dedup by (source col,
-			// crossing-routing col) so each unique edge shape renders once.
-			seen := map[[2]int]bool{}
+			if len(ns.Parents) > 2 {
+				if seen == nil {
+					seen = make(map[[2]int]bool, len(ns.Parents))
+				} else {
+					clear(seen)
+				}
+			}
 			for i := 1; i < len(ns.Parents); i++ {
 				p := st.idx[ns.Parents[i]]
 				if p == nil || p.col == ns.col {
 					continue
 				}
 				rc, hasRC := st.crossings[ns][ns.Parents[i]]
-				key := [2]int{p.col, -1}
-				if hasRC {
-					key[1] = rc
+				if seen != nil {
+					key := [2]int{p.col, -1}
+					if hasRC {
+						key[1] = rc
+					}
+					if seen[key] {
+						continue
+					}
+					seen[key] = true
 				}
-				if seen[key] {
-					continue
-				}
-				seen[key] = true
 				if hasRC {
-					rows = append(rows, st.crossingStagger(p, ns, rc, rowNum, active)...)
+					rows = st.crossingStagger(rows, p, ns, rc, rowNum, active)
 				} else {
-					rows = append(rows, st.termRows(p, ns, rowNum, active)...)
+					rows = st.termRows(rows, p, ns, rowNum, active)
 				}
 			}
 		}
@@ -824,12 +857,14 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 	return rows
 }
 
-// forkRows renders the stagger row(s) introducing lane l. For col distance
-// d > 1 (cross-routing), emits d rows: each step moves the diagonal one
-// col closer to l.col. The destination col is pre-rendered as a vertical
-// pipe in earlier steps so the line "appears" at l.col before the diagonal
-// physically arrives -- this is git's `|\|` then `| |\` pattern.
-func (st *layoutState) forkRows(l lane, rowNum int, active func(int, int) bool) []Row {
+// forkRows appends stagger row(s) introducing lane l to dst. For col
+// distance d > 1 (cross-routing), emits d rows: each step moves the
+// diagonal one col closer to l.col. The destination col is pre-rendered
+// as a vertical pipe in earlier steps so the line "appears" at l.col
+// before the diagonal physically arrives -- this is git's `|\|` then
+// `| |\` pattern. Returns the start index of appended rows so the
+// caller can mutate (e.g. preview tail decoration).
+func (st *layoutState) forkRows(dst []Row, l lane, rowNum int, active func(int, int) bool) ([]Row, int) {
 	dir := 1
 	glyph := GlyphBackslash
 	if l.introCol > l.col {
@@ -840,7 +875,7 @@ func (st *layoutState) forkRows(l lane, rowNum int, active func(int, int) bool) 
 	if d < 0 {
 		d = -d
 	}
-	rows := make([]Row, 0, d)
+	start := len(dst)
 	for i := 0; i < d; i++ {
 		stepCol := l.introCol + dir*(i+1)
 		glyphs := st.nextRowGlyphs()
@@ -858,31 +893,30 @@ func (st *layoutState) forkRows(l lane, rowNum int, active func(int, int) bool) 
 				glyphs[c] = GlyphSpace
 			}
 		}
-		rows = append(rows, Row{Glyphs: glyphs})
+		dst = append(dst, Row{Glyphs: glyphs})
 	}
-	return rows
+	return dst, start
 }
 
 // crossingStagger renders a catch-up termination via a routing col: a
 // fork from p.col out to routingCol, then a term from routingCol back to
 // ns.col. Used when the source col stays alive past p so the natural
 // `|/` would collide with the source col's vertical lane.
-func (st *layoutState) crossingStagger(p, ns *nodeState, routingCol, rowNum int, active func(int, int) bool) []Row {
-	rows := []Row{}
+func (st *layoutState) crossingStagger(dst []Row, p, ns *nodeState, routingCol, rowNum int, active func(int, int) bool) []Row {
 	forkLane := lane{col: routingCol, introCol: p.col, introRow: rowNum, endRow: rowNum}
-	rows = append(rows, st.forkRows(forkLane, rowNum, active)...)
+	dst, _ = st.forkRows(dst, forkLane, rowNum, active)
 	fakeP := &nodeState{col: routingCol}
-	rows = append(rows, st.termRows(fakeP, ns, rowNum, active)...)
-	return rows
+	dst = st.termRows(dst, fakeP, ns, rowNum, active)
+	return dst
 }
 
 // termRows renders the stagger row(s) terminating an edge from parent p
 // into commit ns when they sit on different cols. The diagonal glyph
 // sits at the parent's col on step 0 and steps toward ns.col on later
 // steps; this matches git's `|/` (or `|\`) at the dying col.
-func (st *layoutState) termRows(p, ns *nodeState, rowNum int, active func(int, int) bool) []Row {
+func (st *layoutState) termRows(dst []Row, p, ns *nodeState, rowNum int, active func(int, int) bool) []Row {
 	if p.col == ns.col {
-		return nil
+		return dst
 	}
 	dir := 1
 	glyph := GlyphBackslash
@@ -894,7 +928,6 @@ func (st *layoutState) termRows(p, ns *nodeState, rowNum int, active func(int, i
 	if d < 0 {
 		d = -d
 	}
-	rows := make([]Row, 0, d)
 	for i := 0; i < d; i++ {
 		stepCol := p.col + dir*i
 		glyphs := st.nextRowGlyphs()
@@ -910,7 +943,7 @@ func (st *layoutState) termRows(p, ns *nodeState, rowNum int, active func(int, i
 				glyphs[c] = GlyphSpace
 			}
 		}
-		rows = append(rows, Row{Glyphs: glyphs})
+		dst = append(dst, Row{Glyphs: glyphs})
 	}
-	return rows
+	return dst
 }
