@@ -512,6 +512,49 @@ func TestScenario_SharedParentDualMerge(t *testing.T) {
 	}
 }
 
+func TestScenario_CatchUpReusesIdleCol(t *testing.T) {
+	t.Parallel()
+	// Catch-up merge M (feat lane, col 1) takes m2 (main lane, col 0) as
+	// second parent; main lane stays alive past m2 because `final` extends
+	// it via first-parent. Below M, p2 forks off s1 into col 2.
+	//
+	// Crossing routing for M->m2 needs an extra col, but col 2 is idle in
+	// the stagger row span (rows 4..4 here, while col 2 is only used at
+	// rows 6..7 for p2). detectCrossings should reuse col 2 instead of
+	// allocating a new col 3 -- otherwise the catch-up stagger inflates
+	// from 3 rows in 3 cols to 5 rows in 4 cols.
+	nodes := []graph.Node{
+		{ID: "A", Label: "A", Epoch: iso(1), Lane: h("main")},
+		{ID: "m1", Label: "m1", Epoch: iso(2), Parents: []string{"A"}, Lane: h("main")},
+		{ID: "m2", Label: "m2", Epoch: iso(3), Parents: []string{"m1"}, Lane: h("main")},
+		{ID: "f1", Label: "f1", Epoch: iso(4), Parents: []string{"A"}, Lane: h("feat")},
+		{ID: "M", Label: "M", Epoch: iso(5), Parents: []string{"f1", "m2"}, Lane: h("feat")},
+		{ID: "s1", Label: "s1", Epoch: iso(6), Parents: []string{"M"}, Lane: h("feat")},
+		{ID: "p1", Label: "p1", Epoch: iso(7), Parents: []string{"s1"}, Lane: h("feat")},
+		{ID: "p2", Label: "p2", Epoch: iso(8), Parents: []string{"s1"}, Lane: h("other")},
+		{ID: "mp", Label: "mp", Epoch: iso(9), Parents: []string{"p1", "p2"}, Lane: h("feat")},
+		{ID: "final", Label: "final", Epoch: iso(10), Parents: []string{"m2", "mp"}, Lane: h("main")},
+	}
+	expected := `* A
+|\
+| * f1
+* | m1
+* | m2
+|\|
+| |\
+| |/
+| *   M
+| * s1
+| |\
+| * | p1
+| | * p2
+| |/
+| *   mp
+|/
+*   final`
+	assertGraph(t, nodes, expected)
+}
+
 func TestScenario_StashWithIndex(t *testing.T) {
 	t.Parallel()
 	// Mirrors git's `refs/stash` shape: the stash commit C has two parents,
