@@ -470,11 +470,18 @@ func (st *layoutState) buildLanes(order []*nodeState) {
 			nodeLane[ns.ID] = openIdx[c]
 			continue
 		}
-		// Start new lane. Push introRow past any prior lane in this col.
+		// Start new lane. When a prior lane in this col was alive at the
+		// natural fork row, push the fork stagger to right above the
+		// commit -- otherwise it lands on the merge row consuming the
+		// prior lane and renders as a confusing `|\` immediately followed
+		// by the merge's own `|/` term. Collapsing the intro to ns.row
+		// matches git's rendering: the dying lane's term sits on the
+		// merge row alone, and the new lane's fork sits just above its
+		// own first commit.
 		if openIdx[c] >= 0 {
 			prevEnd := st.lanes[c][openIdx[c]].endRow
 			if introRow <= prevEnd {
-				introRow = prevEnd + 1
+				introRow = ns.row
 			}
 		}
 		// Multi-step forks (col distance > 1) collapse the lane to a single

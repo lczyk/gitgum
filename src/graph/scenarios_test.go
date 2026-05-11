@@ -555,6 +555,36 @@ func TestScenario_CatchUpReusesIdleCol(t *testing.T) {
 	assertGraph(t, nodes, expected)
 }
 
+func TestScenario_SequentialSideBranches(t *testing.T) {
+	t.Parallel()
+	// Two side branches off the same mainline parent B, each merged via
+	// its own merge commit (M1 then M2). Both side branches reuse col 1.
+	// Bug repro (pre-fix): the new col-1 lane intro for s2 was rendered at
+	// M1's row, immediately above M1's own term stagger -- producing a
+	// confusing `|\` then `|/` pair on consecutive rows, with col 1 still
+	// drawn as alive at M1's commit row. The intro should sit just above
+	// s2's commit, after M1 has rendered.
+	nodes := []graph.Node{
+		{ID: "A", Label: "A", Epoch: iso(1), Lane: h("main")},
+		{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}, Lane: h("main")},
+		{ID: "s1", Label: "s1", Epoch: iso(3), Parents: []string{"B"}, Lane: h("feat1")},
+		{ID: "M1", Label: "M1", Epoch: iso(4), Parents: []string{"B", "s1"}, Lane: h("main")},
+		{ID: "s2", Label: "s2", Epoch: iso(5), Parents: []string{"B"}, Lane: h("feat2")},
+		{ID: "M2", Label: "M2", Epoch: iso(6), Parents: []string{"M1", "s2"}, Lane: h("main")},
+	}
+	expected := `* A
+* B
+|\
+| * s1
+|/
+*   M1
+|\
+| * s2
+|/
+*   M2`
+	assertGraph(t, nodes, expected)
+}
+
 func TestScenario_StashWithIndex(t *testing.T) {
 	t.Parallel()
 	// Mirrors git's `refs/stash` shape: the stash commit C has two parents,
