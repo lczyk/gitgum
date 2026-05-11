@@ -314,13 +314,15 @@ func TestScenario_BackMerge(t *testing.T) {
 		{ID: "main_merges_feat", Label: "main_merges_feat", Epoch: iso(4), Parents: []string{"main1", "feat1"}, Lane: h("main")},
 		{ID: "feat_merges_main", Label: "feat_merges_main", Epoch: iso(5), Parents: []string{"feat1", "main_merges_feat"}, Lane: h("feat")},
 	}
-	// Engine's topo walk recurses first parent before second, so feat1
-	// lands above main1 (vs git, which swaps them). Row order is not
-	// load-bearing for layout correctness; the catch-up `|\|` weave is.
+	// Topo walk pre-decrements first-parent indeg before non-first descents,
+	// so the shared parent (feat1, also m_m_f's second parent) is reachable
+	// from m_m_f's non-first descent: main1 lands above feat1, matching git
+	// --graph. Row order is not load-bearing for layout correctness; the
+	// catch-up `|\|` weave is.
 	expected := `* base
 |\
-* | feat1
 | * main1
+* | feat1
 |\|
 | |\
 | |/
@@ -463,7 +465,6 @@ func TestScenario_SharedParentDualMerge(t *testing.T) {
 	// The walk places outer's first-parent (m7) chain after inner's
 	// first-parent (f2) chain, but at higher rows (closer to outer),
 	// which pushes f1/f2 below m1...m7 in oldest-first display.
-	t.Skip("known bug: shared-parent dual-merge misordering")
 	nodes := []graph.Node{
 		{ID: "root", Label: "root", Epoch: iso(1)},
 		{ID: "A", Label: "A", Epoch: iso(2), Parents: []string{"root"}},

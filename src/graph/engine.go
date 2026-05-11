@@ -214,6 +214,23 @@ func (st *layoutState) sort() {
 		ns.row = row
 		row--
 
+		// Pre-decrement first parent's indeg before descending into non-first
+		// parents. When a non-first parent chain reaches a node that's also
+		// shared with our first parent (e.g. m7 = outer's first-parent AND
+		// inner's second-parent), the descendant's decrement will see the
+		// already-reduced count and hit 0, walking the shared chain depth-first
+		// from the descendant. Without this pre-decrement, the shared chain
+		// gets stranded until our trailing first-parent block runs, by which
+		// time the descendant has already walked its own first-parent chain --
+		// flipping their relative ordering.
+		var fp *nodeState
+		if len(ns.Parents) > 0 {
+			if p := st.idx[ns.Parents[0]]; p != nil {
+				indeg[p.ID]--
+				fp = p
+			}
+		}
+
 		// Non-first parents: process depth-first, immediately. This places
 		// side-branch commits in rows above the merge commit in newest-first
 		// order (= just below merge in oldest-first output).
@@ -229,19 +246,11 @@ func (st *layoutState) sort() {
 			}
 		}
 
-		// First parent: also recurse depth-first when ready, so the mainline
-		// chain stays contiguous and lands above the side branch in
-		// oldest-first output. Falls through to ready queue when not yet
-		// reachable (other children still pending).
-		if len(ns.Parents) > 0 {
-			pid := ns.Parents[0]
-			p := st.idx[pid]
-			if p != nil {
-				indeg[p.ID]--
-				if indeg[p.ID] == 0 && !placed[p.ID] {
-					walk(p)
-				}
-			}
+		// First parent: walk if ready and not already placed by a shared-chain
+		// descent above. Falls through to ready queue when not yet reachable
+		// (other children still pending).
+		if fp != nil && !placed[fp.ID] && indeg[fp.ID] == 0 {
+			walk(fp)
 		}
 	}
 
