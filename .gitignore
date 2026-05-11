@@ -15,3 +15,6 @@ bin/
 cover.out
 cover.html
 .claude/
+
+# go test binaries from `go test -c` / cpuprofile runs
+*.test
