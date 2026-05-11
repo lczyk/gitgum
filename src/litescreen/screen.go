@@ -750,15 +750,6 @@ func (s *Screen) Sync() {
 	// Sync the pool buffer's backing already covers this — Grow on a
 	// large-enough buffer is a no-op.
 	buf.Grow(s.fb.width*s.fb.height*10 + 64)
-	// Wipe the region (and anything below it in inline mode) before
-	// repainting. Without this, tearing left in cells outside the picker's
-	// own writes — or wrap residue from terminal scrolling — survives the
-	// repaint. Coalesced into the same buffer as the repaint so we issue
-	// a single Write to the terminal.
-	var scratch [20]byte
-	buf.WriteString("\x1b[")
-	buf.Write(strconv.AppendInt(scratch[:0], int64(s.yOrigin+1), 10))
-	buf.WriteString(";1H\x1b[J")
 	s.fb.flushTo(buf, s.yOrigin, s.cursorX, s.cursorY, s.cursorVisible)
 	s.out.Write(buf.Bytes())
 }

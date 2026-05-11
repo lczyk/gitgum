@@ -31,7 +31,7 @@ func TestNew_OpensTty(t *testing.T) {
 	s, err := litescreen.New(0)
 	assert.NoError(t, err)
 	assert.That(t, s != nil, "expected non-nil Screen")
-	// Don't call Init — that would mess with our test's terminal state.
+	// Don't call Init -- that would mess with our test's terminal state.
 }
 
 // fixedSize is a Size override that always reports the same dimensions.
@@ -124,11 +124,12 @@ func TestNewWithOptions_SyncForcesFullRepaintAndClearsRegion(t *testing.T) {
 	assert.That(t, !strings.Contains(noChange, "X"), "Show with empty diff must not re-emit 'X'; got %q", noChange)
 	out.Reset()
 
-	// Sync must (a) clear from yOrigin (row 8) to end-of-screen and (b) re-
-	// emit every cell, including the unchanged 'X'.
+	// Sync must re-emit every cell (including the unchanged 'X') without
+	// an explicit clear-to-end-of-screen — the cell-by-cell repaint covers
+	// the picker region on its own.
 	s.Sync()
 	got := out.String()
-	assert.That(t, strings.Contains(got, "\x1b[8;1H\x1b[J"), "Sync should clear region from yOrigin; got %q", got)
+	assert.That(t, !strings.Contains(got, "\x1b[J"), "Sync should not clear-to-end; got %q", got)
 	assert.That(t, strings.Contains(got, "X"), "Sync should re-emit 'X' even though back==front; got %q", got)
 
 	s.Fini()
