@@ -760,12 +760,30 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 		// a temp col -- emitted as a fork to the routing col plus a
 		// termination from it to the commit's col.
 		for _, ns := range commitsAt[rowNum] {
+			// Multiple non-first parents can land in the same source col
+			// (e.g. an octopus merge whose siblings all share a compacted
+			// col, or sequential single-commit branches off the same root).
+			// Each parent edge is semantically distinct, but visually the
+			// term stagger from a given source col is identical regardless
+			// of which parent it represents -- emitting one per parent
+			// produces N-1 redundant duplicate rows. Dedup by (source col,
+			// crossing-routing col) so each unique edge shape renders once.
+			seen := map[[2]int]bool{}
 			for i := 1; i < len(ns.Parents); i++ {
 				p := st.idx[ns.Parents[i]]
 				if p == nil || p.col == ns.col {
 					continue
 				}
-				if rc, ok := st.crossings[ns][ns.Parents[i]]; ok {
+				rc, hasRC := st.crossings[ns][ns.Parents[i]]
+				key := [2]int{p.col, -1}
+				if hasRC {
+					key[1] = rc
+				}
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				if hasRC {
 					rows = append(rows, st.crossingStagger(p, ns, rc, rowNum, active)...)
 				} else {
 					rows = append(rows, st.termRows(p, ns, rowNum, active)...)
