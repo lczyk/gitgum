@@ -78,6 +78,107 @@ func parallelBranches(k, length int) []graph.Node {
 	return nodes
 }
 
+// backAndForthCatchups builds n back-and-forth catch-up cycles between a
+// main lane and a feat lane. Each cycle: main commit, then feat catches
+// up to main, then main catches up to feat. Stresses crossing-col reuse:
+// each catch-up needs a routing col, but they're non-overlapping in time
+// so a single routing col should serve all of them.
+func backAndForthCatchups(n int) []graph.Node {
+	nodes := []graph.Node{{ID: "A", Label: "A", Epoch: 0, Lane: 1}}
+	mainPrev := "A"
+	featPrev := ""
+	for i := 0; i < n; i++ {
+		f1 := fmt.Sprintf("f%d", i)
+		nodes = append(nodes, graph.Node{
+			ID: f1, Label: f1, Epoch: int64(i*4 + 1),
+			Parents: []string{
+				func() string {
+					if featPrev == "" {
+						return mainPrev
+					}
+					return featPrev
+				}(),
+			},
+			Lane: 2,
+		})
+		c := fmt.Sprintf("c%d", i)
+		nodes = append(nodes, graph.Node{
+			ID: c, Label: c, Epoch: int64(i*4 + 2),
+			Parents: []string{mainPrev, f1}, Lane: 1,
+		})
+		mainPrev = c
+		featPrev = f1
+	}
+	return nodes
+}
+
+// sequentialSideBranches builds n short PR-merge style side branches off
+// a shared base. Each side branch is a single commit merged via a 2-parent
+// merge back to main. Stresses pushed-intro-to-commit-row behavior and
+// lane reuse in col 1.
+func sequentialSideBranches(n int) []graph.Node {
+	nodes := []graph.Node{{ID: "base", Label: "base", Epoch: 0, Lane: 1}}
+	prev := "base"
+	for i := 0; i < n; i++ {
+		s := fmt.Sprintf("s%d", i)
+		m := fmt.Sprintf("M%d", i)
+		nodes = append(nodes, graph.Node{
+			ID: s, Label: s, Epoch: int64(i*2 + 1),
+			Parents: []string{prev}, Lane: 2,
+		})
+		nodes = append(nodes, graph.Node{
+			ID: m, Label: m, Epoch: int64(i*2 + 2),
+			Parents: []string{prev, s}, Lane: 1,
+		})
+		prev = m
+	}
+	return nodes
+}
+
+// sharedParentDualMerge mirrors the rocks-security-manifest topology:
+// an outer merge whose first parent (m_tip) is also the second parent of
+// an inner merge nested in the outer's other-parent subtree. Repeats the
+// pattern n times to stress the topo-sort pre-decrement path.
+func sharedParentDualMerge(n int) []graph.Node {
+	nodes := []graph.Node{{ID: "root", Label: "root", Epoch: 0, Lane: 1}}
+	prev := "root"
+	for i := 0; i < n; i++ {
+		mTip := fmt.Sprintf("m%d", i)
+		fTip := fmt.Sprintf("f%d", i)
+		inner := fmt.Sprintf("inner%d", i)
+		outer := fmt.Sprintf("outer%d", i)
+		nodes = append(nodes,
+			graph.Node{ID: mTip, Label: mTip, Epoch: int64(i*5 + 1), Parents: []string{prev}, Lane: 1},
+			graph.Node{ID: fTip, Label: fTip, Epoch: int64(i*5 + 2), Parents: []string{prev}, Lane: 2},
+			graph.Node{ID: inner, Label: inner, Epoch: int64(i*5 + 3), Parents: []string{fTip, mTip}, Lane: 2},
+			graph.Node{ID: outer, Label: outer, Epoch: int64(i*5 + 4), Parents: []string{mTip, inner}, Lane: 1},
+		)
+		prev = outer
+	}
+	return nodes
+}
+
+// octopusFan builds a single k-parent octopus merge. All k-1 non-first
+// parents are single-commit branches off a shared root; after compaction
+// they share col 1, exercising the term-stagger dedup path.
+func octopusFan(k int) []graph.Node {
+	nodes := []graph.Node{{ID: "A", Label: "A", Epoch: 0, Lane: 1}}
+	parents := []string{"A"}
+	for i := 1; i < k; i++ {
+		id := fmt.Sprintf("p%d", i)
+		nodes = append(nodes, graph.Node{
+			ID: id, Label: id, Epoch: int64(i),
+			Parents: []string{"A"}, Lane: int64(i + 2),
+		})
+		parents = append(parents, id)
+	}
+	nodes = append(nodes, graph.Node{
+		ID: "M", Label: "M", Epoch: int64(k + 1),
+		Parents: parents, Lane: 1,
+	})
+	return nodes
+}
+
 func benchLayout(b *testing.B, nodes []graph.Node) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -145,3 +246,30 @@ func BenchmarkRenderOnly_Linear1000_Color(b *testing.B) {
 func BenchmarkRenderOnly_Merges1000_Color(b *testing.B) {
 	benchRenderOnly(b, mergeSeries(1000, 5), styled)
 }
+
+// Benches for topology classes that previously triggered bugs --
+// shared-parent dual-merge (topo ordering), back-and-forth catch-ups
+// (routing-col reuse), sequential side branches (pushed-intro-to-commit
+// behavior), octopus fans (term-stagger dedup).
+func BenchmarkLayout_SharedDual100(b *testing.B)  { benchLayout(b, sharedParentDualMerge(100)) }
+func BenchmarkLayout_SharedDual1000(b *testing.B) { benchLayout(b, sharedParentDualMerge(1000)) }
+
+func BenchmarkLayout_BackForth100(b *testing.B)  { benchLayout(b, backAndForthCatchups(100)) }
+func BenchmarkLayout_BackForth1000(b *testing.B) { benchLayout(b, backAndForthCatchups(1000)) }
+
+func BenchmarkLayout_SeqSides100(b *testing.B)  { benchLayout(b, sequentialSideBranches(100)) }
+func BenchmarkLayout_SeqSides1000(b *testing.B) { benchLayout(b, sequentialSideBranches(1000)) }
+
+func BenchmarkLayout_Octopus10(b *testing.B)  { benchLayout(b, octopusFan(10)) }
+func BenchmarkLayout_Octopus100(b *testing.B) { benchLayout(b, octopusFan(100)) }
+
+func BenchmarkRender_BackForth1000(b *testing.B) {
+	benchLayoutAndRender(b, backAndForthCatchups(1000))
+}
+func BenchmarkRender_SeqSides1000(b *testing.B) {
+	benchLayoutAndRender(b, sequentialSideBranches(1000))
+}
+func BenchmarkRender_SharedDual1000(b *testing.B) {
+	benchLayoutAndRender(b, sharedParentDualMerge(1000))
+}
+func BenchmarkRender_Octopus100(b *testing.B) { benchLayoutAndRender(b, octopusFan(100)) }
