@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/src/litescreen"
 	"github.com/lczyk/gitgum/src/litescreen/ansi"
 )
@@ -29,35 +30,61 @@ var (
 	isoDateRe   = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?)?$`)
 )
 
-var sinceUnits = map[string]string{
-	"s": "seconds",
-	"m": "minutes",
-	"h": "hours",
-	"d": "days",
-	"w": "weeks",
-	"y": "years",
+var sinceDurations = map[string]time.Duration{
+	"s": time.Second,
+	"m": time.Minute,
+	"h": time.Hour,
+	"d": 24 * time.Hour,
+	"w": 7 * 24 * time.Hour,
+	"y": 365 * 24 * time.Hour,
 }
 
-// parseSinceArg interprets the --since value. Returns (sinceArg, maxCount,
-// err) where exactly one of sinceArg / maxCount is non-zero (or both zero
-// for "show all").
-func parseSinceArg(s string) (string, int, error) {
+// parseSinceArg interprets the --since value. Returns (duration, sinceArg,
+// maxCount, err). For shorthands (2w, 10d, etc.) duration is non-zero and
+// sinceArg is empty -- the caller resolves the duration relative to the newest
+// commit. For ISO dates sinceArg is set directly. For depth, maxCount is set.
+func parseSinceArg(s string) (time.Duration, string, int, error) {
 	if s == "" {
-		return "", 0, nil
+		return 0, "", 0, nil
 	}
 	if n, err := strconv.Atoi(s); err == nil {
 		if n <= 0 {
-			return "", 0, fmt.Errorf("--since=%q: depth must be a positive integer", s)
+			return 0, "", 0, fmt.Errorf("--since=%q: depth must be a positive integer", s)
 		}
-		return "", n, nil
+		return 0, "", n, nil
 	}
 	if m := shorthandRe.FindStringSubmatch(s); m != nil {
-		return fmt.Sprintf("%s %s ago", m[1], sinceUnits[m[2]]), 0, nil
+		n, _ := strconv.Atoi(m[1])
+		d := time.Duration(n) * sinceDurations[m[2]]
+		return d, "", 0, nil
 	}
 	if isoDateRe.MatchString(s) {
-		return s, 0, nil
+		return 0, s, 0, nil
 	}
-	return "", 0, fmt.Errorf("--since=%q: unrecognised form. use shorthand (2w, 10d, 1h; units s/m/h/d/w/y), ISO date (2024-01-01), bare integer (depth), or empty (all)", s)
+	return 0, "", 0, fmt.Errorf("--since=%q: unrecognised form. use shorthand (2w, 10d, 1h; units s/m/h/d/w/y), ISO date (2024-01-01), bare integer (depth), or empty (all)", s)
+}
+
+// resolveSinceArg turns a parsed since into the final --since string for git.
+// For relative durations, it subtracts from the newest commit's timestamp
+// (across all branches) rather than from now.
+func resolveSinceArg(r git.Repo, dur time.Duration, sinceArg string) (string, error) {
+	if dur == 0 {
+		return sinceArg, nil
+	}
+	stdout, _, err := r.Run("log", "--all", "-1", "--format=%ct", "--date-order")
+	if err != nil {
+		return "", fmt.Errorf("finding newest commit: %w", err)
+	}
+	epochStr := strings.TrimSpace(stdout)
+	if epochStr == "" {
+		return "", nil
+	}
+	epoch, err := strconv.ParseInt(epochStr, 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("parsing commit epoch: %w", err)
+	}
+	cutoff := time.Unix(epoch, 0).Add(-dur)
+	return cutoff.UTC().Format("2006-01-02T15:04:05"), nil
 }
 
 // TODO: replace the `git log --graph` shell-out with an in-process renderer.
@@ -71,7 +98,11 @@ func (t *TreeCommand) Execute(args []string) error {
 	if err := t.repo().CheckInRepo(); err != nil {
 		return err
 	}
-	sinceArg, maxCount, err := parseSinceArg(t.Since)
+	dur, sinceArg, maxCount, err := parseSinceArg(t.Since)
+	if err != nil {
+		return err
+	}
+	sinceArg, err = resolveSinceArg(t.repo(), dur, sinceArg)
 	if err != nil {
 		return err
 	}

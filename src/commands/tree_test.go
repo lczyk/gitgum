@@ -2,8 +2,11 @@ package commands
 
 import (
 	"bytes"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/lczyk/assert"
@@ -13,40 +16,42 @@ import (
 
 func TestParseSinceArg(t *testing.T) {
 	cases := map[string]struct {
-		in        string
-		wantSince string
-		wantCount int
-		wantErr   bool
+		in       string
+		wantDur  time.Duration
+		wantDate string
+		wantN    int
+		wantErr  bool
 	}{
-		"empty":       {"", "", 0, false},
-		"shorthand w": {"2w", "2 weeks ago", 0, false},
-		"shorthand d": {"10d", "10 days ago", 0, false},
-		"shorthand h": {"1h", "1 hours ago", 0, false},
-		"shorthand m": {"30m", "30 minutes ago", 0, false},
-		"shorthand s": {"45s", "45 seconds ago", 0, false},
-		"shorthand y": {"3y", "3 years ago", 0, false},
-		"iso date":    {"2024-01-01", "2024-01-01", 0, false},
+		"empty":       {"", 0, "", 0, false},
+		"shorthand w": {"2w", 2 * 7 * 24 * time.Hour, "", 0, false},
+		"shorthand d": {"10d", 10 * 24 * time.Hour, "", 0, false},
+		"shorthand h": {"1h", time.Hour, "", 0, false},
+		"shorthand m": {"30m", 30 * time.Minute, "", 0, false},
+		"shorthand s": {"45s", 45 * time.Second, "", 0, false},
+		"shorthand y": {"3y", 3 * 365 * 24 * time.Hour, "", 0, false},
+		"iso date":    {"2024-01-01", 0, "2024-01-01", 0, false},
 		"iso datetime": {
-			"2024-01-01T12:00:00", "2024-01-01T12:00:00", 0, false,
+			"2024-01-01T12:00:00", 0, "2024-01-01T12:00:00", 0, false,
 		},
-		"depth":            {"4", "", 4, false},
-		"zero depth":       {"0", "", 0, true},
-		"negative depth":   {"-1", "", 0, true},
-		"unknown unit":     {"2x", "", 0, true},
-		"junk":             {"yesterday", "", 0, true},
-		"two weeks ago":    {"2 weeks ago", "", 0, true},
-		"approxidate fail": {"2.weeks.ago", "", 0, true},
+		"depth":            {"4", 0, "", 4, false},
+		"zero depth":       {"0", 0, "", 0, true},
+		"negative depth":   {"-1", 0, "", 0, true},
+		"unknown unit":     {"2x", 0, "", 0, true},
+		"junk":             {"yesterday", 0, "", 0, true},
+		"two weeks ago":    {"2 weeks ago", 0, "", 0, true},
+		"approxidate fail": {"2.weeks.ago", 0, "", 0, true},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			gotSince, gotCount, err := parseSinceArg(tc.in)
+			gotDur, gotDate, gotN, err := parseSinceArg(tc.in)
 			if tc.wantErr {
 				assert.That(t, err != nil, "expected error for %q", tc.in)
 				return
 			}
 			assert.NoError(t, err)
-			assert.Equal(t, gotSince, tc.wantSince)
-			assert.Equal(t, gotCount, tc.wantCount)
+			assert.Equal(t, gotDur, tc.wantDur)
+			assert.Equal(t, gotDate, tc.wantDate)
+			assert.Equal(t, gotN, tc.wantN)
 		})
 	}
 }
@@ -257,6 +262,33 @@ func TestTreeCommand_Execute(t *testing.T) {
 		assert.That(t, !strings.Contains(out, "chore: Add B on feature"), "should not contain commits dated before 2099")
 		assert.That(t, !strings.Contains(out, "chore: Add C on main"), "should not contain commits dated before 2099")
 	})
+}
+
+func backdatedCommit(t testing.TB, dir, msg, date string) {
+	t.Helper()
+	cmd := exec.Command("git", "commit", "--allow-empty", "-m", msg, "--date", date)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_COMMITTER_DATE="+date)
+	out, err := cmd.CombinedOutput()
+	assert.NoError(t, err, "git commit failed: ", string(out))
+}
+
+func TestTreeCommand_SinceRelativeToNewestCommit(t *testing.T) {
+	dir := temp_repo.NewRepo(t)
+	// Backdate commits to 2020. A wall-clock-relative "2w" would show
+	// nothing (years in the past); commit-relative "2w" sees them.
+	backdatedCommit(t, dir, "chore: old A", "2020-06-15T12:00:00")
+	backdatedCommit(t, dir, "chore: old B", "2020-06-20T12:00:00")
+	repo := git.Repo{Dir: dir}
+
+	var buf bytes.Buffer
+	cmd := &TreeCommand{cmdIO: cmdIO{Out: &buf, Repo: repo}, Since: "2w"}
+	err := cmd.Execute(nil)
+	assert.NoError(t, err)
+
+	out := buf.String()
+	assert.ContainsString(t, out, "chore: old B")
+	assert.ContainsString(t, out, "chore: old A")
 }
 
 func TestTreeCommand_Reverse(t *testing.T) {
