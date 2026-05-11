@@ -541,9 +541,34 @@ func (st *layoutState) detectCrossings(order []*nodeState) {
 			if pLane == nil || pLane.endRow <= p.row {
 				continue
 			}
-			// Source col stays alive past p -- need routing col.
-			routingCol := st.numCols
-			st.numCols++
+			// Source col stays alive past p -- need routing col. Try to
+			// reuse an existing col that has no lane activity in the stagger
+			// rows touched by this routing (between p.row and ns.row). Only
+			// allocate a new col when no existing col is free in that span.
+			// Reusing avoids a spurious extra col when the layout already
+			// contains a side col that's idle here (e.g. a parallel branch
+			// further down the history).
+			routingCol := -1
+			for c := p.col + 1; c < st.numCols; c++ {
+				if c == ns.col {
+					continue
+				}
+				busy := false
+				for _, l := range st.lanes[c] {
+					if l.endRow >= p.row+1 && l.introRow <= ns.row {
+						busy = true
+						break
+					}
+				}
+				if !busy {
+					routingCol = c
+					break
+				}
+			}
+			if routingCol < 0 {
+				routingCol = st.numCols
+				st.numCols++
+			}
 			if st.crossings[ns] == nil {
 				st.crossings[ns] = map[string]int{}
 			}
