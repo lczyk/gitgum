@@ -447,6 +447,70 @@ func TestScenario_OrphanWithTag(t *testing.T) {
 	assertGraph(t, nodes, expected)
 }
 
+func TestScenario_SharedParentDualMerge(t *testing.T) {
+	t.Parallel()
+	// Topology from rocks-security-manifest: a node (m7) is first-parent of
+	// the outer merge AND second-parent of the inner merge. The inner merge's
+	// first-parent is a short feature chain (f1->f2); the second-parent is
+	// the long main chain (m1->...->m7). A chain connects inner to outer merge.
+	//
+	// Expected: feature chain (f1, f2) appears above the main chain
+	// (m1...m7) in oldest-first output, matching git --graph. The native
+	// renderer was placing the main chain first due to how the shared
+	// parent's dual role affected the topo walk.
+	//
+	// TODO: fix topo sort to handle shared-parent dual-merge ordering.
+	// The walk places outer's first-parent (m7) chain after inner's
+	// first-parent (f2) chain, but at higher rows (closer to outer),
+	// which pushes f1/f2 below m1...m7 in oldest-first display.
+	t.Skip("known bug: shared-parent dual-merge misordering")
+	nodes := []graph.Node{
+		{ID: "root", Label: "root", Epoch: iso(1)},
+		{ID: "A", Label: "A", Epoch: iso(2), Parents: []string{"root"}},
+		// long main chain off A
+		{ID: "m1", Label: "m1", Epoch: iso(3), Parents: []string{"A"}, Lane: h("main")},
+		{ID: "m2", Label: "m2", Epoch: iso(4), Parents: []string{"m1"}, Lane: h("main")},
+		{ID: "m3", Label: "m3", Epoch: iso(5), Parents: []string{"m2"}, Lane: h("main")},
+		{ID: "m4", Label: "m4", Epoch: iso(6), Parents: []string{"m3"}, Lane: h("main")},
+		{ID: "m5", Label: "m5", Epoch: iso(7), Parents: []string{"m4"}, Lane: h("main")},
+		{ID: "m6", Label: "m6", Epoch: iso(8), Parents: []string{"m5"}, Lane: h("main")},
+		{ID: "m7", Label: "m7", Epoch: iso(9), Parents: []string{"m6"}, Lane: h("main")},
+		// short feature chain off A
+		{ID: "f1", Label: "f1", Epoch: iso(10), Parents: []string{"A"}, Lane: h("feat")},
+		{ID: "f2", Label: "f2", Epoch: iso(11), Parents: []string{"f1"}, Lane: h("feat")},
+		// inner merge: feature is first parent, main is second
+		{ID: "inner", Label: "inner", Epoch: iso(12), Parents: []string{"f2", "m7"}, Lane: h("feat")},
+		{ID: "c1", Label: "c1", Epoch: iso(13), Parents: []string{"inner"}, Lane: h("feat")},
+		{ID: "c2", Label: "c2", Epoch: iso(14), Parents: []string{"c1"}, Lane: h("feat")},
+		// outer merge: main chain (m7) is first parent, feature chain is second
+		{ID: "outer", Label: "outer", Epoch: iso(15), Parents: []string{"m7", "c2"}, Lane: h("main")},
+		{ID: "tip", Label: "tip", Epoch: iso(16), Parents: []string{"outer"}},
+	}
+	// feature chain (f1, f2) should appear before the main chain (m1...m7)
+	// because the inner merge's walk places non-first parent (m7 chain)
+	// at higher rows. Git --graph produces this order too.
+	lr := graph.Layout(nodes)
+	lines := graph.Render(lr, graph.Style{})
+
+	// Find commit positions.
+	positions := map[string]int{}
+	idx := 0
+	for _, row := range lr.Rows {
+		if row.Commit != nil {
+			positions[row.Commit.ID] = idx
+			idx++
+		}
+	}
+
+	// Assert feature chain above main chain.
+	if positions["f1"] > positions["m1"] {
+		got := stripTrailingSpaces(strings.Join(lines, "\n"))
+		t.Errorf("feature chain should appear above main chain in oldest-first output\n"+
+			"f1 at position %d, m1 at position %d\n--- rendered ---\n%s",
+			positions["f1"], positions["m1"], got)
+	}
+}
+
 func TestScenario_StashWithIndex(t *testing.T) {
 	t.Parallel()
 	// Mirrors git's `refs/stash` shape: the stash commit C has two parents,
