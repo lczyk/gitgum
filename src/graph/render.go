@@ -1,27 +1,63 @@
 package graph
 
-import "strings"
+import "unsafe"
 
 // Render produces output lines in `git log --graph --oneline` style.
 // Style controls graph-glyph ANSI wrapping; pass the zero Style for plain
 // ASCII. Labels are appended verbatim -- callers wanting per-segment
 // coloring should embed ANSI escapes in Node.Label before calling Layout.
+//
+// Internally all lines are written into one shared []byte and the
+// returned strings alias substrings of it. That keeps the alloc count
+// O(1) in number of rows (a single backing buffer + the []string header
+// plus a slots scratch slice), rather than O(rows).
 func Render(lr LayoutResult, st Style) []string {
-	lines := make([]string, 0, len(lr.Rows))
+	if len(lr.Rows) == 0 {
+		return nil
+	}
+	// Reused across rows; renderRowInto truncates to zero before refilling.
+	slots := make([]Glyph, 0, 2*lr.Columns+4)
+	// Rough estimate: 2 chars/col + per-row label budget. Over-allocate
+	// modestly so the buffer rarely grows -- a few growslice events are
+	// much cheaper than one alloc per row.
+	estBytes := 0
 	for _, row := range lr.Rows {
-		lines = append(lines, renderRow(row, lr.Columns, st))
+		estBytes += 2 * lr.Columns
+		if row.Commit != nil {
+			estBytes += len(row.Commit.Label) + row.Extras*2 + 1
+		}
+		if styleOverhead := len(st.LinePrefix) + len(st.LineSuffix) + len(st.StarPrefix) + len(st.StarSuffix); styleOverhead > 0 {
+			estBytes += styleOverhead * 4
+		}
+	}
+	buf := make([]byte, 0, estBytes)
+	offsets := make([]int, len(lr.Rows)+1)
+	for i, row := range lr.Rows {
+		offsets[i] = len(buf)
+		buf = renderRowInto(buf, &slots, row, lr.Columns, st)
+	}
+	offsets[len(lr.Rows)] = len(buf)
+
+	lines := make([]string, len(lr.Rows))
+	for i := range lines {
+		start, end := offsets[i], offsets[i+1]
+		if start == end {
+			continue // leave as ""
+		}
+		// unsafe.String aliases the backing array. Strings are
+		// immutable so the caller cannot mutate buf via the lines;
+		// buf itself is never mutated after this loop either.
+		lines[i] = unsafe.String(&buf[start], end-start)
 	}
 	return lines
 }
 
-func renderRow(row Row, numCols int, st Style) string {
-	var b strings.Builder
-
+func renderRowInto(buf []byte, slotsBuf *[]Glyph, row Row, numCols int, st Style) []byte {
 	// Build slot grid by packing left-to-right. Diagonals (`/`, `\`) slide
 	// into the previous col's trailing-space slot, and the next col's
 	// primary slides up too -- this is git's compressed `|\|` cross-routing
 	// pattern. Without packing, multi-col layouts get extra whitespace.
-	slots := make([]Glyph, 0, 2*numCols)
+	slots := (*slotsBuf)[:0]
 	for c := 0; c < numCols; c++ {
 		g := row.Glyphs[c]
 		if (g == GlyphSlash || g == GlyphBackslash) && len(slots) > 0 && slots[len(slots)-1] == GlyphSpace {
@@ -37,6 +73,7 @@ func renderRow(row Row, numCols int, st Style) string {
 	for len(slots) < 2*numCols {
 		slots = append(slots, GlyphSpace)
 	}
+	*slotsBuf = slots
 
 	// Determine right edge: stagger rows render up to the rightmost col with
 	// non-space content; commit rows do the same (with at least col 0).
@@ -48,7 +85,7 @@ func renderRow(row Row, numCols int, st Style) string {
 	}
 	if row.Commit == nil {
 		if lastActive < 0 {
-			return ""
+			return buf
 		}
 	} else if lastActive < 0 {
 		lastActive = 0
@@ -64,35 +101,35 @@ func renderRow(row Row, numCols int, st Style) string {
 			slotEnd--
 		}
 	}
-	writeSlots(&b, slots[:slotEnd], st)
+	buf = writeSlotsTo(buf, slots[:slotEnd], st)
 	if len(row.Tail) > 0 {
-		writeSlots(&b, row.Tail, st)
+		buf = writeSlotsTo(buf, row.Tail, st)
 	}
 
 	if row.Commit == nil {
-		return b.String()
+		return buf
 	}
 
 	// Merge commits get extra alignment slots after the `*` to line up with
 	// fan-out cols above (each fan-out parent contributes 2 chars). Layout
 	// pre-computes this from actual parent col positions.
 	for range row.Extras * 2 {
-		b.WriteByte(' ')
+		buf = append(buf, ' ')
 	}
 
 	// Label is opaque -- callers embed ANSI codes pre-Layout if they want
 	// per-segment coloring.
-	b.WriteString(row.Commit.Label)
-	return b.String()
+	buf = append(buf, row.Commit.Label...)
+	return buf
 }
 
-// writeSlots emits glyph runs of identical Glyph as a single styled
+// writeSlotsTo emits glyph runs of identical Glyph as a single styled
 // write. Lines (`|`/`/`/`\`) are wrapped with Style.LinePrefix/LineSuffix,
 // stars with Style.StarPrefix/StarSuffix; spaces and unstyled cases go
-// straight to the builder.
-func writeSlots(b *strings.Builder, slots []Glyph, st Style) {
+// straight to the buffer.
+func writeSlotsTo(buf []byte, slots []Glyph, st Style) []byte {
 	if len(slots) == 0 {
-		return
+		return buf
 	}
 	runStart := 0
 	for i := 1; i <= len(slots); i++ {
@@ -105,33 +142,34 @@ func writeSlots(b *strings.Builder, slots []Glyph, st Style) {
 		switch g {
 		case GlyphSpace:
 			for range n {
-				b.WriteByte(' ')
+				buf = append(buf, ' ')
 			}
 		case GlyphStar:
 			if st.StarPrefix == "" && st.StarSuffix == "" {
 				for range n {
-					b.WriteString(ch)
+					buf = append(buf, ch...)
 				}
 			} else {
-				b.WriteString(st.StarPrefix)
+				buf = append(buf, st.StarPrefix...)
 				for range n {
-					b.WriteString(ch)
+					buf = append(buf, ch...)
 				}
-				b.WriteString(st.StarSuffix)
+				buf = append(buf, st.StarSuffix...)
 			}
 		default: // pipe, slash, backslash
 			if st.LinePrefix == "" && st.LineSuffix == "" {
 				for range n {
-					b.WriteString(ch)
+					buf = append(buf, ch...)
 				}
 			} else {
-				b.WriteString(st.LinePrefix)
+				buf = append(buf, st.LinePrefix...)
 				for range n {
-					b.WriteString(ch)
+					buf = append(buf, ch...)
 				}
-				b.WriteString(st.LineSuffix)
+				buf = append(buf, st.LineSuffix...)
 			}
 		}
 		runStart = i
 	}
+	return buf
 }
