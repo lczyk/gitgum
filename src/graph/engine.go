@@ -67,13 +67,15 @@ func Layout(nodes []Node) LayoutResult {
 	// Sort children deterministically: first-parent children first (mainline
 	// continuity), then by date, then by ID. Map iteration above randomizes
 	// append order; without this every phase that iterates children is unstable.
-	// Using sort.Sort with a typed interface avoids the per-call closure
-	// allocation that sort.SliceStable would incur.
+	// Children lists are tiny (almost always 2-4 entries); a manual stable
+	// insertion sort avoids sort.Stable's per-call auxiliary allocations
+	// which dominated the alloc count on histories with many sortable
+	// groups.
 	for _, ns := range st.nodes {
 		if len(ns.children) < 2 {
 			continue
 		}
-		sort.Stable(childSorter{children: ns.children, parentID: ns.ID})
+		insertionSortChildren(ns.children, ns.ID)
 	}
 
 	// Phase 1: topological sort (oldest-first rows).
@@ -113,29 +115,35 @@ func Layout(nodes []Node) LayoutResult {
 	return LayoutResult{Rows: rows, Columns: st.numCols}
 }
 
-// childSorter implements sort.Interface for ordering a parent's children
-// without allocating a closure per Layout call.
-type childSorter struct {
-	children []*nodeState
-	parentID string
-}
-
-func (s childSorter) Len() int      { return len(s.children) }
-func (s childSorter) Swap(i, j int) { s.children[i], s.children[j] = s.children[j], s.children[i] }
-func (s childSorter) Less(i, j int) bool {
-	a, b := s.children[i], s.children[j]
-	aFirst := a.Parents[0] == s.parentID
-	bFirst := b.Parents[0] == s.parentID
-	if aFirst != bFirst {
-		return aFirst
+// insertionSortChildren stable-sorts a parent's children slice in place.
+// Order: first-parent children first (mainline continuity), then by
+// epoch, then label, then ID. Inlined and allocation-free; suitable for
+// the tiny slices (2-4 entries typical) that get sorted on every Layout
+// call.
+func insertionSortChildren(children []*nodeState, parentID string) {
+	less := func(a, b *nodeState) bool {
+		aFirst := a.Parents[0] == parentID
+		bFirst := b.Parents[0] == parentID
+		if aFirst != bFirst {
+			return aFirst
+		}
+		if a.Epoch != b.Epoch {
+			return a.Epoch < b.Epoch
+		}
+		if a.Label != b.Label {
+			return a.Label < b.Label
+		}
+		return a.ID < b.ID
 	}
-	if a.Epoch != b.Epoch {
-		return a.Epoch < b.Epoch
+	for i := 1; i < len(children); i++ {
+		cur := children[i]
+		j := i - 1
+		for j >= 0 && less(cur, children[j]) {
+			children[j+1] = children[j]
+			j--
+		}
+		children[j+1] = cur
 	}
-	if a.Label != b.Label {
-		return a.Label < b.Label
-	}
-	return a.ID < b.ID
 }
 
 // ------ internal state ------------------------------------------------------------------------------------------------
@@ -145,17 +153,24 @@ type nodeState struct {
 	row      int
 	col      int
 	children []*nodeState
+	// routings parallels Parents: routings[i] is the routing col for a
+	// catch-up edge to ns.Parents[i], or -1 if no crossing. nil if the
+	// commit has no crossings at all. Allocated lazily from a slab in
+	// detectCrossings; avoids one map[string]int per crossing-having
+	// commit.
+	routings []int
 }
 
 type layoutState struct {
-	idx        map[string]*nodeState
-	nodes      []*nodeState
-	numCols    int
-	lanes      [][]lane // lanes per col, sorted by introRow
-	crossings  map[*nodeState]map[string]int
-	previews   map[*nodeState]int // commit -> preview col for `|\|` stagger when 2nd parent shares col
-	glyphArena []Glyph            // flat backing for per-row Glyph slices
-	arenaOff   int
+	idx            map[string]*nodeState
+	nodes          []*nodeState
+	numCols        int
+	lanes          [][]lane           // lanes per col, sorted by introRow
+	previews       map[*nodeState]int // commit -> preview col for `|\|` stagger when 2nd parent shares col
+	glyphArena     []Glyph            // flat backing for per-row Glyph slices
+	arenaOff       int
+	routingSlab    []int // backing for nodeState.routings slices
+	routingSlabOff int
 }
 
 // nextRowGlyphs hands out a numCols-wide sub-slice of the pre-allocated
@@ -443,7 +458,7 @@ func (st *layoutState) buildLanes(order []*nodeState) {
 	st.lanes = make([][]lane, st.numCols)
 
 	// Map node -> index of lane that contains it.
-	nodeLane := make(map[string]int)
+	nodeLane := make(map[string]int, len(order))
 	// For each col, index of the currently-open lane, or -1.
 	openIdx := make([]int, st.numCols)
 	for c := range openIdx {
@@ -528,17 +543,47 @@ func (st *layoutState) buildLanes(order []*nodeState) {
 // as a fork from the source col out to the routing col, then a
 // termination from the routing col into the destination col.
 func (st *layoutState) detectCrossings(order []*nodeState) {
-	st.crossings = map[*nodeState]map[string]int{}
-	// Per-routing-col last row in use, so subsequent crossings whose ns.row
-	// is past that point can reuse the col instead of bumping numCols.
-	// Each routing col is "busy" only at the single row of its consuming
-	// merge -- staggers around that row are emitted on the same row in the
-	// rendered output, so non-overlapping merges can share a routing col.
+	// Two-pass: pre-count total parents across crossings-having commits
+	// to slab-allocate ns.routings. First pass identifies which commits
+	// have at least one crossing and the total parent count to back; the
+	// second pass walks the same parents and stores routing cols.
 	type routingSlot struct {
 		col  int
 		used int // last ns.row that occupied this routing col
 	}
 	var routing []routingSlot
+	// Pre-scan to size the routings slab. A commit with any non-first
+	// parent triggering a crossing gets a routings slice of len(Parents);
+	// we hand out from a single shared backing array.
+	totalRoutingEntries := 0
+	for _, ns := range order {
+		for i := 1; i < len(ns.Parents); i++ {
+			pid := ns.Parents[i]
+			p := st.idx[pid]
+			if p == nil || p.col == ns.col {
+				continue
+			}
+			var pLane *lane
+			for li := range st.lanes[p.col] {
+				l := &st.lanes[p.col][li]
+				if l.introRow <= p.row && l.endRow >= p.row {
+					pLane = l
+					break
+				}
+			}
+			if pLane == nil || pLane.endRow <= p.row {
+				continue
+			}
+			totalRoutingEntries += len(ns.Parents)
+			break
+		}
+	}
+	if totalRoutingEntries > 0 {
+		st.routingSlab = make([]int, totalRoutingEntries)
+		for i := range st.routingSlab {
+			st.routingSlab[i] = -1
+		}
+	}
 	for _, ns := range order {
 		for i := 1; i < len(ns.Parents); i++ {
 			pid := ns.Parents[i]
@@ -608,10 +653,12 @@ func (st *layoutState) detectCrossings(order []*nodeState) {
 				st.numCols++
 				routing = append(routing, routingSlot{col: routingCol, used: ns.row})
 			}
-			if st.crossings[ns] == nil {
-				st.crossings[ns] = map[string]int{}
+			if ns.routings == nil {
+				n := len(ns.Parents)
+				ns.routings = st.routingSlab[st.routingSlabOff : st.routingSlabOff+n : st.routingSlabOff+n]
+				st.routingSlabOff += n
 			}
-			st.crossings[ns][pid] = routingCol
+			ns.routings[i] = routingCol
 		}
 	}
 }
@@ -680,7 +727,8 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 			if p == nil || p.col == ns.col {
 				continue
 			}
-			if rc, ok := st.crossings[ns][ns.Parents[i]]; ok {
+			if ns.routings != nil && ns.routings[i] >= 0 {
+				rc := ns.routings[i]
 				d1 := rc - p.col
 				if d1 < 0 {
 					d1 = -d1
@@ -732,19 +780,46 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 		return activeBits[row*stride+c]
 	}
 
-	// Index commits by row. Rows are dense [0, lastRow] so a slice indexed
-	// by row beats a map[int][]*nodeState on alloc count.
-	commitsAt := make([][]*nodeState, lastRow+1)
+	// Index commits by row. Each topo-placed node gets a unique row, so
+	// at most one commit per row -- a flat []*nodeState (nil = empty)
+	// beats [][]*nodeState's per-row backing-slice allocations. For 1000
+	// nodes that's 1000 fewer slice allocs.
+	commitsAt := make([]*nodeState, lastRow+1)
 	for _, ns := range order {
-		commitsAt[ns.row] = append(commitsAt[ns.row], ns)
+		commitsAt[ns.row] = ns
 	}
 
-	// Index lane intros by row. Without this the row loop scans every
-	// lane in every col per row -- O(rows * total_lanes). For large
-	// histories with many short-lived side branches that scan dominates
-	// generateRows. Pre-bucket by introRow so the per-row loop only walks
-	// the lanes that actually introduce there.
+	// Index lane intros by row in two passes: first count per-row so we
+	// can allocate a single backing slab and hand each row a zero-length
+	// sub-slice with exact cap. Avoids per-append growslice when several
+	// lanes share an introRow (common in parallel side-branch merges).
+	totalIntros := 0
+	introCounts := make([]int, lastRow+1)
+	for c := 0; c < len(st.lanes); c++ {
+		for _, l := range st.lanes[c] {
+			if l.introCol < 0 {
+				continue
+			}
+			if l.introRow >= 0 && l.introRow <= lastRow {
+				introCounts[l.introRow]++
+				totalIntros++
+			}
+		}
+	}
 	introsAt := make([][]lane, lastRow+1)
+	if totalIntros > 0 {
+		slab := make([]lane, 0, totalIntros)
+		base := slab[:0]
+		off := 0
+		for r, n := range introCounts {
+			if n == 0 {
+				continue
+			}
+			introsAt[r] = base[off : off : off+n]
+			off += n
+		}
+		_ = base
+	}
 	for c := 0; c < len(st.lanes); c++ {
 		for _, l := range st.lanes[c] {
 			if l.introCol < 0 {
@@ -771,10 +846,7 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 			// append a trailing `|` to the stagger row immediately above
 			// the commit -- this is git's `|\|` shape.
 			if len(rows) > start {
-				for _, ns := range commitsAt[l.endRow] {
-					if ns.col != l.col {
-						continue
-					}
+				if ns := commitsAt[l.endRow]; ns != nil && ns.col == l.col {
 					if _, ok := st.previews[ns]; ok {
 						last := &rows[len(rows)-1]
 						last.Tail = append(last.Tail, GlyphPipe, GlyphSpace)
@@ -792,7 +864,7 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 		// siblings in a compacted col, etc). Most commits have 0 or 1
 		// non-first parents -- skip the map entirely in that case.
 		var seen map[[2]int]bool
-		for _, ns := range commitsAt[rowNum] {
+		if ns := commitsAt[rowNum]; ns != nil {
 			if len(ns.Parents) > 2 {
 				if seen == nil {
 					seen = make(map[[2]int]bool, len(ns.Parents))
@@ -805,7 +877,12 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 				if p == nil || p.col == ns.col {
 					continue
 				}
-				rc, hasRC := st.crossings[ns][ns.Parents[i]]
+				var rc int
+				hasRC := false
+				if ns.routings != nil && ns.routings[i] >= 0 {
+					rc = ns.routings[i]
+					hasRC = true
+				}
 				if seen != nil {
 					key := [2]int{p.col, -1}
 					if hasRC {
@@ -825,7 +902,7 @@ func (st *layoutState) generateRows(order []*nodeState) []Row {
 		}
 
 		// Commit rows.
-		for _, ns := range commitsAt[rowNum] {
+		if ns := commitsAt[rowNum]; ns != nil {
 			glyphs := st.nextRowGlyphs()
 			for c := 0; c < st.numCols; c++ {
 				if c == ns.col {
