@@ -529,6 +529,16 @@ func (st *layoutState) buildLanes(order []*nodeState) {
 // termination from the routing col into the destination col.
 func (st *layoutState) detectCrossings(order []*nodeState) {
 	st.crossings = map[*nodeState]map[string]int{}
+	// Per-routing-col last row in use, so subsequent crossings whose ns.row
+	// is past that point can reuse the col instead of bumping numCols.
+	// Each routing col is "busy" only at the single row of its consuming
+	// merge -- staggers around that row are emitted on the same row in the
+	// rendered output, so non-overlapping merges can share a routing col.
+	type routingSlot struct {
+		col  int
+		used int // last ns.row that occupied this routing col
+	}
+	var routing []routingSlot
 	for _, ns := range order {
 		for i := 1; i < len(ns.Parents); i++ {
 			pid := ns.Parents[i]
@@ -582,9 +592,21 @@ func (st *layoutState) detectCrossings(order []*nodeState) {
 					break
 				}
 			}
+			// Then look at previously-allocated routing cols whose last
+			// use row is strictly before this crossing's ns.row.
+			if routingCol < 0 {
+				for i := range routing {
+					if routing[i].used < ns.row {
+						routingCol = routing[i].col
+						routing[i].used = ns.row
+						break
+					}
+				}
+			}
 			if routingCol < 0 {
 				routingCol = st.numCols
 				st.numCols++
+				routing = append(routing, routingSlot{col: routingCol, used: ns.row})
 			}
 			if st.crossings[ns] == nil {
 				st.crossings[ns] = map[string]int{}
