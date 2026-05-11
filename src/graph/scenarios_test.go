@@ -585,6 +585,78 @@ func TestScenario_SequentialSideBranches(t *testing.T) {
 	assertGraph(t, nodes, expected)
 }
 
+func TestScenario_CrissCross(t *testing.T) {
+	t.Parallel()
+	// B and C both fork off A, then M1 merges as [B, C] (main lane) and
+	// M2 merges as [C, B] (feat lane). Both merges trigger crossings since
+	// each non-first parent's source col stays alive past the parent.
+	// Repro of a panic in detectCrossings: the second crossing's reuse
+	// scan iterated past len(st.lanes) because numCols was bumped by the
+	// first crossing's allocation (routing cols have no lanes entry).
+	nodes := []graph.Node{
+		{ID: "A", Label: "A", Epoch: iso(1), Lane: h("main")},
+		{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}, Lane: h("main")},
+		{ID: "C", Label: "C", Epoch: iso(3), Parents: []string{"A"}, Lane: h("feat")},
+		{ID: "M1", Label: "M1", Epoch: iso(4), Parents: []string{"B", "C"}, Lane: h("main")},
+		{ID: "M2", Label: "M2", Epoch: iso(5), Parents: []string{"C", "B"}, Lane: h("feat")},
+	}
+	// Just assert no panic and a non-empty render -- exact glyph layout
+	// here is less important than the crash regression.
+	lr := graph.Layout(nodes)
+	lines := graph.Render(lr, graph.Style{})
+	if len(lines) == 0 {
+		t.Fatal("expected non-empty render")
+	}
+}
+
+func TestScenario_BackAndForthCatchUps(t *testing.T) {
+	t.Parallel()
+	// Repeated catch-ups between main and feat: every other commit on
+	// either lane merges across. Pre-fix the engine allocated a fresh
+	// routing col per catch-up, so the stagger blocks accumulated
+	// quadratically; routing cols are now reused across non-overlapping
+	// crossings. Asserts the rendering stays within a bounded col width.
+	nodes := []graph.Node{
+		{ID: "A", Label: "A", Epoch: iso(1), Lane: h("main")},
+		{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}, Lane: h("main")},
+		{ID: "f1", Label: "f1", Epoch: iso(3), Parents: []string{"A"}, Lane: h("f")},
+		{ID: "C", Label: "C", Epoch: iso(4), Parents: []string{"B", "f1"}, Lane: h("main")},
+		{ID: "f2", Label: "f2", Epoch: iso(5), Parents: []string{"f1", "C"}, Lane: h("f")},
+		{ID: "D", Label: "D", Epoch: iso(6), Parents: []string{"C", "f2"}, Lane: h("main")},
+		{ID: "f3", Label: "f3", Epoch: iso(7), Parents: []string{"f2", "D"}, Lane: h("f")},
+		{ID: "E", Label: "E", Epoch: iso(8), Parents: []string{"D", "f3"}, Lane: h("main")},
+	}
+	lr := graph.Layout(nodes)
+	if lr.Columns > 3 {
+		lines := graph.Render(lr, graph.Style{})
+		t.Errorf("expected at most 3 cols (main, feat, single routing); got %d\n%s",
+			lr.Columns, strings.Join(lines, "\n"))
+	}
+}
+
+func TestScenario_OctopusDedupTerms(t *testing.T) {
+	t.Parallel()
+	// 4-parent octopus where 3 non-first parents (B, C, D) all land in
+	// the same compacted col 1. Each parent edge is distinct but emits
+	// an identical visual term stagger from col 1; pre-fix three
+	// duplicate `|/` rows rendered above M. Dedup by source col
+	// collapses to one.
+	nodes := []graph.Node{
+		{ID: "A", Label: "A", Epoch: iso(1), Lane: h("main")},
+		{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}, Lane: h("b")},
+		{ID: "C", Label: "C", Epoch: iso(3), Parents: []string{"A"}, Lane: h("c")},
+		{ID: "D", Label: "D", Epoch: iso(4), Parents: []string{"A"}, Lane: h("d")},
+		{ID: "M", Label: "M", Epoch: iso(5), Parents: []string{"A", "B", "C", "D"}, Lane: h("main")},
+	}
+	lr := graph.Layout(nodes)
+	lines := graph.Render(lr, graph.Style{})
+	rendered := stripTrailingSpaces(strings.Join(lines, "\n"))
+	termCount := strings.Count(rendered, "|/")
+	if termCount != 1 {
+		t.Errorf("expected exactly one `|/` term row above M; got %d\n%s", termCount, rendered)
+	}
+}
+
 func TestScenario_StashWithIndex(t *testing.T) {
 	t.Parallel()
 	// Mirrors git's `refs/stash` shape: the stash commit C has two parents,
