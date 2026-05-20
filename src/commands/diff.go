@@ -57,25 +57,34 @@ func (d *DiffCommand) collectDiff(level string) (string, error) {
 	if colorEnabled() {
 		colorFlag = "--color=always"
 	}
+	// Repo.Run TrimSpaces stdout, which eats the leading space git
+	// --compact-summary emits on every row. Restore it so the first row
+	// aligns with the rest.
+	restore := func(s string) string {
+		if s == "" {
+			return s
+		}
+		return " " + s
+	}
 	switch level {
 	case "work":
 		out, _, err := d.repo().Run("diff", "--compact-summary", colorFlag)
 		if err != nil {
 			return "", fmt.Errorf("git diff: %w", err)
 		}
-		return out, nil
+		return restore(out), nil
 	case "index":
 		out, _, err := d.repo().Run("diff", "--cached", "--compact-summary", colorFlag)
 		if err != nil {
 			return "", fmt.Errorf("git diff --cached: %w", err)
 		}
-		return out, nil
+		return restore(out), nil
 	case "head":
 		out, _, err := d.repo().Run("diff", "--compact-summary", colorFlag, "HEAD~1..HEAD")
 		if err != nil {
 			return "", nil
 		}
-		return out, nil
+		return restore(out), nil
 	default:
 		return "", fmt.Errorf("unknown diff level: %s", level)
 	}
