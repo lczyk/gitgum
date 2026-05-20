@@ -229,9 +229,11 @@ func (t *TreeCommand) runFollow(sinceArg string, maxCount int) error {
 		scrollOffset = max(0, min(scrollOffset, maxOffset))
 		lastMaxOffset = maxOffset
 		end := min(scrollOffset+visible, len(cachedLines))
-		for i, line := range cachedLines[scrollOffset:end] {
+		visibleLines := cachedLines[scrollOffset:end]
+		for i, line := range visibleLines {
 			writeAnsi(scr, 0, 1+i, line, tcell.StyleDefault, w, h)
 		}
+		drawTruncIndicator(scr, 0, visibleLines, w, h)
 		scr.Show()
 	}
 
@@ -299,6 +301,23 @@ func writePlain(scr *litescreen.Screen, x0, y int, s string, style tcell.Style, 
 		}
 		scr.SetContent(x, y, r, nil, style)
 		x++
+	}
+}
+
+// drawTruncIndicator paints a yellow `>` at (w-1, row) if any line in lines
+// would exceed w display columns. Shared by --follow renderers (status,
+// tree, diff) so users can see when content has been clipped at the right
+// edge. Width approximation: ansi.Strip + rune count.
+func drawTruncIndicator(scr *litescreen.Screen, row int, lines []string, w, h int) {
+	if w <= 0 {
+		return
+	}
+	for _, line := range lines {
+		if len([]rune(ansi.Strip(line))) > w {
+			style := tcell.StyleDefault.Foreground(tcell.ColorYellow)
+			writePlain(scr, w-1, row, ">", style, w, h)
+			return
+		}
 	}
 }
 

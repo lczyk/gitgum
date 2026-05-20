@@ -182,9 +182,11 @@ func (s *StatusCommand) runFollow() error {
 		}
 		scrollOffset = max(0, min(scrollOffset, maxOffset))
 		end := min(scrollOffset+visible, len(cachedLines))
-		for i, line := range cachedLines[scrollOffset:end] {
+		visibleLines := cachedLines[scrollOffset:end]
+		for i, line := range visibleLines {
 			writeAnsi(scr, 0, 1+i, line, tcell.StyleDefault, w, h)
 		}
+		drawTruncIndicator(scr, 0, visibleLines, w, h)
 		scr.Show()
 	}
 
