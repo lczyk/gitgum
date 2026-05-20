@@ -205,7 +205,7 @@ func (d *DiffCommand) runFollow() error {
 				cachedLines = append(cachedLines, ansiDim+"--- "+m+" ---"+ansiReset)
 			}
 			first = false
-			body := strings.TrimSpace(out)
+			body := strings.Trim(out, "\n")
 			if body == "" {
 				cachedLines = append(cachedLines, emptyModeMessages[m])
 			} else {
