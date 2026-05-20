@@ -223,62 +223,40 @@ func (d *DiffCommand) runFollow() error {
 		}
 	}
 
+	frame := newFollowFrame(scr)
 	redraw := func() {
+		frame.Begin()
+		frame.Header(interval, "", "j/k g/G tab q")
 		w, h := scr.Size()
-		scr.Clear()
-
 		dimStyle := tcell.StyleDefault.Dim(true)
 		boldDimStyle := tcell.StyleDefault.Bold(true).Dim(true)
-
-		ts := time.Now().Format("15:04:05")
-		header := fmt.Sprintf("last update: %s -- %.1fs  (j/k g/G tab q)", ts, interval)
-		writePlain(scr, 0, 0, header, dimStyle, w, h)
-
-		x := 0
-		for i, m := range diffModes {
-			if i > 0 {
-				writePlain(scr, x, 1, " ", dimStyle, w, h)
-				x++
+		frame.ExtraRow(func(y int) {
+			x := 0
+			for i, m := range diffModes {
+				if i > 0 {
+					writePlain(scr, x, y, " ", dimStyle, w, h)
+					x++
+				}
+				n := i + 1
+				var label string
+				var style tcell.Style
+				switch {
+				case m == primaryMode:
+					label = fmt.Sprintf("<%d:%s>", n, m)
+					style = boldDimStyle
+				case pinned[m]:
+					label = fmt.Sprintf("%d:%s", n, m)
+					style = boldDimStyle
+				default:
+					label = fmt.Sprintf("%d:%s", n, m)
+					style = dimStyle
+				}
+				writePlain(scr, x, y, label, style, w, h)
+				x += len(label)
 			}
-			n := i + 1
-			var label string
-			var style tcell.Style
-			switch {
-			case m == primaryMode:
-				label = fmt.Sprintf("<%d:%s>", n, m)
-				style = boldDimStyle
-			case pinned[m]:
-				label = fmt.Sprintf("%d:%s", n, m)
-				style = boldDimStyle
-			default:
-				label = fmt.Sprintf("%d:%s", n, m)
-				style = dimStyle
-			}
-			writePlain(scr, x, 1, label, style, w, h)
-			x += len(label)
-		}
-
-		visible := max(h-2, 0)
-
-		if cachedErr != nil {
-			errStyle := tcell.StyleDefault.Foreground(tcell.PaletteColor(1))
-			writePlain(scr, 0, 2, "git error: "+cachedErr.Error(), errStyle, w, h)
-			scr.Show()
-			return
-		}
-
-		maxOffset := max(len(cachedLines)-visible, 0)
-		if tailMode {
-			scrollOffset = maxOffset
-		}
-		scrollOffset = max(0, min(scrollOffset, maxOffset))
-		end := min(scrollOffset+visible, len(cachedLines))
-		visibleLines := cachedLines[scrollOffset:end]
-		for i, line := range visibleLines {
-			writeAnsi(scr, 0, 2+i, line, tcell.StyleDefault, w, h)
-		}
-		drawTruncIndicator(scr, 0, visibleLines, w, h)
-		scr.Show()
+		})
+		frame.Body(cachedLines, &scrollOffset, &tailMode, cachedErr)
+		frame.End()
 	}
 
 	shiftedNum := map[rune]string{'!': "work", '@': "index", '#': "head"}

@@ -158,36 +158,12 @@ func (s *StatusCommand) runFollow() error {
 		}
 	}
 
+	frame := newFollowFrame(scr)
 	redraw := func() {
-		w, h := scr.Size()
-		scr.Clear()
-
-		dimStyle := tcell.StyleDefault.Dim(true)
-		ts := time.Now().Format("15:04:05")
-		header := fmt.Sprintf("last update: %s -- interval %.1fs (j/k g/G scroll, q exit)", ts, interval)
-		writePlain(scr, 0, 0, header, dimStyle, w, h)
-
-		visible := max(h-1, 0)
-
-		if cachedErr != nil {
-			errStyle := tcell.StyleDefault.Foreground(tcell.PaletteColor(1))
-			writePlain(scr, 0, 1, "git error: "+cachedErr.Error(), errStyle, w, h)
-			scr.Show()
-			return
-		}
-
-		maxOffset := max(len(cachedLines)-visible, 0)
-		if tailMode {
-			scrollOffset = maxOffset
-		}
-		scrollOffset = max(0, min(scrollOffset, maxOffset))
-		end := min(scrollOffset+visible, len(cachedLines))
-		visibleLines := cachedLines[scrollOffset:end]
-		for i, line := range visibleLines {
-			writeAnsi(scr, 0, 1+i, line, tcell.StyleDefault, w, h)
-		}
-		drawTruncIndicator(scr, 0, visibleLines, w, h)
-		scr.Show()
+		frame.Begin()
+		frame.Header(interval, "interval", "j/k g/G scroll, q exit")
+		frame.Body(cachedLines, &scrollOffset, &tailMode, cachedErr)
+		frame.End()
 	}
 
 	refreshCache()
