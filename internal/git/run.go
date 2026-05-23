@@ -32,7 +32,7 @@ var readPrelude = []string{
 	"--no-pager",
 	"-c", "color.ui=never",
 	"-c", "core.quotepath=false",
-	"-c", "status.relativePaths=true",
+	"-c", "status.relativePaths=false",
 	"-c", "log.showSignature=false",
 }
 
