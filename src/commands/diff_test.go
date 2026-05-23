@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lczyk/assert"
 	"github.com/lczyk/gitgum/internal/git"
@@ -323,4 +324,140 @@ func TestCollectOutput_CascadeReturnsLevel(t *testing.T) {
 
 func contains(haystack, needle string) bool {
 	return bytes.Contains([]byte(haystack), []byte(needle))
+}
+
+func TestDiffCommand_UntrackedSection_TextFile(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "")
+	dir := temp_repo.NewRepo(t)
+	temp_repo.CreateCommit(t, dir, "tracked.txt", "v1\n", "chore: add tracked")
+	temp_repo.WriteFile(t, dir, "fresh.txt", "one\ntwo\nthree\n")
+	repo := git.Repo{Dir: dir}
+
+	var buf bytes.Buffer
+	cmd := &DiffCommand{
+		cmdIO: cmdIO{Out: &buf, Repo: repo},
+		Mode:  "untracked",
+	}
+	assert.NoError(t, cmd.Execute(nil))
+	out := buf.String()
+	assert.ContainsString(t, out, "--- untracked ---")
+	assert.ContainsString(t, out, "fresh.txt")
+	assert.ContainsString(t, out, "(+3,-0)")
+}
+
+func TestDiffCommand_UntrackedSection_Binary(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "")
+	dir := temp_repo.NewRepo(t)
+	bin := []byte{0x00, 0x01, 0x02, 0xff}
+	assert.NoError(t, os.WriteFile(filepath.Join(dir, "blob.bin"), bin, 0o644))
+	repo := git.Repo{Dir: dir}
+
+	var buf bytes.Buffer
+	cmd := &DiffCommand{
+		cmdIO: cmdIO{Out: &buf, Repo: repo},
+		Mode:  "untracked",
+	}
+	assert.NoError(t, cmd.Execute(nil))
+	out := buf.String()
+	assert.ContainsString(t, out, "--- untracked ---")
+	assert.ContainsString(t, out, "blob.bin")
+	assert.ContainsString(t, out, "(Bin)")
+}
+
+func TestDiffCommand_NoUntrackedInAutoMode(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "")
+	dir := temp_repo.NewRepo(t)
+	temp_repo.CreateCommit(t, dir, "a.txt", "v1\n", "chore: add a")
+	temp_repo.WriteFile(t, dir, "a.txt", "v2\n")
+	temp_repo.WriteFile(t, dir, "fresh.txt", "x\n")
+	repo := git.Repo{Dir: dir}
+
+	var buf bytes.Buffer
+	cmd := &DiffCommand{cmdIO: cmdIO{Out: &buf, Repo: repo}}
+	assert.NoError(t, cmd.Execute(nil))
+	out := buf.String()
+	assert.That(t, !contains(out, "--- untracked ---"), "auto mode must not show untracked section")
+	assert.That(t, !contains(out, "fresh.txt"), "fresh.txt is untracked, should not appear in auto cascade")
+}
+
+func TestDiffCommand_UntrackedSection_OnlyMode(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "")
+	dir := temp_repo.NewRepo(t)
+	temp_repo.CreateCommit(t, dir, "tracked.txt", "v1\n", "chore: add tracked")
+	temp_repo.WriteFile(t, dir, "tracked.txt", "v2\n") // work change
+	temp_repo.WriteFile(t, dir, "new.txt", "x\n")
+
+	var buf bytes.Buffer
+	cmd := &DiffCommand{
+		cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}},
+		Mode:  "untracked",
+	}
+	assert.NoError(t, cmd.Execute(nil))
+	out := buf.String()
+	assert.ContainsString(t, out, "--- untracked ---")
+	assert.ContainsString(t, out, "new.txt")
+	assert.That(t, !contains(out, "--- work ---"), "mode=untracked must not show work section")
+	assert.That(t, !contains(out, "tracked.txt"), "mode=untracked must not show tracked diff")
+}
+
+func TestDiffCommand_UntrackedSection_NoneWhenAllTracked(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "")
+	dir := temp_repo.NewRepo(t)
+	temp_repo.CreateCommit(t, dir, "a.txt", "v1\n", "chore: add a")
+	temp_repo.WriteFile(t, dir, "a.txt", "v2\n")
+
+	var buf bytes.Buffer
+	cmd := &DiffCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}}
+	assert.NoError(t, cmd.Execute(nil))
+	out := buf.String()
+	assert.That(t, !contains(out, "--- untracked ---"), "no untracked files -> no untracked section")
+}
+
+func TestCountUntrackedLines_Text(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "f.txt")
+	assert.NoError(t, os.WriteFile(p, []byte("a\nb\nc\n"), 0o644))
+	n := countUntrackedLines(p, 1*time.Second)
+	assert.Equal(t, n.added, 3)
+	assert.That(t, !n.binary && !n.unknown, "expected plain numstat")
+}
+
+func TestCountUntrackedLines_TextNoTrailingNewline(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "f.txt")
+	assert.NoError(t, os.WriteFile(p, []byte("a\nb\nc"), 0o644))
+	n := countUntrackedLines(p, 1*time.Second)
+	assert.Equal(t, n.added, 3)
+}
+
+func TestCountUntrackedLines_Binary(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "f.bin")
+	assert.NoError(t, os.WriteFile(p, []byte{0x00, 0x01, 0x02}, 0o644))
+	n := countUntrackedLines(p, 1*time.Second)
+	assert.That(t, n.binary, "expected binary flag")
+}
+
+func TestCountUntrackedLines_Empty(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "f.txt")
+	assert.NoError(t, os.WriteFile(p, nil, 0o644))
+	n := countUntrackedLines(p, 1*time.Second)
+	assert.Equal(t, n.added, 0)
+	assert.That(t, !n.binary && !n.unknown, "empty text file is a 0-line plain entry")
+}
+
+func TestCountUntrackedLines_MissingFileIsUnknown(t *testing.T) {
+	t.Parallel()
+	n := countUntrackedLines("/nonexistent/path/should/not/exist", 1*time.Second)
+	assert.That(t, n.unknown, "missing file -> unknown")
 }

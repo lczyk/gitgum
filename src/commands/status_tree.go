@@ -18,6 +18,8 @@ type changeEntry struct {
 
 type numstat struct {
 	added, deleted int
+	unknown        bool // line count not available (e.g. timed-out untracked read)
+	binary         bool // file detected as binary
 }
 
 // annotateNumstats fills the numstat field on each entry whose path has a
@@ -183,6 +185,18 @@ func formatLeaf(e *changeEntry, name string) string {
 }
 
 func formatNumstat(n numstat) string {
+	if n.binary {
+		return dim("(") + paint(ansiYellow, "Bin") + dim(")")
+	}
+	if n.unknown {
+		return dim("(") +
+			paint(ansiGreen, "+???") +
+			dim(",") +
+			paint(ansiRed, "-???") +
+			dim(") ") +
+			paint(ansiGreen, "+++") +
+			paint(ansiRed, "---")
+	}
 	return dim("(") +
 		paint(ansiGreen, fmt.Sprintf("+%d", n.added)) +
 		dim(",") +

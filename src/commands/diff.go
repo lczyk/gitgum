@@ -1,10 +1,12 @@
 package commands
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -12,12 +14,20 @@ import (
 	"github.com/lczyk/gitgum/src/litescreen"
 )
 
+// diffModes is the set of modes addressable in auto cascade and in the
+// follow tab loop. "untracked" is intentionally not in this set -- it is
+// opt-in only via --mode untracked, never shown by default.
 var diffModes = []string{"work", "index", "head"}
+
+// untrackedCountTimeout caps per-file line-counting for untracked entries.
+// On timeout the entry renders with `+???,-???` and a `+++---` bar marker
+// rather than blocking the whole diff render.
+const untrackedCountTimeout = 200 * time.Millisecond
 
 type DiffCommand struct {
 	cmdIO
 	Follow *float64 `long:"follow" short:"f" optional:"yes" optional-value:"2" description:"follow mode: refresh every N seconds (default 2, min 1)"`
-	Mode   string   `long:"mode" short:"m" description:"lock to a diff level: work (unstaged), index (staged), head (last commit). default: auto-cascade"`
+	Mode   string   `long:"mode" short:"m" description:"lock to a diff level: work (unstaged), index (staged), head (last commit), untracked (opt-in, not shown by default). default: auto-cascade over work/index/head"`
 }
 
 func (d *DiffCommand) Execute(args []string) error {
@@ -27,8 +37,8 @@ func (d *DiffCommand) Execute(args []string) error {
 	if len(args) > 0 {
 		return fmt.Errorf("diff takes no arguments")
 	}
-	if d.Mode != "" && d.Mode != "work" && d.Mode != "index" && d.Mode != "head" {
-		return fmt.Errorf("--mode must be one of: work, index, head")
+	if d.Mode != "" && d.Mode != "work" && d.Mode != "index" && d.Mode != "head" && d.Mode != "untracked" {
+		return fmt.Errorf("--mode must be one of: work, index, head, untracked")
 	}
 	if d.Follow != nil {
 		return d.runFollow()
@@ -37,6 +47,9 @@ func (d *DiffCommand) Execute(args []string) error {
 }
 
 func (d *DiffCommand) render(w io.Writer) error {
+	if d.Mode == "untracked" {
+		return d.renderUntracked(w)
+	}
 	out, level, err := d.collectOutput()
 	if err != nil {
 		return err
@@ -50,6 +63,92 @@ func (d *DiffCommand) render(w io.Writer) error {
 	}
 	fmt.Fprintln(w, out)
 	return nil
+}
+
+func (d *DiffCommand) renderUntracked(w io.Writer) error {
+	entries, err := d.collectUntrackedEntries()
+	if err != nil {
+		return err
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+	fmt.Fprintln(w, dim("--- untracked ---"))
+	renderTree(buildTree(entries), w)
+	return nil
+}
+
+func (d *DiffCommand) collectUntrackedEntries() ([]changeEntry, error) {
+	out, _, err := d.repo().Run("ls-files", "--others", "--exclude-standard", "-z")
+	if err != nil {
+		return nil, fmt.Errorf("git ls-files: %w", err)
+	}
+	if out == "" {
+		return nil, nil
+	}
+	paths := strings.Split(strings.TrimRight(out, "\x00"), "\x00")
+	var entries []changeEntry
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		full := filepath.Join(d.repo().Dir, p)
+		ns := countUntrackedLines(full, untrackedCountTimeout)
+		entries = append(entries, changeEntry{code: "??", path: p, numstat: &ns})
+	}
+	return entries, nil
+}
+
+// countUntrackedLines reads path with a hard deadline. It detects binary
+// content via NUL in the first 8 KiB and otherwise counts `\n` plus a
+// trailing partial line. On timeout / read error it returns an `unknown`
+// numstat -- the renderer surfaces that as `+???,-???` with a `+++---` bar.
+func countUntrackedLines(path string, timeout time.Duration) numstat {
+	ch := make(chan numstat, 1)
+	go func() {
+		ch <- doCountUntrackedLines(path)
+	}()
+	select {
+	case n := <-ch:
+		return n
+	case <-time.After(timeout):
+		return numstat{unknown: true}
+	}
+}
+
+func doCountUntrackedLines(path string) numstat {
+	f, err := os.Open(path)
+	if err != nil {
+		return numstat{unknown: true}
+	}
+	defer f.Close()
+	const sniff = 8 * 1024
+	head := make([]byte, sniff)
+	n, _ := f.Read(head)
+	head = head[:n]
+	if bytes.IndexByte(head, 0) >= 0 {
+		return numstat{binary: true}
+	}
+	lines := bytes.Count(head, []byte{'\n'})
+	var lastByte byte
+	if n > 0 {
+		lastByte = head[n-1]
+	}
+	buf := make([]byte, 32*1024)
+	for {
+		nn, rerr := f.Read(buf)
+		if nn > 0 {
+			lines += bytes.Count(buf[:nn], []byte{'\n'})
+			lastByte = buf[nn-1]
+		}
+		if rerr != nil {
+			break
+		}
+	}
+	if lastByte != 0 && lastByte != '\n' {
+		lines++
+	}
+	return numstat{added: lines}
 }
 
 func (d *DiffCommand) collectDiff(level string) (string, error) {
@@ -85,6 +184,17 @@ func (d *DiffCommand) collectDiff(level string) (string, error) {
 			return "", nil
 		}
 		return restore(out), nil
+	case "untracked":
+		entries, err := d.collectUntrackedEntries()
+		if err != nil {
+			return "", err
+		}
+		if len(entries) == 0 {
+			return "", nil
+		}
+		var buf bytes.Buffer
+		renderTree(buildTree(entries), &buf)
+		return strings.TrimRight(buf.String(), "\n"), nil
 	default:
 		return "", fmt.Errorf("unknown diff level: %s", level)
 	}
@@ -110,9 +220,10 @@ func (d *DiffCommand) collectOutput() (string, string, error) {
 }
 
 var emptyModeMessages = map[string]string{
-	"work":  "(no work changes)",
-	"index": "(no index changes)",
-	"head":  "(no commits)",
+	"work":      "(no work changes)",
+	"index":     "(no index changes)",
+	"head":      "(no commits)",
+	"untracked": "(no untracked)",
 }
 
 func (d *DiffCommand) runFollow() error {
