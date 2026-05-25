@@ -137,3 +137,57 @@ func TestBuildTags(t *testing.T) {
 		[]string{"v0.3.0", "go/v0.3.0", "rust/v0.3.0"},
 	)
 }
+
+func TestParseRevision(t *testing.T) {
+	tests := []struct {
+		in      string
+		want    int
+		wantErr bool
+	}{
+		{"r0", 0, false},
+		{"r1", 1, false},
+		{"r42", 42, false},
+		{"r100", 100, false},
+		{"1", 0, true},    // no r prefix
+		{"v1", 0, true},   // wrong prefix
+		{"r", 0, true},    // empty number
+		{"rx", 0, true},   // non-numeric
+		{"r1.2", 0, true}, // not integer
+		{"r-1", 0, true},  // negative
+	}
+	for _, tt := range tests {
+		got, err := parseRevision(tt.in)
+		if tt.wantErr {
+			assert.Error(t, err, assert.AnyError, tt.in)
+		} else {
+			assert.NoError(t, err, tt.in)
+			assert.Equal(t, got, tt.want)
+		}
+	}
+}
+
+func TestBumpRevision(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"r0", "r1"},
+		{"r1", "r2"},
+		{"r9", "r10"},
+		{"r99", "r100"},
+	}
+	for _, tt := range tests {
+		got, err := bumpRevision(tt.in)
+		assert.NoError(t, err, tt.in)
+		assert.Equal(t, got, tt.want)
+	}
+	_, err := bumpRevision("not-a-rev")
+	assert.Error(t, err, assert.AnyError, "invalid revision should error")
+}
+
+func TestBuildRevisionTags(t *testing.T) {
+	assert.EqualArrays(t, buildRevisionTags("r3", nil), []string{"r3"})
+	assert.EqualArrays(t,
+		buildRevisionTags("r3", []string{"go", "rust"}),
+		[]string{"r3", "go/r3", "rust/r3"},
+	)
+}

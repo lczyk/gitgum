@@ -21,11 +21,14 @@ import (
 type ReleaseCommand struct {
 	cmdIO
 	Args struct {
-		Bump string `positional-arg-name:"BUMP" choice:"patch" choice:"minor" choice:"major" required:"yes"`
+		Bump string `positional-arg-name:"BUMP" choice:"patch" choice:"minor" choice:"major" choice:"revision" required:"yes"`
 	} `positional-args:"yes"`
 }
 
-const versionFileName = "VERSION"
+const (
+	versionFileName  = "VERSION"
+	revisionFileName = "REVISION"
+)
 
 func (r *ReleaseCommand) Execute(args []string) error {
 	bump := r.Args.Bump
@@ -34,6 +37,28 @@ func (r *ReleaseCommand) Execute(args []string) error {
 	if err := repo.CheckInRepo(); err != nil {
 		return err
 	}
+	root, err := repoRoot(repo)
+	if err != nil {
+		return err
+	}
+	versionPath := filepath.Join(root, versionFileName)
+	revisionPath := filepath.Join(root, revisionFileName)
+	hasVersion := regularFileExists(versionPath)
+	hasRevision := regularFileExists(revisionPath)
+	if hasVersion && hasRevision {
+		return fmt.Errorf("both VERSION and REVISION present at repo root; pick one")
+	}
+	if !hasVersion && !hasRevision {
+		return fmt.Errorf("no VERSION or REVISION file at repo root")
+	}
+	isRevision := hasRevision
+	if isRevision && bump != "revision" {
+		return fmt.Errorf("REVISION repo: use `gg release revision` (got %q)", bump)
+	}
+	if !isRevision && bump == "revision" {
+		return fmt.Errorf("VERSION repo: use `gg release patch|minor|major`")
+	}
+
 	branch, err := repo.GetCurrentBranch()
 	if err != nil {
 		return fmt.Errorf("get current branch: %w", err)
@@ -66,22 +91,32 @@ func (r *ReleaseCommand) Execute(args []string) error {
 	}
 	defer cleanup()
 
-	root, err := repoRoot(repo)
-	if err != nil {
-		return err
+	var (
+		header, prefixes []string
+		current, next    string
+		tags             []string
+	)
+	if isRevision {
+		header, prefixes, current, err = readVersion(revisionPath)
+		if err != nil {
+			return err
+		}
+		next, err = bumpRevision(current)
+		if err != nil {
+			return err
+		}
+		tags = buildRevisionTags(next, prefixes)
+	} else {
+		header, prefixes, current, _, err = readVersionOrFallback(repo, versionPath)
+		if err != nil {
+			return err
+		}
+		next, err = bumpVersion(current, bump)
+		if err != nil {
+			return err
+		}
+		tags = buildTags(next, prefixes)
 	}
-
-	versionPath := filepath.Join(root, versionFileName)
-	header, prefixes, current, hasFile, err := readVersionOrFallback(repo, versionPath)
-	if err != nil {
-		return err
-	}
-
-	next, err := bumpVersion(current, bump)
-	if err != nil {
-		return err
-	}
-	tags := buildTags(next, prefixes)
 
 	for _, t := range tags {
 		if repo.TagExists(t) {
@@ -89,29 +124,38 @@ func (r *ReleaseCommand) Execute(args []string) error {
 		}
 	}
 
-	mentions, err := scanVersionMentions(repo, root, current)
-	if err != nil {
-		return err
-	}
-	picks, err := pickVersionEdits(r.sel(), mentions, current)
-	if err != nil {
-		return err
-	}
-
 	fmt.Fprintf(r.out(), "Bumping %s -> %s\n", current, next)
 
-	editedPaths, err := applyVersionEdits(root, picks, current, next)
-	if err != nil {
-		return err
-	}
-	for _, p := range editedPaths {
-		fmt.Fprintf(r.out(), "  updated %s\n", p)
-		if err := repo.Add(filepath.Join(root, p)); err != nil {
-			return fmt.Errorf("git add %s: %w", p, err)
+	var editedPaths []string
+	if !isRevision {
+		mentions, err := scanVersionMentions(repo, root, current)
+		if err != nil {
+			return err
+		}
+		picks, err := pickVersionEdits(r.sel(), mentions, current)
+		if err != nil {
+			return err
+		}
+		editedPaths, err = applyVersionEdits(root, picks, current, next)
+		if err != nil {
+			return err
+		}
+		for _, p := range editedPaths {
+			fmt.Fprintf(r.out(), "  updated %s\n", p)
+			if err := repo.Add(filepath.Join(root, p)); err != nil {
+				return fmt.Errorf("git add %s: %w", p, err)
+			}
 		}
 	}
 
-	if hasFile {
+	if isRevision {
+		if err := writeVersion(revisionPath, header, next); err != nil {
+			return err
+		}
+		if err := repo.Add(revisionPath); err != nil {
+			return fmt.Errorf("git add REVISION: %w", err)
+		}
+	} else {
 		if err := writeVersion(versionPath, header, next); err != nil {
 			return err
 		}
@@ -121,15 +165,8 @@ func (r *ReleaseCommand) Execute(args []string) error {
 	}
 
 	commitMsg := "release: " + tags[0]
-	staged := hasFile || len(editedPaths) > 0
-	if staged {
-		if err := repo.Commit(commitMsg); err != nil {
-			return err
-		}
-	} else {
-		if err := repo.CommitEmpty(commitMsg); err != nil {
-			return err
-		}
+	if err := repo.Commit(commitMsg); err != nil {
+		return err
 	}
 	for _, t := range tags {
 		if err := repo.TagAnnotated(t, "release "+t); err != nil {
@@ -152,6 +189,21 @@ func buildTags(next string, prefixes []string) []string {
 		tags = append(tags, p+"/v"+next)
 	}
 	return tags
+}
+
+// buildRevisionTags returns tags for a revision release: bare next first
+// (already "rN"), then "<prefix>/rN" for each prefix.
+func buildRevisionTags(next string, prefixes []string) []string {
+	tags := []string{next}
+	for _, p := range prefixes {
+		tags = append(tags, p+"/"+next)
+	}
+	return tags
+}
+
+func regularFileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }
 
 func repoRoot(r git.Repo) (string, error) {
@@ -179,7 +231,7 @@ func alreadyReleased(r git.Repo) (releasedState, bool) {
 		return releasedState{}, false
 	}
 	tag, ok := strings.CutPrefix(subject, "release: ")
-	if !ok || !strings.HasPrefix(tag, "v") {
+	if !ok || (!strings.HasPrefix(tag, "v") && !strings.HasPrefix(tag, "r")) {
 		return releasedState{}, false
 	}
 
@@ -318,6 +370,30 @@ func parseSemver(s string) (semver, error) {
 		nums[i] = n
 	}
 	return semver{nums[0], nums[1], nums[2]}, nil
+}
+
+// parseRevision parses "rN" -> N. N must be a non-negative integer.
+func parseRevision(s string) (int, error) {
+	rest, ok := strings.CutPrefix(s, "r")
+	if !ok {
+		return 0, fmt.Errorf("revision %q must start with 'r'", s)
+	}
+	n, err := strconv.Atoi(rest)
+	if err != nil {
+		return 0, fmt.Errorf("parse revision %q: %w", s, err)
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("revision %q must be non-negative", s)
+	}
+	return n, nil
+}
+
+func bumpRevision(current string) (string, error) {
+	n, err := parseRevision(current)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("r%d", n+1), nil
 }
 
 func bumpVersion(current, bump string) (string, error) {
