@@ -18,7 +18,11 @@ func (t *TreeCommand) renderNative(w io.Writer, sinceArg string, maxCount int) e
 	if colorEnabled() {
 		colorFlag = "--color=always"
 	}
-	gitArgs := []string{"log", "--all", "--format=%H %P%x00%h%d %s%x00%at", "--date-order", colorFlag}
+	// %ct (committer date) not %at (author date): git's --date-order sorts by
+	// committer date, and the layout engine's row ordering must match it or an
+	// open (never-merged) side branch whose author date predates the trunk tip
+	// gets sorted to the bottom, detached from its fork point.
+	gitArgs := []string{"log", "--all", "--format=%H %P%x00%h%d %s%x00%ct", "--date-order", colorFlag}
 	if sinceArg != "" {
 		gitArgs = append(gitArgs, "--since", sinceArg)
 	}
@@ -128,6 +132,13 @@ func parseNativeCommits(raw string, useColor bool) ([]graph.Node, error) {
 // extractLaneName parses the first branch name from git's %d decoration
 // string. Format: "abc1234 (HEAD -> main, origin/main) subject" -> "main".
 // Returns "" if no ref decoration is present.
+//
+// The full ref name is kept as the lane key, remote prefix included
+// ("lczyk/rust" stays "lczyk/rust", not "rust"). Collapsing the prefix would
+// merge a remote-tracking ref onto the same lane as a diverged local branch of
+// the same basename, pulling two distinct tips onto one column -- which flattens
+// an open fork between them. Refs that point at the same commit carry both
+// decorations on one node anyway, so distinct keys cost nothing there.
 func extractLaneName(label string) string {
 	if idx := strings.Index(label, " ("); idx >= 0 {
 		rest := label[idx+2:]
@@ -138,9 +149,6 @@ func extractLaneName(label string) string {
 				refs = refs[:comma]
 			}
 			refs = strings.TrimSpace(refs)
-			if slash := strings.Index(refs, "/"); slash >= 0 && slash < len(refs)-1 {
-				refs = refs[slash+1:]
-			}
 			if refs != "" && !strings.HasPrefix(refs, "tag: ") {
 				return refs
 			}
