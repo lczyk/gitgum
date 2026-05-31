@@ -81,7 +81,7 @@ func (r *ReleaseCommand) Execute(args []string) error {
 	if state, ok := alreadyReleased(repo); ok {
 		fmt.Fprintf(r.out(), "Already released: HEAD is %q (tag %s already at HEAD).\n", state.subject, state.tag)
 		fmt.Fprintf(r.out(), "Nothing to do. To publish:\n")
-		fmt.Fprintf(r.out(), "  git push %s %s && git push %s %s\n", remote, defaultBranch, remote, state.tag)
+		fmt.Fprintf(r.out(), "  %s\n", formatPublishPushes(remote, defaultBranch, []string{state.tag}))
 		return nil
 	}
 
@@ -175,10 +175,27 @@ func (r *ReleaseCommand) Execute(args []string) error {
 	}
 
 	fmt.Fprintf(r.out(), "\nTagged %s. To publish:\n", strings.Join(tags, ", "))
-	fmt.Fprintf(r.out(), "  git push %s %s && git push %s %s\n", remote, defaultBranch, remote, strings.Join(tags, " "))
+	fmt.Fprintf(r.out(), "  %s\n", formatPublishPushes(remote, defaultBranch, tags))
 	fmt.Fprintln(r.out(), "\nTo fully undo (drops the commit and the tag(s)):")
 	fmt.Fprintf(r.out(), "  git reset --hard HEAD~1 && git tag -d %s\n", strings.Join(tags, " "))
 	return nil
+}
+
+// maxTagsPerPush is github's ceiling: a single push carrying more than this
+// many tags generates no `push` workflow events for any tag in it -- the
+// trigger silently never fires (see case.md). split tag pushes to stay under.
+const maxTagsPerPush = 3
+
+// formatPublishPushes builds the chained `git push` command suggested for
+// publishing a release: the branch first, then the tags split into pushes of
+// at most maxTagsPerPush so the release workflow actually fires.
+func formatPublishPushes(remote, branch string, tags []string) string {
+	parts := []string{fmt.Sprintf("git push %s %s", remote, branch)}
+	for i := 0; i < len(tags); i += maxTagsPerPush {
+		end := min(i+maxTagsPerPush, len(tags))
+		parts = append(parts, fmt.Sprintf("git push %s %s", remote, strings.Join(tags[i:end], " ")))
+	}
+	return strings.Join(parts, " && ")
 }
 
 // buildTags returns the list of tags to create: bare "v"+next first, then

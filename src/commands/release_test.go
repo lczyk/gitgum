@@ -138,6 +138,26 @@ func TestBuildTags(t *testing.T) {
 	)
 }
 
+func TestFormatPublishPushes(t *testing.T) {
+	// single tag: branch push then one tag push.
+	assert.Equal(t,
+		formatPublishPushes("origin", "main", []string{"v1.2.3"}),
+		"git push origin main && git push origin v1.2.3",
+	)
+	// three tags fit one push (at the limit, no split).
+	assert.Equal(t,
+		formatPublishPushes("origin", "main", []string{"v0.3.0", "go/v0.3.0", "rust/v0.3.0"}),
+		"git push origin main && git push origin v0.3.0 go/v0.3.0 rust/v0.3.0",
+	)
+	// four tags exceed the limit: tags split across two pushes so the
+	// release workflow still fires (see case.md).
+	assert.Equal(t,
+		formatPublishPushes("origin", "main",
+			[]string{"v0.3.0", "go/v0.3.0", "python/v0.3.0", "rust/v0.3.0"}),
+		"git push origin main && git push origin v0.3.0 go/v0.3.0 python/v0.3.0 && git push origin rust/v0.3.0",
+	)
+}
+
 func TestParseRevision(t *testing.T) {
 	tests := []struct {
 		in      string
