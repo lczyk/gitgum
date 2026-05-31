@@ -51,8 +51,8 @@ func (s *SwitchCommand) retargetTracking(remote, branch string) error {
 		fmt.Fprintln(s.err(), "Not setting tracking reference. Aborting switch.")
 		return ui.ErrCancelled
 	}
-	if _, _, err := s.repo().RunWrite("branch", "--set-upstream-to="+remote+"/"+branch, branch); err != nil {
-		return fmt.Errorf("setting tracking reference: %w", err)
+	if _, stderr, err := s.repo().RunWrite("branch", "--set-upstream-to="+remote+"/"+branch, branch); err != nil {
+		return fmt.Errorf("setting tracking reference: %w: %s", err, stderr)
 	}
 	fmt.Fprintf(s.out(), "Set tracking reference for local branch '%s' to remote branch '%s/%s'.\n",
 		branch, remote, branch)
