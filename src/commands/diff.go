@@ -15,9 +15,11 @@ import (
 )
 
 // diffModes is the set of modes addressable in auto cascade and in the
-// follow tab loop. "untracked" is intentionally not in this set -- it is
-// opt-in only via --mode untracked, never shown by default.
-var diffModes = []string{"work", "index", "head"}
+// follow tab loop. "untracked" sits before "head" so that local untracked
+// files surface in the cascade rather than falling through to the last
+// commit's diff -- otherwise a clean tree with only untracked files shows
+// HEAD~1..HEAD, which reads as "no local changes" when there are some.
+var diffModes = []string{"work", "index", "untracked", "head"}
 
 // untrackedCountTimeout caps per-file line-counting for untracked entries.
 // On timeout the entry renders with `+???,-???` and a `+++---` bar marker
@@ -27,7 +29,7 @@ const untrackedCountTimeout = 200 * time.Millisecond
 type DiffCommand struct {
 	cmdIO
 	Follow *float64 `long:"follow" short:"f" optional:"yes" optional-value:"2" description:"follow mode: refresh every N seconds (default 2, min 1)"`
-	Mode   string   `long:"mode" short:"m" description:"lock to a diff level: work (unstaged), index (staged), head (last commit), untracked (opt-in, not shown by default). default: auto-cascade over work/index/head"`
+	Mode   string   `long:"mode" short:"m" description:"lock to a diff level: work (unstaged), index (staged), untracked, head (last commit). default: auto-cascade over work/index/untracked/head"`
 }
 
 func (d *DiffCommand) Execute(args []string) error {
@@ -200,7 +202,7 @@ func (d *DiffCommand) collectDiff(level string) (string, error) {
 	}
 }
 
-// collectOutput runs the cascade (work -> index -> head) unless Mode is set,
+// collectOutput runs the cascade (work -> index -> untracked -> head) unless Mode is set,
 // in which case it returns that level directly. returns (output, level, error).
 func (d *DiffCommand) collectOutput() (string, string, error) {
 	if d.Mode != "" {
@@ -370,7 +372,16 @@ func (d *DiffCommand) runFollow() error {
 		frame.End()
 	}
 
-	shiftedNum := map[rune]string{'!': "work", '@': "index", '#': "head"}
+	// number keys 1..N select the Nth tab as primary; their shifted symbols
+	// toggle a pin on that tab. both derive from diffModes so the bindings
+	// stay in lockstep with the rendered tab strip.
+	shiftSymbols := []rune{'!', '@', '#', '$', '%'}
+	shiftedNum := map[rune]string{}
+	for i, m := range diffModes {
+		if i < len(shiftSymbols) {
+			shiftedNum[shiftSymbols[i]] = m
+		}
+	}
 
 	refreshCache()
 	redraw()
@@ -386,16 +397,8 @@ func (d *DiffCommand) runFollow() error {
 			case *tcell.EventKey:
 				_, h := scr.Size()
 				switch {
-				case ev.Rune() == '1':
-					primaryMode = "work"
-					clear(pinned)
-					refreshCache()
-				case ev.Rune() == '2':
-					primaryMode = "index"
-					clear(pinned)
-					refreshCache()
-				case ev.Rune() == '3':
-					primaryMode = "head"
+				case ev.Rune() >= '1' && ev.Rune() <= '9' && int(ev.Rune()-'1') < len(diffModes):
+					primaryMode = diffModes[ev.Rune()-'1']
 					clear(pinned)
 					refreshCache()
 				case ev.Key() == tcell.KeyTab:

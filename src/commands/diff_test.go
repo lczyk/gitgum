@@ -54,19 +54,20 @@ func TestDiffCommand_Parity_ModifiedFile(t *testing.T) {
 	assert.ContainsString(t, out, "a.txt")
 }
 
-func TestDiffCommand_Parity_UntrackedOnlyFallsBackToLastCommit(t *testing.T) {
+func TestDiffCommand_Parity_UntrackedOnlyShowsUntracked(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("FORCE_COLOR", "")
 	dir := temp_repo.NewRepo(t)
 	temp_repo.CreateCommit(t, dir, "tracked.txt", "v1\n", "chore: add tracked")
 	// untracked file -- git diff (working vs index) ignores it, --cached
-	// shows nothing either, so we cascade to HEAD~1..HEAD.
+	// shows nothing either, so the cascade lands on the untracked level
+	// (which sits before head) and surfaces the untracked file.
 	temp_repo.WriteFile(t, dir, "new.txt", "fresh\n")
 	repo := git.Repo{Dir: dir}
 
 	out := assertParity(t, repo)
-	// last commit added tracked.txt -- should appear.
-	assert.ContainsString(t, out, "tracked.txt")
+	assert.ContainsString(t, out, "--- untracked ---")
+	assert.ContainsString(t, out, "new.txt")
 }
 
 func TestDiffCommand_Parity_DeletedFile(t *testing.T) {
@@ -416,6 +417,27 @@ func TestDiffCommand_UntrackedSection_NoneWhenAllTracked(t *testing.T) {
 	assert.NoError(t, cmd.Execute(nil))
 	out := buf.String()
 	assert.That(t, !contains(out, "--- untracked ---"), "no untracked files -> no untracked section")
+}
+
+// Regression: a clean tree (no work/index changes) with only untracked files
+// must surface those untracked files in the auto cascade rather than falling
+// through to the HEAD~1..HEAD diff, which misleadingly reads as "no changes".
+func TestDiffCommand_UntrackedInAutoMode_WhenNoTrackedChanges(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "")
+	dir := temp_repo.NewRepo(t)
+	temp_repo.CreateCommit(t, dir, "a.txt", "v1\n", "chore: add a")
+	temp_repo.CreateCommit(t, dir, "b.txt", "v1\n", "chore: add b")
+	temp_repo.WriteFile(t, dir, "fresh.txt", "x\n")
+	repo := git.Repo{Dir: dir}
+
+	var buf bytes.Buffer
+	cmd := &DiffCommand{cmdIO: cmdIO{Out: &buf, Repo: repo}}
+	assert.NoError(t, cmd.Execute(nil))
+	out := buf.String()
+	assert.ContainsString(t, out, "--- untracked ---")
+	assert.ContainsString(t, out, "fresh.txt")
+	assert.That(t, !contains(out, "--- head ---"), "untracked present -> cascade must not fall to head")
 }
 
 func TestCountUntrackedLines_Text(t *testing.T) {
