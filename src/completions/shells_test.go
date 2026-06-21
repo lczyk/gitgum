@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 )
 
 // shellSpec describes how to invoke a shell to run a syntax check on a
@@ -110,9 +111,9 @@ func lookupShell(t *testing.T, bin string) string {
 func renderToTemp(t *testing.T, render func(shell, cmd string) (string, error), cmdName, shell string) string {
 	t.Helper()
 	rendered, err := render(shell, cmdName)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	file := filepath.Join(t.TempDir(), cmdName+"."+shell)
-	assert.NoError(t, os.WriteFile(file, []byte(rendered), 0o644))
+	require.NoError(t, os.WriteFile(file, []byte(rendered), 0o644))
 	return file
 }
 
@@ -128,7 +129,7 @@ func TestShellSyntax(t *testing.T) {
 				}
 				file := renderToTemp(t, b.render, b.cmdName, s.template)
 				out, err := exec.Command(path, s.checkArgs(file)...).CombinedOutput()
-				assert.NoError(t, err, "syntax check failed: output:\n%s", out)
+				require.NoError(t, err, "syntax check failed: output:\n%s", out)
 			})
 		}
 	}
@@ -155,7 +156,7 @@ func TestShellContent(t *testing.T) {
 		for _, s := range shells {
 			t.Run(b.cmdName+"/"+s.template, func(t *testing.T) {
 				rendered, err := b.render(s.template, b.cmdName)
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				assert.That(t, !strings.Contains(rendered, Placeholder), "placeholder leftover")
 				assert.ContainsString(t, rendered, b.cmdName)
 				for _, want := range b.requiredContent {
@@ -194,7 +195,7 @@ func TestBashCompletion(t *testing.T) {
 					bashQuote(b.cmdName), bashQuote(cur), bashQuote(prev),
 				)
 				out, err := exec.Command(bash, "-c", script).CombinedOutput()
-				assert.NoError(t, err, "bash completion: output:\n%s", out)
+				require.NoError(t, err, "bash completion: output:\n%s", out)
 				for _, want := range tc.wantContains {
 					assert.ContainsString(t, string(out), want)
 				}
@@ -213,7 +214,7 @@ func TestFishCompletion(t *testing.T) {
 				cmdline := b.cmdName + " " + strings.Join(tc.words, " ")
 				script := fmt.Sprintf("source %q; complete -C %q", file, cmdline)
 				out, err := exec.Command(fish, "-c", script).CombinedOutput()
-				assert.NoError(t, err, "fish completion: output:\n%s", out)
+				require.NoError(t, err, "fish completion: output:\n%s", out)
 				for _, want := range tc.wantContains {
 					assert.ContainsString(t, string(out), want)
 				}
@@ -230,7 +231,7 @@ func TestNuCompletion(t *testing.T) {
 		t.Run(b.cmdName, func(t *testing.T) {
 			file := renderToTemp(t, b.render, b.cmdName, "nu")
 			out, err := exec.Command(nu, "-c", "source "+file+"; help "+b.cmdName).CombinedOutput()
-			assert.NoError(t, err, "nu help %s: output:\n%s", b.cmdName, out)
+			require.NoError(t, err, "nu help %s: output:\n%s", b.cmdName, out)
 			for _, want := range b.nuHelpExpect {
 				assert.ContainsString(t, string(out), want)
 			}

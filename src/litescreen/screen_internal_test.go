@@ -11,6 +11,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 )
 
 // preloaded returns a buffered channel pre-filled with bs. Receivers don't
@@ -438,7 +439,7 @@ func TestScreen_InitFini_Inline(t *testing.T) {
 	s, out, restoreCalled := newTestScreen(5, 80, 24, strings.NewReader(""))
 
 	err := s.Init()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	got := out.String()
 	assert.That(t, strings.Contains(got, "\x1b[?25l"), "init hides cursor")
 	assert.That(t, strings.Contains(got, "\x1b[20;1H\x1b[J"), "init clears region at row 20")
@@ -457,7 +458,7 @@ func TestScreen_InitFini_Inline(t *testing.T) {
 func TestScreen_InitFini_Fullscreen(t *testing.T) {
 	s, out, restoreCalled := newTestScreen(0, 80, 24, strings.NewReader(""))
 
-	assert.NoError(t, s.Init())
+	require.NoError(t, s.Init())
 	got := out.String()
 	assert.That(t, strings.Contains(got, "\x1b[?1049h"), "fullscreen enters alt-screen")
 	assert.Equal(t, s.yOrigin, 0)
@@ -471,7 +472,7 @@ func TestScreen_InitFini_Fullscreen(t *testing.T) {
 
 func TestScreen_HandleResize_Narrow(t *testing.T) {
 	s, out, _ := newTestScreen(5, 100, 24, strings.NewReader(""))
-	assert.NoError(t, s.Init())
+	require.NoError(t, s.Init())
 
 	// Simulate terminal narrowing: swap getSize to report new width.
 	s.getSize = func() (int, int) { return 60, 24 }
@@ -497,7 +498,7 @@ func TestScreen_HandleResize_Narrow(t *testing.T) {
 // wait for the goroutine to exit before returning.
 func TestScreen_Fini_StopsReadLoop(t *testing.T) {
 	pr, pw, err := os.Pipe()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer pr.Close()
 	defer pw.Close()
 
@@ -509,7 +510,7 @@ func TestScreen_Fini_StopsReadLoop(t *testing.T) {
 		height: 5,
 	}
 
-	assert.NoError(t, s.Init())
+	require.NoError(t, s.Init())
 
 	eventsCh := make(chan tcell.Event, 16)
 	go s.ChannelEvents(eventsCh, nil)
@@ -571,7 +572,7 @@ func TestReadLoop_PollsOnNoData(t *testing.T) {
 	fake := &fakeInputSource{bytes: [][]byte{{'a'}, {'b'}}}
 	s.input = fake
 
-	assert.NoError(t, s.Init())
+	require.NoError(t, s.Init())
 
 	got := make([]byte, 0, 2)
 	for range 2 {
@@ -599,7 +600,7 @@ func TestReadLoop_SetupErrorExits(t *testing.T) {
 	fake := &fakeInputSource{setupErr: errors.New("boom")}
 	s.input = fake
 
-	assert.NoError(t, s.Init())
+	require.NoError(t, s.Init())
 
 	done := make(chan struct{})
 	go func() { s.Fini(); close(done) }()
@@ -621,7 +622,7 @@ func TestReadLoop_TeardownOnQuit(t *testing.T) {
 	fake := &fakeInputSource{} // empty bytes → always errNoData
 	s.input = fake
 
-	assert.NoError(t, s.Init())
+	require.NoError(t, s.Init())
 	s.Fini()
 
 	assert.Equal(t, fake.teardownN, 1)
@@ -636,7 +637,7 @@ func TestReadLoop_ErrorExits(t *testing.T) {
 	fake := &erroringInputSource{err: errors.New("permanent failure")}
 	s.input = fake
 
-	assert.NoError(t, s.Init())
+	require.NoError(t, s.Init())
 
 	// readDone must close on its own (via readLoop's deferred close), not
 	// because Fini signaled quit. We give it a generous window and Fini
@@ -665,7 +666,7 @@ func (e *erroringInputSource) read(buf []byte) (int, error) { return 0, e.err }
 // would lose its nonblocking-poll guarantee.
 func TestInputFor_Dispatch(t *testing.T) {
 	pr, pw, err := os.Pipe()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer pr.Close()
 	defer pw.Close()
 
@@ -680,7 +681,7 @@ func TestInputFor_Dispatch(t *testing.T) {
 // second Fini would double-close s.winch / s.sigCh / s.quit and panic.
 func TestScreen_Fini_Idempotent(t *testing.T) {
 	s, _, _ := newTestScreen(5, 80, 24, strings.NewReader(""))
-	assert.NoError(t, s.Init())
+	require.NoError(t, s.Init())
 
 	s.Fini()
 	// Second call must not panic on double-close of channels.
@@ -699,7 +700,7 @@ func TestScreen_Fini_Idempotent(t *testing.T) {
 // production wiring.
 func TestScreen_ReadLoop_ForwardsBytes(t *testing.T) {
 	pr, pw, err := os.Pipe()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer pr.Close()
 
 	var out bytes.Buffer
@@ -709,7 +710,7 @@ func TestScreen_ReadLoop_ForwardsBytes(t *testing.T) {
 		out:    &out,
 		height: 5,
 	}
-	assert.NoError(t, s.Init())
+	require.NoError(t, s.Init())
 
 	eventsCh := make(chan tcell.Event, 16)
 	go s.ChannelEvents(eventsCh, nil)

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
@@ -49,7 +50,7 @@ func TestPushCommand_CreatesRemoteBranch(t *testing.T) {
 	cmd := &PushCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: dir}}}
 
 	err := cmd.Execute([]string{"origin"})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	upstream := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "--abbrev-ref", branch+"@{u}"))
 	assert.Equal(t, upstream, "origin/"+branch)
@@ -74,7 +75,7 @@ func TestPushCommand_DeclinesCreateRemoteBranch(t *testing.T) {
 	cmd := &PushCommand{cmdIO: cmdIO{UI: stub, Repo: git.Repo{Dir: dir}}}
 
 	err := cmd.Execute([]string{"origin"})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	upstreamCmd := exec.Command("git", "rev-parse", "--abbrev-ref", branch+"@{u}")
 	upstreamCmd.Dir = dir
@@ -99,7 +100,7 @@ func TestPushCommand_UpstreamSet_AlreadyUpToDate(t *testing.T) {
 	cmd := &PushCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: dir}}}
 
 	err := cmd.Execute(nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.ContainsString(t, buf.String(), "No changes to push")
 	assert.Equal(t, len(stub.confirmCalls), 0)
 }
@@ -119,7 +120,7 @@ func TestPushCommand_AlreadyUpToDate_SetsUpstream(t *testing.T) {
 
 	cmd := &PushCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
 	err := cmd.Execute([]string{"origin"})
-	assert.NoError(t, err, "should succeed when already up to date")
+	require.NoError(t, err, "should succeed when already up to date")
 
 	upstream := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "--abbrev-ref", branch+"@{u}"))
 	assert.Equal(t, upstream, "origin/"+branch)

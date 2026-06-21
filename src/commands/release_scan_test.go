@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 )
 
 func TestContainsVersionToken(t *testing.T) {
@@ -60,10 +61,10 @@ version = { git = "https://example.com", tag = "rust/v0.5.0" }
 serde = "0.7.1"
 `
 	err := os.WriteFile(path, []byte(body), 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	got, err := scanFileForVersion(path, "Cargo.toml", "0.7.1")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	// only the package version line matches: contains both "version" and 0.7.1.
 	// the "serde = 0.7.1" line has the token but not the word "version".
 	// the "version = { ..., tag = ... }" line has "version" but not the token.
@@ -83,10 +84,10 @@ func TestScanFileForVersion_BinarySkipped(t *testing.T) {
 	// Null byte in the probe window -> treated as binary, soft-skip.
 	body := append([]byte("version = \"1.0.0\"\n\x00"), make([]byte, 100)...)
 	err := os.WriteFile(path, body, 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	got, err := scanFileForVersion(path, "blob", "1.0.0")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, len(got), 0)
 }
 
@@ -100,10 +101,10 @@ func TestScanFileForVersion_LargeFileSkipped(t *testing.T) {
 	}
 	copy(body, []byte("version = \"1.0.0\"\n"))
 	err := os.WriteFile(path, body, 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	got, err := scanFileForVersion(path, "huge", "1.0.0")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, len(got), 0)
 }
 
@@ -118,14 +119,14 @@ version = "0.7.1"  # comment
 serde = "0.7.1"
 `
 	err := os.WriteFile(path, []byte(body), 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Only rewrite line 3.
 	err = rewriteLines(path, []int{3}, "0.7.1", "0.7.2")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	got, err := os.ReadFile(path)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	want := `[package]
 name = "edit"
 version = "0.7.2"  # comment
@@ -140,13 +141,13 @@ func TestRewriteLines_NoTrailingNewline(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "VERSION")
 	err := os.WriteFile(path, []byte(`version = "1.0.0"`), 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	err = rewriteLines(path, []int{1}, "1.0.0", "1.0.1")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	got, err := os.ReadFile(path)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, string(got), `version = "1.0.1"`)
 }
 
@@ -154,18 +155,18 @@ func TestApplyVersionEdits(t *testing.T) {
 	root := t.TempDir()
 	cargo := filepath.Join(root, "Cargo.toml")
 	err := os.WriteFile(cargo, []byte("version = \"1.0.0\"\nother = \"1.0.0\"\n"), 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	pkg := filepath.Join(root, "package.json")
 	err = os.WriteFile(pkg, []byte("{\n  \"version\": \"1.0.0\"\n}\n"), 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	picks := []versionMention{
 		{path: "Cargo.toml", line: 1},
 		{path: "package.json", line: 2},
 	}
 	paths, err := applyVersionEdits(root, picks, "1.0.0", "1.0.1")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.EqualArrays(t, paths, []string{"Cargo.toml", "package.json"})
 
 	got, _ := os.ReadFile(cargo)
@@ -176,14 +177,14 @@ func TestApplyVersionEdits(t *testing.T) {
 
 func TestApplyVersionEdits_Empty(t *testing.T) {
 	paths, err := applyVersionEdits(t.TempDir(), nil, "1.0.0", "1.0.1")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, len(paths), 0)
 }
 
 func TestPickVersionEdits_NoMentions(t *testing.T) {
 	stub := &stubSelector{}
 	picks, err := pickVersionEdits(stub, nil, "1.0.0")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, len(picks), 0)
 	assert.Equal(t, len(stub.multiSelectCalls), 0)
 }
@@ -197,7 +198,7 @@ func TestPickVersionEdits_PickSubset(t *testing.T) {
 	stub := &stubSelector{multiSelectAnswers: [][]string{{want}}}
 
 	picks, err := pickVersionEdits(stub, mentions, "1.0.0")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, len(picks), 1)
 	assert.Equal(t, picks[0].path, "Cargo.toml")
 	assert.Equal(t, picks[0].line, 3)
@@ -208,6 +209,6 @@ func TestPickVersionEdits_PickNothing(t *testing.T) {
 	stub := &stubSelector{multiSelectAnswers: [][]string{{}}}
 
 	picks, err := pickVersionEdits(stub, mentions, "1.0.0")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, len(picks), 0)
 }

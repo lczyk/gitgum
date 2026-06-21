@@ -4,26 +4,27 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 )
 
 func TestParseQuirks_Empty(t *testing.T) {
 	t.Setenv("GG_QUIRKS", "")
 	q, err := parseQuirks()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, len(q), 0)
 }
 
 func TestParseQuirks_Single(t *testing.T) {
 	t.Setenv("GG_QUIRKS", "normal-branches")
 	q, err := parseQuirks()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, q["normal-branches"], true)
 }
 
 func TestParseQuirks_Negation(t *testing.T) {
 	t.Setenv("GG_QUIRKS", "normal-branches,-normal-branches")
 	q, err := parseQuirks()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, q["normal-branches"], false)
 }
 

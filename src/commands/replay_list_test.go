@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
@@ -96,7 +97,7 @@ func TestListCommits(t *testing.T) {
 					assert.ContainsString(t, err.Error(), tt.errorContains)
 				}
 			} else {
-				assert.NoError(t, err, "should not error")
+				require.NoError(t, err, "should not error")
 				if tt.verifyCommits != nil {
 					tt.verifyCommits(t, commits)
 				}
@@ -116,5 +117,5 @@ func TestReplayListCommand_Execute(t *testing.T) {
 	cmd.Args.BranchB = "main"
 
 	err := cmd.Execute(nil)
-	assert.NoError(t, err, "Execute should not error")
+	require.NoError(t, err, "Execute should not error")
 }

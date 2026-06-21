@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 )
 
 func TestParseSemver(t *testing.T) {
@@ -27,7 +28,7 @@ func TestParseSemver(t *testing.T) {
 		if tt.wantErr {
 			assert.Error(t, err, assert.AnyError, tt.in)
 		} else {
-			assert.NoError(t, err, tt.in)
+			require.NoError(t, err, tt.in)
 			assert.Equal(t, got, tt.want)
 		}
 	}
@@ -45,7 +46,7 @@ func TestBumpVersion(t *testing.T) {
 	}
 	for _, tt := range tests {
 		got, err := bumpVersion(tt.in, tt.bump)
-		assert.NoError(t, err, tt.in+"/"+tt.bump)
+		require.NoError(t, err, tt.in+"/"+tt.bump)
 		assert.Equal(t, got, tt.want)
 	}
 }
@@ -62,20 +63,20 @@ func TestReadWriteVersion(t *testing.T) {
 	// round-trip with header
 	header := []string{"# managed by release command"}
 	err := writeVersion(path, header, "1.2.3")
-	assert.NoError(t, err, "writeVersion")
+	require.NoError(t, err, "writeVersion")
 
 	gotHeader, gotPrefixes, gotVer, err := readVersion(path)
-	assert.NoError(t, err, "readVersion")
+	require.NoError(t, err, "readVersion")
 	assert.Equal(t, gotVer, "1.2.3")
 	assert.EqualArrays(t, gotHeader, header)
 	assert.That(t, gotPrefixes == nil, "no prefixes when no tags directive")
 
 	// round-trip without header
 	err = writeVersion(path, nil, "2.0.0")
-	assert.NoError(t, err, "writeVersion no header")
+	require.NoError(t, err, "writeVersion no header")
 
 	_, _, gotVer, err = readVersion(path)
-	assert.NoError(t, err, "readVersion no header")
+	require.NoError(t, err, "readVersion no header")
 	assert.Equal(t, gotVer, "2.0.0")
 
 	// missing file
@@ -94,10 +95,10 @@ func TestReadVersion_TagsDirective(t *testing.T) {
 	path := filepath.Join(dir, "VERSION")
 	body := "# managed by release\n# tags: go rust python\n0.2.0\n"
 	err := os.WriteFile(path, []byte(body), 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	header, prefixes, current, err := readVersion(path)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, current, "0.2.0")
 	assert.EqualArrays(t, prefixes, []string{"go", "rust", "python"})
 	assert.Equal(t, len(header), 2)
@@ -180,7 +181,7 @@ func TestParseRevision(t *testing.T) {
 		if tt.wantErr {
 			assert.Error(t, err, assert.AnyError, tt.in)
 		} else {
-			assert.NoError(t, err, tt.in)
+			require.NoError(t, err, tt.in)
 			assert.Equal(t, got, tt.want)
 		}
 	}
@@ -197,7 +198,7 @@ func TestBumpRevision(t *testing.T) {
 	}
 	for _, tt := range tests {
 		got, err := bumpRevision(tt.in)
-		assert.NoError(t, err, tt.in)
+		require.NoError(t, err, tt.in)
 		assert.Equal(t, got, tt.want)
 	}
 	_, err := bumpRevision("not-a-rev")

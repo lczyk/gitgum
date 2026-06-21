@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
 
@@ -33,7 +34,7 @@ func TestParseGitVersion(t *testing.T) {
 			assert.That(t, err != nil, "want error for ", tc.in)
 			continue
 		}
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, got, tc.want)
 	}
 }
@@ -59,7 +60,7 @@ func TestRunReadCapturesOutput(t *testing.T) {
 	t.Parallel()
 	r := Repo{Dir: temp_repo.NewRepo(t)}
 	stdout, _, err := r.runRead(context.Background(), "rev-parse", "--is-inside-work-tree")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, strings.TrimSpace(stdout), "true")
 }
 
@@ -70,12 +71,12 @@ func TestRunReadIgnoresUserGlobalConfig(t *testing.T) {
 	dir := temp_repo.NewRepo(t)
 	cfgDir := t.TempDir()
 	cfg := filepath.Join(cfgDir, "config")
-	assert.NoError(t, os.WriteFile(cfg, []byte("[color]\n\tui = always\n"), 0o644))
+	require.NoError(t, os.WriteFile(cfg, []byte("[color]\n\tui = always\n"), 0o644))
 	t.Setenv("GIT_CONFIG_GLOBAL", cfg)
 
 	r := Repo{Dir: dir}
 	stdout, _, err := r.runRead(context.Background(), "status", "--short")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.That(t, !strings.Contains(stdout, "\x1b["), "stdout should not contain ansi escapes when read profile is active")
 }
 
@@ -87,11 +88,11 @@ func TestRunReadIgnoresGitDirEnv(t *testing.T) {
 
 	r := Repo{Dir: dir}
 	stdout, _, err := r.runRead(context.Background(), "rev-parse", "--show-toplevel")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	got, err := filepath.EvalSymlinks(strings.TrimSpace(stdout))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	want, err := filepath.EvalSymlinks(dir)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, got, want)
 }
 

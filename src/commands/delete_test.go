@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
@@ -44,7 +45,7 @@ func TestDeleteCommand_DeletesPickedBranch(t *testing.T) {
 	cmd := &DeleteCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: dir}}}
 
 	err := cmd.Execute(nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	branches := temp_repo.RunGit(t, dir, "branch", "--list", "feature")
 	assert.Equal(t, strings.TrimSpace(branches), "")

@@ -5,6 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 )
 
 func TestParseAnsiItems_StripsAndStyles(t *testing.T) {
@@ -46,7 +47,7 @@ func TestInitFinder_AnsiPopulatesStyledItems(t *testing.T) {
 	defer m.Fini()
 	items := []string{"\x1b[31mhello\x1b[0m", "world"}
 	err := f.initFinder(items, Opt{Ansi: true})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	assert.EqualArrays(t, f.state.items, []string{"hello", "world"})
 	assert.Equal(t, len(f.state.itemsStyled), 2)
@@ -59,7 +60,7 @@ func TestInitFinder_NoAnsi(t *testing.T) {
 	defer m.Fini()
 	items := []string{"plain"}
 	err := f.initFinder(items, Opt{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	assert.That(t, f.state.itemsStyled == nil, "itemsStyled should be nil without Opt.Ansi")
 	assert.EqualArrays(t, f.state.items, items)

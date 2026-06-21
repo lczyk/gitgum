@@ -10,6 +10,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
@@ -48,7 +49,7 @@ func TestParseSinceArg(t *testing.T) {
 				assert.That(t, err != nil, "expected error for %q", tc.in)
 				return
 			}
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.Equal(t, gotDur, tc.wantDur)
 			assert.Equal(t, gotDate, tc.wantDate)
 			assert.Equal(t, gotN, tc.wantN)
@@ -143,18 +144,18 @@ func TestSnapshotRefs(t *testing.T) {
 	cmd := &TreeCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
 
 	first, err := cmd.snapshotRefs()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.That(t, first != "", "snapshot should be non-empty")
 
 	// no ref change -> identical fingerprint
 	second, err := cmd.snapshotRefs()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, first, second)
 
 	// new commit -> fingerprint changes
 	temp_repo.CreateCommit(t, dir, "b.txt", "b\n", "chore: Add B")
 	third, err := cmd.snapshotRefs()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.That(t, first != third, "snapshot should change after new commit")
 }
 
@@ -210,7 +211,7 @@ func TestTreeCommand_Execute(t *testing.T) {
 		var buf bytes.Buffer
 		cmd := &TreeCommand{cmdIO: cmdIO{Out: &buf, Repo: repo}}
 		err := cmd.Execute(nil)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		out := buf.String()
 		assert.That(t, strings.Contains(out, "*"), "should contain graph node markers")
@@ -226,7 +227,7 @@ func TestTreeCommand_Execute(t *testing.T) {
 		var buf bytes.Buffer
 		cmd := &TreeCommand{cmdIO: cmdIO{Out: &buf, Repo: repo}}
 		err := cmd.Execute(nil)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		out := buf.String()
 		idxInitial := strings.Index(out, "chore: init")
@@ -242,7 +243,7 @@ func TestTreeCommand_Execute(t *testing.T) {
 		var buf bytes.Buffer
 		cmd := &TreeCommand{cmdIO: cmdIO{Out: &buf, Repo: repo}, Since: "2000-01-01"}
 		err := cmd.Execute(nil)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		out := buf.String()
 		assert.ContainsString(t, out, "chore: Add A")
@@ -255,7 +256,7 @@ func TestTreeCommand_Execute(t *testing.T) {
 		var buf bytes.Buffer
 		cmd := &TreeCommand{cmdIO: cmdIO{Out: &buf, Repo: repo}, Since: "2099-01-01"}
 		err := cmd.Execute(nil)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		out := strings.TrimSpace(buf.String())
 		assert.That(t, !strings.Contains(out, "chore: Add A"), "should not contain commits dated before 2099")
@@ -270,7 +271,7 @@ func backdatedCommit(t testing.TB, dir, msg, date string) {
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_COMMITTER_DATE="+date)
 	out, err := cmd.CombinedOutput()
-	assert.NoError(t, err, "git commit failed: ", string(out))
+	require.NoError(t, err, "git commit failed: ", string(out))
 }
 
 func TestTreeCommand_SinceRelativeToNewestCommit(t *testing.T) {
@@ -284,7 +285,7 @@ func TestTreeCommand_SinceRelativeToNewestCommit(t *testing.T) {
 	var buf bytes.Buffer
 	cmd := &TreeCommand{cmdIO: cmdIO{Out: &buf, Repo: repo}, Since: "2w"}
 	err := cmd.Execute(nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	out := buf.String()
 	assert.ContainsString(t, out, "chore: old B")
@@ -301,7 +302,7 @@ func TestTreeCommand_Reverse(t *testing.T) {
 	var buf bytes.Buffer
 	cmd := &TreeCommand{cmdIO: cmdIO{Out: &buf, Repo: repo}, Reverse: true}
 	err := cmd.Execute(nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	out := buf.String()
 	idxA := strings.Index(out, "chore: Add A")
@@ -322,6 +323,6 @@ func TestTreeCommand_NoColor(t *testing.T) {
 	var buf bytes.Buffer
 	cmd := &TreeCommand{cmdIO: cmdIO{Out: &buf, Repo: repo}}
 	err := cmd.Execute(nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.That(t, !strings.Contains(buf.String(), "\x1b"), "should not contain ansi escapes when NO_COLOR is set")
 }

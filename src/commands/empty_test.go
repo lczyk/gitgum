@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
@@ -26,5 +27,5 @@ func TestEmptyCommand_NoUpstream(t *testing.T) {
 	cmd := &EmptyCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
 	err := cmd.Execute(nil)
 
-	assert.NoError(t, err, "should succeed without upstream")
+	require.NoError(t, err, "should succeed without upstream")
 }

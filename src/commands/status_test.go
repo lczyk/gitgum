@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
@@ -28,7 +29,7 @@ func TestStatusCommand_InGitRepo(t *testing.T) {
 	cmd := &StatusCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}}
 	err := cmd.Execute(nil)
 
-	assert.NoError(t, err, "should succeed in git repo")
+	require.NoError(t, err, "should succeed in git repo")
 	output := buf.String()
 	assert.ContainsString(t, output, "BRANCHES")
 	assert.ContainsString(t, output, "STATUS")
@@ -49,7 +50,7 @@ func TestStatusCommand_WithChanges(t *testing.T) {
 	cmd := &StatusCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}}
 	err := cmd.Execute(nil)
 
-	assert.NoError(t, err, "should succeed with pending changes")
+	require.NoError(t, err, "should succeed with pending changes")
 	output := buf.String()
 	assert.ContainsString(t, output, "CHANGES")
 	assert.ContainsString(t, output, "STATUS")
@@ -64,7 +65,7 @@ func TestStatusCommand_RenderBody_SuppressesBranchesAndRemotes(t *testing.T) {
 	cmd := &StatusCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}}
 	err := cmd.renderBody(&buf)
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	output := buf.String()
 	assert.ContainsString(t, output, "CHANGES")
 	assert.ContainsString(t, output, "STATUS")

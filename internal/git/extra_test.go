@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
@@ -18,7 +19,7 @@ func TestIsBranchAheadOfRemote(t *testing.T) {
 		temp_repo.CreateCommit(t, local, "ahead.txt", "x", "chore: ahead commit")
 
 		ahead, err := git.Repo{Dir: local}.IsBranchAheadOfRemote("main", "origin/main")
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.That(t, ahead, "local should be ahead of remote after new commit")
 	})
 
@@ -27,7 +28,7 @@ func TestIsBranchAheadOfRemote(t *testing.T) {
 		local, _ := temp_repo.NewRepoWithRemote(t)
 
 		ahead, err := git.Repo{Dir: local}.IsBranchAheadOfRemote("main", "origin/main")
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.That(t, !ahead, "freshly cloned local should not be ahead")
 	})
 }
@@ -37,7 +38,7 @@ func TestGetRemoteBranches(t *testing.T) {
 	local, _ := temp_repo.NewRepoWithRemote(t)
 
 	branches, err := git.Repo{Dir: local}.GetRemoteBranches("origin")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.That(t, slices.Contains(branches, "main"), "main present in origin remote branches")
 }
 
@@ -46,7 +47,7 @@ func TestGetRemoteBranches_UnknownRemote(t *testing.T) {
 	dir := temp_repo.NewRepo(t)
 
 	branches, err := git.Repo{Dir: dir}.GetRemoteBranches("nope")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, len(branches), 0)
 }
 
@@ -57,6 +58,6 @@ func TestGetFileStatus_FreeFn(t *testing.T) {
 	temp_repo.WriteFile(t, dir, "untracked.txt", "x")
 
 	status, err := git.GetFileStatus("untracked.txt")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, status, git.FileUntracked)
 }

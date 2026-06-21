@@ -9,11 +9,12 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 )
 
 func TestParseFlags(t *testing.T) {
 	cfg, err := parseFlags([]string{"-m", "-q", "foo", "--prompt", "$ ", "--header", "h", "-1"}, &bytes.Buffer{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.That(t, cfg.opt.Multi)
 	assert.Equal(t, cfg.opt.Query, "foo")
 	assert.Equal(t, cfg.opt.Prompt, "$ ")
@@ -23,7 +24,7 @@ func TestParseFlags(t *testing.T) {
 
 func TestParseFlags_DefaultPrompt(t *testing.T) {
 	cfg, err := parseFlags(nil, &bytes.Buffer{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, cfg.opt.Prompt, "> ")
 }
 
@@ -38,7 +39,7 @@ func TestStreamItems(t *testing.T) {
 		items []string
 	)
 	err := streamItems(context.Background(), strings.NewReader("a\nb\r\n\nc\n"), &lock, &items, 0, true)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	want := []string{"a", "b", "c"}
 	assert.EqualArrays(t, items, want)
 }
@@ -50,7 +51,7 @@ func TestStreamItems_StripsAnsi(t *testing.T) {
 	)
 	input := "\x1b[31mred\x1b[0m\nplain\n\x1b[1;32mboldgreen\x1b[m\n"
 	err := streamItems(context.Background(), strings.NewReader(input), &lock, &items, 0, true)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	want := []string{"red", "plain", "boldgreen"}
 	assert.EqualArrays(t, items, want)
 }
@@ -58,20 +59,20 @@ func TestStreamItems_StripsAnsi(t *testing.T) {
 func TestReadFirstLine_StripsAnsi(t *testing.T) {
 	r := bufio.NewReader(strings.NewReader("\x1b[31mred\x1b[0m\nplain\n"))
 	got, err := readFirstLine(r, true)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, got, "red")
 }
 
 func TestReadFirstLine_KeepsAnsiWhenStripDisabled(t *testing.T) {
 	r := bufio.NewReader(strings.NewReader("\x1b[31mred\x1b[0m\n"))
 	got, err := readFirstLine(r, false)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.That(t, strings.Contains(got, "\x1b["), "expected raw escape preserved, got %q", got)
 }
 
 func TestParseFlags_Ansi(t *testing.T) {
 	cfg, err := parseFlags([]string{"--ansi"}, &bytes.Buffer{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.That(t, cfg.opt.Ansi, "Ansi should be true")
 }
 
@@ -82,7 +83,7 @@ func TestStreamItems_KeepsAnsiWhenStripDisabled(t *testing.T) {
 	)
 	input := "\x1b[31mred\x1b[0m\n"
 	err := streamItems(context.Background(), strings.NewReader(input), &lock, &items, 0, false)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, len(items), 1)
 	assert.That(t, strings.Contains(items[0], "\x1b["), "expected raw escape preserved")
 }

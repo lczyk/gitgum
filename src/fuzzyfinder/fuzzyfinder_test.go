@@ -17,6 +17,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/google/go-cmp/cmp"
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
@@ -58,12 +59,12 @@ func assertWithGolden(t *testing.T, f func() string) {
 	fname := normalizeFilename(name)
 
 	if *update {
-		assert.NoError(t, os.WriteFile(fname, []byte(actual), 0600), "update golden")
+		require.NoError(t, os.WriteFile(fname, []byte(actual), 0600), "update golden")
 		return
 	}
 
 	b, err := os.ReadFile(fname)
-	assert.NoError(t, err, "load golden")
+	require.NoError(t, err, "load golden")
 	expected := string(b)
 	if runtime.GOOS == "windows" {
 		expected = strings.ReplaceAll(expected, "\r\n", "\n")
@@ -106,7 +107,7 @@ func TestReal(t *testing.T) {
 	}
 	names := trackNames()
 	_, err := ff.Find(context.Background(), &names, nil, ff.Opt{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }
 
 // makeNumberedItems returns ["item-00", "item-01", ...] of length n. Used
@@ -422,7 +423,7 @@ func TestFind_enter(t *testing.T) {
 
 			names := trackNames()
 			idxs, err := f.Find(context.Background(), &names, nil, ff.Opt{})
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.Equal(t, c.expected, idxs[0])
 		})
 	}
@@ -461,7 +462,7 @@ func TestFind_WithQuery(t *testing.T) {
 
 		assertWithGolden(t, func() string {
 			idxs, err := f.Find(context.Background(), &things, nil, ff.Opt{})
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.Equal(t, 0, idxs[0])
 			return term.GetResult()
 		})
@@ -473,7 +474,7 @@ func TestFind_WithQuery(t *testing.T) {
 
 		assertWithGolden(t, func() string {
 			idxs, err := f.Find(context.Background(), &things, nil, ff.Opt{Query: "three2"})
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.Equal(t, 1, idxs[0])
 			return term.GetResult()
 		})
@@ -519,7 +520,7 @@ func TestFind_WithSelectOne(t *testing.T) {
 				if c.abort {
 					assert.Error(t, err, ff.ErrAbort)
 				} else {
-					assert.NoError(t, err)
+					require.NoError(t, err)
 					assert.Equal(t, c.expected, idxs[0])
 				}
 				return term.GetResult()
@@ -575,7 +576,7 @@ func TestFindMulti(t *testing.T) {
 				assert.Error(t, err, ff.ErrAbort)
 				return
 			}
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.EqualArrays(t, c.expected, idxs)
 		})
 	}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
@@ -23,12 +24,12 @@ func runBoth(t *testing.T, repo git.Repo) (passthrough, native string) {
 	cmd := &DiffCommand{cmdIO: cmdIO{Out: &buf, Repo: repo}}
 
 	t.Setenv("GG_DIFF_NATIVE", "0")
-	assert.NoError(t, cmd.Execute(nil))
+	require.NoError(t, cmd.Execute(nil))
 	passthrough = buf.String()
 
 	buf.Reset()
 	t.Setenv("GG_DIFF_NATIVE", "1")
-	assert.NoError(t, cmd.Execute(nil))
+	require.NoError(t, cmd.Execute(nil))
 	native = buf.String()
 	return
 }
@@ -75,7 +76,7 @@ func TestDiffCommand_Parity_DeletedFile(t *testing.T) {
 	t.Setenv("FORCE_COLOR", "")
 	dir := temp_repo.NewRepo(t)
 	temp_repo.CreateCommit(t, dir, "doomed.txt", "bye\n", "chore: add doomed")
-	assert.NoError(t, os.Remove(filepath.Join(dir, "doomed.txt")))
+	require.NoError(t, os.Remove(filepath.Join(dir, "doomed.txt")))
 	repo := git.Repo{Dir: dir}
 
 	out := assertParity(t, repo)
@@ -87,7 +88,7 @@ func TestDiffCommand_Parity_ModeChange(t *testing.T) {
 	t.Setenv("FORCE_COLOR", "")
 	dir := temp_repo.NewRepo(t)
 	temp_repo.CreateCommit(t, dir, "script.sh", "echo hi\n", "chore: add script")
-	assert.NoError(t, os.Chmod(filepath.Join(dir, "script.sh"), 0o755))
+	require.NoError(t, os.Chmod(filepath.Join(dir, "script.sh"), 0o755))
 	repo := git.Repo{Dir: dir}
 
 	out := assertParity(t, repo)
@@ -113,11 +114,11 @@ func TestDiffCommand_Parity_BinaryModified(t *testing.T) {
 	t.Setenv("FORCE_COLOR", "")
 	dir := temp_repo.NewRepo(t)
 	bin := []byte{0x00, 0x01, 0x02, 0x03, 0xff, 0xfe, 0x7f, 0x00}
-	assert.NoError(t, os.WriteFile(filepath.Join(dir, "blob.bin"), bin, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "blob.bin"), bin, 0o644))
 	temp_repo.RunGit(t, dir, "add", "blob.bin")
 	temp_repo.RunGit(t, dir, "commit", "-m", "chore: add blob")
 	bin2 := []byte{0xde, 0xad, 0xbe, 0xef, 0x00, 0x11, 0x22, 0x33}
-	assert.NoError(t, os.WriteFile(filepath.Join(dir, "blob.bin"), bin2, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "blob.bin"), bin2, 0o644))
 	repo := git.Repo{Dir: dir}
 
 	out := assertParity(t, repo)
@@ -131,7 +132,7 @@ func TestDiffCommand_Parity_MultiFileMix(t *testing.T) {
 	temp_repo.CreateCommit(t, dir, "keep.txt", "one\ntwo\nthree\n", "chore: add keep")
 	temp_repo.CreateCommit(t, dir, "drop.txt", "gone\n", "chore: add drop")
 	temp_repo.WriteFile(t, dir, "keep.txt", "one\ntwo\nthree\nfour\n")
-	assert.NoError(t, os.Remove(filepath.Join(dir, "drop.txt")))
+	require.NoError(t, os.Remove(filepath.Join(dir, "drop.txt")))
 	repo := git.Repo{Dir: dir}
 
 	out := assertParity(t, repo)
@@ -260,7 +261,7 @@ func TestCollectDiff_Work(t *testing.T) {
 
 	cmd := &DiffCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
 	out, err := cmd.collectDiff("work")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.ContainsString(t, out, "a.txt")
 }
 
@@ -274,7 +275,7 @@ func TestCollectDiff_Index(t *testing.T) {
 
 	cmd := &DiffCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
 	out, err := cmd.collectDiff("index")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.ContainsString(t, out, "a.txt")
 }
 
@@ -287,7 +288,7 @@ func TestCollectDiff_Head(t *testing.T) {
 
 	cmd := &DiffCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
 	out, err := cmd.collectDiff("head")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.ContainsString(t, out, "b.txt")
 }
 
@@ -304,7 +305,7 @@ func TestCollectOutput_WithMode(t *testing.T) {
 		Mode:  "index",
 	}
 	out, level, err := cmd.collectOutput()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, level, "index")
 	assert.ContainsString(t, out, "a.txt")
 }
@@ -318,7 +319,7 @@ func TestCollectOutput_CascadeReturnsLevel(t *testing.T) {
 
 	cmd := &DiffCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
 	out, level, err := cmd.collectOutput()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, level, "work")
 	assert.ContainsString(t, out, "a.txt")
 }
@@ -340,7 +341,7 @@ func TestDiffCommand_UntrackedSection_TextFile(t *testing.T) {
 		cmdIO: cmdIO{Out: &buf, Repo: repo},
 		Mode:  "untracked",
 	}
-	assert.NoError(t, cmd.Execute(nil))
+	require.NoError(t, cmd.Execute(nil))
 	out := buf.String()
 	assert.ContainsString(t, out, "--- untracked ---")
 	assert.ContainsString(t, out, "fresh.txt")
@@ -352,7 +353,7 @@ func TestDiffCommand_UntrackedSection_Binary(t *testing.T) {
 	t.Setenv("FORCE_COLOR", "")
 	dir := temp_repo.NewRepo(t)
 	bin := []byte{0x00, 0x01, 0x02, 0xff}
-	assert.NoError(t, os.WriteFile(filepath.Join(dir, "blob.bin"), bin, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "blob.bin"), bin, 0o644))
 	repo := git.Repo{Dir: dir}
 
 	var buf bytes.Buffer
@@ -360,7 +361,7 @@ func TestDiffCommand_UntrackedSection_Binary(t *testing.T) {
 		cmdIO: cmdIO{Out: &buf, Repo: repo},
 		Mode:  "untracked",
 	}
-	assert.NoError(t, cmd.Execute(nil))
+	require.NoError(t, cmd.Execute(nil))
 	out := buf.String()
 	assert.ContainsString(t, out, "--- untracked ---")
 	assert.ContainsString(t, out, "blob.bin")
@@ -378,7 +379,7 @@ func TestDiffCommand_NoUntrackedInAutoMode(t *testing.T) {
 
 	var buf bytes.Buffer
 	cmd := &DiffCommand{cmdIO: cmdIO{Out: &buf, Repo: repo}}
-	assert.NoError(t, cmd.Execute(nil))
+	require.NoError(t, cmd.Execute(nil))
 	out := buf.String()
 	assert.That(t, !contains(out, "--- untracked ---"), "auto mode must not show untracked section")
 	assert.That(t, !contains(out, "fresh.txt"), "fresh.txt is untracked, should not appear in auto cascade")
@@ -397,7 +398,7 @@ func TestDiffCommand_UntrackedSection_OnlyMode(t *testing.T) {
 		cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}},
 		Mode:  "untracked",
 	}
-	assert.NoError(t, cmd.Execute(nil))
+	require.NoError(t, cmd.Execute(nil))
 	out := buf.String()
 	assert.ContainsString(t, out, "--- untracked ---")
 	assert.ContainsString(t, out, "new.txt")
@@ -414,7 +415,7 @@ func TestDiffCommand_UntrackedSection_NoneWhenAllTracked(t *testing.T) {
 
 	var buf bytes.Buffer
 	cmd := &DiffCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}}
-	assert.NoError(t, cmd.Execute(nil))
+	require.NoError(t, cmd.Execute(nil))
 	out := buf.String()
 	assert.That(t, !contains(out, "--- untracked ---"), "no untracked files -> no untracked section")
 }
@@ -433,7 +434,7 @@ func TestDiffCommand_UntrackedInAutoMode_WhenNoTrackedChanges(t *testing.T) {
 
 	var buf bytes.Buffer
 	cmd := &DiffCommand{cmdIO: cmdIO{Out: &buf, Repo: repo}}
-	assert.NoError(t, cmd.Execute(nil))
+	require.NoError(t, cmd.Execute(nil))
 	out := buf.String()
 	assert.ContainsString(t, out, "--- untracked ---")
 	assert.ContainsString(t, out, "fresh.txt")
@@ -444,7 +445,7 @@ func TestCountUntrackedLines_Text(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	p := filepath.Join(dir, "f.txt")
-	assert.NoError(t, os.WriteFile(p, []byte("a\nb\nc\n"), 0o644))
+	require.NoError(t, os.WriteFile(p, []byte("a\nb\nc\n"), 0o644))
 	n := countUntrackedLines(p, 1*time.Second)
 	assert.Equal(t, n.added, 3)
 	assert.That(t, !n.binary && !n.unknown, "expected plain numstat")
@@ -454,7 +455,7 @@ func TestCountUntrackedLines_TextNoTrailingNewline(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	p := filepath.Join(dir, "f.txt")
-	assert.NoError(t, os.WriteFile(p, []byte("a\nb\nc"), 0o644))
+	require.NoError(t, os.WriteFile(p, []byte("a\nb\nc"), 0o644))
 	n := countUntrackedLines(p, 1*time.Second)
 	assert.Equal(t, n.added, 3)
 }
@@ -463,7 +464,7 @@ func TestCountUntrackedLines_Binary(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	p := filepath.Join(dir, "f.bin")
-	assert.NoError(t, os.WriteFile(p, []byte{0x00, 0x01, 0x02}, 0o644))
+	require.NoError(t, os.WriteFile(p, []byte{0x00, 0x01, 0x02}, 0o644))
 	n := countUntrackedLines(p, 1*time.Second)
 	assert.That(t, n.binary, "expected binary flag")
 }
@@ -472,7 +473,7 @@ func TestCountUntrackedLines_Empty(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	p := filepath.Join(dir, "f.txt")
-	assert.NoError(t, os.WriteFile(p, nil, 0o644))
+	require.NoError(t, os.WriteFile(p, nil, 0o644))
 	n := countUntrackedLines(p, 1*time.Second)
 	assert.Equal(t, n.added, 0)
 	assert.That(t, !n.binary && !n.unknown, "empty text file is a 0-line plain entry")

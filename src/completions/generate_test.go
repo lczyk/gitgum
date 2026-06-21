@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 )
 
 func TestRender(t *testing.T) {
@@ -30,7 +31,7 @@ func TestRender(t *testing.T) {
 				return
 			}
 
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.That(t, !strings.Contains(result, Placeholder), "placeholder should be replaced")
 			if tt.cmdName != "" {
 				assert.ContainsString(t, result, tt.cmdName)

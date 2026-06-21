@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 )
 
 // ChdirTempDir changes to a fresh temp dir for the duration of the test.
@@ -18,10 +18,10 @@ func ChdirTempDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	origDir, err := os.Getwd()
-	assert.NoError(t, err, "getwd")
-	assert.NoError(t, os.Chdir(dir), "chdir")
+	require.NoError(t, err, "getwd")
+	require.NoError(t, os.Chdir(dir), "chdir")
 	t.Cleanup(func() {
-		assert.NoError(t, os.Chdir(origDir), "restore working dir")
+		require.NoError(t, os.Chdir(origDir), "restore working dir")
 	})
 	return dir
 }
@@ -94,14 +94,14 @@ func RunGit(t testing.TB, dir string, args ...string) string {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
-	assert.NoError(t, err, "git ", args, " failed: ", string(out))
+	require.NoError(t, err, "git ", args, " failed: ", string(out))
 	return string(out)
 }
 
 // WriteFile writes content to dir/filename, failing the test on error.
 func WriteFile(t testing.TB, dir, filename, content string) {
 	t.Helper()
-	assert.NoError(t, os.WriteFile(filepath.Join(dir, filename), []byte(content), 0o644), "write ", filename)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, filename), []byte(content), 0o644), "write ", filename)
 }
 
 // CreateCommit writes a file then stages and commits it.

@@ -17,6 +17,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	fuzz "github.com/google/gofuzz"
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
@@ -49,7 +50,7 @@ func TestFuzz(t *testing.T) {
 	}
 
 	f, err := os.Create(*out)
-	assert.NoError(t, err, "create fuzz output file")
+	require.NoError(t, err, "create fuzz output file")
 	defer f.Close()
 
 	fuzzer := fuzz.New()

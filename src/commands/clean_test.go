@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
@@ -21,13 +22,13 @@ func fileNotExists(t *testing.T, dir, filename string) {
 func fileExists(t *testing.T, dir, filename string) {
 	t.Helper()
 	_, err := os.Stat(filepath.Join(dir, filename))
-	assert.NoError(t, err, filename+" should still exist")
+	require.NoError(t, err, filename+" should still exist")
 }
 
 func fileContent(t *testing.T, dir, filename, expected string) {
 	t.Helper()
 	content, err := os.ReadFile(filepath.Join(dir, filename))
-	assert.NoError(t, err, "read "+filename)
+	require.NoError(t, err, "read "+filename)
 	assert.That(t, string(content) == expected, "%s: got %q, want %q", filename, string(content), expected)
 }
 
@@ -152,7 +153,7 @@ func TestCleanCommand_Execute(t *testing.T) {
 			cmd.Repo = git.Repo{Dir: dir}
 
 			err := cmd.Execute(nil)
-			assert.NoError(t, err, "command should succeed")
+			require.NoError(t, err, "command should succeed")
 
 			if tt.verify != nil {
 				tt.verify(t, dir)

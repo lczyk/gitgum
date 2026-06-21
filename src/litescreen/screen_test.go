@@ -19,6 +19,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/src/litescreen"
 )
 
@@ -29,7 +30,7 @@ func TestNew_OpensTty(t *testing.T) {
 		t.Skipf("no /dev/tty: %v", err)
 	}
 	s, err := litescreen.New(0)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.That(t, s != nil, "expected non-nil Screen")
 	// Don't call Init -- that would mess with our test's terminal state.
 }
@@ -46,9 +47,9 @@ func TestNewWithOptions_HeadlessInline(t *testing.T) {
 		Out:    &out,
 		Size:   fixedSize(80, 24),
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	assert.NoError(t, s.Init())
+	require.NoError(t, s.Init())
 	got := out.String()
 	assert.That(t, strings.Contains(got, "\x1b[?25l"), "init hides cursor; got %q", got)
 	assert.That(t, strings.Contains(got, "\x1b[20;1H\x1b[J"), "init clears region at row 20; got %q", got)
@@ -69,9 +70,9 @@ func TestNewWithOptions_HeadlessFullscreen(t *testing.T) {
 		Out:    &out,
 		Size:   fixedSize(80, 24),
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	assert.NoError(t, s.Init())
+	require.NoError(t, s.Init())
 	got := out.String()
 	assert.That(t, strings.Contains(got, "\x1b[?1049h"), "fullscreen enters alt-screen; got %q", got)
 
@@ -88,8 +89,8 @@ func TestNewWithOptions_SetContentAndShow(t *testing.T) {
 		Out:    &out,
 		Size:   fixedSize(20, 10),
 	})
-	assert.NoError(t, err)
-	assert.NoError(t, s.Init())
+	require.NoError(t, err)
+	require.NoError(t, s.Init())
 	out.Reset()
 
 	s.SetContent(0, 0, 'X', nil, tcell.StyleDefault)
@@ -109,8 +110,8 @@ func TestNewWithOptions_SyncForcesFullRepaintAndClearsRegion(t *testing.T) {
 		Out:    &out,
 		Size:   fixedSize(20, 10),
 	})
-	assert.NoError(t, err)
-	assert.NoError(t, s.Init())
+	require.NoError(t, err)
+	require.NoError(t, s.Init())
 
 	// Initial frame: write a cell and Show. Front buffer now matches back.
 	s.SetContent(0, 0, 'X', nil, tcell.StyleDefault)
@@ -153,8 +154,8 @@ func TestNewWithOptions_ChannelEventsRunes(t *testing.T) {
 	s, err := litescreen.NewWithOptions(litescreen.Options{
 		In: strings.NewReader("ab"),
 	})
-	assert.NoError(t, err)
-	assert.NoError(t, s.Init())
+	require.NoError(t, err)
+	require.NoError(t, s.Init())
 	defer s.Fini()
 
 	events := make(chan tcell.Event, 4)
@@ -173,8 +174,8 @@ func TestNewWithOptions_ChannelEventsEscape(t *testing.T) {
 	s, err := litescreen.NewWithOptions(litescreen.Options{
 		In: strings.NewReader("\x1b[A\x03"), // up arrow, Ctrl-C
 	})
-	assert.NoError(t, err)
-	assert.NoError(t, s.Init())
+	require.NoError(t, err)
+	require.NoError(t, s.Init())
 	defer s.Fini()
 
 	events := make(chan tcell.Event, 4)
@@ -191,7 +192,7 @@ func TestNewWithOptions_DefaultSizeFallback(t *testing.T) {
 	// Size unset → falls back to 80x24.
 	var out bytes.Buffer
 	s, _ := litescreen.NewWithOptions(litescreen.Options{Height: 0, Out: &out})
-	assert.NoError(t, s.Init())
+	require.NoError(t, s.Init())
 	w, h := s.Size()
 	assert.Equal(t, w, 80)
 	assert.Equal(t, h, 24)

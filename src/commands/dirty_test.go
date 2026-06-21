@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
@@ -24,7 +25,7 @@ func TestHandleDirtyTree_Clean(t *testing.T) {
 	c := newDirtyTestIO(stub, dir)
 
 	cleanup, err := handleDirtyTree(c, "test")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.That(t, cleanup != nil, "cleanup must always be non-nil")
 	cleanup()
 	assert.Equal(t, len(stub.confirmCalls), 0)
@@ -34,13 +35,13 @@ func TestHandleDirtyTree_UntrackedOnly(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)
 	err := os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("x"), 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	stub := &stubSelector{}
 	c := newDirtyTestIO(stub, dir)
 
 	cleanup, err := handleDirtyTree(c, "test")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	cleanup()
 	assert.Equal(t, len(stub.confirmCalls), 0)
 
@@ -54,13 +55,13 @@ func TestHandleDirtyTree_DirtyConfirmYes(t *testing.T) {
 	dir := temp_repo.NewRepo(t)
 	readme := filepath.Join(dir, "README.md")
 	err := os.WriteFile(readme, []byte("modified\n"), 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	stub := &stubSelector{confirmAnswers: []bool{true}}
 	c := newDirtyTestIO(stub, dir)
 
 	cleanup, err := handleDirtyTree(c, "release")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, len(stub.confirmCalls), 1)
 	assert.ContainsString(t, stub.confirmCalls[0].Prompt, "release")
 
@@ -88,21 +89,21 @@ func TestHandleDirtyTree_TrackedAndUntrackedMixed(t *testing.T) {
 	dir := temp_repo.NewRepo(t)
 
 	err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("changed\n"), 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	err = os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("x"), 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	stub := &stubSelector{confirmAnswers: []bool{true}}
 	c := newDirtyTestIO(stub, dir)
 
 	cleanup, err := handleDirtyTree(c, "test")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer cleanup()
 	assert.Equal(t, len(stub.confirmCalls), 1)
 
 	// Untracked file must remain in working tree.
 	_, statErr := os.Stat(filepath.Join(dir, "untracked.txt"))
-	assert.NoError(t, statErr, "untracked file should not be stashed away")
+	require.NoError(t, statErr, "untracked file should not be stashed away")
 }
 
 func TestHandleDirtyTree_RestoresIndexAfterPop(t *testing.T) {
@@ -111,18 +112,18 @@ func TestHandleDirtyTree_RestoresIndexAfterPop(t *testing.T) {
 
 	stagedPath := filepath.Join(dir, "staged.txt")
 	err := os.WriteFile(stagedPath, []byte("staged\n"), 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	temp_repo.RunGit(t, dir, "add", "staged.txt")
 
 	unstagedPath := filepath.Join(dir, "README.md")
 	err = os.WriteFile(unstagedPath, []byte("changed\n"), 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	stub := &stubSelector{confirmAnswers: []bool{true}}
 	c := newDirtyTestIO(stub, dir)
 
 	cleanup, err := handleDirtyTree(c, "test")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	cleanup()
 
 	out := temp_repo.RunGit(t, dir, "status", "--porcelain")
@@ -148,12 +149,12 @@ func TestHandleDirtyTree_PreservesPartialHunkStaging(t *testing.T) {
 
 	path := filepath.Join(dir, "file.txt")
 	err := os.WriteFile(path, []byte("a\nb\nc\nd\ne\n"), 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	temp_repo.RunGit(t, dir, "add", "file.txt")
 	temp_repo.RunGit(t, dir, "commit", "-m", "chore: add file")
 
 	err = os.WriteFile(path, []byte("A\nb\nc\nd\nE\n"), 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	stagePatch := "" +
 		"diff --git a/file.txt b/file.txt\n" +
 		"--- a/file.txt\n" +
@@ -165,7 +166,7 @@ func TestHandleDirtyTree_PreservesPartialHunkStaging(t *testing.T) {
 		" c\n"
 	patchPath := filepath.Join(dir, "stage.patch")
 	err = os.WriteFile(patchPath, []byte(stagePatch), 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	temp_repo.RunGit(t, dir, "apply", "--cached", patchPath)
 	os.Remove(patchPath)
 
@@ -174,18 +175,18 @@ func TestHandleDirtyTree_PreservesPartialHunkStaging(t *testing.T) {
 
 	indexBefore := temp_repo.RunGit(t, dir, "show", ":file.txt")
 	worktreeBefore, err := os.ReadFile(path)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	stub := &stubSelector{confirmAnswers: []bool{true}}
 	c := newDirtyTestIO(stub, dir)
 
 	cleanup, err := handleDirtyTree(c, "test")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	cleanup()
 
 	indexAfter := temp_repo.RunGit(t, dir, "show", ":file.txt")
 	worktreeAfter, err := os.ReadFile(path)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	assert.Equal(t, indexAfter, indexBefore)
 	assert.Equal(t, string(worktreeAfter), string(worktreeBefore))
@@ -199,7 +200,7 @@ func TestHandleDirtyTree_DirtyConfirmNo(t *testing.T) {
 	dir := temp_repo.NewRepo(t)
 	readme := filepath.Join(dir, "README.md")
 	err := os.WriteFile(readme, []byte("modified\n"), 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	stub := &stubSelector{confirmAnswers: []bool{false}}
 	c := newDirtyTestIO(stub, dir)

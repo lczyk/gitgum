@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
@@ -28,7 +29,7 @@ func TestCheckoutPRCommand_Execute_ChecksOutPR(t *testing.T) {
 	cmd := &CheckoutPRCommand{cmdIO: cmdIO{UI: stub, Repo: git.Repo{Dir: dir}}}
 
 	err := cmd.Execute(nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, currentBranchIn(t, dir), "pr-1")
 	assert.Equal(t, len(stub.selectCalls), 2)
 	assert.ContainsString(t, stub.selectCalls[0].Prompt, "remote")
@@ -133,7 +134,7 @@ func TestParsePRSelection(t *testing.T) {
 			if tt.expectedError {
 				assert.Error(t, err, tt.expectedErrMsg, "expected error for %s", tt.selection)
 			} else {
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				assert.Equal(t, tt.expectedNum, num)
 				assert.Equal(t, tt.expectedType, prType)
 			}

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
@@ -20,7 +21,7 @@ func TestGetDefaultBranch_LocalMainFallback(t *testing.T) {
 	temp_repo.RunGit(t, dir, "branch", "-m", "main")
 
 	got, err := git.Repo{Dir: dir}.GetDefaultBranch()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, got, "main")
 }
 
@@ -30,7 +31,7 @@ func TestGetDefaultBranch_LocalMaster(t *testing.T) {
 	temp_repo.RunGit(t, dir, "branch", "-m", "master")
 
 	got, err := git.Repo{Dir: dir}.GetDefaultBranch()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, got, "master")
 }
 
@@ -48,7 +49,7 @@ func TestGetDefaultBranch_FromRemoteHEAD(t *testing.T) {
 	temp_repo.RunGit(t, dir, "remote", "set-head", "origin", "trunk")
 
 	got, err := git.Repo{Dir: dir}.GetDefaultBranch()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, got, "trunk")
 }
 
@@ -56,7 +57,7 @@ func TestDirtyTrackedLines_Clean(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)
 	lines, err := git.Repo{Dir: dir}.DirtyTrackedLines()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, len(lines), 0)
 }
 
@@ -64,10 +65,10 @@ func TestDirtyTrackedLines_FiltersUntracked(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)
 	err := os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("x"), 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	lines, err := git.Repo{Dir: dir}.DirtyTrackedLines()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, len(lines), 0)
 }
 
@@ -79,12 +80,12 @@ func TestDirtyTrackedLines_PreservesLeadingSpace(t *testing.T) {
 	dir := temp_repo.NewRepo(t)
 
 	err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("changed\n"), 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	err = os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("x"), 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	lines, err := git.Repo{Dir: dir}.DirtyTrackedLines()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, len(lines), 1)
 	assert.Equal(t, lines[0], " M README.md")
 }
@@ -94,13 +95,13 @@ func TestDirtyTrackedLines_StagedAndUnstaged(t *testing.T) {
 	dir := temp_repo.NewRepo(t)
 
 	err := os.WriteFile(filepath.Join(dir, "staged.txt"), []byte("s\n"), 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	temp_repo.RunGit(t, dir, "add", "staged.txt")
 	err = os.WriteFile(filepath.Join(dir, "README.md"), []byte("m\n"), 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	lines, err := git.Repo{Dir: dir}.DirtyTrackedLines()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.That(t, slices.Contains(lines, "A  staged.txt"), "staged file present with A status")
 	assert.That(t, slices.Contains(lines, " M README.md"), "modified file present with unstaged status")
 }
@@ -111,10 +112,10 @@ func TestStashPush_AndPopIndex_RoundTrip(t *testing.T) {
 	r := git.Repo{Dir: dir}
 
 	err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("changed\n"), 0o644)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	err = r.StashPush("test stash")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Tree clean, stash list contains entry.
 	clean := strings.TrimSpace(temp_repo.RunGit(t, dir, "status", "--porcelain"))
@@ -122,11 +123,11 @@ func TestStashPush_AndPopIndex_RoundTrip(t *testing.T) {
 	assert.ContainsString(t, temp_repo.RunGit(t, dir, "stash", "list"), "test stash")
 
 	err = r.StashPopIndex()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Modification restored, stash list empty.
 	lines, err := r.DirtyTrackedLines()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.That(t, slices.Contains(lines, " M README.md"), "modification restored after pop")
 	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "stash", "list")), "")
 }

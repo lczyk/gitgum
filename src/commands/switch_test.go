@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
@@ -41,7 +42,7 @@ func TestApplySelection_Local(t *testing.T) {
 	var buf strings.Builder
 	s := &SwitchCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}}
 	err := s.applySelection("local: feature")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, currentBranchIn(t, dir), "feature")
 	assert.ContainsString(t, buf.String(), "Switched to branch 'feature'.")
 }
@@ -64,7 +65,7 @@ func TestApplySelection_LocalRemote(t *testing.T) {
 	var buf strings.Builder
 	s := &SwitchCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}}
 	err := s.applySelection("local/remote: feature")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, currentBranchIn(t, dir), "feature")
 }
 
@@ -73,7 +74,7 @@ func TestResolveCurrentBranchContext_OnBranch(t *testing.T) {
 	dir := temp_repo.NewRepo(t)
 
 	currentBranch, trackingRemote, statusLine, err := resolveCurrentBranchContext(git.Repo{Dir: dir})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, trackingRemote, "")
 	assert.ContainsString(t, statusLine, "Current branch is:")
 	assert.ContainsString(t, statusLine, currentBranch)
@@ -92,7 +93,7 @@ func TestSwitchCommand_Execute_PicksLocalBranch(t *testing.T) {
 	cmd := &SwitchCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: dir}}}
 
 	err := cmd.Execute(nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, currentBranchIn(t, dir), "feature")
 	assert.ContainsString(t, buf.String(), "Switched to branch 'feature'.")
 	assert.Equal(t, len(stub.selectCalls), 1)
@@ -117,11 +118,11 @@ func TestStreamBranches_SameNameOnOtherRemote(t *testing.T) {
 
 	r := git.Repo{Dir: local}
 	trackingRemote, err := r.GetBranchTrackingRemote("main")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, trackingRemote, "other")
 
 	remotes, err := r.GetRemotes()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	var errBuf bytes.Buffer
 	src := streamBranches(context.Background(), r, &errBuf, "main", trackingRemote, remotes)
@@ -159,7 +160,7 @@ func TestResolveCurrentBranchContext_DetachedHEAD(t *testing.T) {
 	temp_repo.RunGit(t, dir, "checkout", "--detach", "HEAD~1")
 
 	currentBranch, trackingRemote, statusLine, err := resolveCurrentBranchContext(git.Repo{Dir: dir})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, currentBranch, "")
 	assert.Equal(t, trackingRemote, "")
 	assert.ContainsString(t, statusLine, "detached HEAD")

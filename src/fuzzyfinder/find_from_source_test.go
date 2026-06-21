@@ -6,6 +6,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
@@ -17,7 +18,7 @@ func TestFindFromSource_BasicEnter(t *testing.T) {
 
 	src := ff.NewSliceSourceFrom([]string{"alpha", "beta", "gamma"})
 	got, err := f.FindFromSource(context.Background(), src, ff.Opt{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.EqualArrays(t, got, []string{"alpha"})
 }
 
@@ -30,7 +31,7 @@ func TestFindFromSource_QuerySelectsMatch(t *testing.T) {
 
 	src := ff.NewSliceSourceFrom([]string{"alpha", "beta", "gamma"})
 	got, err := f.FindFromSource(context.Background(), src, ff.Opt{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.EqualArrays(t, got, []string{"gamma"})
 }
 
@@ -61,7 +62,7 @@ func TestFindFromSource_SelectOneAfterPopulate(t *testing.T) {
 	src := ff.NewSliceSourceFrom([]string{"only"})
 
 	got, err := f.FindFromSource(context.Background(), src, ff.Opt{SelectOne: true})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.EqualArrays(t, got, []string{"only"})
 }
 
@@ -79,6 +80,6 @@ func TestFindFromSource_MultiSelect(t *testing.T) {
 
 	src := ff.NewSliceSourceFrom([]string{"alpha", "beta", "gamma"})
 	got, err := f.FindFromSource(context.Background(), src, ff.Opt{Multi: true})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.EqualArraysUnordered(t, got, []string{"alpha", "beta"})
 }

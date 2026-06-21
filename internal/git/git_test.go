@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
@@ -18,7 +19,7 @@ import (
 func TestCheckInRepo(t *testing.T) {
 	t.Parallel()
 	r := git.Repo{Dir: temp_repo.NewRepo(t)}
-	assert.NoError(t, r.CheckInRepo())
+	require.NoError(t, r.CheckInRepo())
 }
 
 func TestGetLocalBranches(t *testing.T) {
@@ -26,7 +27,7 @@ func TestGetLocalBranches(t *testing.T) {
 	dir := temp_repo.NewRepo(t)
 	temp_repo.RunGit(t, dir, "branch", "feature")
 	branches, err := git.Repo{Dir: dir}.GetLocalBranches()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.That(t, slices.Contains(branches, "feature"), "feature branch present")
 }
 
@@ -35,7 +36,7 @@ func TestGetRemotes(t *testing.T) {
 	dir := temp_repo.NewRepo(t)
 	temp_repo.RunGit(t, dir, "remote", "add", "origin", "https://example.com/repo.git")
 	remotes, err := git.Repo{Dir: dir}.GetRemotes()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.That(t, slices.Contains(remotes, "origin"), "origin remote present")
 }
 
@@ -52,7 +53,7 @@ func TestGetCommitHash(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)
 	hash, err := git.Repo{Dir: dir}.GetCommitHash("HEAD")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.That(t, len(hash) >= 7, "hash length plausible")
 }
 
@@ -72,7 +73,7 @@ func TestGetFileStatus(t *testing.T) {
 		},
 		"modified": {
 			setup: func(t *testing.T, dir string) string {
-				assert.NoError(t, appendFile(dir+"/README.md", "\nmodified content"))
+				require.NoError(t, appendFile(dir+"/README.md", "\nmodified content"))
 				return "README.md"
 			},
 			want: git.FileModified,
@@ -90,7 +91,7 @@ func TestGetFileStatus(t *testing.T) {
 				temp_repo.WriteFile(t, dir, "deleted.txt", "content")
 				temp_repo.RunGit(t, dir, "add", "deleted.txt")
 				temp_repo.RunGit(t, dir, "commit", "-m", "chore: add file")
-				assert.NoError(t, os.Remove(dir+"/deleted.txt"))
+				require.NoError(t, os.Remove(dir+"/deleted.txt"))
 				temp_repo.RunGit(t, dir, "rm", "deleted.txt")
 				return "deleted.txt"
 			},
@@ -117,7 +118,7 @@ func TestGetFileStatus(t *testing.T) {
 			dir := temp_repo.NewRepo(t)
 			file := c.setup(t, dir)
 			status, err := git.Repo{Dir: dir}.GetFileStatus(file)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.Equal(t, c.want, status)
 		})
 	}
@@ -131,7 +132,7 @@ func TestGetBranchUpstream(t *testing.T) {
 		dir := temp_repo.NewRepo(t)
 		temp_repo.RunGit(t, dir, "branch", "no-upstream")
 		remote, remoteBranch, err := git.Repo{Dir: dir}.GetBranchUpstream("no-upstream")
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, "", remote)
 		assert.Equal(t, "", remoteBranch)
 	})
@@ -143,7 +144,7 @@ func TestGetBranchUpstream(t *testing.T) {
 		temp_repo.RunGit(t, dir, "fetch", "origin")
 		temp_repo.RunGit(t, dir, "branch", "--set-upstream-to=origin/main", "main")
 		remote, remoteBranch, err := git.Repo{Dir: dir}.GetBranchUpstream("main")
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, "origin", remote)
 		assert.Equal(t, "main", remoteBranch)
 	})
@@ -160,7 +161,7 @@ func TestGetBranchUpstream(t *testing.T) {
 		temp_repo.RunGit(t, dir, "branch", "--set-upstream-to=origin/main", "main")
 		temp_repo.RunGit(t, dir, "update-ref", "-d", "refs/remotes/origin/main")
 		remote, remoteBranch, err := git.Repo{Dir: dir}.GetBranchUpstream("main")
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, "origin", remote)
 		assert.Equal(t, "main", remoteBranch)
 	})
@@ -175,7 +176,7 @@ func TestGetCurrentBranchUpstream(t *testing.T) {
 		temp_repo.RunGit(t, dir, "branch", "no-upstream")
 		temp_repo.RunGit(t, dir, "checkout", "no-upstream")
 		upstream, err := git.Repo{Dir: dir}.GetCurrentBranchUpstream()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, "", upstream)
 	})
 
@@ -186,7 +187,7 @@ func TestGetCurrentBranchUpstream(t *testing.T) {
 		temp_repo.RunGit(t, dir, "fetch", "origin")
 		temp_repo.RunGit(t, dir, "branch", "--set-upstream-to=origin/main", "main")
 		upstream, err := git.Repo{Dir: dir}.GetCurrentBranchUpstream()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, "origin/main", upstream)
 	})
 }
@@ -200,7 +201,7 @@ func TestCheckedOutBranches(t *testing.T) {
 		current := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "--abbrev-ref", "HEAD"))
 
 		checked, err := git.Repo{Dir: dir}.CheckedOutBranches()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.That(t, checked[current], "current branch should be in set")
 		assert.That(t, !checked["not-a-branch"], "absent branch should not be in set")
 	})
@@ -214,7 +215,7 @@ func TestCheckedOutBranches(t *testing.T) {
 		temp_repo.RunGit(t, dir, "worktree", "add", wt, "feature")
 
 		checked, err := git.Repo{Dir: dir}.CheckedOutBranches()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.That(t, checked[current], "main worktree branch in set")
 		assert.That(t, checked["feature"], "linked worktree branch in set")
 	})

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
@@ -30,7 +31,7 @@ func TestConfirmWith(t *testing.T) {
 				},
 				"Test?", tc.defaultYes,
 			)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.Equal(t, got, tc.want)
 		})
 	}
