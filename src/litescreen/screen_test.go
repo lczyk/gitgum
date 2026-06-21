@@ -51,8 +51,8 @@ func TestNewWithOptions_HeadlessInline(t *testing.T) {
 
 	require.NoError(t, s.Init())
 	got := out.String()
-	assert.That(t, strings.Contains(got, "\x1b[?25l"), "init hides cursor; got %q", got)
-	assert.That(t, strings.Contains(got, "\x1b[20;1H\x1b[J"), "init clears region at row 20; got %q", got)
+	assert.ContainsString(t, got, "\x1b[?25l", "init hides cursor; got %q", got)
+	assert.ContainsString(t, got, "\x1b[20;1H\x1b[J", "init clears region at row 20; got %q", got)
 	w, h := s.Size()
 	assert.Equal(t, w, 80)
 	assert.Equal(t, h, 5)
@@ -60,7 +60,7 @@ func TestNewWithOptions_HeadlessInline(t *testing.T) {
 	out.Reset()
 	s.Fini()
 	final := out.String()
-	assert.That(t, strings.Contains(final, "\x1b[20;1H\x1b[J"), "fini clears region; got %q", final)
+	assert.ContainsString(t, final, "\x1b[20;1H\x1b[J", "fini clears region; got %q", final)
 }
 
 func TestNewWithOptions_HeadlessFullscreen(t *testing.T) {
@@ -74,12 +74,12 @@ func TestNewWithOptions_HeadlessFullscreen(t *testing.T) {
 
 	require.NoError(t, s.Init())
 	got := out.String()
-	assert.That(t, strings.Contains(got, "\x1b[?1049h"), "fullscreen enters alt-screen; got %q", got)
+	assert.ContainsString(t, got, "\x1b[?1049h", "fullscreen enters alt-screen; got %q", got)
 
 	out.Reset()
 	s.Fini()
 	final := out.String()
-	assert.That(t, strings.Contains(final, "\x1b[?1049l"), "fini exits alt-screen; got %q", final)
+	assert.ContainsString(t, final, "\x1b[?1049l", "fini exits alt-screen; got %q", final)
 }
 
 func TestNewWithOptions_SetContentAndShow(t *testing.T) {
@@ -97,8 +97,8 @@ func TestNewWithOptions_SetContentAndShow(t *testing.T) {
 	s.Show()
 	got := out.String()
 	// First fb row maps to terminal row yOrigin+1 = (10-3)+1 = 8.
-	assert.That(t, strings.Contains(got, "\x1b[8;1H"), "expected cursor move to row 8; got %q", got)
-	assert.That(t, strings.Contains(got, "X"), "expected 'X' in output; got %q", got)
+	assert.ContainsString(t, got, "\x1b[8;1H", "expected cursor move to row 8; got %q", got)
+	assert.ContainsString(t, got, "X", "expected 'X' in output; got %q", got)
 
 	s.Fini()
 }
@@ -131,7 +131,7 @@ func TestNewWithOptions_SyncForcesFullRepaintAndClearsRegion(t *testing.T) {
 	s.Sync()
 	got := out.String()
 	assert.That(t, !strings.Contains(got, "\x1b[J"), "Sync should not clear-to-end; got %q", got)
-	assert.That(t, strings.Contains(got, "X"), "Sync should re-emit 'X' even though back==front; got %q", got)
+	assert.ContainsString(t, got, "X", "Sync should re-emit 'X' even though back==front; got %q", got)
 
 	s.Fini()
 }

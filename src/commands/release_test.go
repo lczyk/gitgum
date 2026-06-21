@@ -69,7 +69,7 @@ func TestReadWriteVersion(t *testing.T) {
 	require.NoError(t, err, "readVersion")
 	assert.Equal(t, gotVer, "1.2.3")
 	assert.EqualArrays(t, gotHeader, header)
-	assert.That(t, gotPrefixes == nil, "no prefixes when no tags directive")
+	assert.Nil(t, gotPrefixes, "no prefixes when no tags directive")
 
 	// round-trip without header
 	err = writeVersion(path, nil, "2.0.0")

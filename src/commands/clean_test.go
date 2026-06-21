@@ -29,7 +29,7 @@ func fileContent(t *testing.T, dir, filename, expected string) {
 	t.Helper()
 	content, err := os.ReadFile(filepath.Join(dir, filename))
 	require.NoError(t, err, "read "+filename)
-	assert.That(t, string(content) == expected, "%s: got %q, want %q", filename, string(content), expected)
+	assert.Equal(t, string(content), expected, "%s mismatch", filename)
 }
 
 func TestCleanCommand_NotInGitRepo(t *testing.T) {

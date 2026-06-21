@@ -287,7 +287,7 @@ func TestStyleToSGR(t *testing.T) {
 func TestStyleToSGR_TrueColor(t *testing.T) {
 	st := tcell.StyleDefault.Foreground(tcell.NewRGBColor(255, 128, 0))
 	got := ansi.StyleToSGR(st)
-	assert.That(t, strings.Contains(got, "38;2;255;128;0"), "expected 24-bit fg sequence, got %q", got)
+	assert.ContainsString(t, got, "38;2;255;128;0", "expected 24-bit fg sequence, got %q", got)
 }
 
 func TestStyleToSGR_RoundTrip(t *testing.T) {

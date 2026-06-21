@@ -214,7 +214,7 @@ func TestTreeCommand_Execute(t *testing.T) {
 		require.NoError(t, err)
 
 		out := buf.String()
-		assert.That(t, strings.Contains(out, "*"), "should contain graph node markers")
+		assert.ContainsString(t, out, "*", "should contain graph node markers")
 		assert.ContainsString(t, out, "chore: Add A")
 		assert.ContainsString(t, out, "chore: Add B on feature")
 		assert.ContainsString(t, out, "chore: Add C on main")

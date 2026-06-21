@@ -154,7 +154,7 @@ func TestParseCSI_Malformed(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// All of these should return nil (silently ignored) and not panic.
 			ev := parseCSI(preloaded(tc.bytes...))
-			assert.That(t, ev == nil, "expected nil event for malformed CSI")
+			assert.Nil(t, ev, "expected nil event for malformed CSI")
 		})
 	}
 }
@@ -284,8 +284,8 @@ func TestFramebuf_SetContentEmitsCell(t *testing.T) {
 	fb.set(2, 0, liteCell{mainc: 'X'})
 	out := string(fb.flush(0, 0, 0, false))
 	// Should reposition to row 1, col 3 (1-indexed) and emit 'X'.
-	assert.That(t, strings.Contains(out, "\x1b[1;3H"), "expected cursor move to (1,3); got %q", out)
-	assert.That(t, strings.Contains(out, "X"), "expected 'X' in output; got %q", out)
+	assert.ContainsString(t, out, "\x1b[1;3H", "expected cursor move to (1,3); got %q", out)
+	assert.ContainsString(t, out, "X", "expected 'X' in output; got %q", out)
 }
 
 func TestFramebuf_OutOfRangeIgnored(t *testing.T) {
@@ -307,7 +307,7 @@ func TestFramebuf_StyleTransition(t *testing.T) {
 	out := string(fb.flush(0, 0, 0, false))
 
 	// Bold SGR appears (it's `\x1b[1m`).
-	assert.That(t, strings.Contains(out, "\x1b[1m"), "expected bold SGR; got %q", out)
+	assert.ContainsString(t, out, "\x1b[1m", "expected bold SGR; got %q", out)
 	// Style reset between bold and default appears at least twice (initial + change).
 	resets := strings.Count(out, "\x1b[m")
 	assert.That(t, resets >= 2, "expected ≥2 SGR resets, got %d in %q", resets, out)
@@ -332,8 +332,8 @@ func TestFramebuf_WideRunePhantomSlot(t *testing.T) {
 func TestFramebuf_CursorVisibility(t *testing.T) {
 	fb := newFramebuf(3, 1)
 	out := string(fb.flush(0, 2, 0, true))
-	assert.That(t, strings.Contains(out, "\x1b[?25h"), "cursor-show expected when visible; got %q", out)
-	assert.That(t, strings.Contains(out, "\x1b[1;3H"), "expected cursor positioned at 1;3; got %q", out)
+	assert.ContainsString(t, out, "\x1b[?25h", "cursor-show expected when visible; got %q", out)
+	assert.ContainsString(t, out, "\x1b[1;3H", "expected cursor positioned at 1;3; got %q", out)
 
 	out = string(fb.flush(0, 0, 0, false))
 	assert.That(t, !strings.Contains(out, "\x1b[?25h"), "no cursor-show when invisible")
@@ -349,7 +349,7 @@ func TestFramebuf_Clear(t *testing.T) {
 	fb.clear()
 	out := string(fb.flush(0, 0, 0, false))
 	// Cursor should have moved to col 1 to overwrite 'X'.
-	assert.That(t, strings.Contains(out, "\x1b[1;1H"), "expected cursor move to (1,1) after clear; got %q", out)
+	assert.ContainsString(t, out, "\x1b[1;1H", "expected cursor move to (1,1) after clear; got %q", out)
 }
 
 func TestFramebuf_Resize(t *testing.T) {
@@ -441,8 +441,8 @@ func TestScreen_InitFini_Inline(t *testing.T) {
 	err := s.Init()
 	require.NoError(t, err)
 	got := out.String()
-	assert.That(t, strings.Contains(got, "\x1b[?25l"), "init hides cursor")
-	assert.That(t, strings.Contains(got, "\x1b[20;1H\x1b[J"), "init clears region at row 20")
+	assert.ContainsString(t, got, "\x1b[?25l", "init hides cursor")
+	assert.ContainsString(t, got, "\x1b[20;1H\x1b[J", "init clears region at row 20")
 	assert.Equal(t, s.yOrigin, 19)
 	assert.Equal(t, s.fb.height, 5)
 	assert.That(t, !*restoreCalled, "restore must not run before Fini")
@@ -450,8 +450,8 @@ func TestScreen_InitFini_Inline(t *testing.T) {
 	out.Reset()
 	s.Fini()
 	final := out.String()
-	assert.That(t, strings.Contains(final, "\x1b[20;1H\x1b[J"), "fini clears region")
-	assert.That(t, strings.Contains(final, "\x1b[?25h"), "fini shows cursor")
+	assert.ContainsString(t, final, "\x1b[20;1H\x1b[J", "fini clears region")
+	assert.ContainsString(t, final, "\x1b[?25h", "fini shows cursor")
 	assert.That(t, *restoreCalled, "fini must restore raw mode")
 }
 
@@ -460,13 +460,13 @@ func TestScreen_InitFini_Fullscreen(t *testing.T) {
 
 	require.NoError(t, s.Init())
 	got := out.String()
-	assert.That(t, strings.Contains(got, "\x1b[?1049h"), "fullscreen enters alt-screen")
+	assert.ContainsString(t, got, "\x1b[?1049h", "fullscreen enters alt-screen")
 	assert.Equal(t, s.yOrigin, 0)
 
 	out.Reset()
 	s.Fini()
 	final := out.String()
-	assert.That(t, strings.Contains(final, "\x1b[?1049l"), "fullscreen exits alt-screen on Fini")
+	assert.ContainsString(t, final, "\x1b[?1049l", "fullscreen exits alt-screen on Fini")
 	assert.That(t, *restoreCalled, "fini restores raw mode")
 }
 
@@ -482,7 +482,7 @@ func TestScreen_HandleResize_Narrow(t *testing.T) {
 	assert.Equal(t, w, 60)
 	assert.Equal(t, rows, 5)
 	got := out.String()
-	assert.That(t, strings.Contains(got, "\x1b[2J"), "narrow triggers full-clear")
+	assert.ContainsString(t, got, "\x1b[2J", "narrow triggers full-clear")
 
 	s.Fini()
 }
@@ -715,9 +715,8 @@ func TestScreen_ReadLoop_ForwardsBytes(t *testing.T) {
 	eventsCh := make(chan tcell.Event, 16)
 	go s.ChannelEvents(eventsCh, nil)
 
-	if _, err := pw.Write([]byte("a")); err != nil {
-		t.Fatal(err)
-	}
+	_, err = pw.Write([]byte("a"))
+	require.NoError(t, err)
 
 	select {
 	case ev := <-eventsCh:
@@ -744,10 +743,10 @@ func TestInitSequence_Fullscreen(t *testing.T) {
 	assert.Equal(t, yOrigin, 0)
 	assert.Equal(t, fb.width, 80)
 	assert.Equal(t, fb.height, 24)
-	assert.That(t, strings.Contains(got, "\x1b[?1049h"), "expected smcup; got %q", got)
-	assert.That(t, strings.Contains(got, "\x1b[2J"), "expected screen clear; got %q", got)
-	assert.That(t, strings.Contains(got, "\x1b[H"), "expected cursor home; got %q", got)
-	assert.That(t, strings.Contains(got, "\x1b[?25l"), "expected hide cursor; got %q", got)
+	assert.ContainsString(t, got, "\x1b[?1049h", "expected smcup; got %q", got)
+	assert.ContainsString(t, got, "\x1b[2J", "expected screen clear; got %q", got)
+	assert.ContainsString(t, got, "\x1b[H", "expected cursor home; got %q", got)
+	assert.ContainsString(t, got, "\x1b[?25l", "expected hide cursor; got %q", got)
 }
 
 func TestInitSequence_Inline(t *testing.T) {
@@ -757,8 +756,8 @@ func TestInitSequence_Inline(t *testing.T) {
 	assert.Equal(t, fb.width, 80)
 	assert.Equal(t, fb.height, 5)
 	assert.Equal(t, strings.Count(got, "\n"), 4) // rows-1 newlines
-	assert.That(t, strings.Contains(got, "\x1b[?25l"), "expected hide cursor; got %q", got)
-	assert.That(t, strings.Contains(got, "\x1b[20;1H\x1b[J"), "expected region clear at row 20; got %q", got)
+	assert.ContainsString(t, got, "\x1b[?25l", "expected hide cursor; got %q", got)
+	assert.ContainsString(t, got, "\x1b[20;1H\x1b[J", "expected region clear at row 20; got %q", got)
 	// Inline must NOT enter alt-screen — that would clobber prior output.
 	assert.That(t, !strings.Contains(got, "\x1b[?1049h"), "inline must not enter alt-screen")
 }
@@ -768,17 +767,17 @@ func TestInitSequence_NegativeHeight(t *testing.T) {
 	got := string(out)
 	assert.Equal(t, fb.height, 22) // termH + height = 24 + (-2)
 	assert.Equal(t, yOrigin, 2)    // termH - rows = 24 - 22
-	assert.That(t, strings.Contains(got, "\x1b[3;1H\x1b[J"), "expected region clear at row 3; got %q", got)
+	assert.ContainsString(t, got, "\x1b[3;1H\x1b[J", "expected region clear at row 3; got %q", got)
 }
 
 func TestFiniSequence(t *testing.T) {
 	full := string(finiSequence(0))
-	assert.That(t, strings.Contains(full, "\x1b[?1049l"), "fullscreen fini emits rmcup; got %q", full)
-	assert.That(t, strings.Contains(full, "\x1b[?25h"), "fullscreen fini shows cursor; got %q", full)
+	assert.ContainsString(t, full, "\x1b[?1049l", "fullscreen fini emits rmcup; got %q", full)
+	assert.ContainsString(t, full, "\x1b[?25h", "fullscreen fini shows cursor; got %q", full)
 
 	inline := string(finiSequence(19))
-	assert.That(t, strings.Contains(inline, "\x1b[20;1H\x1b[J"), "inline fini clears region at yOrigin+1; got %q", inline)
-	assert.That(t, strings.Contains(inline, "\x1b[?25h"), "inline fini shows cursor; got %q", inline)
+	assert.ContainsString(t, inline, "\x1b[20;1H\x1b[J", "inline fini clears region at yOrigin+1; got %q", inline)
+	assert.ContainsString(t, inline, "\x1b[?25h", "inline fini shows cursor; got %q", inline)
 	// Inline must NOT leave alt-screen — we never entered it.
 	assert.That(t, !strings.Contains(inline, "\x1b[?1049l"), "inline fini must not emit rmcup")
 }
@@ -788,8 +787,8 @@ func TestResizeSequence_Fullscreen(t *testing.T) {
 	got := string(out)
 	assert.Equal(t, yOrigin, 0)
 	assert.Equal(t, rows, 30)
-	assert.That(t, strings.Contains(got, "\x1b[2J"), "fullscreen resize clears screen")
-	assert.That(t, strings.Contains(got, "\x1b[H"), "fullscreen resize homes cursor")
+	assert.ContainsString(t, got, "\x1b[2J", "fullscreen resize clears screen")
+	assert.ContainsString(t, got, "\x1b[H", "fullscreen resize homes cursor")
 }
 
 func TestResizeSequence_InlineExpand(t *testing.T) {
@@ -799,7 +798,7 @@ func TestResizeSequence_InlineExpand(t *testing.T) {
 	assert.Equal(t, yOrigin, 19)
 	assert.Equal(t, rows, 5)
 	assert.That(t, !strings.Contains(got, "\x1b[2J"), "expand must not full-clear")
-	assert.That(t, strings.Contains(got, "\x1b[20;1H\x1b[J"), "expand clears region")
+	assert.ContainsString(t, got, "\x1b[20;1H\x1b[J", "expand clears region")
 }
 
 func TestResizeSequence_InlineNarrow(t *testing.T) {
@@ -808,8 +807,8 @@ func TestResizeSequence_InlineNarrow(t *testing.T) {
 	got := string(out)
 	assert.Equal(t, yOrigin, 19)
 	assert.Equal(t, rows, 5)
-	assert.That(t, strings.Contains(got, "\x1b[2J"), "narrow must full-clear viewport")
-	assert.That(t, strings.Contains(got, "\x1b[20;1H\x1b[J"), "narrow also clears region")
+	assert.ContainsString(t, got, "\x1b[2J", "narrow must full-clear viewport")
+	assert.ContainsString(t, got, "\x1b[20;1H\x1b[J", "narrow also clears region")
 }
 
 func TestResizeSequence_InlineSameWidth(t *testing.T) {
@@ -831,7 +830,7 @@ func TestInitSequence_InlineMidScreenAnchor(t *testing.T) {
 	assert.Equal(t, yOrigin, 5) // 0-indexed: row 6 in 1-indexed
 	assert.Equal(t, fb.height, 3)
 	assert.Equal(t, strings.Count(got, "\n"), 2) // rows-1 newlines, no extra
-	assert.That(t, strings.Contains(got, "\x1b[6;1H\x1b[J"),
+	assert.ContainsString(t, got, "\x1b[6;1H\x1b[J",
 		"expected region clear anchored at cursorRow=6; got %q", got)
 	// Bottom-anchored fallback would have positioned at row 18 (termH-rows+1).
 	assert.That(t, !strings.Contains(got, "\x1b[18;1H"),
@@ -846,7 +845,7 @@ func TestInitSequence_InlineCursorBottomAnchored(t *testing.T) {
 	out, yOrigin, _ := initSequence(3, 80, 20, 20)
 	got := string(out)
 	assert.Equal(t, yOrigin, 17) // termH-rows = 20-3
-	assert.That(t, strings.Contains(got, "\x1b[18;1H\x1b[J"),
+	assert.ContainsString(t, got, "\x1b[18;1H\x1b[J",
 		"expected region clear at row 18 (bottom anchor); got %q", got)
 }
 
@@ -856,7 +855,7 @@ func TestInitSequence_InlineCursorRowZero(t *testing.T) {
 	out, yOrigin, _ := initSequence(5, 80, 24, 0)
 	got := string(out)
 	assert.Equal(t, yOrigin, 19)
-	assert.That(t, strings.Contains(got, "\x1b[20;1H\x1b[J"),
+	assert.ContainsString(t, got, "\x1b[20;1H\x1b[J",
 		"expected bottom anchor on unknown cursorRow; got %q", got)
 }
 
@@ -892,7 +891,7 @@ func TestFramebuf_FlushWithYOrigin(t *testing.T) {
 
 	fb.set(0, 0, liteCell{mainc: 'X'})
 	out := string(fb.flush(20, 0, 0, false))
-	assert.That(t, strings.Contains(out, "\x1b[21;1H"), "expected cursor at row 21; got %q", out)
+	assert.ContainsString(t, out, "\x1b[21;1H", "expected cursor at row 21; got %q", out)
 }
 
 func TestUTF8ContinuationCount(t *testing.T) {

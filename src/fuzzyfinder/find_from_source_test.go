@@ -44,7 +44,7 @@ func TestFindFromSource_AbortReturnsErrAbort(t *testing.T) {
 	src := ff.NewSliceSourceFrom([]string{"a", "b"})
 	got, err := f.FindFromSource(context.Background(), src, ff.Opt{})
 	assert.Error(t, err, ff.ErrAbort)
-	assert.That(t, got == nil, "got should be nil on abort")
+	assert.Nil(t, got, "got should be nil on abort")
 }
 
 func TestFindFromSource_NilSourceErrors(t *testing.T) {

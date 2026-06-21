@@ -62,6 +62,6 @@ func TestInitFinder_NoAnsi(t *testing.T) {
 	err := f.initFinder(items, Opt{})
 	require.NoError(t, err)
 
-	assert.That(t, f.state.itemsStyled == nil, "itemsStyled should be nil without Opt.Ansi")
+	assert.Nil(t, f.state.itemsStyled, "itemsStyled should be nil without Opt.Ansi")
 	assert.EqualArrays(t, f.state.items, items)
 }

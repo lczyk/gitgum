@@ -54,7 +54,7 @@ func TestEdge_MissingParent(t *testing.T) {
 	lr := graph.Layout(nodes)
 	lines := graph.Render(lr, graph.Style{})
 	assert.Equal(t, len(lines), 1)
-	assert.That(t, strings.Contains(lines[0], "child"), "child line present")
+	assert.ContainsString(t, lines[0], "child", "child line present")
 }
 
 // TestEdge_DuplicateID: two nodes share an ID. Engine panics with a
@@ -66,7 +66,7 @@ func TestEdge_DuplicateID(t *testing.T) {
 		{ID: "a", Label: "a-second", Epoch: 2},
 	}
 	assert.Panic(t, func() { graph.Layout(nodes) }, func(t testing.TB, rec any) {
-		assert.That(t, strings.Contains(rec.(string), "duplicate"), "panic should mention duplicate, got %q", rec)
+		assert.ContainsString(t, rec.(string), "duplicate", "panic should mention duplicate, got %q", rec)
 	})
 }
 
@@ -101,8 +101,8 @@ func TestEdge_NoEpoch(t *testing.T) {
 		{ID: "merge", Label: "merge", Parents: []string{"a", "b"}},
 	}
 	first := strings.Join(graph.Render(graph.Layout(nodes), graph.Style{}), "\n")
-	assert.That(t, strings.Contains(first, "base"), "base in output")
-	assert.That(t, strings.Contains(first, "merge"), "merge in output")
+	assert.ContainsString(t, first, "base", "base in output")
+	assert.ContainsString(t, first, "merge", "merge in output")
 	for i := 0; i < 20; i++ {
 		out := strings.Join(graph.Render(graph.Layout(nodes), graph.Style{}), "\n")
 		if out != first {

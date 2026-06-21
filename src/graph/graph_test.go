@@ -30,9 +30,9 @@ func TestRender_Linear(t *testing.T) {
 	for i, line := range lines {
 		assert.That(t, strings.HasPrefix(line, "* "), "line %d should start with '* '", i)
 	}
-	assert.That(t, strings.Contains(lines[0], "a first commit"), "first line should be commit a")
-	assert.That(t, strings.Contains(lines[1], "b second commit"), "second line should be commit b")
-	assert.That(t, strings.Contains(lines[2], "c third commit"), "third line should be commit c")
+	assert.ContainsString(t, lines[0], "a first commit", "first line should be commit a")
+	assert.ContainsString(t, lines[1], "b second commit", "second line should be commit b")
+	assert.ContainsString(t, lines[2], "c third commit", "third line should be commit c")
 
 	// Ordering: a before b before c.
 	idxA := indexOf(lines, "a first commit")
@@ -61,7 +61,7 @@ func TestRender_Fork(t *testing.T) {
 	// Two columns: main branch (a→b) in col 0, branch2 (c) in col 1.
 	assert.Equal(t, lr.Columns, 2)
 
-	assert.That(t, strings.Contains(lines[0], "a base"), "commit a visible")
+	assert.ContainsString(t, lines[0], "a base", "commit a visible")
 
 	// Both b and c should be present.
 	assert.That(t, containsAny(lines, "b branch1"), "commit b visible")
@@ -117,7 +117,7 @@ func TestRender_Style(t *testing.T) {
 	assert.Equal(t, lines[0], "<S>*</S> base")
 	// Stagger row contains a wrapped line glyph (`|\`-ish).
 	stagger := lines[1]
-	assert.That(t, strings.Contains(stagger, "<L>"), "stagger row uses LinePrefix")
+	assert.ContainsString(t, stagger, "<L>", "stagger row uses LinePrefix")
 }
 
 func TestRender_SingleNode(t *testing.T) {

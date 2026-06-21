@@ -67,7 +67,7 @@ func TestReadFirstLine_KeepsAnsiWhenStripDisabled(t *testing.T) {
 	r := bufio.NewReader(strings.NewReader("\x1b[31mred\x1b[0m\n"))
 	got, err := readFirstLine(r, false)
 	require.NoError(t, err)
-	assert.That(t, strings.Contains(got, "\x1b["), "expected raw escape preserved, got %q", got)
+	assert.ContainsString(t, got, "\x1b[", "expected raw escape preserved, got %q", got)
 }
 
 func TestParseFlags_Ansi(t *testing.T) {
@@ -85,7 +85,7 @@ func TestStreamItems_KeepsAnsiWhenStripDisabled(t *testing.T) {
 	err := streamItems(context.Background(), strings.NewReader(input), &lock, &items, 0, false)
 	require.NoError(t, err)
 	assert.Equal(t, len(items), 1)
-	assert.That(t, strings.Contains(items[0], "\x1b["), "expected raw escape preserved")
+	assert.ContainsString(t, items[0], "\x1b[", "expected raw escape preserved")
 }
 
 func TestRun_EmptyStdin(t *testing.T) {
