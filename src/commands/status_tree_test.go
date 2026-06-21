@@ -1,5 +1,3 @@
-// cspell:ignore timg
-
 package commands
 
 import (

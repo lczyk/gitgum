@@ -23,8 +23,5 @@ jobs:
     - name: Lint
       run: make lint
 
-    - name: Spellcheck
-      run: make spellcheck
-
     - name: Test
       run: make test

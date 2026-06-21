@@ -1,7 +1,5 @@
 package fuzzyfinder
 
-// cspell:ignore simscreen
-
 import (
 	"github.com/gdamore/tcell/v2"
 )

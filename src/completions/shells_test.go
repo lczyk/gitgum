@@ -1,5 +1,3 @@
-// cspell:ignore CWORD COMPREPLY
-
 package completions
 
 import (

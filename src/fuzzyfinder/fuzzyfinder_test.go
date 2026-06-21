@@ -1,7 +1,5 @@
 package fuzzyfinder_test
 
-// cspell:ignore adrele adrena keeno fname AQUAPLUS ICHIDAIJI обичам Здравей zdravej
-
 import (
 	"context"
 	"flag"
