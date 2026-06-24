@@ -504,6 +504,11 @@ func (f *finder) _draw() {
 			styled = f.state.itemsStyled[m]
 		}
 
+		// Display-only items are drawn dimmed (a faint version of whatever
+		// colour the runes already carry). The cursor row keeps its own
+		// highlight -- being on the cursor is the stronger signal.
+		unsel := f.unselectableLocked(m)
+
 		w := 2
 		for j, r := range itemRunes {
 			style := tcell.StyleDefault.Foreground(tcell.ColorDefault).Background(tcell.ColorDefault)
@@ -520,6 +525,8 @@ func (f *finder) _draw() {
 				} else {
 					style = tcell.StyleDefault.Foreground(tcell.ColorYellow).Bold(true).Background(tcell.ColorBlack)
 				}
+			} else if unsel {
+				style = style.Dim(true)
 			}
 
 			rw := runewidth.RuneWidth(r)
@@ -743,11 +750,15 @@ func (f *finder) readKey(ctx context.Context) error {
 				return nil
 			}
 			idx := f.state.matched[f.state.y]
-			if _, ok := f.state.selection[idx]; ok {
-				delete(f.state.selection, idx)
-			} else {
-				f.state.selection[idx] = f.state.selectionIdx
-				f.state.selectionIdx++
+			// Unselectable items can't be toggled, but Tab still advances the
+			// cursor like a normal item.
+			if !f.unselectableLocked(idx) {
+				if _, ok := f.state.selection[idx]; ok {
+					delete(f.state.selection, idx)
+				} else {
+					f.state.selection[idx] = f.state.selectionIdx
+					f.state.selectionIdx++
+				}
 			}
 			f.scrollAwayFromPrompt(pageSize, matchedLinesCount)
 		default:
@@ -1015,7 +1026,7 @@ func (f *finder) runLoop(ctx context.Context, opt *Opt) ([]int, error) {
 		defer f.term.Fini()
 	}
 
-	if opt.SelectOne && len(f.state.matched) == 1 {
+	if opt.SelectOne && len(f.state.matched) == 1 && !f.unselectableLocked(f.state.matched[0]) {
 		return []int{f.state.matched[0]}, nil
 	}
 
@@ -1073,27 +1084,15 @@ func (f *finder) runLoop(ctx context.Context, opt *Opt) ([]int, error) {
 			case errors.Is(err, ErrAbort):
 				return nil, ErrAbort
 			case errors.Is(err, errEntered):
-				f.stateMu.RLock()
-				defer f.stateMu.RUnlock()
-
-				if len(f.state.matched) == 0 {
-					return nil, ErrAbort
+				idxs, cerr := f.confirmSelection()
+				if cerr != nil {
+					return nil, cerr
 				}
-				if f.multi {
-					if len(f.state.selection) == 0 {
-						return []int{f.state.matched[f.state.y]}, nil
-					}
-					poss, idxs := make([]int, 0, len(f.state.selection)), make([]int, 0, len(f.state.selection))
-					for idx, pos := range f.state.selection {
-						idxs = append(idxs, idx)
-						poss = append(poss, pos)
-					}
-					sort.Slice(idxs, func(i, j int) bool {
-						return poss[i] < poss[j]
-					})
-					return idxs, nil
+				if idxs == nil {
+					// Cursored item is unselectable; ignore Enter, stay open.
+					continue
 				}
-				return []int{f.state.matched[f.state.y]}, nil
+				return idxs, nil
 			case err != nil:
 				return nil, fmt.Errorf("failed to read a key: %w", err)
 			}
@@ -1156,6 +1155,56 @@ func (f *finder) itemsAtLocked(idxs []int) []string {
 		}
 	}
 	return out
+}
+
+// unselectableLocked reports whether the item at idx is display-only per
+// Opt.Unselectable. Caller must hold f.stateMu (read or write).
+func (f *finder) unselectableLocked(idx int) bool {
+	if f.opt == nil || f.opt.Unselectable == nil {
+		return false
+	}
+	if idx < 0 || idx >= len(f.state.items) {
+		return false
+	}
+	return f.opt.Unselectable(f.state.items[idx])
+}
+
+// confirmSelection resolves what Enter should return. Three outcomes:
+//   - (nil, ErrAbort): nothing to confirm (no matches)
+//   - (nil, nil): the cursored item is unselectable; caller keeps the picker open
+//   - (idxs, nil): confirmed selection
+func (f *finder) confirmSelection() ([]int, error) {
+	f.stateMu.RLock()
+	defer f.stateMu.RUnlock()
+
+	if len(f.state.matched) == 0 {
+		return nil, ErrAbort
+	}
+	if f.multi {
+		if len(f.state.selection) == 0 {
+			cur := f.state.matched[f.state.y]
+			if f.unselectableLocked(cur) {
+				return nil, nil
+			}
+			return []int{cur}, nil
+		}
+		// Selection is built via Tab, which already rejects unselectable items,
+		// so every entry here is selectable.
+		poss, idxs := make([]int, 0, len(f.state.selection)), make([]int, 0, len(f.state.selection))
+		for idx, pos := range f.state.selection {
+			idxs = append(idxs, idx)
+			poss = append(poss, pos)
+		}
+		sort.Slice(idxs, func(i, j int) bool {
+			return poss[i] < poss[j]
+		})
+		return idxs, nil
+	}
+	cur := f.state.matched[f.state.y]
+	if f.unselectableLocked(cur) {
+		return nil, nil
+	}
+	return []int{cur}, nil
 }
 
 func isInTesting() bool {

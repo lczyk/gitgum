@@ -38,6 +38,15 @@ type Opt struct {
 	// (and win) over the per-rune ansi style. When false (default), items
 	// are drawn as plain text and any escapes render as literal cells.
 	Ansi bool
+	// Unselectable, when non-nil, is called with an item string (ANSI-stripped
+	// when Opt.Ansi) and reports whether that item is display-only. Such items
+	// still appear, match the query, and can hold the cursor, but Tab won't
+	// toggle them and Enter won't confirm them -- they're drawn dimmed to signal
+	// it. A nil predicate (default) makes every item selectable.
+	//
+	// NOTE: the predicate keys on the item string, so duplicate item strings
+	// share a selectability. Fine unless you need two same-text items to differ.
+	Unselectable func(item string) bool
 }
 
 func (o Opt) withDefaults() Opt {
