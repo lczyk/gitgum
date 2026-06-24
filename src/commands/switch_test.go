@@ -150,6 +150,42 @@ func TestStreamBranches_SameNameOnOtherRemote(t *testing.T) {
 	assert.That(t, !hasOtherMain, "other/main should not appear (current branch tracks it)")
 }
 
+// A branch checked out in another worktree must still appear in the picker,
+// tagged with the worktree marker and reported unselectable -- previously it
+// was silently dropped, which looked like a missing branch.
+func TestStreamBranches_CheckedOutElsewhereIsMarkedUnselectable(t *testing.T) {
+	t.Parallel()
+
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "branch", "feature")
+	wt := t.TempDir()
+	temp_repo.RunGit(t, dir, "worktree", "add", wt, "feature")
+
+	r := git.Repo{Dir: dir}
+	remotes, err := r.GetRemotes()
+	require.NoError(t, err)
+
+	var errBuf bytes.Buffer
+	src := streamBranches(context.Background(), r, &errBuf, currentBranchIn(t, dir), "", remotes)
+
+	var feature string
+	for i := 0; i < 50; i++ {
+		time.Sleep(10 * time.Millisecond)
+		for _, item := range src.Snapshot() {
+			if strings.Contains(item, "feature") {
+				feature = item
+			}
+		}
+		if feature != "" {
+			break
+		}
+	}
+
+	require.That(t, feature != "", "feature branch should appear")
+	assert.ContainsString(t, feature, "(checked out in")
+	assert.That(t, isCheckedOutElsewhere(feature), "marked entry should be unselectable")
+}
+
 // Regression: in detached HEAD, rev-parse --abbrev-ref returns "HEAD" and
 // HEAD@{u} fails with "HEAD does not point to a branch". Previously this
 // propagated as a "getting tracking remote" error and broke `gg switch`.

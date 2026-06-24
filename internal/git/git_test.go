@@ -202,8 +202,10 @@ func TestCheckedOutBranches(t *testing.T) {
 
 		checked, err := git.Repo{Dir: dir}.CheckedOutBranches()
 		require.NoError(t, err)
-		assert.That(t, checked[current], "current branch should be in set")
-		assert.That(t, !checked["not-a-branch"], "absent branch should not be in set")
+		_, ok := checked[current]
+		assert.That(t, ok, "current branch should be in set")
+		_, ok = checked["not-a-branch"]
+		assert.That(t, !ok, "absent branch should not be in set")
 	})
 
 	t.Run("with linked worktree", func(t *testing.T) {
@@ -216,8 +218,9 @@ func TestCheckedOutBranches(t *testing.T) {
 
 		checked, err := git.Repo{Dir: dir}.CheckedOutBranches()
 		require.NoError(t, err)
-		assert.That(t, checked[current], "main worktree branch in set")
-		assert.That(t, checked["feature"], "linked worktree branch in set")
+		_, ok := checked[current]
+		assert.That(t, ok, "main worktree branch in set")
+		assert.That(t, checked["feature"] != "", "linked worktree branch maps to its path")
 	})
 }
 
