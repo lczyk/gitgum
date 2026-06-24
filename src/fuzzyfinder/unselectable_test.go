@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
-	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
 	"github.com/lczyk/assert"
 	"github.com/lczyk/assert/require"
+	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
 // Opt.Unselectable items can't be confirmed (Enter) or toggled (Tab); a
