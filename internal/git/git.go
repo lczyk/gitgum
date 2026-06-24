@@ -179,22 +179,25 @@ func (r Repo) GetBranchTrackingRemote(branch string) (string, error) {
 	return remote, err
 }
 
-// CheckedOutBranches returns the set of branch names currently checked out in
-// any worktree (including the main worktree). Callers use the map for O(1)
-// lookups rather than running a separate subprocess per branch.
-func (r Repo) CheckedOutBranches() (map[string]bool, error) {
+// CheckedOutBranches maps each branch currently checked out in any worktree
+// (including the main worktree) to that worktree's path. Callers use the map
+// for O(1) lookups rather than running a separate subprocess per branch.
+func (r Repo) CheckedOutBranches() (map[string]string, error) {
 	stdout, _, err := r.run("worktree", "list")
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]bool)
+	out := make(map[string]string)
 	for _, line := range strings.Split(stdout, "\n") {
-		// each worktree line ends with [branch] for named branches;
-		// detached HEADs and bare worktrees use (…) instead.
+		// each worktree line is "<path> <sha> [branch]" for named branches;
+		// detached HEADs and bare worktrees use (...) instead of [branch].
 		start := strings.LastIndex(line, "[")
 		end := strings.LastIndex(line, "]")
 		if start != -1 && end > start {
-			out[line[start+1:end]] = true
+			fields := strings.Fields(line)
+			if len(fields) > 0 {
+				out[line[start+1:end]] = fields[0]
+			}
 		}
 	}
 	return out, nil
@@ -301,11 +304,11 @@ func GetBranchUpstream(branch string) (string, string, error) {
 func GetBranchTrackingRemote(branch string) (string, error) {
 	return CWD().GetBranchTrackingRemote(branch)
 }
-func CheckedOutBranches() (map[string]bool, error) { return CWD().CheckedOutBranches() }
-func GetCommitHash(ref string) (string, error)     { return CWD().GetCommitHash(ref) }
-func BranchExists(branch string) bool              { return CWD().BranchExists(branch) }
-func GetCurrentBranch() (string, error)            { return CWD().GetCurrentBranch() }
-func GetCurrentBranchUpstream() (string, error)    { return CWD().GetCurrentBranchUpstream() }
+func CheckedOutBranches() (map[string]string, error) { return CWD().CheckedOutBranches() }
+func GetCommitHash(ref string) (string, error)       { return CWD().GetCommitHash(ref) }
+func BranchExists(branch string) bool                { return CWD().BranchExists(branch) }
+func GetCurrentBranch() (string, error)              { return CWD().GetCurrentBranch() }
+func GetCurrentBranchUpstream() (string, error)      { return CWD().GetCurrentBranchUpstream() }
 func RemoteBranchExists(remote, branch string) (bool, error) {
 	return CWD().RemoteBranchExists(remote, branch)
 }

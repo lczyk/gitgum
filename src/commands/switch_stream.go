@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,6 +14,24 @@ import (
 )
 
 const streamDelay = 3 * time.Millisecond
+
+// checkedOutMarker tags a branch already checked out in another worktree. The
+// switch flow always ends in `git checkout <name>` / reset, which git rejects
+// for a branch checked out elsewhere, so these entries are shown but made
+// unselectable (see switch.go). The emitter and the unselectable predicate both
+// key on this string -- keep them in sync via this const.
+const checkedOutMarker = " (checked out in "
+
+// checkedOutSuffix renders the display suffix naming the blocking worktree.
+func checkedOutSuffix(worktreePath string) string {
+	return checkedOutMarker + filepath.Base(worktreePath) + " worktree)"
+}
+
+// isCheckedOutElsewhere is the picker's Unselectable predicate: an entry
+// carrying the checked-out marker can't be switched to (see checkedOutMarker).
+func isCheckedOutElsewhere(item string) bool {
+	return strings.Contains(item, checkedOutMarker)
+}
 
 type branchEntry struct {
 	display  string
@@ -36,7 +56,7 @@ func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBr
 	checkedOut, err := r.CheckedOutBranches()
 	if err != nil {
 		fmt.Fprintf(errOut, "error getting worktrees: %v\n", err)
-		checkedOut = map[string]bool{}
+		checkedOut = map[string]string{}
 	}
 
 	queue := make(chan branchEntry, 1000)
@@ -73,7 +93,7 @@ func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBr
 	return src
 }
 
-func streamLocalBranches(ctx context.Context, r git.Repo, errOut io.Writer, queue chan<- branchEntry, currentBranch string, checkedOut map[string]bool) {
+func streamLocalBranches(ctx context.Context, r git.Repo, errOut io.Writer, queue chan<- branchEntry, currentBranch string, checkedOut map[string]string) {
 	locals, err := r.GetLocalBranches()
 	if err != nil {
 		fmt.Fprintf(errOut, "error getting local branches: %v\n", err)
@@ -82,9 +102,6 @@ func streamLocalBranches(ctx context.Context, r git.Repo, errOut io.Writer, queu
 
 	for _, branch := range locals {
 		if branch == currentBranch {
-			continue
-		}
-		if branch != currentBranch && checkedOut[branch] {
 			continue
 		}
 		tr, err := r.GetBranchTrackingRemote(branch)
@@ -103,6 +120,11 @@ func streamLocalBranches(ctx context.Context, r git.Repo, errOut io.Writer, queu
 				dedupKey: "local:" + branch,
 			}
 		}
+		// checked out in another worktree -> show but mark unselectable;
+		// `git checkout <branch>` would fail. dedupKey stays clean.
+		if wt, ok := checkedOut[branch]; ok {
+			entry.display += checkedOutSuffix(wt)
+		}
 		select {
 		case queue <- entry:
 		case <-ctx.Done():
@@ -111,7 +133,7 @@ func streamLocalBranches(ctx context.Context, r git.Repo, errOut io.Writer, queu
 	}
 }
 
-func streamRemoteBranches(ctx context.Context, r git.Repo, errOut io.Writer, queue chan<- branchEntry, remote, currentBranch, trackingRemote string, checkedOut map[string]bool) {
+func streamRemoteBranches(ctx context.Context, r git.Repo, errOut io.Writer, queue chan<- branchEntry, remote, currentBranch, trackingRemote string, checkedOut map[string]string) {
 	branches, err := r.GetRemoteBranches(remote)
 	if err != nil {
 		fmt.Fprintf(errOut, "error getting remote branches for '%s': %v\n", remote, err)
@@ -122,14 +144,18 @@ func streamRemoteBranches(ctx context.Context, r git.Repo, errOut io.Writer, que
 		if remote == trackingRemote && branch == currentBranch {
 			continue
 		}
-		if branch != currentBranch && checkedOut[branch] {
-			continue
-		}
-		select {
-		case queue <- branchEntry{
+		entry := branchEntry{
 			display:  "remote: " + remote + "/" + branch,
 			dedupKey: "remote:" + remote + "/" + branch,
-		}:
+		}
+		// selecting a remote branch ends in `git checkout <branch>` on the
+		// local landing name; if that's checked out elsewhere it'd fail, so
+		// show but mark unselectable. skip the current branch (own ref).
+		if wt, ok := checkedOut[branch]; ok && branch != currentBranch {
+			entry.display += checkedOutSuffix(wt)
+		}
+		select {
+		case queue <- entry:
 		case <-ctx.Done():
 			return
 		}

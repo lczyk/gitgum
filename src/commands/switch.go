@@ -81,7 +81,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 
 	src := streamBranches(ctx, r, s.err(), currentBranch, trackingRemote, remotes)
 
-	selected, err := s.sel().SelectStream(ctx, "Select a branch to switch to", src)
+	selected, err := s.sel().SelectStream(ctx, "Select a branch to switch to", src, isCheckedOutElsewhere)
 	cancel()
 	if err != nil {
 		fmt.Fprintln(s.err(), "No branch selected. Aborting switch.")

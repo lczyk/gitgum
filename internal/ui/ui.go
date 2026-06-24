@@ -45,8 +45,8 @@ func selectWith(finder func(context.Context, *[]string, sync.Locker, ff.Opt) ([]
 // may grow (or shrink) concurrently — used by callers that stream entries
 // from background goroutines (e.g. switch). ctx is cancelled when the
 // consumer is done; that also tells producers to stop.
-func SelectStream(ctx context.Context, prompt string, src *ff.SliceSource) (string, error) {
-	opt := ff.Opt{Prompt: prompt + ": ", Height: 10, Reverse: true}
+func SelectStream(ctx context.Context, prompt string, src *ff.SliceSource, unselectable func(string) bool) (string, error) {
+	opt := ff.Opt{Prompt: prompt + ": ", Height: 10, Reverse: true, Unselectable: unselectable}
 	selected, err := ff.FindFromSource(ctx, src, opt)
 	if err != nil {
 		if errors.Is(err, ff.ErrAbort) {
@@ -82,7 +82,7 @@ func Confirm(prompt string, defaultYes bool) (bool, error) {
 // RealSelector (the zero value), which delegates to the package-level functions.
 type Selector interface {
 	Select(prompt string, options []string, initialQuery ...string) (string, error)
-	SelectStream(ctx context.Context, prompt string, src *ff.SliceSource) (string, error)
+	SelectStream(ctx context.Context, prompt string, src *ff.SliceSource, unselectable func(string) bool) (string, error)
 	MultiSelect(prompt string, options []string) ([]string, error)
 	Confirm(prompt string, defaultYes bool) (bool, error)
 }
@@ -118,8 +118,8 @@ func (RealSelector) Select(prompt string, options []string, initialQuery ...stri
 	return Select(prompt, options, initialQuery...)
 }
 
-func (RealSelector) SelectStream(ctx context.Context, prompt string, src *ff.SliceSource) (string, error) {
-	return SelectStream(ctx, prompt, src)
+func (RealSelector) SelectStream(ctx context.Context, prompt string, src *ff.SliceSource, unselectable func(string) bool) (string, error) {
+	return SelectStream(ctx, prompt, src, unselectable)
 }
 
 func (RealSelector) MultiSelect(prompt string, options []string) ([]string, error) {
