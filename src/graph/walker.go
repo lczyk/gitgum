@@ -187,32 +187,43 @@ func (w *walkState) pipeRow() []Glyph {
 	return g
 }
 
-// collapse converges the extra child lanes into myCol. Each converging lane
-// steps one column left per row toward myCol, drawing a diagonal -- crossing
-// over any live lanes in between (the diagonal cuts across their pipe for that
-// one row). Extras are always to the right of myCol (the leftmost hit). The
-// converging lanes are removed from the lane set up front; they are "in transit"
-// until they reach myCol, so live survivors keep their columns throughout.
+// collapse converges the extra child lanes into myCol as a single diagonal that
+// sweeps right-to-left one HALF-column per row (git's classic fan): the diagonal
+// occupies a column's primary slot on even half-steps and the inter-column gap on
+// odd ones, so lanes settle into clean verticals behind it. Each extra is merged
+// (removed) as the diagonal reaches its column; lanes the diagonal has not yet
+// reached stay as pipes. Survivors that aren't extras keep their pipes and are
+// crossed for the one row the diagonal sits on their column.
+//
+// Half-column geometry: column c's pipe is at char position 2c; the gap to its
+// right is 2c+1. The diagonal sweeps d from 2*maxExtra-1 (gap left of the
+// furthest extra) down to 2*myCol+1 (gap right of the sink).
 func (w *walkState) collapse(myCol int, extras []int) {
 	if len(extras) == 0 {
 		return
 	}
-	pos := make([]int, 0, len(extras))
+	maxE := myCol
 	for _, c := range extras {
-		pos = append(pos, c)
-		w.lanes[c] = nil // in transit; survivors keep their columns
+		if c > maxE {
+			maxE = c
+		}
 	}
-	for len(pos) > 0 {
-		row := w.pipeRow()
-		next := pos[:0]
-		for _, p := range pos {
-			row[p] = GlyphSlash // converging lane occupies its own column
-			if p-1 > myCol {
-				next = append(next, p-1) // keep stepping left next row
+	for d := 2*maxE - 1; d >= 2*myCol+1; d-- {
+		// Merge any extra the diagonal has now reached (its pipe at/right of d).
+		for _, c := range extras {
+			if 2*c >= d && w.lanes[c] != nil {
+				w.lanes[c] = nil
 			}
 		}
-		w.emit(row, nil, nil)
-		pos = next
+		row := w.pipeRow()
+		var gaps []Glyph
+		if d%2 == 1 {
+			gaps = make([]Glyph, len(w.lanes))
+			gaps[(d-1)/2] = GlyphSlash // diagonal in the inter-column gap
+		} else {
+			row[d/2] = GlyphSlash // diagonal on a column's primary slot
+		}
+		w.emit(row, gaps, nil)
 	}
 }
 
