@@ -32,7 +32,7 @@ func TestFindAll(t *testing.T) {
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			matched := matching.FindAll(c.query, haystack)
+			matched := matching.FindAll(c.query, haystack, false)
 			assert.Len(t, matched, len(c.want))
 			for i, idx := range matched {
 				assert.Equal(t, c.want[i], idx)
@@ -41,11 +41,33 @@ func TestFindAll(t *testing.T) {
 	}
 }
 
+func TestFindAll_negate(t *testing.T) {
+	t.Parallel()
+	haystack := []string{"WHITE ALBUM", "SOUND OF DESTINY", "Twinkle Snow"}
+
+	eq := func(want, got []int) {
+		t.Helper()
+		assert.Len(t, got, len(want))
+		for i := range got {
+			assert.Equal(t, want[i], got[i])
+		}
+	}
+
+	// negate off: '!' is literal, matches nothing here.
+	eq(nil, matching.FindAll("!white", haystack, false))
+	// negate on: exclude items containing "white".
+	eq([]int{1, 2}, matching.FindAll("!white", haystack, true))
+	// positive + negative needle combined.
+	eq([]int{0}, matching.FindAll("album !sound", haystack, true))
+	// bare '!' is ignored -> matches all.
+	eq([]int{0, 1, 2}, matching.FindAll("!", haystack, true))
+}
+
 func TestFindAll_unicode(t *testing.T) {
 	t.Parallel()
 	haystack := []string{"日本語の本", "fußÄnger"}
-	assert.Len(t, matching.FindAll("日本", haystack), 1)
-	assert.Len(t, matching.FindAll("Ä", haystack), 1)
+	assert.Len(t, matching.FindAll("日本", haystack, false), 1)
+	assert.Len(t, matching.FindAll("Ä", haystack, false), 1)
 }
 
 func BenchmarkFindAll(b *testing.B) {
@@ -63,7 +85,7 @@ func BenchmarkFindAll(b *testing.B) {
 	}
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		matching.FindAll("cas hr", benchSlice)
+		matching.FindAll("cas hr", benchSlice, false)
 	}
 }
 
@@ -122,7 +144,7 @@ func BenchmarkFindAll_Sweep(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 				for b.Loop() {
-					_ = matching.FindAll(q.query, haystack)
+					_ = matching.FindAll(q.query, haystack, false)
 				}
 			})
 		}
@@ -136,7 +158,7 @@ func BenchmarkFindAll_Sweep(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
-				_ = matching.FindAll("問題", haystackU)
+				_ = matching.FindAll("問題", haystackU, false)
 			}
 		})
 	}
@@ -171,7 +193,7 @@ func BenchmarkFindAllLower(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 				for b.Loop() {
-					_ = matching.FindAllLower(lq, lower)
+					_ = matching.FindAllLower(lq, lower, false)
 				}
 			})
 		}
