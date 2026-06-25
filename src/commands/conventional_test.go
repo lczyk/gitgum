@@ -128,42 +128,6 @@ func TestColorCommitSubject_SeparatorMatchesType(t *testing.T) {
 	assert.ContainsString(t, got, ansiBoldRed+": "+ansiReset)
 }
 
-func TestColorTreeLine_PlainSubjectAfterAnsi(t *testing.T) {
-	t.Setenv("FORCE_COLOR", "1")
-	in := "\x1b[33m" + "abc1234" + "\x1b[m" + " feat: hello"
-	got := colorTreeLine(in)
-	assert.ContainsString(t, got, ansiGreen+"feat"+ansiReset)
-	assert.ContainsString(t, got, ansiGreen+": "+ansiReset)
-	assert.Equal(t, stripAnsi(got), "abc1234 feat: hello")
-}
-
-func TestColorTreeLine_WithDecoration(t *testing.T) {
-	t.Setenv("FORCE_COLOR", "1")
-	in := "\x1b[31m" + "*" + "\x1b[m" + " \x1b[33m" + "abc1234" + "\x1b[m" +
-		" \x1b[33m(\x1b[m\x1b[1;32m" + "main" + "\x1b[m\x1b[33m)\x1b[m" +
-		" fix(x)!: ouch"
-	got := colorTreeLine(in)
-	assert.ContainsString(t, got, ansiBoldRed+"fix"+ansiReset)
-	assert.ContainsString(t, got, ansiBoldRed+"("+ansiReset)
-	assert.ContainsString(t, got, ansiDim+ansiItalic+"x"+ansiReset)
-	assert.ContainsString(t, got, ansiBoldRed+"!"+ansiReset)
-	assert.Equal(t, stripAnsi(got), "* abc1234 (main) fix(x)!: ouch")
-}
-
-func TestColorTreeLine_NonConventional(t *testing.T) {
-	t.Setenv("FORCE_COLOR", "1")
-	in := "\x1b[33m" + "abc1234" + "\x1b[m" + " just a plain subject"
-	got := colorTreeLine(in)
-	assert.Equal(t, got, in)
-}
-
-func TestColorTreeLine_NoAnsi(t *testing.T) {
-	t.Setenv("FORCE_COLOR", "1")
-	in := "abc1234 feat: thing"
-	got := colorTreeLine(in)
-	assert.Equal(t, got, in)
-}
-
 func TestColorCommitSubject_ReleaseTagMatch(t *testing.T) {
 	t.Setenv("FORCE_COLOR", "1")
 	got := colorCommitSubject("release: v0.17.0", []string{"v0.17.0"})
@@ -201,17 +165,6 @@ func TestExtractTags(t *testing.T) {
 			assert.EqualArrays(t, got, want)
 		}
 	}
-}
-
-func TestColorTreeLine_ReleaseTagMatch(t *testing.T) {
-	t.Setenv("FORCE_COLOR", "1")
-	in := "\x1b[33m" + "abc1234" + "\x1b[m" +
-		" \x1b[33m(\x1b[m\x1b[1;33m" + "tag: v0.17.0" + "\x1b[m\x1b[33m, \x1b[m\x1b[1;31m" + "origin/main" + "\x1b[m\x1b[33m)\x1b[m" +
-		" release: v0.17.0"
-	got := colorTreeLine(in)
-	assert.ContainsString(t, got, ansiBoldYellow+"release"+ansiReset)
-	assert.ContainsString(t, got, ansiBoldYellow+"v0.17.0"+ansiReset)
-	assert.Equal(t, stripAnsi(got), "abc1234 (tag: v0.17.0, origin/main) release: v0.17.0")
 }
 
 func TestColorCommitSubject_NoColor(t *testing.T) {

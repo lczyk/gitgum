@@ -5,9 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -87,13 +85,6 @@ func resolveSinceArg(r git.Repo, dur time.Duration, sinceArg string) (string, er
 	return cutoff.UTC().Format("2006-01-02T15:04:05"), nil
 }
 
-// TODO: replace the `git log --graph` shell-out with an in-process renderer.
-// Plan: fetch raw commit/parent/ref data from git (e.g. `git log --format=...`
-// + `git for-each-ref`), build the graph ourselves, and render it. Initial
-// output should match this format byte-for-byte; later it gains interactive
-// fuzzyfinder features. Keep tests structural (no exact-format pins) so the
-// swap is local to this function. The reverse-and-flip dance below also goes
-// away once we render natively — we'll just emit oldest-first directly.
 func (t *TreeCommand) Execute(args []string) error {
 	if err := t.repo().CheckInRepo(); err != nil {
 		return err
@@ -113,36 +104,7 @@ func (t *TreeCommand) Execute(args []string) error {
 }
 
 func (t *TreeCommand) renderOnce(w io.Writer, sinceArg string, maxCount int) error {
-	if os.Getenv("GG_TREE_NATIVE") != "0" {
-		return t.renderNative(w, sinceArg, maxCount)
-	}
-	colorFlag := "--color=never"
-	if colorEnabled() {
-		colorFlag = "--color=always"
-	}
-	gitArgs := []string{"log", "--graph", "--oneline", "--all", "--decorate", colorFlag}
-	if sinceArg != "" {
-		gitArgs = append(gitArgs, "--since", sinceArg)
-	}
-	if maxCount > 0 {
-		gitArgs = append(gitArgs, fmt.Sprintf("-%d", maxCount))
-	}
-
-	stdout, _, runErr := t.repo().Run(gitArgs...)
-	if runErr != nil {
-		return fmt.Errorf("git log: %w", runErr)
-	}
-	if strings.TrimSpace(stdout) == "" {
-		return nil
-	}
-
-	out := stdout
-	if !t.Reverse {
-		out = reverseGraph(out)
-	}
-	out = colorTreeLines(out)
-	fmt.Fprintln(w, out)
-	return nil
+	return t.renderNative(w, sinceArg, maxCount)
 }
 
 func (t *TreeCommand) runFollow(sinceArg string, maxCount int) error {
@@ -317,19 +279,6 @@ func (t *TreeCommand) snapshotRefs() (string, error) {
 		return refs, err
 	}
 	return refs + "\n" + head, nil
-}
-
-// reverseGraph flips git's --graph output so the tip lands at the bottom
-// (right above the next prompt). git refuses --graph + --reverse, so we
-// reverse line order and swap '/' <-> '\' in each line's graph prefix to
-// keep diagonal connectors pointing the right way after the y-axis flip.
-func reverseGraph(out string) string {
-	lines := strings.Split(out, "\n")
-	slices.Reverse(lines)
-	for i, line := range lines {
-		lines[i] = swapGraphSlashes(line)
-	}
-	return strings.Join(lines, "\n")
 }
 
 // swapGraphSlashes swaps '/' and '\' in the graph-drawing prefix of a line.
