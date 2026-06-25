@@ -2,14 +2,11 @@ package graph
 
 import "sort"
 
-// Layout takes a slice of Nodes and returns a layout result describing how
-// each commit maps to a (row, col) pair in the rendered output, plus any
-// stagger rows for fork / merge / catch-up edges.
-func Layout(nodes []Node) LayoutResult {
-	if len(nodes) == 0 {
-		return LayoutResult{}
-	}
-
+// newLayoutState builds the shared graph state from nodes: the id index, the
+// child->parent reverse edges, and a deterministic per-parent child ordering.
+// It does not assign rows/cols -- callers run the phase pipeline (legacy
+// engine) or the row-walker on top.
+func newLayoutState(nodes []Node) *layoutState {
 	st := &layoutState{
 		idx:   make(map[string]*nodeState, len(nodes)),
 		nodes: make([]*nodeState, 0, len(nodes)),
@@ -77,6 +74,28 @@ func Layout(nodes []Node) LayoutResult {
 		}
 		insertionSortChildren(ns.children, ns.ID)
 	}
+	return st
+}
+
+// Layout takes a slice of Nodes and returns a layout result describing how
+// each commit maps to a (row, col) pair in the rendered output, plus any
+// stagger rows for fork / merge / catch-up edges.
+//
+// Two engines exist behind a switch. The default is the legacy multi-phase
+// engine (assignColumns/compactColumns/buildLanes/...). Setting GG_GRAPH_WALKER
+// selects the active-lanes row-walker (walker.go) -- a single sweep that keeps
+// one column per live edge, so lanes never disconnect. NOTE: walker is opt-in
+// until it's proven against the full scenario suite; then it becomes default
+// and the legacy engine is deleted.
+func Layout(nodes []Node) LayoutResult {
+	if len(nodes) == 0 {
+		return LayoutResult{}
+	}
+	if useWalker {
+		return layoutWalker(nodes)
+	}
+
+	st := newLayoutState(nodes)
 
 	// Phase 1: topological sort (oldest-first rows).
 	st.sort()

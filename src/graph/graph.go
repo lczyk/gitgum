@@ -93,6 +93,12 @@ type Row struct {
 	// decorations (e.g. the trailing `|` that turns a fork stagger `|\`
 	// into git's `|\|` shape) without widening LayoutResult.Columns.
 	Tail []Glyph
+	// Gap, when non-nil, holds the glyph drawn in each column's trailing
+	// half-slot (the space to its right). The row-walker uses it for crossing
+	// diagonals that pass between lanes: the diagonal lands in Gap[c] while the
+	// pipes at columns c and c+1 stay intact (`|\|` weave), rather than
+	// overwriting a lane. Space (zero value) means an ordinary column gap.
+	Gap []Glyph
 }
 
 // LayoutResult is the computed output of Layout. Rows is in oldest-first

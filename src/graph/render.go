@@ -60,15 +60,20 @@ func renderRowInto(buf []byte, slotsBuf *[]Glyph, row Row, numCols int, st Style
 	slots := (*slotsBuf)[:0]
 	for c := 0; c < numCols; c++ {
 		g := row.Glyphs[c]
-		if (g == GlyphSlash || g == GlyphBackslash) && len(slots) > 0 && slots[len(slots)-1] == GlyphSpace {
+		// NOTE: the diagonal-slide compression is git-mimicry; the row-walker
+		// emits a clean fixed grid and must not be packed (it would crush
+		// `| \ \ \` into `|\\\`). Gate it off there.
+		if !useWalker && (g == GlyphSlash || g == GlyphBackslash) && len(slots) > 0 && slots[len(slots)-1] == GlyphSpace {
 			slots[len(slots)-1] = g
 			continue
 		}
-		if g == GlyphSpace {
-			slots = append(slots, GlyphSpace, GlyphSpace)
-		} else {
-			slots = append(slots, g, GlyphSpace)
+		// Trailing half-slot: normally a space, but the row-walker can place a
+		// crossing diagonal here (Gap) so it weaves between two intact pipes.
+		trailing := GlyphSpace
+		if c < len(row.Gap) {
+			trailing = row.Gap[c]
 		}
+		slots = append(slots, g, trailing)
 	}
 	for len(slots) < 2*numCols {
 		slots = append(slots, GlyphSpace)

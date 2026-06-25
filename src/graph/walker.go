@@ -1,0 +1,301 @@
+package graph
+
+import (
+	"os"
+	"sort"
+)
+
+// useWalker selects the active-lanes row-walker over the legacy multi-phase
+// engine. Opt-in until proven; see Layout.
+var useWalker = os.Getenv("GG_GRAPH_WALKER") != ""
+
+// ------ active-lanes row-walker ------------------------------------------------
+//
+// Model: walk commits newest-first maintaining `lanes` -- one column per live
+// edge, each carrying the id of the parent commit it heads toward. A column
+// hosts exactly one edge at a time, so occupancy is exact by construction and
+// a lane can never be packed onto a column another edge crosses. That is the
+// whole point: it dissolves the disconnection class the legacy compaction hit.
+//
+// Per commit we emit: optional fan-in connector rows (children converging),
+// the commit row, optional fan-out connector rows (extra parents diverging).
+// Diagonals step one column per row so every edge is a continuous path.
+//
+// Output is built newest-first then reversed (and slashes swapped) to match
+// the oldest-first LayoutResult contract the rest of the package expects.
+
+type laneEdge struct {
+	target string // parent commit id this lane heads toward
+}
+
+type walkState struct {
+	idx     map[string]*nodeState
+	lanes   []*laneEdge // nil = free column
+	rows    [][]Glyph   // newest-first; reversed at the end
+	gaps    [][]Glyph   // parallel to rows: trailing-slot diagonals (crossings)
+	commits []*Node     // parallel to rows; nil on connector rows
+	width   int
+}
+
+func layoutWalker(nodes []Node) LayoutResult {
+	if len(nodes) == 0 {
+		return LayoutResult{}
+	}
+	// Reuse the legacy state construction + topo sort purely for ordering:
+	// it gives each node a stable row (newest = highest) with the nice
+	// "second parent right after its merge" placement.
+	st := newLayoutState(nodes)
+	st.sort()
+	order := make([]*nodeState, len(st.nodes))
+	copy(order, st.nodes)
+	sort.Slice(order, func(i, j int) bool { return order[i].row > order[j].row }) // newest first
+
+	w := &walkState{idx: st.idx}
+	for _, ns := range order {
+		w.place(ns)
+	}
+
+	return w.finish()
+}
+
+// place handles one commit: fan-in, commit row, fan-out.
+func (w *walkState) place(ns *nodeState) {
+	id := ns.ID
+
+	// columns whose edge targets this commit (its children's edges)
+	hits := w.hits(id)
+	var myCol int
+	if len(hits) > 0 {
+		myCol = hits[0]
+		// fan-in: bring the extra child lanes into myCol before the commit row
+		w.collapse(myCol, hits[1:])
+	} else {
+		myCol = w.allocNear(0)
+		w.lanes[myCol] = &laneEdge{}
+	}
+
+	// commit row
+	row := w.pipeRow()
+	row[myCol] = GlyphStar
+	w.emit(row, nil, ns.Node)
+
+	// parents: first reuses myCol, extras open new lanes and fan out
+	parents := ns.Parents
+	if len(parents) == 0 {
+		w.lanes[myCol] = nil
+		return
+	}
+	w.lanes[myCol].target = parents[0]
+	newCols := make([]int, 0, len(parents)-1)
+	for k := 1; k < len(parents); k++ {
+		pid := parents[k]
+		// If this parent already has a live lane (another child of it has been
+		// placed), route the merge edge straight to that lane instead of opening
+		// a fresh far column that would only have to converge back -- avoids the
+		// detour overshoot.
+		if tc := w.targetCol(pid); tc >= 0 {
+			w.routeMerge(myCol, tc)
+			continue
+		}
+		nc := w.allocNear(myCol + 1)
+		w.lanes[nc] = &laneEdge{target: pid}
+		newCols = append(newCols, nc)
+	}
+	if len(newCols) > 0 {
+		w.fanOut(myCol, newCols)
+	}
+}
+
+// targetCol returns the leftmost column whose lane already heads toward id, or
+// -1 if none.
+func (w *walkState) targetCol(id string) int {
+	for i, e := range w.lanes {
+		if e != nil && e.target == id {
+			return i
+		}
+	}
+	return -1
+}
+
+// routeMerge draws a diagonal staircase from a merge commit at `from` to an
+// already-live parent lane at `to`, one column-step per row, crossing any lanes
+// in between. The destination lane is left in place; the edge just joins it.
+func (w *walkState) routeMerge(from, to int) {
+	if to == from {
+		return
+	}
+	dir := -1
+	glyph := GlyphSlash // newest-first: moving left while descending
+	if to > from {
+		dir = 1
+		glyph = GlyphBackslash
+	}
+	for p := from + dir; ; p += dir {
+		row := w.pipeRow()
+		gaps := make([]Glyph, len(w.lanes))
+		// Weave in the gap so crossed lanes keep their pipes. Leftward steps
+		// sit in the gap left of p (gap[p]); rightward in the gap left of p too
+		// (gap[p-1]) -- i.e. always the gap on the side the edge entered from.
+		gi := p
+		if dir > 0 {
+			gi = p - 1
+		}
+		gaps[gi] = glyph
+		w.emit(row, gaps, nil)
+		if p == to {
+			return
+		}
+	}
+}
+
+// hits returns the columns whose lane targets id, left to right.
+func (w *walkState) hits(id string) []int {
+	var out []int
+	for i, e := range w.lanes {
+		if e != nil && e.target == id {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// allocNear returns a free column at or after `pref` (preferring pref to keep
+// fan-out diagonals short), else the leftmost free column, else a new one.
+func (w *walkState) allocNear(pref int) int {
+	for c := pref; c < len(w.lanes); c++ {
+		if w.lanes[c] == nil {
+			return c
+		}
+	}
+	for c := 0; c < len(w.lanes); c++ {
+		if w.lanes[c] == nil {
+			return c
+		}
+	}
+	w.lanes = append(w.lanes, nil)
+	return len(w.lanes) - 1
+}
+
+// pipeRow renders the current lane state as a row of pipes.
+func (w *walkState) pipeRow() []Glyph {
+	g := make([]Glyph, len(w.lanes))
+	for i, e := range w.lanes {
+		if e != nil {
+			g[i] = GlyphPipe
+		}
+	}
+	return g
+}
+
+// collapse converges the extra child lanes into myCol. Each converging lane
+// steps one column left per row toward myCol, drawing a diagonal -- crossing
+// over any live lanes in between (the diagonal cuts across their pipe for that
+// one row). Extras are always to the right of myCol (the leftmost hit). The
+// converging lanes are removed from the lane set up front; they are "in transit"
+// until they reach myCol, so live survivors keep their columns throughout.
+func (w *walkState) collapse(myCol int, extras []int) {
+	if len(extras) == 0 {
+		return
+	}
+	pos := make([]int, 0, len(extras))
+	for _, c := range extras {
+		pos = append(pos, c)
+		w.lanes[c] = nil // in transit; survivors keep their columns
+	}
+	for len(pos) > 0 {
+		row := w.pipeRow()
+		next := pos[:0]
+		for _, p := range pos {
+			row[p] = GlyphSlash // converging lane occupies its own column
+			if p-1 > myCol {
+				next = append(next, p-1) // keep stepping left next row
+			}
+		}
+		w.emit(row, nil, nil)
+		pos = next
+	}
+}
+
+// fanOut draws diagonals from the commit at myCol to each new parent lane.
+func (w *walkState) fanOut(myCol int, newCols []int) {
+	maxC := myCol
+	for _, c := range newCols {
+		if c > maxC {
+			maxC = c
+		}
+	}
+	// one connector row stepping each new lane's diagonal one column right of
+	// the commit; for adjacent (the common 2-parent case) this is a single
+	// clean `|\` row.
+	row := w.pipeRow()
+	row[myCol] = GlyphPipe
+	for _, c := range newCols {
+		row[c] = GlyphBackslash
+	}
+	w.emit(row, nil, nil)
+	_ = maxC
+}
+
+// emit appends a row (padding to the running width). gaps may be nil. Connector
+// rows (no commit) that carry no diagonal -- in either the column glyphs or the
+// gaps -- are pure pipes between two commit rows, redundant, so they're dropped.
+func (w *walkState) emit(row []Glyph, gaps []Glyph, commit *Node) {
+	if commit == nil {
+		hasDiag := false
+		for _, g := range row {
+			if g == GlyphSlash || g == GlyphBackslash {
+				hasDiag = true
+				break
+			}
+		}
+		for _, g := range gaps {
+			if g == GlyphSlash || g == GlyphBackslash {
+				hasDiag = true
+				break
+			}
+		}
+		if !hasDiag {
+			return
+		}
+	}
+	if len(row) > w.width {
+		w.width = len(row)
+	}
+	w.rows = append(w.rows, row)
+	w.gaps = append(w.gaps, gaps)
+	w.commits = append(w.commits, commit)
+}
+
+// finish reverses to oldest-first, swaps slashes (in both column glyphs and
+// gaps, since the y-flip turns every `/` into `\` and vice versa), and pads to
+// width.
+func (w *walkState) finish() LayoutResult {
+	n := len(w.rows)
+	out := make([]Row, n)
+	swap := func(dst, src []Glyph) {
+		for c := range dst {
+			if c >= len(src) {
+				continue
+			}
+			switch src[c] {
+			case GlyphSlash:
+				dst[c] = GlyphBackslash
+			case GlyphBackslash:
+				dst[c] = GlyphSlash
+			default:
+				dst[c] = src[c]
+			}
+		}
+	}
+	for i := 0; i < n; i++ {
+		g := make([]Glyph, w.width)
+		swap(g, w.rows[n-1-i])
+		var gap []Glyph
+		if src := w.gaps[n-1-i]; src != nil {
+			gap = make([]Glyph, w.width)
+			swap(gap, src)
+		}
+		out[i] = Row{Commit: w.commits[n-1-i], Glyphs: g, Gap: gap}
+	}
+	return LayoutResult{Rows: out, Columns: w.width}
+}
