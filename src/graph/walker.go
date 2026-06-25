@@ -227,24 +227,41 @@ func (w *walkState) collapse(myCol int, extras []int) {
 	}
 }
 
-// fanOut draws diagonals from the commit at myCol to each new parent lane.
+// fanOut draws the diagonals from a merge at myCol to its extra-parent lanes --
+// the mirror of collapse. The diagonals weave in the inter-column gaps (so a
+// 2-parent merge is a clean `|\`, not `| \`), sweeping one column per row toward
+// each new lane. A new lane is "in transit" until the diagonal reaches it, so it
+// isn't drawn as a pipe on the rows above its column.
 func (w *walkState) fanOut(myCol int, newCols []int) {
 	maxC := myCol
-	for _, c := range newCols {
+	saved := make([]*laneEdge, len(newCols))
+	for i, c := range newCols {
 		if c > maxC {
 			maxC = c
 		}
+		saved[i] = w.lanes[c]
+		w.lanes[c] = nil // born via the diagonal; verticalises once reached
 	}
-	// one connector row stepping each new lane's diagonal one column right of
-	// the commit; for adjacent (the common 2-parent case) this is a single
-	// clean `|\` row.
-	row := w.pipeRow()
-	row[myCol] = GlyphPipe
-	for _, c := range newCols {
-		row[c] = GlyphBackslash
+	for p := myCol + 1; p <= maxC; p++ {
+		row := w.pipeRow()
+		gaps := make([]Glyph, len(w.lanes))
+		for i, c := range newCols {
+			if p > c {
+				continue // this lane already reached its column
+			}
+			gaps[p-1] = GlyphBackslash // diagonal in the gap left of column p
+			if p == c {
+				w.lanes[c] = saved[i] // settle: pipe from the next row on
+			}
+		}
+		w.emit(row, gaps, nil)
 	}
-	w.emit(row, nil, nil)
-	_ = maxC
+	// Any lane not yet restored (shouldn't happen: p reaches maxC >= every c).
+	for i, c := range newCols {
+		if w.lanes[c] == nil {
+			w.lanes[c] = saved[i]
+		}
+	}
 }
 
 // emit appends a row (padding to the running width). gaps may be nil. Connector
