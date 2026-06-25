@@ -386,10 +386,6 @@ func (st *layoutState) compactColumns() {
 			}
 		}
 	}
-	mergedTo := make([]int, st.numCols)
-	for i := range mergedTo {
-		mergedTo[i] = i
-	}
 	hasCommit := make([]bool, st.numCols)
 	for _, ns := range st.nodes {
 		hasCommit[ns.col] = true
@@ -405,43 +401,63 @@ func (st *layoutState) compactColumns() {
 		}
 		return false
 	}
+
+	// Interval-graph greedy coloring. Process side cols in order of their
+	// earliest active row, packing each into the lowest-numbered destination
+	// col (col 0 reserved for mainline) whose accumulated activity doesn't
+	// overlap. Start-row order is what keeps a long-lived spine on a low col
+	// instead of letting a small far-away lane claim it first and fragmenting
+	// the cluster across high cols. A plain by-index greedy merge gets this
+	// wrong -- see compactColumns history.
+	type srcCol struct {
+		old   int
+		start int
+	}
+	src := make([]srcCol, 0, st.numCols-1)
 	for c := 1; c < st.numCols; c++ {
-		if mergedTo[c] != c || !hasCommit[c] {
-			continue
+		if !hasCommit[c] {
+			continue // pre-routing every col has a commit; defensive only
 		}
-		for cp := 0; cp < c; cp++ {
-			if mergedTo[cp] != cp || !hasCommit[cp] {
-				continue
+		start := -1
+		for r := range activity[c] {
+			if start < 0 || r < start {
+				start = r
 			}
-			if !overlaps(activity[c], activity[cp]) {
-				mergedTo[c] = cp
-				for r := range activity[c] {
-					activity[cp][r] = true
-				}
+		}
+		src = append(src, srcCol{old: c, start: start})
+	}
+	sort.Slice(src, func(i, j int) bool {
+		if src[i].start != src[j].start {
+			return src[i].start < src[j].start
+		}
+		return src[i].old < src[j].old
+	})
+	mergedTo := make([]int, st.numCols) // old col -> new col; col 0 stays 0
+	// Bucket 0 is seeded with the mainline (col 0) activity so disjoint lanes
+	// can still reuse col 0 where it has gaps (multi-root / orphan histories),
+	// while a continuous mainline blocks reuse there as before.
+	dstRows := []map[int]bool{activity[0]}
+	for _, s := range src {
+		placed := -1
+		for nc := range dstRows {
+			if !overlaps(dstRows[nc], activity[s.old]) {
+				placed = nc
 				break
 			}
 		}
+		if placed < 0 {
+			placed = len(dstRows)
+			dstRows = append(dstRows, map[int]bool{})
+		}
+		for r := range activity[s.old] {
+			dstRows[placed][r] = true
+		}
+		mergedTo[s.old] = placed
 	}
 	for _, ns := range st.nodes {
 		ns.col = mergedTo[ns.col]
 	}
-	used := map[int]bool{}
-	for _, ns := range st.nodes {
-		used[ns.col] = true
-	}
-	cols := make([]int, 0, len(used))
-	for c := range used {
-		cols = append(cols, c)
-	}
-	sort.Ints(cols)
-	remap := make(map[int]int, len(cols))
-	for i, c := range cols {
-		remap[c] = i
-	}
-	for _, ns := range st.nodes {
-		ns.col = remap[ns.col]
-	}
-	st.numCols = len(cols)
+	st.numCols = len(dstRows)
 }
 
 // ------ phase 4: lane construction ------------------------------------------------------------------------
