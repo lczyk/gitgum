@@ -65,3 +65,15 @@ func TestInitFinder_NoAnsi(t *testing.T) {
 	assert.Nil(t, f.state.itemsStyled, "itemsStyled should be nil without Opt.Ansi")
 	assert.EqualArrays(t, f.state.items, items)
 }
+
+func TestNegRuneMask(t *testing.T) {
+	// negate off -> nil regardless of input.
+	assert.Nil(t, negRuneMask([]rune("!foo"), false))
+	// no negated term -> nil.
+	assert.Nil(t, negRuneMask([]rune("foo bar"), true))
+
+	// "foo !bar": only the "!bar" runes (indices 4-7) are masked.
+	got := negRuneMask([]rune("foo !bar"), true)
+	want := []bool{false, false, false, false, true, true, true, true}
+	assert.EqualArrays(t, want, got)
+}
