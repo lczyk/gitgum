@@ -13,6 +13,8 @@ module completions {
     --fast                   # Disable streaming delay
     --reverse                # Render prompt at top
     --height: int            # Number of rows to occupy
+    --ansi                   # Render ANSI SGR colour escapes from input items
+    --no-negate              # Disable fzf-style '!foo' negative needles
     --completion: string@"nu-complete ff shell" # Print shell completion script
     --version(-v)            # Show version
     --help(-h)               # Show help

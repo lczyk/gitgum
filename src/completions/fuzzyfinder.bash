@@ -8,7 +8,7 @@ _ff_completion() {
     fi
     prev="$3"
 
-    opts="-m --multi -q --query -p --prompt --header -1 --select-1 --fast --reverse --height --completion -v --version -h --help"
+    opts="-m --multi -q --query -p --prompt --header -1 --select-1 --fast --reverse --height --ansi --no-negate --completion -v --version -h --help"
 
     case "${prev}" in
         --completion)

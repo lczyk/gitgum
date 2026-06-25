@@ -47,6 +47,11 @@ type Opt struct {
 	// NOTE: the predicate keys on the item string, so duplicate item strings
 	// share a selectability. Fine unless you need two same-text items to differ.
 	Unselectable func(item string) bool
+	// Negate enables fzf-style negative needles: a query term prefixed with
+	// '!' (e.g. "!foo") matches items that do NOT contain the rest of the
+	// term. A bare "!" is ignored. When false (default), '!' is treated as a
+	// literal character in the needle.
+	Negate bool
 }
 
 func (o Opt) withDefaults() Opt {

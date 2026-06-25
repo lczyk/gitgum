@@ -10,6 +10,8 @@ _ff() {
         '--fast[Disable streaming delay]' \
         '--reverse[Render prompt at top]' \
         '--height=[Number of rows to occupy]:rows:_default' \
+        '--ansi[Render ANSI SGR colour escapes from input items]' \
+        "--no-negate[Disable fzf-style '!foo' negative needles]" \
         '--completion=[Print shell completion script]:shell:(bash fish zsh nu)' \
         '(-v --version)'{-v,--version}'[Show version]' \
         '(-h --help)'{-h,--help}'[Show help]'

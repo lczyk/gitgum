@@ -227,10 +227,13 @@ func parseFlags(args []string, stderr io.Writer) (config, error) {
 	fs.IntVar(&cfg.opt.Height, "height", 0, "occupy only N rows of the terminal instead of fullscreen; preserves prior terminal output above the picker. 0 = fullscreen, N>0 = exact rows, N<0 = terminal_rows + N")
 	fs.BoolVar(&cfg.opt.Ansi, "ansi", false, "render ANSI SGR colour escapes from input items in the picker (default: strip)")
 	fs.StringVar(&cfg.completion, "completion", "", "print shell completion script for the given shell (bash, fish, zsh, or nu) and exit")
+	var noNegate bool
+	fs.BoolVar(&noNegate, "no-negate", false, "disable fzf-style '!foo' negative needles (treat '!' as a literal char)")
 
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
+	cfg.opt.Negate = !noNegate
 	return cfg, nil
 }
 
@@ -249,7 +252,8 @@ Description:
 
   Matching is substring-based and case-insensitive: whitespace-split queries
   require every word to appear in the item (in any order). Matched characters
-  are highlighted. Empty lines from stdin are skipped.
+  are highlighted. Empty lines from stdin are skipped. A query word prefixed
+  with '!' is negated (the item must NOT contain it); disable with --no-negate.
 
 Options:
   -m, --multi          Allow selecting multiple items. Tab toggles the item
@@ -275,6 +279,9 @@ Options:
                          0     fullscreen (default)
                          N>0   exactly N rows
                          N<0   terminal_rows + N
+      --no-negate      Disable fzf-style negative needles. By default a query
+                       word like '!foo' excludes items containing "foo"; with
+                       this flag '!' is matched literally.
       --completion <s> Print a shell completion script for <s> and exit.
                        Supported shells: bash, fish, zsh, nu. Source the
                        output from your shell init.

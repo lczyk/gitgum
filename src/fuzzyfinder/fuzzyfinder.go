@@ -214,7 +214,7 @@ func (f *finder) updateItems(items []string) {
 	if len(f.state.input) == 0 {
 		f.resetMatchedIdentity(len(f.state.items))
 	} else {
-		f.state.matched = matching.FindAllLower(strings.ToLower(string(f.state.input)), f.state.itemsLower)
+		f.state.matched = matching.FindAllLower(strings.ToLower(string(f.state.input)), f.state.itemsLower, f.negate())
 	}
 
 	// Re-key selection: drop entries whose item is gone; keep selection order
@@ -444,8 +444,19 @@ func (f *finder) _draw() {
 		promptCol++
 	}
 	w = 0
-	for _, r := range f.state.input {
+	negMask := negRuneMask(f.state.input, f.negate())
+	for i, r := range f.state.input {
 		style := tcell.StyleDefault.Foreground(tcell.ColorDefault).Background(tcell.ColorDefault).Bold(true)
+		if negMask != nil && negMask[i] {
+			// Visual feedback that this term is negated. Red when colour is
+			// allowed; strike-through when NO_COLOR, so the cue survives in
+			// a monochrome terminal.
+			if noColor() {
+				style = style.StrikeThrough(true)
+			} else {
+				style = style.Foreground(tcell.ColorRed)
+			}
+		}
 		f.term.SetContent(promptCol+w, promptRow, r, nil, style)
 		w += runewidth.RuneWidth(r)
 	}
@@ -880,7 +891,7 @@ func (f *finder) filter() {
 	}
 
 	// FindAll may take a lot of time, so it is desired to use RLock to avoid goroutine blocking.
-	matchedItems := matching.FindAllLower(strings.ToLower(string(f.state.input)), f.state.itemsLower)
+	matchedItems := matching.FindAllLower(strings.ToLower(string(f.state.input)), f.state.itemsLower, f.negate())
 	f.stateMu.RUnlock()
 
 	f.stateMu.Lock()
@@ -1155,6 +1166,44 @@ func (f *finder) itemsAtLocked(idxs []int) []string {
 		}
 	}
 	return out
+}
+
+// negate reports whether fzf-style '!' negative needles are enabled.
+func (f *finder) negate() bool {
+	return f.opt != nil && f.opt.Negate
+}
+
+// noColor reports whether NO_COLOR is set (any value), per no-color.org.
+func noColor() bool {
+	_, ok := os.LookupEnv("NO_COLOR")
+	return ok
+}
+
+// negRuneMask marks which runes of input belong to a negated ('!'-prefixed)
+// whitespace-delimited term, for query-line highlighting. Returns nil when
+// negate is off or no term is negated (no allocation in the common case).
+func negRuneMask(input []rune, negate bool) []bool {
+	if !negate {
+		return nil
+	}
+	var mask []bool
+	wordStart := -1 // index of the term's first rune, or -1 between words
+	for i, r := range input {
+		if r == ' ' || r == '\t' {
+			wordStart = -1
+			continue
+		}
+		if wordStart == -1 {
+			wordStart = i
+		}
+		if input[wordStart] == '!' {
+			if mask == nil {
+				mask = make([]bool, len(input))
+			}
+			mask[i] = true
+		}
+	}
+	return mask
 }
 
 // unselectableLocked reports whether the item at idx is display-only per
