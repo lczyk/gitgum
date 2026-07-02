@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -13,20 +14,44 @@ type DeleteCommand struct {
 }
 
 func (d *DeleteCommand) Execute(args []string) error {
-	if err := d.repo().CheckInRepo(); err != nil {
+	r := d.repo()
+	if err := r.CheckInRepo(); err != nil {
 		return err
 	}
 
-	branches, err := d.repo().GetLocalBranches()
+	// cheap guard for the genuinely-empty repo (no commits yet), where
+	// resolveCurrentBranchContext's rev-parse HEAD below would fail with a
+	// cryptic message. NOTE: a repo with zero local branches but existing remote
+	// branches isn't caught here -- in a normal working repo you always have at
+	// least one local branch, so this only fires on a fresh init.
+	locals, err := r.GetLocalBranches()
 	if err != nil {
 		return fmt.Errorf("getting local branches: %w", err)
 	}
-
-	if len(branches) == 0 {
+	if len(locals) == 0 {
 		return fmt.Errorf("no local branches found")
 	}
 
-	branch, err := d.sel().Select("Select a branch to delete", branches)
+	currentBranch, trackingRemote, _, err := resolveCurrentBranchContext(r)
+	if err != nil {
+		return err
+	}
+
+	remotes, err := r.GetRemotes()
+	if err != nil {
+		return fmt.Errorf("getting remotes: %w", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// includeCurrent=true: current branch shows but is unselectable (checked-out
+	// marker), same picker as switch. This lists remote branches too, so a
+	// remote-only branch is deletable -- the whole point of the unification.
+	src := streamBranches(ctx, r, d.err(), currentBranch, trackingRemote, remotes, true)
+
+	selected, err := d.sel().SelectStream(ctx, "Select a branch to delete", src, isCheckedOutElsewhere)
+	cancel()
 	if err != nil {
 		if errors.Is(err, ui.ErrCancelled) {
 			fmt.Fprintln(d.out(), "Aborting delete.")
@@ -35,6 +60,34 @@ func (d *DeleteCommand) Execute(args []string) error {
 		return err
 	}
 
+	return d.applyDeletion(selected)
+}
+
+// applyDeletion parses the typed picker entry (mirrors switch's applySelection)
+// and dispatches: local branches go through the safe->force local flow, remote
+// entries are deleted straight off the remote.
+func (d *DeleteCommand) applyDeletion(selected string) error {
+	parts := strings.SplitN(selected, ": ", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid selection: %s", selected)
+	}
+	typ, name := parts[0], parts[1]
+
+	switch typ {
+	case "local", "local/remote":
+		return d.deleteLocal(name)
+	case "remote":
+		remoteParts := strings.SplitN(name, "/", 2)
+		if len(remoteParts) != 2 {
+			return fmt.Errorf("invalid remote branch format: %s", name)
+		}
+		return d.deleteRemoteOnly(remoteParts[0], remoteParts[1])
+	default:
+		return fmt.Errorf("unknown branch type: %s", typ)
+	}
+}
+
+func (d *DeleteCommand) deleteLocal(branch string) error {
 	// main/master deletion is dangerous enough to warrant a confirmation
 	if branch == "main" || branch == "master" {
 		confirmed, err := d.sel().Confirm(
@@ -48,51 +101,6 @@ func (d *DeleteCommand) Execute(args []string) error {
 			fmt.Fprintln(d.out(), "Aborting delete.")
 			return nil
 		}
-	}
-
-	// if user wants to delete their current branch, offer to switch first
-	currentBranch, err := d.repo().GetCurrentBranch()
-	if err != nil {
-		return fmt.Errorf("getting current branch: %w", err)
-	}
-
-	if branch == currentBranch {
-		confirmed, err := d.sel().Confirm(
-			fmt.Sprintf("You are currently on branch '%s'. Do you want to switch to another branch before deleting it?", branch),
-			true,
-		)
-		if err != nil {
-			return err
-		}
-		if !confirmed {
-			fmt.Fprintln(d.out(), "Aborting delete.")
-			return nil
-		}
-
-		var otherBranches []string
-		for _, b := range branches {
-			if b != branch {
-				otherBranches = append(otherBranches, b)
-			}
-		}
-
-		if len(otherBranches) == 0 {
-			return fmt.Errorf("no other branches to switch to")
-		}
-
-		otherBranch, err := d.sel().Select("Select a branch to switch to", otherBranches)
-		if err != nil {
-			if errors.Is(err, ui.ErrCancelled) {
-				fmt.Fprintln(d.out(), "Aborting delete.")
-				return nil
-			}
-			return err
-		}
-
-		if _, stderr, err := d.repo().RunWriteStream("checkout", otherBranch); err != nil {
-			return fmt.Errorf("switching to branch '%s': %w: %s", otherBranch, err, strings.TrimSpace(stderr))
-		}
-		fmt.Fprintf(d.out(), "Switched to branch '%s'.\n", otherBranch)
 	}
 
 	// non-fatal: skip remote deletion if upstream lookup fails
@@ -112,7 +120,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 	}
 
 	// try safe delete first, fall back to force delete with confirmation
-	_, _, err = d.repo().RunWrite("branch", "-d", branch)
+	_, _, err := d.repo().RunWrite("branch", "-d", branch)
 	if err != nil {
 		var confirmMsg string
 		if needsToDeleteRemote {
@@ -145,5 +153,27 @@ func (d *DeleteCommand) Execute(args []string) error {
 		fmt.Fprintf(d.out(), "Deleted remote branch '%s/%s'.\n", remoteName, remoteBranchName)
 	}
 
+	return nil
+}
+
+// deleteRemoteOnly deletes a branch that exists only on the remote (no local
+// counterpart selected), e.g. a leftover branch after the local copy is gone.
+func (d *DeleteCommand) deleteRemoteOnly(remote, branch string) error {
+	confirmed, err := d.sel().Confirm(
+		fmt.Sprintf("Delete remote branch '%s/%s'?", remote, branch),
+		false,
+	)
+	if err != nil {
+		return err
+	}
+	if !confirmed {
+		fmt.Fprintln(d.out(), "Aborting delete.")
+		return nil
+	}
+
+	if _, stderr, err := d.repo().RunWriteStream("push", "--delete", remote, branch); err != nil {
+		return fmt.Errorf("deleting remote branch: %w: %s", err, strings.TrimSpace(stderr))
+	}
+	fmt.Fprintf(d.out(), "Deleted remote branch '%s/%s'.\n", remote, branch)
 	return nil
 }

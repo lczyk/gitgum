@@ -46,7 +46,12 @@ type branchEntry struct {
 // The returned SliceSource supports both Add (used by the producers below)
 // and RemoveFunc (left available for future hooks that drop branches as the
 // user deletes them).
-func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBranch, trackingRemote string, remotes []string) *ff.SliceSource {
+// includeCurrent controls whether the current branch is emitted. switch filters
+// it out (you can't switch to where you are); delete keeps it so it's visible
+// but unselectable -- it carries the checked-out marker for the current worktree
+// and isCheckedOutElsewhere blocks selection, matching git's refusal to delete a
+// checked-out branch.
+func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBranch, trackingRemote string, remotes []string, includeCurrent bool) *ff.SliceSource {
 	src := ff.NewSliceSource()
 	seen := make(map[string]struct{})
 	var seenMu sync.Mutex
@@ -79,7 +84,7 @@ func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBr
 		}
 	}()
 
-	go streamLocalBranches(ctx, r, errOut, queue, currentBranch, checkedOut)
+	go streamLocalBranches(ctx, r, errOut, queue, currentBranch, checkedOut, includeCurrent)
 	for _, remote := range remotes {
 		go streamRemoteBranches(ctx, r, errOut, queue, remote, currentBranch, trackingRemote, checkedOut)
 	}
@@ -93,7 +98,7 @@ func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBr
 	return src
 }
 
-func streamLocalBranches(ctx context.Context, r git.Repo, errOut io.Writer, queue chan<- branchEntry, currentBranch string, checkedOut map[string]string) {
+func streamLocalBranches(ctx context.Context, r git.Repo, errOut io.Writer, queue chan<- branchEntry, currentBranch string, checkedOut map[string]string, includeCurrent bool) {
 	locals, err := r.GetLocalBranches()
 	if err != nil {
 		fmt.Fprintf(errOut, "error getting local branches: %v\n", err)
@@ -101,7 +106,7 @@ func streamLocalBranches(ctx context.Context, r git.Repo, errOut io.Writer, queu
 	}
 
 	for _, branch := range locals {
-		if branch == currentBranch {
+		if branch == currentBranch && !includeCurrent {
 			continue
 		}
 		tr, err := r.GetBranchTrackingRemote(branch)

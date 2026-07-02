@@ -79,7 +79,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	src := streamBranches(ctx, r, s.err(), currentBranch, trackingRemote, remotes)
+	src := streamBranches(ctx, r, s.err(), currentBranch, trackingRemote, remotes, false)
 
 	selected, err := s.sel().SelectStream(ctx, "Select a branch to switch to", src, isCheckedOutElsewhere)
 	cancel()

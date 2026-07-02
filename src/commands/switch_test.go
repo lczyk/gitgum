@@ -125,7 +125,7 @@ func TestStreamBranches_SameNameOnOtherRemote(t *testing.T) {
 	require.NoError(t, err)
 
 	var errBuf bytes.Buffer
-	src := streamBranches(context.Background(), r, &errBuf, "main", trackingRemote, remotes)
+	src := streamBranches(context.Background(), r, &errBuf, "main", trackingRemote, remotes, false)
 
 	var items []string
 	for i := 0; i < 50; i++ {
@@ -166,7 +166,7 @@ func TestStreamBranches_CheckedOutElsewhereIsMarkedUnselectable(t *testing.T) {
 	require.NoError(t, err)
 
 	var errBuf bytes.Buffer
-	src := streamBranches(context.Background(), r, &errBuf, currentBranchIn(t, dir), "", remotes)
+	src := streamBranches(context.Background(), r, &errBuf, currentBranchIn(t, dir), "", remotes, false)
 
 	var feature string
 	for i := 0; i < 50; i++ {

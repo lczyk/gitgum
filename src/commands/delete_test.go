@@ -41,7 +41,7 @@ func TestDeleteCommand_DeletesPickedBranch(t *testing.T) {
 	temp_repo.RunGit(t, dir, "branch", "feature")
 
 	var buf strings.Builder
-	stub := &stubSelector{selectAnswers: []string{"feature"}}
+	stub := &stubSelector{selectAnswers: []string{"local: feature"}}
 	cmd := &DeleteCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: dir}}}
 
 	err := cmd.Execute(nil)
