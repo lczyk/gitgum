@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	flags "github.com/jessevdk/go-flags"
 	"github.com/lczyk/gitgum/internal/ui"
@@ -26,6 +27,36 @@ type Options struct {
 	Release    commands.ReleaseCommand    `command:"release" description:"Bump VERSION (or latest tag), commit, and tag"`
 	Tree       commands.TreeCommand       `command:"tree" description:"Print a colored commit graph across all branches"`
 	Diff       commands.DiffCommand       `command:"diff" description:"Show working-tree diff with --compact-summary"`
+}
+
+// isFollowArg reports whether an arg is -f / --follow, optionally with an =value.
+func isFollowArg(a string) bool {
+	return a == "-f" || a == "--follow" ||
+		strings.HasPrefix(a, "-f=") || strings.HasPrefix(a, "--follow=")
+}
+
+// hoistFollow moves leading -f/--follow tokens to just after the subcommand, so
+// the flag can be given at the top level. only leading follow flags are moved; a
+// leading non-follow flag (e.g. --version) stops the rewrite and args pass through.
+func hoistFollow(args []string) []string {
+	var follow []string
+	i := 1
+	for ; i < len(args); i++ {
+		if isFollowArg(args[i]) {
+			follow = append(follow, args[i])
+			continue
+		}
+		break // command token (or some other flag)
+	}
+	// nothing hoisted, or no command token after the follow flags -> leave as-is
+	if len(follow) == 0 || i >= len(args) || strings.HasPrefix(args[i], "-") {
+		return args
+	}
+	out := append([]string{}, args[:1]...) // prog name
+	out = append(out, args[i])             // command
+	out = append(out, follow...)           // hoisted follow flags
+	out = append(out, args[i+1:]...)       // remaining args
+	return out
 }
 
 func main() {
@@ -55,6 +86,11 @@ func main() {
 	if len(os.Args) == 2 && os.Args[1] == "help" {
 		os.Args = []string{os.Args[0], "--help"}
 	}
+
+	// let -f/--follow ride at the top level: `gg -f status` == `gg status -f`.
+	// move any leading follow flags to just after the subcommand token. unknown-flag
+	// cases (`gg -f foo` for a foo w/out --follow) then error like `gg foo -f` does.
+	os.Args = hoistFollow(os.Args)
 
 	var opts Options
 	parser := flags.NewParser(&opts, flags.Default)
