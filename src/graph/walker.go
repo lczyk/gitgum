@@ -117,34 +117,50 @@ func (w *walkState) targetCol(id string) int {
 	return -1
 }
 
-// routeMerge draws a diagonal staircase from a merge commit at `from` to an
-// already-live parent lane at `to`, one column-step per row, crossing any lanes
-// in between. The destination lane is left in place; the edge just joins it.
+// diag is the shared half-column diagonal emitter. It sweeps a front position
+// `d` (in half-column units: column c's pipe sits at 2c, the gap to its right
+// at 2c+1) from dStart to dEnd inclusive, one half-step per row, so every
+// diagonal in the layout climbs at the same angle -- gap slot on odd d (`|\|`
+// weave), column primary on even d (a bare `\` crossing that column's slot).
+// beforeRow, if set, runs just before each row is built so callers can update
+// lane state (merge / birth) as the front reaches a column.
+func (w *walkState) diag(dStart, dEnd int, glyph Glyph, beforeRow func(d int)) {
+	step := 1
+	if dEnd < dStart {
+		step = -1
+	}
+	for d := dStart; ; d += step {
+		if beforeRow != nil {
+			beforeRow(d)
+		}
+		row := w.pipeRow()
+		var gaps []Glyph
+		if d%2 == 1 {
+			gaps = make([]Glyph, len(w.lanes))
+			gaps[(d-1)/2] = glyph // diagonal in the inter-column gap
+		} else {
+			row[d/2] = glyph // diagonal crossing a column's primary slot
+		}
+		w.emit(row, gaps, nil)
+		if d == dEnd {
+			return
+		}
+	}
+}
+
+// routeMerge draws a diagonal from a merge commit at `from` to an already-live
+// parent lane at `to`, crossing any lanes in between at the shared half-column
+// slope. The edge leaves `from` and arrives beside `to` (both endpoints in the
+// adjacent gap), so the lanes at `from` and `to` keep their pipes and the edge
+// just joins the destination.
 func (w *walkState) routeMerge(from, to int) {
 	if to == from {
 		return
 	}
-	dir := -1
-	glyph := GlyphSlash // newest-first: moving left while descending
 	if to > from {
-		dir = 1
-		glyph = GlyphBackslash
-	}
-	for p := from + dir; ; p += dir {
-		row := w.pipeRow()
-		gaps := make([]Glyph, len(w.lanes))
-		// Weave in the gap so crossed lanes keep their pipes. Leftward steps
-		// sit in the gap left of p (gap[p]); rightward in the gap left of p too
-		// (gap[p-1]) -- i.e. always the gap on the side the edge entered from.
-		gi := p
-		if dir > 0 {
-			gi = p - 1
-		}
-		gaps[gi] = glyph
-		w.emit(row, gaps, nil)
-		if p == to {
-			return
-		}
+		w.diag(2*from+1, 2*to-1, GlyphBackslash, nil) // rightward, descending
+	} else {
+		w.diag(2*from-1, 2*to+1, GlyphSlash, nil) // leftward, descending
 	}
 }
 
@@ -187,17 +203,12 @@ func (w *walkState) pipeRow() []Glyph {
 	return g
 }
 
-// collapse converges the extra child lanes into myCol as a single diagonal that
-// sweeps right-to-left one HALF-column per row (git's classic fan): the diagonal
-// occupies a column's primary slot on even half-steps and the inter-column gap on
-// odd ones, so lanes settle into clean verticals behind it. Each extra is merged
-// (removed) as the diagonal reaches its column; lanes the diagonal has not yet
-// reached stay as pipes. Survivors that aren't extras keep their pipes and are
-// crossed for the one row the diagonal sits on their column.
-//
-// Half-column geometry: column c's pipe is at char position 2c; the gap to its
-// right is 2c+1. The diagonal sweeps d from 2*maxExtra-1 (gap left of the
-// furthest extra) down to 2*myCol+1 (gap right of the sink).
+// collapse converges the extra child lanes into myCol as a single half-column
+// diagonal sweeping right-to-left (git's classic fan). Each extra is merged
+// (removed) as the front reaches its column; lanes the front has not yet
+// reached stay as pipes, non-extra survivors are crossed for the one row the
+// diagonal sits on their column. The front runs from the gap left of the
+// furthest extra (2*maxE-1) down to the gap right of the sink (2*myCol+1).
 func (w *walkState) collapse(myCol int, extras []int) {
 	if len(extras) == 0 {
 		return
@@ -208,31 +219,25 @@ func (w *walkState) collapse(myCol int, extras []int) {
 			maxE = c
 		}
 	}
-	for d := 2*maxE - 1; d >= 2*myCol+1; d-- {
-		// Merge any extra the diagonal has now reached (its pipe at/right of d).
+	w.diag(2*maxE-1, 2*myCol+1, GlyphSlash, func(d int) {
+		// Merge any extra the front has now reached (its pipe at/right of d).
 		for _, c := range extras {
 			if 2*c >= d && w.lanes[c] != nil {
 				w.lanes[c] = nil
 			}
 		}
-		row := w.pipeRow()
-		var gaps []Glyph
-		if d%2 == 1 {
-			gaps = make([]Glyph, len(w.lanes))
-			gaps[(d-1)/2] = GlyphSlash // diagonal in the inter-column gap
-		} else {
-			row[d/2] = GlyphSlash // diagonal on a column's primary slot
-		}
-		w.emit(row, gaps, nil)
-	}
+	})
 }
 
-// fanOut draws the diagonals from a merge at myCol to its extra-parent lanes --
-// the mirror of collapse. The diagonals weave in the inter-column gaps (so a
-// 2-parent merge is a clean `|\`, not `| \`), sweeping one column per row toward
-// each new lane. A new lane is "in transit" until the diagonal reaches it, so it
-// isn't drawn as a pipe on the rows above its column.
+// fanOut draws the diagonal from a merge at myCol out to its extra-parent lanes
+// -- the mirror of collapse -- at the same half-column slope. Each new lane is
+// "in transit" (nil, undrawn) until the front reaches it, then settles into a
+// pipe. The front runs from the gap right of myCol (2*myCol+1) up to the gap
+// left of the furthest new col (2*maxC-1).
 func (w *walkState) fanOut(myCol int, newCols []int) {
+	if len(newCols) == 0 {
+		return
+	}
 	maxC := myCol
 	saved := make([]*laneEdge, len(newCols))
 	for i, c := range newCols {
@@ -242,21 +247,15 @@ func (w *walkState) fanOut(myCol int, newCols []int) {
 		saved[i] = w.lanes[c]
 		w.lanes[c] = nil // born via the diagonal; verticalises once reached
 	}
-	for p := myCol + 1; p <= maxC; p++ {
-		row := w.pipeRow()
-		gaps := make([]Glyph, len(w.lanes))
+	w.diag(2*myCol+1, 2*maxC-1, GlyphBackslash, func(d int) {
+		// Settle any new lane the front has now reached (mirror of collapse).
 		for i, c := range newCols {
-			if p > c {
-				continue // this lane already reached its column
-			}
-			gaps[p-1] = GlyphBackslash // diagonal in the gap left of column p
-			if p == c {
-				w.lanes[c] = saved[i] // settle: pipe from the next row on
+			if 2*c <= d && w.lanes[c] == nil {
+				w.lanes[c] = saved[i] // pipe from this row on
 			}
 		}
-		w.emit(row, gaps, nil)
-	}
-	// Any lane not yet restored (shouldn't happen: p reaches maxC >= every c).
+	})
+	// Any lane the sweep didn't reach (its col is at/beyond maxC's gap) settles now.
 	for i, c := range newCols {
 		if w.lanes[c] == nil {
 			w.lanes[c] = saved[i]

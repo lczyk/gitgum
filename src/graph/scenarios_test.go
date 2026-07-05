@@ -573,6 +573,7 @@ func TestScenario_SequentialSideBranches(t *testing.T) {
 | |\
 | | * s1
 | |/
+| /
 |/|
 * |   M1
 | * s2
@@ -653,7 +654,9 @@ func TestScenario_OctopusDedupTerms(t *testing.T) {
 | | * | C
 | * | | B
 | | |/
+| | /
 | |/
+| /
 |/
 *       M`
 	assertGraph(t, nodes, expected)
