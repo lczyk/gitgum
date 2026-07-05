@@ -94,11 +94,6 @@ type Row struct {
 	// `--graph` alignment which only widens the gap when parents actually
 	// fan out further to the side.
 	Extras int
-	// Tail is appended verbatim to the rendered row, after the col-grid
-	// slots, before any extras/label. Used for transient single-row
-	// decorations (e.g. the trailing `|` that turns a fork stagger `|\`
-	// into git's `|\|` shape) without widening LayoutResult.Columns.
-	Tail []Glyph
 	// Gap, when non-nil, holds the glyph drawn in each column's trailing
 	// half-slot (the space to its right). The row-walker uses it for crossing
 	// diagonals that pass between lanes: the diagonal lands in Gap[c] while the

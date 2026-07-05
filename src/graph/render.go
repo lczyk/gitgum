@@ -60,15 +60,9 @@ func renderRowInto(buf []byte, slotsBuf *[]Glyph, row Row, numCols int, st Style
 	slots := (*slotsBuf)[:0]
 	for c := 0; c < numCols; c++ {
 		g := row.Glyphs[c]
-		// NOTE: the diagonal-slide compression is git-mimicry; the row-walker
-		// emits a clean fixed grid and must not be packed (it would crush
-		// `| \ \ \` into `|\\\`). Gate it off there.
-		if !useWalker && (g == GlyphSlash || g == GlyphBackslash) && len(slots) > 0 && slots[len(slots)-1] == GlyphSpace {
-			slots[len(slots)-1] = g
-			continue
-		}
-		// Trailing half-slot: normally a space, but the row-walker can place a
-		// crossing diagonal here (Gap) so it weaves between two intact pipes.
+		// The row-walker emits a clean fixed grid (2 slots per column). The
+		// trailing half-slot is normally a space, but the walker can place a
+		// crossing diagonal there (Gap) so it weaves between two intact pipes.
 		trailing := GlyphSpace
 		if c < len(row.Gap) {
 			trailing = row.Gap[c]
@@ -97,19 +91,7 @@ func renderRowInto(buf []byte, slotsBuf *[]Glyph, row Row, numCols int, st Style
 	}
 
 	slotEnd := 2 * (lastActive + 1)
-	// Tail decorations sit immediately after the last non-space slot, used
-	// by stagger rows needing a transient extra glyph (e.g. the trailing
-	// `|` in git's `|\|` weave) without growing numCols. Trim col-pad
-	// spaces so the tail abuts the last meaningful slot.
-	if len(row.Tail) > 0 {
-		for slotEnd > 0 && slots[slotEnd-1] == GlyphSpace {
-			slotEnd--
-		}
-	}
 	buf = writeSlotsTo(buf, slots[:slotEnd], st)
-	if len(row.Tail) > 0 {
-		buf = writeSlotsTo(buf, row.Tail, st)
-	}
 
 	if row.Commit == nil {
 		return buf

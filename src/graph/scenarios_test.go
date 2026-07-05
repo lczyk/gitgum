@@ -176,13 +176,13 @@ func TestScenario_CrossMerge(t *testing.T) {
 		{ID: "a_merges_b", Label: "a_merges_b", Epoch: iso(4), Parents: []string{"a1", "b1"}, Lane: h("a")},
 		{ID: "main_merges_a", Label: "main_merges_a", Epoch: iso(5), Parents: []string{"base", "a_merges_b"}, Lane: h("main")},
 	}
-	// Cross-merge: `|\|` cross-routing where col 2 opens lazily after a1's
-	// commit row, then `| |\` extends the diagonal one more col over.
+	// Cross-merge: both of base's side children (a1, b1) open their own lane
+	// off the fork before a1 merges b1, then main merges a.
 	expected := `* base
 |\
-| * a1
-|\|
+| \
 | |\
+| * | a1
 | | * b1
 | |/
 | *   a_merges_b
@@ -286,9 +286,9 @@ func TestScenario_FastForward(t *testing.T) {
 
 func TestScenario_ThreeParallel(t *testing.T) {
 	t.Parallel()
-	// Three open branches forked from base, none merged. Each tip's lane on
-	// col 1 is independent (no overlap), so compaction reuses col 1 and
-	// each tip gets its own |\ fork stagger.
+	// Three open branches forked from base, none merged. The walker gives each
+	// live tip-edge its own column, so base's three children fan out across
+	// three columns rather than reusing one.
 	nodes := []graph.Node{
 		{ID: "base", Label: "base", Epoch: iso(1), Lane: h("main")},
 		{ID: "a1", Label: "a1", Epoch: iso(2), Parents: []string{"base"}, Lane: h("a")},
@@ -297,8 +297,9 @@ func TestScenario_ThreeParallel(t *testing.T) {
 	}
 	expected := `* base
 |\
-| * a1
-|\
+| \
+| |\
+| | * a1
 | * b1
 * c1`
 	assertGraph(t, nodes, expected)
@@ -324,8 +325,6 @@ func TestScenario_BackMerge(t *testing.T) {
 | * main1
 * | feat1
 |\|
-| |\
-| |/
 | *   main_merges_feat
 |/
 *   feat_merges_main`
@@ -541,8 +540,6 @@ func TestScenario_CatchUpReusesIdleCol(t *testing.T) {
 * | m1
 * | m2
 |\|
-| |\
-| |/
 | *   M
 | * s1
 | |\
@@ -557,13 +554,10 @@ func TestScenario_CatchUpReusesIdleCol(t *testing.T) {
 
 func TestScenario_SequentialSideBranches(t *testing.T) {
 	t.Parallel()
-	// Two side branches off the same mainline parent B, each merged via
-	// its own merge commit (M1 then M2). Both side branches reuse col 1.
-	// Bug repro (pre-fix): the new col-1 lane intro for s2 was rendered at
-	// M1's row, immediately above M1's own term stagger -- producing a
-	// confusing `|\` then `|/` pair on consecutive rows, with col 1 still
-	// drawn as alive at M1's commit row. The intro should sit just above
-	// s2's commit, after M1 has rendered.
+	// Two side branches off the same mainline parent B, each merged via its
+	// own merge commit (M1 then M2). Both side branches (s1, s2) fork off B;
+	// the walker gives each its own live lane, so s2 opens a fresh column
+	// alongside s1's rather than reusing it.
 	nodes := []graph.Node{
 		{ID: "A", Label: "A", Epoch: iso(1), Lane: h("main")},
 		{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}, Lane: h("main")},
@@ -575,10 +569,12 @@ func TestScenario_SequentialSideBranches(t *testing.T) {
 	expected := `* A
 * B
 |\
-| * s1
-|/
-*   M1
-|\
+| \
+| |\
+| | * s1
+| |/
+|/|
+* |   M1
 | * s2
 |/
 *   M2`
@@ -636,11 +632,10 @@ func TestScenario_BackAndForthCatchUps(t *testing.T) {
 
 func TestScenario_OctopusDedupTerms(t *testing.T) {
 	t.Parallel()
-	// 4-parent octopus where 3 non-first parents (B, C, D) all land in
-	// the same compacted col 1. Each parent edge is distinct but emits
-	// an identical visual term stagger from col 1; pre-fix three
-	// duplicate `|/` rows rendered above M. Dedup by source col
-	// collapses to one.
+	// 4-parent octopus: M merges [A, B, C, D]. The walker gives each of A's
+	// three side children (B, C, D) its own live lane, so the fan-out cascades
+	// across four columns and each edge terms back with its own `|/` step. The
+	// merge `*` is padded by the three non-first parents (6 slots).
 	nodes := []graph.Node{
 		{ID: "A", Label: "A", Epoch: iso(1), Lane: h("main")},
 		{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}, Lane: h("b")},
@@ -648,23 +643,29 @@ func TestScenario_OctopusDedupTerms(t *testing.T) {
 		{ID: "D", Label: "D", Epoch: iso(4), Parents: []string{"A"}, Lane: h("d")},
 		{ID: "M", Label: "M", Epoch: iso(5), Parents: []string{"A", "B", "C", "D"}, Lane: h("main")},
 	}
-	lr := graph.Layout(nodes)
-	lines := graph.Render(lr, graph.Style{})
-	rendered := stripTrailingSpaces(strings.Join(lines, "\n"))
-	termCount := strings.Count(rendered, "|/")
-	if termCount != 1 {
-		t.Errorf("expected exactly one `|/` term row above M; got %d\n%s", termCount, rendered)
-	}
+	expected := `* A
+|\
+| \
+| |\
+| | \
+| | |\
+| | | * D
+| | * | C
+| * | | B
+| | |/
+| |/
+|/
+*       M`
+	assertGraph(t, nodes, expected)
 }
 
 func TestScenario_StashWithIndex(t *testing.T) {
 	t.Parallel()
 	// Mirrors git's `refs/stash` shape: the stash commit C has two parents,
 	// the mainline tip A and an "index" commit B (which itself parents off A).
-	// `git log --graph --all` renders this with a `|\|` weave between B and C
-	// to convey C's second-parent edge into B's now-dead lane -- not a plain
-	// `|\` fork. Repro of the discrepancy seen running `gg tree` on a real
-	// repo with an active auto-stash entry.
+	// The walker opens a distinct lane for each of A's live children (B and
+	// C's edge), so C's second-parent edge into B routes through its own
+	// column rather than the compact `|\|` weave git draws.
 	nodes := []graph.Node{
 		{ID: "A", Label: "A", Epoch: iso(1), Lane: h("main")},
 		{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}, Lane: h("stash-idx")},
@@ -673,9 +674,11 @@ func TestScenario_StashWithIndex(t *testing.T) {
 	}
 	expected := `* A
 |\
-| * B
-|\|
-| * C
+| \
+| |\
+| | * B
+| |/
+| *   C
 * M`
 	assertGraph(t, nodes, expected)
 }

@@ -1,13 +1,6 @@
 package graph
 
-import (
-	"os"
-	"sort"
-)
-
-// useWalker selects the active-lanes row-walker over the legacy multi-phase
-// engine. Opt-in until proven; see Layout.
-var useWalker = os.Getenv("GG_GRAPH_WALKER") != ""
+import "sort"
 
 // ------ active-lanes row-walker ------------------------------------------------
 //
@@ -34,6 +27,7 @@ type walkState struct {
 	rows    [][]Glyph   // newest-first; reversed at the end
 	gaps    [][]Glyph   // parallel to rows: trailing-slot diagonals (crossings)
 	commits []*Node     // parallel to rows; nil on connector rows
+	extras  []int       // parallel to rows: merge `*`-to-label padding slots
 	width   int
 }
 
@@ -78,6 +72,18 @@ func (w *walkState) place(ns *nodeState) {
 	row := w.pipeRow()
 	row[myCol] = GlyphStar
 	w.emit(row, nil, ns.Node)
+	// Merge padding: git pads a merge `*` by 2 slots per extra parent that
+	// lives in a different column (mirrors the legacy engine's Extras). In the
+	// walker every non-first parent routes to a lane other than myCol, so this
+	// is just the count of non-first parents present in the graph (dangling
+	// parents open no closing lane and don't pad, matching legacy).
+	extras := 0
+	for k := 1; k < len(ns.Parents); k++ {
+		if w.idx[ns.Parents[k]] != nil {
+			extras++
+		}
+	}
+	w.extras[len(w.extras)-1] = extras
 
 	// parents: first reuses myCol, extras open new lanes and fan out
 	parents := ns.Parents
@@ -292,6 +298,7 @@ func (w *walkState) emit(row []Glyph, gaps []Glyph, commit *Node) {
 	w.rows = append(w.rows, row)
 	w.gaps = append(w.gaps, gaps)
 	w.commits = append(w.commits, commit)
+	w.extras = append(w.extras, 0)
 }
 
 // finish reverses to oldest-first, swaps slashes (in both column glyphs and
@@ -323,7 +330,7 @@ func (w *walkState) finish() LayoutResult {
 			gap = make([]Glyph, w.width)
 			swap(gap, src)
 		}
-		out[i] = Row{Commit: w.commits[n-1-i], Glyphs: g, Gap: gap}
+		out[i] = Row{Commit: w.commits[n-1-i], Glyphs: g, Gap: gap, Extras: w.extras[n-1-i]}
 	}
 	return LayoutResult{Rows: out, Columns: w.width}
 }
