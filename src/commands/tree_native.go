@@ -22,7 +22,7 @@ func (t *TreeCommand) renderNative(w io.Writer, sinceArg string, maxCount int) e
 	// committer date, and the layout engine's row ordering must match it or an
 	// open (never-merged) side branch whose author date predates the trunk tip
 	// gets sorted to the bottom, detached from its fork point.
-	gitArgs := []string{"log", "--all", "--format=%H %P%x00%h%d %s%x00%ct", "--date-order", colorFlag}
+	gitArgs := []string{"log", "--all", logFormat, "--date-order", colorFlag}
 	if sinceArg != "" {
 		gitArgs = append(gitArgs, "--since", sinceArg)
 	}
@@ -34,12 +34,24 @@ func (t *TreeCommand) renderNative(w io.Writer, sinceArg string, maxCount int) e
 	if runErr != nil {
 		return fmt.Errorf("git log: %w", runErr)
 	}
+
+	// --since is a global commit-date filter, so it can drop HEAD itself (and
+	// the commits linking it to its in-window descendants) when the checked-out
+	// commit predates the window (e.g. detached onto an old commit). That leaves
+	// head-float with nothing to anchor on. Splice those lines back in so HEAD
+	// stays in the graph, connected, and can sink to the bottom.
+	if !t.NoHeadFloat {
+		if extra := t.headFloatLines(colorFlag, stdout, nodeIDs(stdout)); len(extra) > 0 {
+			stdout = strings.Join(extra, "\n") + "\n" + stdout
+		}
+	}
+
 	if strings.TrimSpace(stdout) == "" {
 		return nil
 	}
 
 	useColor := colorEnabled()
-	nodes, err := parseNativeCommits(stdout, useColor)
+	nodes, err := parseNativeCommits(stdout, useColor, !t.NoHeadFloat)
 	if err != nil {
 		return fmt.Errorf("parsing git log output: %w", err)
 	}
@@ -67,13 +79,97 @@ func (t *TreeCommand) renderNative(w io.Writer, sinceArg string, maxCount int) e
 	return nil
 }
 
+// logFormat is the null-delimited plumbing format shared by renderNative's main
+// query and the head-float splice, so spliced lines parse identically.
+const logFormat = "--format=%H %P%x00%h%d %s%x00%ct"
+
+// rawHasNode reports whether id appears as a node (the leading %H field of some
+// line) in git-log output, ignoring matches in the %P parent fields.
+func rawHasNode(raw, id string) bool {
+	prefix := id + " "
+	for _, ln := range strings.Split(raw, "\n") {
+		if strings.HasPrefix(ln, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// nodeIDs extracts the %H node id (leading field) from each line of git-log
+// output, ignoring blanks.
+func nodeIDs(raw string) []string {
+	lines := strings.Split(strings.TrimSpace(raw), "\n")
+	ids := make([]string, 0, len(lines))
+	for _, ln := range lines {
+		if ln == "" {
+			continue
+		}
+		if id, _, ok := strings.Cut(ln, " "); ok && id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// headFloatLines returns extra git-log lines to splice into the main output so
+// the checked-out commit (HEAD) and the commits bridging it to its in-window
+// descendants stay visible -- --since can filter HEAD and that connecting chain
+// out. windowIDs are the %H node ids already present in raw. Returns nil when
+// HEAD is already shown (the common in-window case) or on lookup failure.
+// colorFlag mirrors the main query so spliced lines format identically.
+func (t *TreeCommand) headFloatLines(colorFlag, raw string, windowIDs []string) []string {
+	r := t.repo()
+	idOut, _, err := r.Run("rev-parse", "HEAD")
+	if err != nil {
+		return nil
+	}
+	headID := strings.TrimSpace(idOut)
+	// Match HEAD as a node id (%H, line-start), not anywhere: the hash also
+	// appears as a %P parent field on HEAD's children, so a plain substring
+	// check would wrongly treat an out-of-window HEAD as already present.
+	if headID == "" || rawHasNode(raw, headID) {
+		return nil
+	}
+
+	var lines []string
+	// HEAD itself: the A..B bridge ranges below exclude A, so they never yield
+	// HEAD -- fetch it as its own single-rev line.
+	if out, _, err := r.Run("log", "-1", logFormat, colorFlag, headID); err == nil {
+		if line := strings.TrimRight(out, "\n"); line != "" {
+			lines = append(lines, line)
+		}
+	}
+
+	// Bridge: commits on the ancestry path from HEAD (exclusive) up to each
+	// in-window node. --ancestry-path trims each HEAD..id range to the commits
+	// actually linking the two; git dedups across ranges in a single walk.
+	// Splice only the ones --since dropped (not already in raw).
+	if len(windowIDs) > 0 {
+		args := []string{"log", "--ancestry-path", logFormat, colorFlag}
+		for _, id := range windowIDs {
+			args = append(args, headID+".."+id)
+		}
+		if out, _, err := r.Run(args...); err == nil {
+			for _, ln := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+				if ln == "" {
+					continue
+				}
+				if id, _, ok := strings.Cut(ln, " "); ok && !rawHasNode(raw, id) {
+					lines = append(lines, ln)
+				}
+			}
+		}
+	}
+	return lines
+}
+
 // parseNativeCommits parses null-delimited git log output and pre-formats
 // each Label with ANSI escapes when color is on. Each commit is one line:
 // "<hash> <parents>\x00<hash> <decorations> <subject>\x00<epoch>"
 //
 // Branch-name hints are interned into int64 lane ids via a per-call map
 // so repeated names share a lane.
-func parseNativeCommits(raw string, useColor bool) ([]graph.Node, error) {
+func parseNativeCommits(raw string, useColor, floatHead bool) ([]graph.Node, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, nil
@@ -124,6 +220,7 @@ func parseNativeCommits(raw string, useColor bool) ([]graph.Node, error) {
 			Parents: parents,
 			Epoch:   epoch,
 			Lane:    lane,
+			IsHead:  floatHead && isHeadDecoration(rawLabel),
 		})
 	}
 	return nodes, nil
@@ -155,6 +252,28 @@ func extractLaneName(label string) string {
 		}
 	}
 	return ""
+}
+
+// isHeadDecoration reports whether the %d decoration marks the checked-out
+// commit. Matches both attached ("HEAD -> main") and detached ("HEAD") forms,
+// scoped to a ref token so a subject mentioning the word HEAD never trips it.
+func isHeadDecoration(label string) bool {
+	idx := strings.Index(label, " (")
+	if idx < 0 {
+		return false
+	}
+	rest := label[idx+2:]
+	end := strings.Index(rest, ")")
+	if end < 0 {
+		return false
+	}
+	for _, ref := range strings.Split(rest[:end], ", ") {
+		ref = strings.TrimSpace(ref)
+		if ref == "HEAD" || strings.HasPrefix(ref, "HEAD -> ") {
+			return true
+		}
+	}
+	return false
 }
 
 // colorLabel takes a raw "<hash> [(refs)] <subject>" string and returns

@@ -18,9 +18,10 @@ import (
 
 type TreeCommand struct {
 	cmdIO
-	Since   string   `long:"since" default:"2w" description:"limit history. shorthand: '2w', '10d', '1h' (units: s/m/h/d/w/y). ISO date: '2024-01-01'. bare integer: tree depth (last N commits). empty: show all."`
-	Reverse bool     `long:"reverse" short:"r" description:"newest-first output (useful in follow mode)"`
-	Follow  *float64 `long:"follow" short:"f" optional:"yes" optional-value:"2" description:"follow mode: refresh every N seconds (default 2, min 1)"`
+	Since       string   `long:"since" default:"2w" description:"limit history. shorthand: '2w', '10d', '1h' (units: s/m/h/d/w/y). ISO date: '2024-01-01'. bare integer: tree depth (last N commits). empty: show all."`
+	Reverse     bool     `long:"reverse" short:"r" description:"newest-first output (useful in follow mode)"`
+	NoHeadFloat bool     `long:"no-head-float" description:"don't float the checked-out commit (HEAD) to the bottom"`
+	Follow      *float64 `long:"follow" short:"f" optional:"yes" optional-value:"2" description:"follow mode: refresh every N seconds (default 2, min 1)"`
 }
 
 var (

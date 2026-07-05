@@ -33,6 +33,12 @@ type Node struct {
 	Parents []string // parent IDs (empty for roots)
 	Epoch   int64    // sort key (commonly unix epoch seconds; any monotonic int works). Optional -- when all Epochs are equal (incl. zero), nodes tiebreak by ID for deterministic layout.
 	Lane    int64
+	// IsHead marks the checked-out commit. At most one node should set it.
+	// When set, the layout floats this node and its descendant-closure to the
+	// bottom of the output (the head's lineage sorts ahead of everything else),
+	// so the checked-out commit lands as low as the DAG allows -- exactly the
+	// bottom row when it's a branch tip. Unset on every node = no-op.
+	IsHead bool
 }
 
 // Glyph is a single graph-drawing character in one column of one row.

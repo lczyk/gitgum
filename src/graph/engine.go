@@ -213,6 +213,35 @@ type lane struct {
 
 // ------ phase 1: topological sort --------------------------------------------------------------------------
 
+// headDescendants returns the set of node IDs covering the IsHead node and all
+// its descendants (reachable via child edges). Returns nil when no node sets
+// IsHead, so the caller's ordering is unaffected.
+func (st *layoutState) headDescendants() map[string]bool {
+	var head *nodeState
+	for _, ns := range st.nodes {
+		if ns.IsHead {
+			head = ns
+			break
+		}
+	}
+	if head == nil {
+		return nil
+	}
+	set := map[string]bool{}
+	var walk func(ns *nodeState)
+	walk = func(ns *nodeState) {
+		if set[ns.ID] {
+			return
+		}
+		set[ns.ID] = true
+		for _, c := range ns.children {
+			walk(c)
+		}
+	}
+	walk(head)
+	return set
+}
+
 func (st *layoutState) sort() {
 	n := len(st.nodes)
 	if n == 0 {
@@ -224,6 +253,12 @@ func (st *layoutState) sort() {
 	for _, ns := range st.nodes {
 		indeg[ns.ID] = len(ns.children)
 	}
+
+	// headSide is HEAD plus its descendant-closure (the commits that must render
+	// below it). Floating these ahead of everything else in the ready queue sinks
+	// HEAD to the lowest row the DAG allows -- the bottom row when it's a tip.
+	// Empty (no IsHead node) leaves ordering untouched.
+	headSide := st.headDescendants()
 
 	// Ready set: nodes whose children are all placed (tips first).
 	ready := make([]*nodeState, 0)
@@ -292,6 +327,9 @@ func (st *layoutState) sort() {
 		// Pick newest ready node (date-ordered queue).
 		sort.Slice(ready, func(i, j int) bool {
 			a, b := ready[i], ready[j]
+			if ah, bh := headSide[a.ID], headSide[b.ID]; ah != bh {
+				return ah // head-side tips drain first -> sink to the bottom
+			}
 			if a.Epoch != b.Epoch {
 				return a.Epoch > b.Epoch
 			}
