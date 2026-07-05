@@ -27,7 +27,6 @@ type walkState struct {
 	rows    [][]Glyph   // newest-first; reversed at the end
 	gaps    [][]Glyph   // parallel to rows: trailing-slot diagonals (crossings)
 	commits []*Node     // parallel to rows; nil on connector rows
-	extras  []int       // parallel to rows: merge `*`-to-label padding slots
 	width   int
 }
 
@@ -72,7 +71,6 @@ func (w *walkState) place(ns *nodeState) {
 	row := w.pipeRow()
 	row[myCol] = GlyphStar
 	w.emit(row, nil, ns.Node)
-	commitRow := len(w.extras) - 1 // Extras set below, once fan-out is known
 
 	// parents: first reuses myCol, extras open new lanes and fan out
 	parents := ns.Parents
@@ -96,11 +94,6 @@ func (w *walkState) place(ns *nodeState) {
 		w.lanes[nc] = &laneEdge{target: pid}
 		newCols = append(newCols, nc)
 	}
-	// Merge padding: git pads a merge `*` by 2 slots per extra parent that
-	// fans out to a NEW column on its right. Parents that route into an
-	// already-live lane (a converging `|\|` weave) add no rightward column,
-	// so they don't pad -- padding there would trail into empty space.
-	w.extras[commitRow] = len(newCols)
 	if len(newCols) > 0 {
 		w.fanOut(myCol, newCols)
 	}
@@ -291,7 +284,6 @@ func (w *walkState) emit(row []Glyph, gaps []Glyph, commit *Node) {
 	w.rows = append(w.rows, row)
 	w.gaps = append(w.gaps, gaps)
 	w.commits = append(w.commits, commit)
-	w.extras = append(w.extras, 0)
 }
 
 // finish reverses to oldest-first, swaps slashes (in both column glyphs and
@@ -323,7 +315,7 @@ func (w *walkState) finish() LayoutResult {
 			gap = make([]Glyph, w.width)
 			swap(gap, src)
 		}
-		out[i] = Row{Commit: w.commits[n-1-i], Glyphs: g, Gap: gap, Extras: w.extras[n-1-i]}
+		out[i] = Row{Commit: w.commits[n-1-i], Glyphs: g, Gap: gap}
 	}
 	return LayoutResult{Rows: out, Columns: w.width}
 }

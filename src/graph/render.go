@@ -24,7 +24,7 @@ func Render(lr LayoutResult, st Style) []string {
 	for _, row := range lr.Rows {
 		estBytes += 2 * lr.Columns
 		if row.Commit != nil {
-			estBytes += len(row.Commit.Label) + row.Extras*2 + 1
+			estBytes += len(row.Commit.Label) + 1
 		}
 		if styleOverhead := len(st.LinePrefix) + len(st.LineSuffix) + len(st.StarPrefix) + len(st.StarSuffix); styleOverhead > 0 {
 			estBytes += styleOverhead * 4
@@ -95,13 +95,6 @@ func renderRowInto(buf []byte, slotsBuf *[]Glyph, row Row, numCols int, st Style
 
 	if row.Commit == nil {
 		return buf
-	}
-
-	// Merge commits get extra alignment slots after the `*` to line up with
-	// fan-out cols above (each fan-out parent contributes 2 chars). Layout
-	// pre-computes this from actual parent col positions.
-	for range row.Extras * 2 {
-		buf = append(buf, ' ')
 	}
 
 	// Label is opaque -- callers embed ANSI codes pre-Layout if they want

@@ -95,7 +95,7 @@ func TestScenario_SingleMerge(t *testing.T) {
 | * side1
 | * side2
 |/
-*   merge`
+* merge`
 	assertGraph(t, nodes, expected)
 }
 
@@ -113,11 +113,11 @@ func TestScenario_TwoBranches(t *testing.T) {
 |\
 | * f1a
 |/
-*   merge_f1
+* merge_f1
 |\
 | * f2a
 |/
-*   merge_f2`
+* merge_f2`
 	assertGraph(t, nodes, expected)
 }
 
@@ -160,9 +160,9 @@ func TestScenario_NestedMerge(t *testing.T) {
 | |\
 | | * inner1
 | |/
-| *   merge_inner
+| * merge_inner
 |/
-*   merge_outer`
+* merge_outer`
 	assertGraph(t, nodes, expected)
 }
 
@@ -185,9 +185,9 @@ func TestScenario_CrossMerge(t *testing.T) {
 | * | a1
 | | * b1
 | |/
-| *   a_merges_b
+| * a_merges_b
 |/
-*   main_merges_a`
+* main_merges_a`
 	assertGraph(t, nodes, expected)
 }
 
@@ -240,7 +240,7 @@ func TestScenario_WideStagger(t *testing.T) {
 * | m4
 | * far1
 |/
-*   merge_far`
+* merge_far`
 	assertGraph(t, nodes, expected)
 }
 
@@ -327,7 +327,7 @@ func TestScenario_BackMerge(t *testing.T) {
 |\|
 | * main_merges_feat
 |/
-*   feat_merges_main`
+* feat_merges_main`
 	assertGraph(t, nodes, expected)
 }
 
@@ -355,7 +355,7 @@ func TestScenario_MergeOldIntoNew(t *testing.T) {
 * | m6
 | * old1
 |/
-*   merge_old`
+* merge_old`
 	assertGraph(t, nodes, expected)
 }
 
@@ -379,11 +379,11 @@ func TestScenario_DeepNested(t *testing.T) {
 | | |\
 | | | * l3a
 | | |/
-| | *   L2_merges_L3
+| | * L2_merges_L3
 | |/
-| *   L1_merges_L2
+| * L1_merges_L2
 |/
-*   main_merges_L1`
+* main_merges_L1`
 	assertGraph(t, nodes, expected)
 }
 
@@ -413,7 +413,7 @@ func TestScenario_TopoSkewMerge(t *testing.T) {
 * | main1
 | * side_old
 |/
-*   merge_side`
+* merge_side`
 	assertGraph(t, nodes, expected)
 }
 
@@ -546,9 +546,9 @@ func TestScenario_CatchUpReusesIdleCol(t *testing.T) {
 | * | p1
 | | * p2
 | |/
-| *   mp
+| * mp
 |/
-*   final`
+* final`
 	assertGraph(t, nodes, expected)
 }
 
@@ -575,10 +575,10 @@ func TestScenario_SequentialSideBranches(t *testing.T) {
 | |/
 | /
 |/|
-* |   M1
+* | M1
 | * s2
 |/
-*   M2`
+* M2`
 	assertGraph(t, nodes, expected)
 }
 
@@ -658,7 +658,7 @@ func TestScenario_OctopusDedupTerms(t *testing.T) {
 | |/
 | /
 |/
-*       M`
+* M`
 	assertGraph(t, nodes, expected)
 }
 
@@ -681,7 +681,7 @@ func TestScenario_StashWithIndex(t *testing.T) {
 | |\
 | | * B
 | |/
-| *   C
+| * C
 * M`
 	assertGraph(t, nodes, expected)
 }

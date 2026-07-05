@@ -88,12 +88,6 @@ type Style struct {
 type Row struct {
 	Commit *Node
 	Glyphs []Glyph // len == LayoutResult.Columns
-	// Extras is the number of `*-to-label` alignment-padding slots a merge
-	// commit needs. Computed by Layout from how many non-first parents end
-	// up in cols different from the commit's own col -- matches git's
-	// `--graph` alignment which only widens the gap when parents actually
-	// fan out further to the side.
-	Extras int
 	// Gap, when non-nil, holds the glyph drawn in each column's trailing
 	// half-slot (the space to its right). The row-walker uses it for crossing
 	// diagonals that pass between lanes: the diagonal lands in Gap[c] while the
