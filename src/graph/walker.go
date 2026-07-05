@@ -72,18 +72,7 @@ func (w *walkState) place(ns *nodeState) {
 	row := w.pipeRow()
 	row[myCol] = GlyphStar
 	w.emit(row, nil, ns.Node)
-	// Merge padding: git pads a merge `*` by 2 slots per extra parent that
-	// lives in a different column (mirrors the legacy engine's Extras). In the
-	// walker every non-first parent routes to a lane other than myCol, so this
-	// is just the count of non-first parents present in the graph (dangling
-	// parents open no closing lane and don't pad, matching legacy).
-	extras := 0
-	for k := 1; k < len(ns.Parents); k++ {
-		if w.idx[ns.Parents[k]] != nil {
-			extras++
-		}
-	}
-	w.extras[len(w.extras)-1] = extras
+	commitRow := len(w.extras) - 1 // Extras set below, once fan-out is known
 
 	// parents: first reuses myCol, extras open new lanes and fan out
 	parents := ns.Parents
@@ -107,6 +96,11 @@ func (w *walkState) place(ns *nodeState) {
 		w.lanes[nc] = &laneEdge{target: pid}
 		newCols = append(newCols, nc)
 	}
+	// Merge padding: git pads a merge `*` by 2 slots per extra parent that
+	// fans out to a NEW column on its right. Parents that route into an
+	// already-live lane (a converging `|\|` weave) add no rightward column,
+	// so they don't pad -- padding there would trail into empty space.
+	w.extras[commitRow] = len(newCols)
 	if len(newCols) > 0 {
 		w.fanOut(myCol, newCols)
 	}

@@ -325,7 +325,7 @@ func TestScenario_BackMerge(t *testing.T) {
 | * main1
 * | feat1
 |\|
-| *   main_merges_feat
+| * main_merges_feat
 |/
 *   feat_merges_main`
 	assertGraph(t, nodes, expected)
@@ -540,7 +540,7 @@ func TestScenario_CatchUpReusesIdleCol(t *testing.T) {
 * | m1
 * | m2
 |\|
-| *   M
+| * M
 | * s1
 | |\
 | * | p1
