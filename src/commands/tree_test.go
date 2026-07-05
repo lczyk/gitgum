@@ -251,7 +251,7 @@ func TestTreeCommand_Execute(t *testing.T) {
 		assert.ContainsString(t, out, "chore: Add C on main")
 	})
 
-	t.Run("future iso since shows no commits", func(t *testing.T) {
+	t.Run("future iso since keeps only HEAD via head-float", func(t *testing.T) {
 		t.Parallel()
 		var buf bytes.Buffer
 		cmd := &TreeCommand{cmdIO: cmdIO{Out: &buf, Repo: repo}, Since: "2099-01-01"}
@@ -259,9 +259,23 @@ func TestTreeCommand_Execute(t *testing.T) {
 		require.NoError(t, err)
 
 		out := strings.TrimSpace(buf.String())
-		assert.That(t, !strings.Contains(out, "chore: Add A"), "should not contain commits dated before 2099")
-		assert.That(t, !strings.Contains(out, "chore: Add B on feature"), "should not contain commits dated before 2099")
-		assert.That(t, !strings.Contains(out, "chore: Add C on main"), "should not contain commits dated before 2099")
+		// Head-float always keeps the checked-out commit in view, even when the
+		// --since window would otherwise filter everything out. HEAD here is the
+		// main tip ("Add C on main"); the rest stay hidden.
+		assert.ContainsString(t, out, "chore: Add C on main")
+		assert.That(t, !strings.Contains(out, "chore: Add A"), "non-HEAD commits stay filtered")
+		assert.That(t, !strings.Contains(out, "chore: Add B on feature"), "non-HEAD commits stay filtered")
+	})
+
+	t.Run("future iso since with --no-head-float shows nothing", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		cmd := &TreeCommand{cmdIO: cmdIO{Out: &buf, Repo: repo}, Since: "2099-01-01", NoHeadFloat: true}
+		err := cmd.Execute(nil)
+		require.NoError(t, err)
+
+		out := strings.TrimSpace(buf.String())
+		assert.Equal(t, out, "")
 	})
 }
 
