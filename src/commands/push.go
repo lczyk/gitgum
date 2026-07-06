@@ -35,6 +35,14 @@ func (p *PushCommand) Execute(args []string) error {
 			return fmt.Errorf("getting remote commit: %w", err)
 		}
 		if localCommit == remoteCommit {
+			// remoteBranch is the local remote-tracking ref (refs/remotes/...),
+			// which can be stale: the upstream may have been deleted without a
+			// prune. Verify it still exists before declaring "up to date".
+			if handled, err := p.handleStaleUpstream(currentBranch, remoteBranch); err != nil {
+				return err
+			} else if handled {
+				return nil
+			}
 			fmt.Fprintf(p.out(), "No changes to push. Local branch '%s' is up to date with '%s'.\n",
 				currentBranch, remoteBranch)
 			return nil
@@ -162,4 +170,44 @@ func (p *PushCommand) Execute(args []string) error {
 	}
 	fmt.Fprintf(p.out(), "Pushed to remote branch '%s'.\n", expectedRemoteBranchName)
 	return nil
+}
+
+// handleStaleUpstream is called when the local branch matches its
+// remote-tracking ref, which would normally mean "nothing to push". Because
+// that ref is a local cache, it can lie when the upstream branch was deleted
+// remotely without a prune. handleStaleUpstream does a live check: if the
+// upstream is gone (remote reachable, ref missing) it offers to recreate it;
+// if the remote is unreachable it warns and lets the caller fall through to
+// the (best-effort) up-to-date message. Returns handled=true when it has
+// fully dealt with the push (recreated, declined, or cancelled).
+func (p *PushCommand) handleStaleUpstream(currentBranch, upstream string) (handled bool, err error) {
+	remote, branch, ok := strings.Cut(upstream, "/")
+	if !ok {
+		return false, nil
+	}
+	exists, reachable := p.repo().RemoteBranchReachability(remote, branch)
+	if exists {
+		return false, nil
+	}
+	if !reachable {
+		fmt.Fprintf(p.err(), "Warning: could not reach remote '%s' to verify branch '%s' (network/auth issue?).\n", remote, branch)
+		return false, nil
+	}
+
+	fmt.Fprintf(p.out(), "Branch '%s' no longer exists on remote '%s' (deleted upstream). Local tracking info is stale.\n", branch, upstream)
+	confirmed, err := p.sel().Confirm(fmt.Sprintf("Recreate remote branch '%s'?", upstream), true)
+	if err != nil {
+		if errors.Is(err, ui.ErrCancelled) {
+			return true, nil
+		}
+		return false, fmt.Errorf("confirming recreate upstream: %w", err)
+	}
+	if !confirmed {
+		return true, nil
+	}
+	if _, stderr, err := p.repo().RunWriteStream("push", "-u", remote, currentBranch); err != nil {
+		return false, fmt.Errorf("failed to push: %w: %s", err, strings.TrimSpace(stderr))
+	}
+	fmt.Fprintf(p.out(), "Recreated remote branch '%s'.\n", upstream)
+	return true, nil
 }
