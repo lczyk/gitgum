@@ -63,7 +63,7 @@ Print a colored commit graph across all branches, with the tip at the bottom (ri
 ```bash
 git log --graph --oneline --all --decorate   # then reverse + flip diagonals
 ```
-Defaults to the last two weeks. Override with `--since=<expr>` (any value `git log --since` accepts: `1m`, `yesterday`, `2024-01-01`, `"3 weeks ago"`). Pass `--since=` (empty) for the full history. Pass `--follow` / `-f` (optional `=N` interval) for an auto-refreshing alt-screen view with `j/k g/G` scroll.
+Defaults to the last two weeks. Override with `--since=<expr>` (any value `git log --since` accepts: `1m`, `yesterday`, `2024-01-01`, `"3 weeks ago"`). Pass `--since=` (empty), or `--all` / `-a`, for the full history. Pass `--follow` / `-f` (optional `=N` interval) for an auto-refreshing alt-screen view with `j/k g/G` scroll.
 
 ### `gitgum push`
 
