@@ -94,6 +94,26 @@ func (s *SwitchCommand) alignWithRemote(remote, branch string) error {
 	return nil
 }
 
+// warnIfRemoteUnreachable checks the tracking remote of a just-checked-out
+// local branch and prints a warning if the branch is missing there or the
+// remote can't be reached. Best-effort: never fails the switch, since the
+// checkout already succeeded.
+func (s *SwitchCommand) warnIfRemoteUnreachable(branch string) {
+	remote, err := s.repo().GetBranchTrackingRemote(branch)
+	if err != nil || remote == "" {
+		return
+	}
+	exists, reachable := s.repo().RemoteBranchReachability(remote, branch)
+	switch {
+	case exists:
+		return
+	case reachable:
+		fmt.Fprintf(s.err(), "Warning: branch '%s' no longer exists on remote '%s' (deleted upstream?). Local tracking info is stale.\n", branch, remote)
+	default:
+		fmt.Fprintf(s.err(), "Warning: could not reach remote '%s' to verify branch '%s' (network/auth issue?). Local tracking info may be stale.\n", remote, branch)
+	}
+}
+
 func (s *SwitchCommand) createTrackingBranch(remote, branch string) error {
 	confirmed, err := s.sel().Confirm(fmt.Sprintf("Branch '%s' is not tracked locally. Create a local tracking branch?", branch), true)
 	if err != nil {

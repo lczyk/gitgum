@@ -2,7 +2,9 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
 
 	"github.com/lczyk/gitgum/internal/strutil"
@@ -241,6 +243,24 @@ func (r Repo) RemoteBranchExists(remote, branch string) (bool, error) {
 		return false, nil
 	}
 	return true, nil
+}
+
+// RemoteBranchReachability distinguishes "branch missing on remote" from
+// "remote itself couldn't be reached", so callers can give a precise
+// warning instead of conflating the two. `ls-remote --exit-code` exits 2
+// specifically for "remote reachable, no matching ref"; any other non-zero
+// exit (auth failure, DNS/network error, etc.) means the remote itself
+// couldn't be queried.
+func (r Repo) RemoteBranchReachability(remote, branch string) (exists, reachable bool) {
+	_, _, err := r.run("ls-remote", "--exit-code", "--heads", remote, branch)
+	if err == nil {
+		return true, true
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 2 {
+		return false, true
+	}
+	return false, false
 }
 
 // IsBranchAheadOfRemote reports whether localBranch has commits not in remoteBranch.
