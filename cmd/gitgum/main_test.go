@@ -15,11 +15,11 @@ func TestHoistFollow(t *testing.T) {
 		{[]string{"gg", "-f", "status"}, []string{"gg", "status", "-f"}},
 		{[]string{"gg", "--follow", "tree"}, []string{"gg", "tree", "--follow"}},
 		{[]string{"gg", "-f=5", "status"}, []string{"gg", "status", "-f=5"}},
-		{[]string{"gg", "-f", "tree", "-f"}, []string{"gg", "tree", "-f", "-f"}}, // double -f == single
-		{[]string{"gg", "-f", "foo"}, []string{"gg", "foo", "-f"}},               // unknown-cmd errors like `gg foo -f`
-		{[]string{"gg", "status", "-f"}, []string{"gg", "status", "-f"}},         // already correct, untouched
-		{[]string{"gg", "status"}, []string{"gg", "status"}},                     // no follow, untouched
-		{[]string{"gg", "-f"}, []string{"gg", "-f"}},                             // no command, untouched
+		{[]string{"gg", "-f", "tree", "-f"}, []string{"gg", "tree", "-f", "-f"}},       // double -f == single
+		{[]string{"gg", "-f", "foo"}, []string{"gg", "foo", "-f"}},                     // unknown-cmd errors like `gg foo -f`
+		{[]string{"gg", "status", "-f"}, []string{"gg", "status", "-f"}},               // already correct, untouched
+		{[]string{"gg", "status"}, []string{"gg", "status"}},                           // no follow, untouched
+		{[]string{"gg", "-f"}, []string{"gg", "-f"}},                                   // no command, untouched
 		{[]string{"gg", "--version", "status"}, []string{"gg", "--version", "status"}}, // non-follow flag bails
 	}
 	for _, c := range cases {
