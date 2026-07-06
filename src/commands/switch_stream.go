@@ -84,7 +84,14 @@ func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBr
 		}
 	}()
 
-	go streamLocalBranches(ctx, r, errOut, queue, currentBranch, checkedOut, includeCurrent)
+	// Local branches are scanned synchronously (no network involved) before the
+	// remote goroutines start. This guarantees local entries queue -- and thus
+	// win the dedup race in the consumer above -- ahead of any remote entry
+	// sharing the same dedupKey. Without this ordering, a branch that's both
+	// local and remote-tracked could race-display as "remote: ..." instead of
+	// "local/remote: ...", sending switch down the fetch/tracking-branch path
+	// for a branch that already exists locally.
+	streamLocalBranches(ctx, r, errOut, queue, currentBranch, checkedOut, includeCurrent)
 	for _, remote := range remotes {
 		go streamRemoteBranches(ctx, r, errOut, queue, remote, currentBranch, trackingRemote, checkedOut)
 	}
