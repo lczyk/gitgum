@@ -19,6 +19,7 @@ import (
 type TreeCommand struct {
 	cmdIO
 	Since       string   `long:"since" default:"2w" description:"limit history. shorthand: '2w', '10d', '1h' (units: s/m/h/d/w/y). ISO date: '2024-01-01'. bare integer: tree depth (last N commits). empty: show all."`
+	All         bool     `long:"all" short:"a" description:"show full history (alias for --since=)"`
 	Reverse     bool     `long:"reverse" short:"r" description:"newest-first output (useful in follow mode)"`
 	NoHeadFloat bool     `long:"no-head-float" description:"don't float the checked-out commit (HEAD) to the bottom"`
 	Follow      *float64 `long:"follow" short:"f" optional:"yes" optional-value:"2" description:"follow mode: refresh every N seconds (default 2, min 1)"`
@@ -89,6 +90,9 @@ func resolveSinceArg(r git.Repo, dur time.Duration, sinceArg string) (string, er
 func (t *TreeCommand) Execute(args []string) error {
 	if err := t.repo().CheckInRepo(); err != nil {
 		return err
+	}
+	if t.All {
+		t.Since = "" // --all wins over any --since
 	}
 	dur, sinceArg, maxCount, err := parseSinceArg(t.Since)
 	if err != nil {
