@@ -115,11 +115,15 @@ func (s *SwitchCommand) applySelection(selected string) error {
 		fmt.Fprintf(s.out(), "Switched to branch '%s'.\n", name)
 		return nil
 	case "local/remote":
-		if err := s.checkoutBranch(name); err != nil {
+		branch, ok := localRemoteBranch(name)
+		if !ok {
+			return fmt.Errorf("invalid local/remote branch format: %s", name)
+		}
+		if err := s.checkoutBranch(branch); err != nil {
 			return err
 		}
-		fmt.Fprintf(s.out(), "Switched to branch '%s'.\n", name)
-		s.warnIfRemoteUnreachable(name)
+		fmt.Fprintf(s.out(), "Switched to branch '%s'.\n", branch)
+		s.warnIfRemoteUnreachable(branch)
 		return nil
 	case "remote":
 		remoteParts := strings.SplitN(name, "/", 2)

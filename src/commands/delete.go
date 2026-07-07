@@ -74,8 +74,14 @@ func (d *DeleteCommand) applyDeletion(selected string) error {
 	typ, name := parts[0], parts[1]
 
 	switch typ {
-	case "local", "local/remote":
+	case "local":
 		return d.deleteLocal(name)
+	case "local/remote":
+		branch, ok := localRemoteBranch(name)
+		if !ok {
+			return fmt.Errorf("invalid local/remote branch format: %s", name)
+		}
+		return d.deleteLocal(branch)
 	case "remote":
 		remoteParts := strings.SplitN(name, "/", 2)
 		if len(remoteParts) != 2 {

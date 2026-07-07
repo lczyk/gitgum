@@ -33,6 +33,16 @@ func isCheckedOutElsewhere(item string) bool {
 	return strings.Contains(item, checkedOutMarker)
 }
 
+// localRemoteBranch recovers the local branch name from a "local/remote"
+// picker payload, which is "<remote>/<branch>" (see streamLocalBranches). A
+// git remote name never contains '/', so a single cut on the first '/' yields
+// the branch -- which may itself contain '/' (e.g. "feat/foo"). Returns false
+// if the payload has no '/'.
+func localRemoteBranch(name string) (string, bool) {
+	_, branch, ok := strings.Cut(name, "/")
+	return branch, ok
+}
+
 type branchEntry struct {
 	display  string
 	dedupKey string
@@ -122,8 +132,13 @@ func streamLocalBranches(ctx context.Context, r git.Repo, errOut io.Writer, queu
 		}
 		var entry branchEntry
 		if tr != "" {
+			// Include the tracking remote in the display so the row is
+			// searchable by remote name (typing "origin" surfaces every branch
+			// tracking origin), matching the "remote: <remote>/<branch>" rows.
+			// applySelection/applyDeletion strip the remote back off via
+			// localRemoteBranch to recover the local branch to check out/delete.
 			entry = branchEntry{
-				display:  "local/remote: " + branch,
+				display:  "local/remote: " + tr + "/" + branch,
 				dedupKey: "remote:" + tr + "/" + branch,
 			}
 		} else {

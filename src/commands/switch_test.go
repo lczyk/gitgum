@@ -64,9 +64,57 @@ func TestApplySelection_LocalRemote(t *testing.T) {
 
 	var buf strings.Builder
 	s := &SwitchCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}}
-	err := s.applySelection("local/remote: feature")
+	err := s.applySelection("local/remote: origin/feature")
 	require.NoError(t, err)
 	assert.Equal(t, currentBranchIn(t, dir), "feature")
+}
+
+// The remote prefix is stripped on the first '/', so a branch name that itself
+// contains '/' round-trips intact.
+func TestApplySelection_LocalRemoteSlashBranch(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "branch", "feat/x")
+
+	var buf strings.Builder
+	s := &SwitchCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}}
+	err := s.applySelection("local/remote: origin/feat/x")
+	require.NoError(t, err)
+	assert.Equal(t, currentBranchIn(t, dir), "feat/x")
+}
+
+// Regression (bug: missing choices): a local branch that tracks a remote must
+// carry the remote name in its picker row so it's searchable by remote owner.
+// Previously the row was "local/remote: <branch>" with the remote dropped, so
+// typing the remote name filtered the branch out entirely.
+func TestStreamBranches_LocalRemoteIncludesRemote(t *testing.T) {
+	t.Parallel()
+	local, _ := temp_repo.NewRepoWithRemote(t)
+	temp_repo.RunGit(t, local, "fetch", "origin")
+	temp_repo.RunGit(t, local, "branch", "feature")
+	temp_repo.RunGit(t, local, "branch", "--set-upstream-to=origin/main", "feature")
+
+	r := git.Repo{Dir: local}
+	remotes, err := r.GetRemotes()
+	require.NoError(t, err)
+
+	var errBuf bytes.Buffer
+	src := streamBranches(context.Background(), r, &errBuf, currentBranchIn(t, local), "", remotes, false)
+
+	var feature string
+	for i := 0; i < 50; i++ {
+		time.Sleep(10 * time.Millisecond)
+		for _, item := range src.Snapshot() {
+			if strings.HasPrefix(item, "local/remote: ") && strings.Contains(item, "feature") {
+				feature = item
+			}
+		}
+		if feature != "" {
+			break
+		}
+	}
+	require.That(t, feature != "", "feature branch tracking origin should appear")
+	assert.Equal(t, feature, "local/remote: origin/feature")
 }
 
 func TestResolveCurrentBranchContext_OnBranch(t *testing.T) {
