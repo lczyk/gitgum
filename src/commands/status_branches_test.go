@@ -13,8 +13,7 @@ func TestRenderBranchList_NoColor(t *testing.T) {
 	in := "* main               26c3916 [origin/main] release: v0.17.0\n  feat              abc1234 subject\n"
 	got := renderBranchList(in)
 	want := strings.Join([]string{
-		"* main 26c3916",
-		"    [origin/main]",
+		"* (origin/)main 26c3916",
 		"    release: v0.17.0",
 		"  feat abc1234",
 		"    subject",
@@ -25,12 +24,12 @@ func TestRenderBranchList_NoColor(t *testing.T) {
 func TestFormatBranchRows_CurrentWithUpstream(t *testing.T) {
 	t.Setenv("FORCE_COLOR", "1")
 	rows := formatBranchRows("* main               26c3916 [origin/main] release: v0.17.0", true)
-	assert.Equal(t, len(rows), 3)
+	assert.Equal(t, len(rows), 2)
 	got := strings.Join(rows, "\n")
 	assert.ContainsString(t, rows[0], ansiBoldCyan+"*"+ansiReset)
+	assert.ContainsString(t, rows[0], ansiBoldRed+"origin/"+ansiReset)
 	assert.ContainsString(t, rows[0], ansiBoldGreen+"main"+ansiReset)
 	assert.ContainsString(t, rows[0], ansiYellow+"26c3916"+ansiReset)
-	assert.ContainsString(t, rows[1], ansiBoldRed+"origin/main"+ansiReset)
 	assert.ContainsString(t, got, ansiBoldYellow+"release"+ansiReset)
 }
 
@@ -38,8 +37,18 @@ func TestFormatBranchRows_AheadBehind(t *testing.T) {
 	t.Setenv("FORCE_COLOR", "1")
 	rows := formatBranchRows("  feat               abc1234 [origin/feat: ahead 2, behind 1] some subject", true)
 	assert.Equal(t, len(rows), 3)
-	assert.ContainsString(t, rows[1], ansiBoldRed+"origin/feat"+ansiReset)
-	assert.ContainsString(t, rows[1], ansiBoldYellow+": ahead 2, behind 1"+ansiReset)
+	assert.ContainsString(t, rows[0], ansiBoldRed+"origin/"+ansiReset)
+	assert.ContainsString(t, rows[1], ansiBoldYellow+"[ahead 2, behind 1]"+ansiReset)
+}
+
+// upstream named differently from the local branch keeps the full bracket row
+func TestFormatBranchRows_DifferentUpstreamName(t *testing.T) {
+	t.Setenv("FORCE_COLOR", "1")
+	rows := formatBranchRows("  feat               abc1234 [origin/other: ahead 2] some subject", true)
+	assert.Equal(t, len(rows), 3)
+	assert.ContainsString(t, rows[0], ansiBoldGreen+"feat"+ansiReset)
+	assert.ContainsString(t, rows[1], ansiBoldRed+"origin/other"+ansiReset)
+	assert.ContainsString(t, rows[1], ansiBoldYellow+": ahead 2"+ansiReset)
 }
 
 func TestFormatBranchRows_NoUpstream(t *testing.T) {
@@ -75,14 +84,13 @@ func TestRenderBranchList_MultiRow(t *testing.T) {
 	got := renderBranchList(in)
 	plain := stripAnsi(got)
 	lines := strings.Split(plain, "\n")
-	assert.Equal(t, lines[0], "* main 26c3916")
-	assert.Equal(t, lines[1], "    [origin/main]")
-	assert.Equal(t, lines[2], "    release: v0.17.0")
-	assert.Equal(t, lines[3], "  hierarchy-aware-ff e4cee51")
-	assert.Equal(t, lines[4], "    docs: mark hierarchy-aware ff implemented")
-	assert.Equal(t, lines[5], "  some-feature 82348bb")
-	assert.Equal(t, lines[6], "    [origin/some-feature: ahead 87]")
-	assert.Equal(t, lines[7], "    subject")
+	assert.Equal(t, lines[0], "* (origin/)main 26c3916")
+	assert.Equal(t, lines[1], "    release: v0.17.0")
+	assert.Equal(t, lines[2], "  hierarchy-aware-ff e4cee51")
+	assert.Equal(t, lines[3], "    docs: mark hierarchy-aware ff implemented")
+	assert.Equal(t, lines[4], "  (origin/)some-feature 82348bb")
+	assert.Equal(t, lines[5], "    [ahead 87]")
+	assert.Equal(t, lines[6], "    subject")
 }
 
 func TestRenderBranchList_NormalBranchesQuirk(t *testing.T) {

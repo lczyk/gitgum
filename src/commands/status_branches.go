@@ -81,6 +81,19 @@ func formatBranchRows(line string, color bool) []string {
 	marker, name, hash, tracking, trail := m[1], m[2], m[4], m[5], m[6]
 	subject := strings.TrimSpace(trail)
 
+	// A same-name upstream collapses into the switch-style "(remote/)name",
+	// leaving the bracket row for ahead/behind/gone notes only.
+	nameDisplay := ""
+	notesOnly := false
+	if remote, notes, ok := sameNameUpstream(tracking, name); ok {
+		nameDisplay = remoteSlashBranch(remote, name, color)
+		tracking = ""
+		if notes != "" {
+			tracking = "[" + notes + "]"
+			notesOnly = true
+		}
+	}
+
 	var row1 strings.Builder
 	if color {
 		switch marker {
@@ -92,24 +105,33 @@ func formatBranchRows(line string, color bool) []string {
 			row1.WriteByte(' ')
 		}
 		row1.WriteByte(' ')
-		if strings.HasPrefix(name, "(") && strings.HasSuffix(name, ")") {
+		switch {
+		case nameDisplay != "":
+			row1.WriteString(nameDisplay)
+		case strings.HasPrefix(name, "(") && strings.HasSuffix(name, ")"):
 			row1.WriteString(ansiBoldCyan + name + ansiReset)
-		} else {
+		default:
 			row1.WriteString(ansiBoldGreen + name + ansiReset)
 		}
 		row1.WriteByte(' ')
 		row1.WriteString(ansiYellow + hash + ansiReset)
 	} else {
-		row1.WriteString(marker + " " + name + " " + hash)
+		if nameDisplay == "" {
+			nameDisplay = name
+		}
+		row1.WriteString(marker + " " + nameDisplay + " " + hash)
 	}
 
 	rows := []string{row1.String()}
 
 	if tracking != "" {
-		if color {
-			rows = append(rows, "    "+colorBranchTracking(tracking))
-		} else {
+		switch {
+		case !color:
 			rows = append(rows, "    "+tracking)
+		case notesOnly:
+			rows = append(rows, "    "+ansiBoldYellow+tracking+ansiReset)
+		default:
+			rows = append(rows, "    "+colorBranchTracking(tracking))
 		}
 	}
 
@@ -122,6 +144,24 @@ func formatBranchRows(line string, color bool) []string {
 	}
 
 	return rows
+}
+
+// sameNameUpstream reports whether a tracking string ("[origin/main]" or
+// "[origin/main: ahead 1]") names an upstream whose branch part equals name.
+// Returns the remote and the notes after ": " (empty when in sync).
+func sameNameUpstream(tracking, name string) (remote, notes string, ok bool) {
+	if len(tracking) < 2 || tracking[0] != '[' || tracking[len(tracking)-1] != ']' {
+		return "", "", false
+	}
+	upstream := tracking[1 : len(tracking)-1]
+	if colon := strings.Index(upstream, ": "); colon >= 0 {
+		upstream, notes = upstream[:colon], upstream[colon+2:]
+	}
+	remote, branch, found := strings.Cut(upstream, "/")
+	if !found || branch != name {
+		return "", "", false
+	}
+	return remote, notes, true
 }
 
 // colorBranchTracking colors a "[upstream]" or "[upstream: ahead N, behind M]"

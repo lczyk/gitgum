@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"io"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -190,15 +191,68 @@ func (s *StatusCommand) renderChanges(out io.Writer, header func()) error {
 	return nil
 }
 
-// renderHead prints the branch summary line, e.g. "## main...origin/main".
+// renderHead prints the branch summary line, with the tracking branch
+// rendered switch-style, e.g. "## (origin/)main [ahead 7]".
 func (s *StatusCommand) renderHead(out io.Writer, header func()) error {
 	lines, err := s.statusLines()
 	if err != nil {
 		return err
 	}
 	header()
-	fmt.Fprintln(out, lines[0])
+	fmt.Fprintln(out, formatHeadLine(lines[0], colorEnabled()))
 	return nil
+}
+
+// headLineRe splits "## main...origin/main [ahead 1]" into local branch,
+// upstream (optional) and bracketed ahead/behind notes (optional).
+var headLineRe = regexp.MustCompile(`^## (.+?)(?:\.\.\.(\S+))?( \[[^\]]*\])?$`)
+
+// formatHeadLine rewrites the `git status --branch` summary line so a
+// same-name upstream renders switch-style: "## main...origin/main [ahead 7]"
+// becomes "## (origin/)main [ahead 7]". Detached HEAD, differing upstream
+// names and "No commits yet" lines keep their original shape (colored).
+func formatHeadLine(line string, color bool) string {
+	m := headLineRe.FindStringSubmatch(line)
+	if m == nil {
+		return line
+	}
+	local, upstream, bracket := m[1], m[2], m[3]
+	if strings.HasPrefix(local, "No commits yet") {
+		return line
+	}
+
+	hashes := "## "
+	if color {
+		hashes = ansiDim + "##" + ansiReset + " "
+		bracket = strings.TrimPrefix(bracket, " ")
+		if bracket != "" {
+			bracket = " " + ansiBoldYellow + bracket + ansiReset
+		}
+	}
+
+	if upstream == "" {
+		branch := local
+		if color {
+			if strings.HasPrefix(local, "HEAD ") {
+				branch = ansiBoldCyan + local + ansiReset
+			} else {
+				branch = ansiBoldGreen + local + ansiReset
+			}
+		}
+		return hashes + branch + bracket
+	}
+
+	if remote, branch, ok := strings.Cut(upstream, "/"); ok && branch == local {
+		return hashes + remoteSlashBranch(remote, local, color) + bracket
+	}
+
+	// upstream tracks a differently-named branch: keep the "a...b" shape
+	if color {
+		local = ansiBoldGreen + local + ansiReset
+		upstream = ansiBoldRed + upstream + ansiReset
+		return hashes + local + ansiBoldYellow + "..." + ansiReset + upstream + bracket
+	}
+	return hashes + local + "..." + upstream + bracket
 }
 
 func (s *StatusCommand) statusLines() ([]string, error) {
