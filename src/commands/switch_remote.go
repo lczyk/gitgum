@@ -42,15 +42,6 @@ func (s *SwitchCommand) handleRemoteSelection(remote, branch string) error {
 func (s *SwitchCommand) retargetTracking(remote, branch string) error {
 	fmt.Fprintf(s.out(), "Local branch '%s' is not tracking remote branch '%s/%s'.\n", branch, remote, branch)
 
-	confirmed, err := s.sel().Confirm(fmt.Sprintf("Set '%s/%s' as the tracking reference for local branch '%s'?",
-		remote, branch, branch), false)
-	if err != nil {
-		return err
-	}
-	if !confirmed {
-		fmt.Fprintln(s.err(), "Not setting tracking reference. Aborting switch.")
-		return ui.ErrCancelled
-	}
 	if _, stderr, err := s.repo().RunWrite("branch", "--set-upstream-to="+remote+"/"+branch, branch); err != nil {
 		return fmt.Errorf("setting tracking reference: %w: %s", err, stderr)
 	}
