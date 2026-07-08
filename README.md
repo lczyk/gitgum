@@ -59,7 +59,17 @@ Create a new branch and switch to it. Pick the start point from the same live pi
 
 ### `gitgum status`
 
-Print branches, remotes, and a tree-formatted view of the working-tree changes (modified files get an inline `(+a,-d)` line-change count). Pass `--flat` for a porcelain list instead of the tree. Pass `--follow` / `-f` (optional `=N` interval, default 2s, min 1) to refresh in an alt-screen with `j/k g/G PgUp/PgDn` scroll and `q` to exit; in follow mode the branches and remotes sections are suppressed and no remote ops run -- only `git status` is called.
+Print one or more status sections, named by a comma-separated argument:
+
+- `branch` (`b`) -- local branches with their upstreams
+- `remote` (`r`) -- configured remotes
+- `worktree` (`w`) -- linked worktrees
+- `changes` (`c`) -- a tree-formatted view of the working-tree changes (modified files get an inline `(+a,-d)` line-change count)
+- `head` (`h`) -- the `## main...origin/main` summary line
+
+Sections render in the order given, and a repeated section moves to its last position -- `b,r,b` renders as `r,b`. Surrounding whitespace is ignored, so `gg status "b, r"` works. A single section prints bare; two or more get headers. `gg status` with no argument is `gg status changes,head`.
+
+Pass `--flat` for a porcelain list instead of the change tree. Pass `--follow` / `-f` (optional `=N` interval, default 2s, min 1) to refresh the selected sections in an alt-screen with `j/k g/G PgUp/PgDn` scroll and `q` to exit; no remote ops run in follow mode.
 
 ### `gitgum tree`
 
