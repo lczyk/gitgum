@@ -45,10 +45,11 @@ func (d *DeleteCommand) Execute(args []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// includeCurrent=true: current branch shows but is unselectable (checked-out
+	// includeCurrent: current branch shows but is unselectable (checked-out
 	// marker), same picker as switch. This lists remote branches too, so a
 	// remote-only branch is deletable -- the whole point of the unification.
-	src := streamBranches(ctx, r, d.err(), currentBranch, trackingRemote, remotes, true)
+	src := streamBranches(ctx, r, d.err(), currentBranch, trackingRemote, remotes,
+		branchStreamOpts{includeCurrent: true, markCheckedOut: true})
 
 	selected, err := d.sel().SelectStream(ctx, "Select a branch to delete", src, isCheckedOutElsewhere)
 	cancel()
@@ -67,11 +68,10 @@ func (d *DeleteCommand) Execute(args []string) error {
 // and dispatches: local branches go through the safe->force local flow, remote
 // entries are deleted straight off the remote.
 func (d *DeleteCommand) applyDeletion(selected string) error {
-	parts := strings.SplitN(selected, ": ", 2)
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid selection: %s", selected)
+	typ, name, err := parseBranchEntry(selected)
+	if err != nil {
+		return err
 	}
-	typ, name := parts[0], parts[1]
 
 	switch typ {
 	case "local":

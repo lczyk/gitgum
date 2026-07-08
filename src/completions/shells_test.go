@@ -55,7 +55,7 @@ var bins = []binSpec{
 		bashFn:  "_gitgum_completion",
 		requiredContent: []string{
 			// subcommands
-			"switch", "checkout-pr", "completion", "status", "push",
+			"switch", "branch", "checkout-pr", "completion", "status", "push",
 			"clean", "delete", "replay-list", "empty", "release",
 			// clean flag names (bare so fish's `-l changes` matches too)
 			"changes", "untracked", "ignored",
@@ -67,13 +67,13 @@ var bins = []binSpec{
 			"bash", "fish", "zsh", "nu",
 		},
 		cases: []completionCase{
-			{"top-level", []string{""}, []string{"switch", "clean", "release", "replay-list"}},
+			{"top-level", []string{""}, []string{"switch", "branch", "clean", "release", "replay-list"}},
 			{"clean flags", []string{"clean", "--"}, []string{"--changes", "--untracked", "--ignored", "--all", "--yes"}},
 			{"status flags", []string{"status", "--"}, []string{"--flat", "--follow"}},
 			{"completion shells", []string{"completion", ""}, []string{"bash", "fish", "zsh", "nu"}},
 			{"release bumps", []string{"release", ""}, []string{"patch", "minor", "major"}},
 		},
-		nuHelpExpect: []string{"switch", "checkout-pr", "completion", "clean", "release"},
+		nuHelpExpect: []string{"switch", "branch", "checkout-pr", "completion", "clean", "release"},
 	},
 	{
 		cmdName: "ff",
@@ -82,12 +82,12 @@ var bins = []binSpec{
 		requiredContent: []string{
 			// flag names (bare so fish's `-l multi` matches too)
 			"multi", "query", "prompt", "header", "select-1",
-			"fast", "reverse", "height", "completion",
+			"fast", "print-query", "reverse", "height", "completion",
 			// completion shell choices
 			"bash", "fish", "zsh", "nu",
 		},
 		cases: []completionCase{
-			{"flags", []string{"-"}, []string{"--multi", "--query", "--prompt", "--header", "--select-1", "--fast", "--reverse", "--height", "--completion"}},
+			{"flags", []string{"-"}, []string{"--multi", "--query", "--prompt", "--header", "--select-1", "--fast", "--print-query", "--reverse", "--height", "--completion"}},
 			{"completion shells", []string{"--completion", ""}, []string{"bash", "fish", "zsh", "nu"}},
 		},
 		nuHelpExpect: []string{"multi", "query", "completion"},

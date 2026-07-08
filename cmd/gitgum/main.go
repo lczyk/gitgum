@@ -16,6 +16,7 @@ import (
 // Options defines the global command structure
 type Options struct {
 	Switch     commands.SwitchCommand     `command:"switch" description:"Switch to a branch interactively"`
+	Branch     commands.BranchCommand     `command:"branch" description:"Create a new branch off an existing one and switch to it"`
 	CheckoutPR commands.CheckoutPRCommand `command:"checkout-pr" description:"Checkout a pull request from a remote repository"`
 	Completion commands.CompletionCommand `command:"completion" description:"Output shell completion script"`
 	Status     commands.StatusCommand     `command:"status" description:"Show the status of the current git repository"`
@@ -70,7 +71,7 @@ func main() {
 
 	// If no command provided, use fuzzyfinder to select one
 	if len(os.Args) == 1 {
-		cmds := []string{"switch", "status", "tree", "push", "clean", "empty", "help"}
+		cmds := []string{"switch", "branch", "status", "tree", "push", "clean", "empty", "help"}
 		selected, err := ui.Select("Select command", cmds)
 		if err != nil {
 			if errors.Is(err, ui.ErrCancelled) {

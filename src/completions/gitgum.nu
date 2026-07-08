@@ -21,6 +21,10 @@ module completions {
     --help(-h)               # Show help
   ]
 
+  export extern "__GITGUM_CMD__ branch" [
+    --help(-h)               # Show help
+  ]
+
   export extern "__GITGUM_CMD__ checkout-pr" [
     --help(-h)               # Show help
   ]

@@ -17,6 +17,9 @@ _gitgum_completion() {
             gitgum,switch)
                 cmd="gitgum_switch"
                 ;;
+            gitgum,branch)
+                cmd="gitgum_branch"
+                ;;
             gitgum,checkout-pr)
                 cmd="gitgum_checkout_pr"
                 ;;
@@ -49,11 +52,11 @@ _gitgum_completion() {
 
     case "${cmd}" in
         gitgum)
-            opts="-h --help -v --version switch checkout-pr completion status push clean delete replay-list empty release"
+            opts="-h --help -v --version switch branch checkout-pr completion status push clean delete replay-list empty release"
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        gitgum_switch|gitgum_checkout_pr|gitgum_push|gitgum_delete|gitgum_empty)
+        gitgum_switch|gitgum_branch|gitgum_checkout_pr|gitgum_push|gitgum_delete|gitgum_empty)
             opts="-h --help"
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0

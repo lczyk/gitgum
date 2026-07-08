@@ -41,7 +41,7 @@ _gitgum() {
                         '1:bump:(patch minor major)' \
                         && ret=0
                     ;;
-                switch|checkout-pr|push|delete|empty)
+                switch|branch|checkout-pr|push|delete|empty)
                     _arguments \
                         '(-h --help)'{-h,--help}'[Show help]' \
                         && ret=0
@@ -64,6 +64,7 @@ _gitgum_commands() {
     local -a commands
     commands=(
         'switch:Switch to a branch interactively'
+        'branch:Create a new branch off an existing one and switch to it'
         'checkout-pr:Checkout a pull request from a remote repository'
         'completion:Output shell completion script'
         'status:Show the status of the current git repository'

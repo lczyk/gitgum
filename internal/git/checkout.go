@@ -21,7 +21,30 @@ func Checkout(branch string) error { return CWD().Checkout(branch) }
 // CheckoutNewBranch creates a new branch off startPoint and switches to it
 // (`git checkout -b <branch> <startPoint>`).
 func (r Repo) CheckoutNewBranch(branch, startPoint string) error {
+	return r.checkoutNewBranch(branch, startPoint, false)
+}
+
+func CheckoutNewBranch(branch, startPoint string) error {
+	return CWD().CheckoutNewBranch(branch, startPoint)
+}
+
+// CheckoutNewBranchNoTrack is CheckoutNewBranch with `--no-track`. Needed when
+// startPoint is a remote-tracking ref: git's branch.autoSetupMerge default would
+// silently set the new branch's upstream to it, so a later push would target
+// someone else's branch instead of creating one.
+func (r Repo) CheckoutNewBranchNoTrack(branch, startPoint string) error {
+	return r.checkoutNewBranch(branch, startPoint, true)
+}
+
+func CheckoutNewBranchNoTrack(branch, startPoint string) error {
+	return CWD().CheckoutNewBranchNoTrack(branch, startPoint)
+}
+
+func (r Repo) checkoutNewBranch(branch, startPoint string, noTrack bool) error {
 	args := []string{"checkout", "-b", branch}
+	if noTrack {
+		args = append(args, "--no-track")
+	}
 	if startPoint != "" {
 		args = append(args, startPoint)
 	}
@@ -30,10 +53,6 @@ func (r Repo) CheckoutNewBranch(branch, startPoint string) error {
 		return fmt.Errorf("git checkout -b %s: %w: %s", branch, err, stderr)
 	}
 	return nil
-}
-
-func CheckoutNewBranch(branch, startPoint string) error {
-	return CWD().CheckoutNewBranch(branch, startPoint)
 }
 
 // ResetHard performs `git reset --hard <ref>`. Destructive: discards

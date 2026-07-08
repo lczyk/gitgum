@@ -79,7 +79,8 @@ func (s *SwitchCommand) Execute(args []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	src := streamBranches(ctx, r, s.err(), currentBranch, trackingRemote, remotes, false)
+	src := streamBranches(ctx, r, s.err(), currentBranch, trackingRemote, remotes,
+		branchStreamOpts{markCheckedOut: true})
 
 	selected, err := s.sel().SelectStream(ctx, "Select a branch to switch to", src, isCheckedOutElsewhere)
 	cancel()
@@ -101,11 +102,10 @@ func (s *SwitchCommand) Execute(args []string) error {
 }
 
 func (s *SwitchCommand) applySelection(selected string) error {
-	parts := strings.SplitN(selected, ": ", 2)
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid selection: %s", selected)
+	typ, name, err := parseBranchEntry(selected)
+	if err != nil {
+		return err
 	}
-	typ, name := parts[0], parts[1]
 
 	switch typ {
 	case "local":

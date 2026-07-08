@@ -33,6 +33,18 @@ func isCheckedOutElsewhere(item string) bool {
 	return strings.Contains(item, checkedOutMarker)
 }
 
+// parseBranchEntry splits a picker payload ("local: foo", "remote: origin/foo",
+// "local/remote: origin/foo") into its type tag and name. The name is whatever
+// followed the tag, suffixes included -- callers that enabled markCheckedOut
+// only ever see entries they made selectable, so no suffix reaches here.
+func parseBranchEntry(selected string) (typ, name string, err error) {
+	typ, name, ok := strings.Cut(selected, ": ")
+	if !ok {
+		return "", "", fmt.Errorf("invalid selection: %s", selected)
+	}
+	return typ, name, nil
+}
+
 // localRemoteBranch recovers the local branch name from a "local/remote"
 // picker payload, which is "<remote>/<branch>" (see streamLocalBranches). A
 // git remote name never contains '/', so a single cut on the first '/' yields
@@ -48,6 +60,20 @@ type branchEntry struct {
 	dedupKey string
 }
 
+// branchStreamOpts tunes streamBranches for its three consumers.
+type branchStreamOpts struct {
+	// includeCurrent emits the current branch. switch filters it out (you can't
+	// switch to where you are); delete keeps it so it's visible but unselectable;
+	// branch keeps it because branching off HEAD is the common case.
+	includeCurrent bool
+	// markCheckedOut appends checkedOutSuffix to branches checked out in another
+	// worktree, which isCheckedOutElsewhere then blocks. switch and delete want
+	// this -- git refuses both operations on such a branch. branch does not: a
+	// branch checked out elsewhere is a perfectly good start point, and the
+	// suffix would otherwise have to be stripped back off the picker payload.
+	markCheckedOut bool
+}
+
 // streamBranches collects local and remote branches concurrently, deduplicating
 // and writing into a SliceSource the picker consumes. Caller cancels ctx
 // when the consumer (fuzzyfinder) is done; cancellation also stops producers.
@@ -56,22 +82,20 @@ type branchEntry struct {
 // The returned SliceSource supports both Add (used by the producers below)
 // and RemoveFunc (left available for future hooks that drop branches as the
 // user deletes them).
-// includeCurrent controls whether the current branch is emitted. switch filters
-// it out (you can't switch to where you are); delete keeps it so it's visible
-// but unselectable -- it carries the checked-out marker for the current worktree
-// and isCheckedOutElsewhere blocks selection, matching git's refusal to delete a
-// checked-out branch.
-func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBranch, trackingRemote string, remotes []string, includeCurrent bool) *ff.SliceSource {
+func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBranch, trackingRemote string, remotes []string, opts branchStreamOpts) *ff.SliceSource {
 	src := ff.NewSliceSource()
 	seen := make(map[string]struct{})
 	var seenMu sync.Mutex
 
 	// Fetch checkout state once so producers can do map lookups instead of
-	// N subprocess calls.
-	checkedOut, err := r.CheckedOutBranches()
-	if err != nil {
-		fmt.Fprintf(errOut, "error getting worktrees: %v\n", err)
-		checkedOut = map[string]string{}
+	// N subprocess calls. Skipped entirely when nobody's going to mark them.
+	checkedOut := map[string]string{}
+	if opts.markCheckedOut {
+		var err error
+		if checkedOut, err = r.CheckedOutBranches(); err != nil {
+			fmt.Fprintf(errOut, "error getting worktrees: %v\n", err)
+			checkedOut = map[string]string{}
+		}
 	}
 
 	queue := make(chan branchEntry, 1000)
@@ -101,7 +125,7 @@ func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBr
 	// local and remote-tracked could race-display as "remote: ..." instead of
 	// "local/remote: ...", sending switch down the fetch/tracking-branch path
 	// for a branch that already exists locally.
-	streamLocalBranches(ctx, r, errOut, queue, currentBranch, checkedOut, includeCurrent)
+	streamLocalBranches(ctx, r, errOut, queue, currentBranch, checkedOut, opts.includeCurrent)
 	for _, remote := range remotes {
 		go streamRemoteBranches(ctx, r, errOut, queue, remote, currentBranch, trackingRemote, checkedOut)
 	}
