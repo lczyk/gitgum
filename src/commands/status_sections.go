@@ -126,18 +126,37 @@ func (s *StatusCommand) renderRemotes(out io.Writer, header func()) error {
 	return nil
 }
 
+// renderWorktrees lists worktrees in the same multi-row layout as the
+// BRANCHES section, with the checked-out ref rendered switch-style
+// ("(remote/)branch"). The worktree the command runs in is marked with '*'.
 func (s *StatusCommand) renderWorktrees(out io.Writer, header func()) error {
-	stdout, _, err := s.repo().Run("worktree", "list")
+	stdout, _, err := s.repo().Run("worktree", "list", "--porcelain")
 	if err != nil {
 		return fmt.Errorf("getting worktrees: %w", err)
 	}
-	lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
-	if len(lines) == 1 && lines[0] == "" {
+	worktrees := parseWorktreePorcelain(stdout)
+	if len(worktrees) == 0 {
 		return nil
 	}
 	header()
-	for _, line := range lines {
-		fmt.Fprintln(out, line)
+	toplevel, _, err := s.repo().Run("rev-parse", "--show-toplevel")
+	if err != nil {
+		toplevel = ""
+	}
+	color := colorEnabled()
+	for _, wt := range worktrees {
+		trackingRemote := ""
+		if wt.branch != "" {
+			trackingRemote, _ = s.repo().GetBranchTrackingRemote(wt.branch)
+		}
+		subject := ""
+		if wt.head != "" {
+			subject, _, _ = s.repo().Run("log", "-1", "--format=%s", wt.head)
+		}
+		current := toplevel != "" && wt.path == toplevel
+		for _, row := range formatWorktreeRows(wt, current, trackingRemote, subject, color) {
+			fmt.Fprintln(out, row)
+		}
 	}
 	return nil
 }
