@@ -15,7 +15,7 @@ type Opt struct {
 	// Default is bottom-up (prompt at bottom).
 	Reverse bool
 	// Multi lets the user select multiple items via Tab. When false, the
-	// returned slice always has exactly one element.
+	// result carries at most one element.
 	Multi bool
 	// Height controls inline rendering. Counts item rows only — the prompt
 	// and number-line (and header, when set) are drawn in addition.
@@ -43,6 +43,9 @@ type Opt struct {
 	// still appear, match the query, and can hold the cursor, but Tab won't
 	// toggle them and Enter won't confirm them -- they're drawn dimmed to signal
 	// it. A nil predicate (default) makes every item selectable.
+	//
+	// If the query matches no selectable item at all, Enter ends the picker with
+	// an empty selection rather than being swallowed (see Result).
 	//
 	// NOTE: the predicate keys on the item string, so duplicate item strings
 	// share a selectability. Fine unless you need two same-text items to differ.

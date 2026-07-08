@@ -70,6 +70,7 @@ func isTTY(f *os.File) bool {
 type config struct {
 	opt        ff.Opt
 	fast       bool
+	printQuery bool
 	completion string
 }
 
@@ -128,7 +129,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	go func() { readErrCh <- streamItems(ctx, br, &lock, &items, delay, !cfg.opt.Ansi) }()
 
-	idxs, findErr := ff.Find(ctx, &items, &lock, cfg.opt)
+	res, findErr := ff.Find(ctx, &items, &lock, cfg.opt)
 	cancel()
 
 	if err := <-readErrCh; err != nil {
@@ -139,14 +140,24 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	lock.Lock()
 	defer lock.Unlock()
 
-	if findErr != nil {
-		if errors.Is(findErr, ff.ErrAbort) {
-			return exitCancelled
-		}
+	if findErr != nil && !errors.Is(findErr, ff.ErrAbort) {
 		fmt.Fprintf(stderr, "fuzzyfinder: %v\n", findErr)
 		return exitUsage
 	}
-	for _, idx := range idxs {
+	// Like fzf: the query is the first output line, printed on every exit path
+	// that reached the picker -- including cancellation and no-match, which are
+	// exactly the runs where the caller wants to know what was typed.
+	if cfg.printQuery {
+		fmt.Fprintln(stdout, res.Query)
+	}
+	if findErr != nil {
+		return exitCancelled
+	}
+	// Enter with nothing selectable under the query. fzf calls that exit 1.
+	if len(res.Indices) == 0 {
+		return exitNoMatch
+	}
+	for _, idx := range res.Indices {
 		if idx < 0 || idx >= len(items) {
 			return exitNoMatch
 		}
@@ -223,6 +234,7 @@ func parseFlags(args []string, stderr io.Writer) (config, error) {
 	fs.BoolVar(&cfg.opt.SelectOne, "1", false, "auto-select if exactly one item (shorthand)")
 	fs.BoolVar(&cfg.opt.SelectOne, "select-1", false, "auto-select if exactly one item")
 	fs.BoolVar(&cfg.fast, "fast", false, "disable streaming delay (append items as fast as stdin produces them)")
+	fs.BoolVar(&cfg.printQuery, "print-query", false, "print the query as the first output line")
 	fs.BoolVar(&cfg.opt.Reverse, "reverse", false, "render prompt at the top with items growing downward")
 	fs.IntVar(&cfg.opt.Height, "height", 0, "occupy only N rows of the terminal instead of fullscreen; preserves prior terminal output above the picker. 0 = fullscreen, N>0 = exact rows, N<0 = terminal_rows + N")
 	fs.BoolVar(&cfg.opt.Ansi, "ansi", false, "render ANSI SGR colour escapes from input items in the picker (default: strip)")
@@ -271,6 +283,10 @@ Options:
       --fast           Disable the streaming delay. Items are appended as fast
                        as stdin produces them, instead of throttled to match
                        the gg switch animation cadence.
+      --print-query    Print the query as the first line of output, before any
+                       selection. Printed on every exit that reached the picker,
+                       including cancellation (130) and no match (1) -- so the
+                       typed text survives a run that selected nothing.
       --reverse        Render the prompt at the top with items growing
                        downward. Default is bottom-up (prompt at the bottom).
       --height=N       Occupy only N rows of the terminal instead of going

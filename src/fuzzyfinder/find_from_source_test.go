@@ -17,9 +17,9 @@ func TestFindFromSource_BasicEnter(t *testing.T) {
 	term.SetEvents(key(input{tcell.KeyEnter, rune(tcell.KeyEnter), tcell.ModNone}))
 
 	src := ff.NewSliceSourceFrom([]string{"alpha", "beta", "gamma"})
-	got, err := f.FindFromSource(context.Background(), src, ff.Opt{})
+	res, err := f.FindFromSource(context.Background(), src, ff.Opt{})
 	require.NoError(t, err)
-	assert.EqualArrays(t, got, []string{"alpha"})
+	assert.EqualArrays(t, res.Items, []string{"alpha"})
 }
 
 func TestFindFromSource_QuerySelectsMatch(t *testing.T) {
@@ -30,9 +30,10 @@ func TestFindFromSource_QuerySelectsMatch(t *testing.T) {
 	term.SetEvents(events...)
 
 	src := ff.NewSliceSourceFrom([]string{"alpha", "beta", "gamma"})
-	got, err := f.FindFromSource(context.Background(), src, ff.Opt{})
+	res, err := f.FindFromSource(context.Background(), src, ff.Opt{})
 	require.NoError(t, err)
-	assert.EqualArrays(t, got, []string{"gamma"})
+	assert.EqualArrays(t, res.Items, []string{"gamma"})
+	assert.Equal(t, "gam", res.Query)
 }
 
 func TestFindFromSource_AbortReturnsErrAbort(t *testing.T) {
@@ -42,9 +43,9 @@ func TestFindFromSource_AbortReturnsErrAbort(t *testing.T) {
 	term.SetEvents(key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 
 	src := ff.NewSliceSourceFrom([]string{"a", "b"})
-	got, err := f.FindFromSource(context.Background(), src, ff.Opt{})
+	res, err := f.FindFromSource(context.Background(), src, ff.Opt{})
 	assert.Error(t, err, ff.ErrAbort)
-	assert.Nil(t, got, "got should be nil on abort")
+	assert.Nil(t, res.Items, "items should be nil on abort")
 }
 
 func TestFindFromSource_NilSourceErrors(t *testing.T) {
@@ -61,9 +62,9 @@ func TestFindFromSource_SelectOneAfterPopulate(t *testing.T) {
 	f, _ := ff.NewWithMockedTerminal()
 	src := ff.NewSliceSourceFrom([]string{"only"})
 
-	got, err := f.FindFromSource(context.Background(), src, ff.Opt{SelectOne: true})
+	res, err := f.FindFromSource(context.Background(), src, ff.Opt{SelectOne: true})
 	require.NoError(t, err)
-	assert.EqualArrays(t, got, []string{"only"})
+	assert.EqualArrays(t, res.Items, []string{"only"})
 }
 
 func TestFindFromSource_MultiSelect(t *testing.T) {
@@ -79,7 +80,7 @@ func TestFindFromSource_MultiSelect(t *testing.T) {
 	)...)
 
 	src := ff.NewSliceSourceFrom([]string{"alpha", "beta", "gamma"})
-	got, err := f.FindFromSource(context.Background(), src, ff.Opt{Multi: true})
+	res, err := f.FindFromSource(context.Background(), src, ff.Opt{Multi: true})
 	require.NoError(t, err)
-	assert.EqualArraysUnordered(t, got, []string{"alpha", "beta"})
+	assert.EqualArraysUnordered(t, res.Items, []string{"alpha", "beta"})
 }

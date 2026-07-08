@@ -11,6 +11,7 @@ module completions {
     --header: string         # Static header line
     --select-1               # Auto-select if exactly one match
     --fast                   # Disable streaming delay
+    --print-query            # Print the query as the first output line
     --reverse                # Render prompt at top
     --height: int            # Number of rows to occupy
     --ansi                   # Render ANSI SGR colour escapes from input items

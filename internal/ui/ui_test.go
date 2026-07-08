@@ -54,16 +54,25 @@ func TestSelectEmptyOptions(t *testing.T) {
 }
 
 func TestSelectAbortMapsToErrCancelled(t *testing.T) {
-	_, err := selectWith(func(_ context.Context, _ *[]string, _ sync.Locker, _ ff.Opt) ([]int, error) {
-		return nil, ff.ErrAbort
+	_, err := selectWith(func(_ context.Context, _ *[]string, _ sync.Locker, _ ff.Opt) (ff.Result, error) {
+		return ff.Result{}, ff.ErrAbort
+	}, 10, "test", []string{"a"})
+	assert.Error(t, err, ErrCancelled)
+}
+
+// Enter with nothing selectable returns an empty result and no error; a picker
+// that offers no other way out reads that as the user backing out.
+func TestSelectEmptySelectionMapsToErrCancelled(t *testing.T) {
+	_, err := selectWith(func(_ context.Context, _ *[]string, _ sync.Locker, _ ff.Opt) (ff.Result, error) {
+		return ff.Result{Query: "nope"}, nil
 	}, 10, "test", []string{"a"})
 	assert.Error(t, err, ErrCancelled)
 }
 
 func TestSelectFinderError(t *testing.T) {
 	sentinel := errors.New("boom")
-	_, err := selectWith(func(_ context.Context, _ *[]string, _ sync.Locker, _ ff.Opt) ([]int, error) {
-		return nil, sentinel
+	_, err := selectWith(func(_ context.Context, _ *[]string, _ sync.Locker, _ ff.Opt) (ff.Result, error) {
+		return ff.Result{}, sentinel
 	}, 10, "test", []string{"a"})
 	assert.Error(t, err, sentinel)
 }

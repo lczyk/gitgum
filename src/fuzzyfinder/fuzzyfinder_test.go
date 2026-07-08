@@ -420,9 +420,9 @@ func TestFind_enter(t *testing.T) {
 			term.SetEvents(events...)
 
 			names := trackNames()
-			idxs, err := f.Find(context.Background(), &names, nil, ff.Opt{})
+			res, err := f.Find(context.Background(), &names, nil, ff.Opt{})
 			require.NoError(t, err)
-			assert.Equal(t, c.expected, idxs[0])
+			assert.Equal(t, c.expected, res.Indices[0])
 		})
 	}
 }
@@ -459,9 +459,10 @@ func TestFind_WithQuery(t *testing.T) {
 		term.SetEvents(events...)
 
 		assertWithGolden(t, func() string {
-			idxs, err := f.Find(context.Background(), &things, nil, ff.Opt{})
+			res, err := f.Find(context.Background(), &things, nil, ff.Opt{})
 			require.NoError(t, err)
-			assert.Equal(t, 0, idxs[0])
+			assert.Equal(t, 0, res.Indices[0])
+			assert.Equal(t, "one", res.Query)
 			return term.GetResult()
 		})
 	})
@@ -471,9 +472,9 @@ func TestFind_WithQuery(t *testing.T) {
 		term.SetEvents(events...)
 
 		assertWithGolden(t, func() string {
-			idxs, err := f.Find(context.Background(), &things, nil, ff.Opt{Query: "three2"})
+			res, err := f.Find(context.Background(), &things, nil, ff.Opt{Query: "three2"})
 			require.NoError(t, err)
-			assert.Equal(t, 1, idxs[0])
+			assert.Equal(t, 1, res.Indices[0])
 			return term.GetResult()
 		})
 	})
@@ -511,7 +512,7 @@ func TestFind_WithSelectOne(t *testing.T) {
 
 			assertWithGolden(t, func() string {
 				things := c.things
-				idxs, err := f.Find(context.Background(), &things, nil, ff.Opt{
+				res, err := f.Find(context.Background(), &things, nil, ff.Opt{
 					Query:     c.query,
 					SelectOne: true,
 				})
@@ -519,7 +520,7 @@ func TestFind_WithSelectOne(t *testing.T) {
 					assert.Error(t, err, ff.ErrAbort)
 				} else {
 					require.NoError(t, err)
-					assert.Equal(t, c.expected, idxs[0])
+					assert.Equal(t, c.expected, res.Indices[0])
 				}
 				return term.GetResult()
 			})
@@ -533,7 +534,9 @@ func TestFindMulti(t *testing.T) {
 	cases := map[string]struct {
 		events   []tcell.Event
 		expected []int
-		abort    bool
+		// query set => Enter matched nothing, so the run ends with an empty
+		// selection and this query rather than an error.
+		query string
 	}{
 		"input glow": {events: runes("glow"), expected: []int{5}},
 		"select two items": {events: keys([]input{
@@ -553,7 +556,7 @@ func TestFindMulti(t *testing.T) {
 			{tcell.KeyTab, rune(tcell.KeyTab), tcell.ModNone},
 			{tcell.KeyDown, rune(tcell.KeyDown), tcell.ModNone},
 		}...), expected: []int{0}},
-		"empty result": {events: runes("fffffff"), abort: true},
+		"empty result": {events: runes("fffffff"), query: "fffffff"},
 		"resize window": {events: []tcell.Event{
 			tcell.NewEventResize(10, 10),
 		}, expected: []int{0}},
@@ -569,13 +572,14 @@ func TestFindMulti(t *testing.T) {
 			term.SetEvents(events...)
 
 			names := trackNames()
-			idxs, err := f.Find(context.Background(), &names, nil, ff.Opt{Multi: true})
-			if c.abort {
-				assert.Error(t, err, ff.ErrAbort)
+			res, err := f.Find(context.Background(), &names, nil, ff.Opt{Multi: true})
+			require.NoError(t, err)
+			if c.query != "" {
+				assert.Equal(t, 0, len(res.Indices))
+				assert.Equal(t, c.query, res.Query)
 				return
 			}
-			require.NoError(t, err)
-			assert.EqualArrays(t, c.expected, idxs)
+			assert.EqualArrays(t, c.expected, res.Indices)
 		})
 	}
 }

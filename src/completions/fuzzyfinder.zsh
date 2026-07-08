@@ -8,6 +8,7 @@ _ff() {
         '--header=[Static header line]:header:_default' \
         '(-1 --select-1)'{-1,--select-1}'[Auto-select if exactly one match]' \
         '--fast[Disable streaming delay]' \
+        '--print-query[Print the query as the first output line]' \
         '--reverse[Render prompt at top]' \
         '--height=[Number of rows to occupy]:rows:_default' \
         '--ansi[Render ANSI SGR colour escapes from input items]' \

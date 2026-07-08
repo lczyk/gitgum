@@ -36,10 +36,28 @@ func newScreen(height int) (screen, error) {
 }
 
 var (
-	// ErrAbort is returned from Find* functions if there are no selections.
+	// ErrAbort is returned from Find* functions when the user cancels the
+	// picker (Esc, Ctrl-C, Ctrl-D).
 	ErrAbort   = errors.New("abort")
 	errEntered = errors.New("entered")
 )
+
+// Result is what a Find* run produces. Indices and Items describe the same
+// selection: Indices into the picker's final item snapshot, Items the strings
+// themselves (ANSI-stripped when Opt.Ansi). Query is always the query as typed
+// when the picker exited, whether or not anything was selected.
+//
+// A confirmed selection yields a non-empty Indices/Items. Pressing Enter when
+// no matched item is selectable -- no matches at all, or every match ruled out
+// by Opt.Unselectable -- ends the picker with both empty and a nil error: the
+// picker cannot produce a selection, so it doesn't pretend to, and the caller
+// decides what the bare Query means. Cancelling returns ErrAbort alongside a
+// Result whose Query is still populated (the selection is empty).
+type Result struct {
+	Indices []int
+	Items   []string
+	Query   string
+}
 
 type state struct {
 	items       []string            // All item names (stripped of ansi when Opt.Ansi).
@@ -1095,11 +1113,8 @@ func (f *finder) runLoop(ctx context.Context, opt *Opt) ([]int, error) {
 			case errors.Is(err, ErrAbort):
 				return nil, ErrAbort
 			case errors.Is(err, errEntered):
-				idxs, cerr := f.confirmSelection()
-				if cerr != nil {
-					return nil, cerr
-				}
-				if idxs == nil {
+				idxs, done := f.confirmSelection()
+				if !done {
 					// Cursored item is unselectable; ignore Enter, stay open.
 					continue
 				}
@@ -1111,47 +1126,64 @@ func (f *finder) runLoop(ctx context.Context, opt *Opt) ([]int, error) {
 	}
 }
 
-// Find displays a fuzzy-finder UI over items and returns the indices of the
-// selected entries, or ErrAbort if the user cancels. With Opt.Multi=false,
-// the returned slice always has exactly one element.
+// Find displays a fuzzy-finder UI over items and returns the selection, or
+// ErrAbort if the user cancels. With Opt.Multi=false the result carries at
+// most one element. See Result for the empty-selection case.
 //
 // Pass lock=nil for a static slice. Pass a non-nil lock when the slice may
 // grow concurrently — the picker re-snapshots under lock on a 30ms cadence.
 // Length-equal mutations (e.g. in-place edits or balanced add+remove) are not
 // detected on this path; for that, use FindFromSource with a SliceSource.
-func Find(ctx context.Context, items *[]string, lock sync.Locker, opt Opt) ([]int, error) {
+func Find(ctx context.Context, items *[]string, lock sync.Locker, opt Opt) (Result, error) {
 	if items == nil {
-		return nil, errors.New("items pointer must not be nil")
+		return Result{}, errors.New("items pointer must not be nil")
 	}
 	f := &finder{}
 	return f.Find(ctx, items, lock, opt)
 }
 
-func (f *finder) Find(ctx context.Context, items *[]string, lock sync.Locker, opt Opt) ([]int, error) {
-	return f.find(ctx, &legacyLockedSource{items: items, lock: lock}, opt)
+func (f *finder) Find(ctx context.Context, items *[]string, lock sync.Locker, opt Opt) (Result, error) {
+	return f.result(f.find(ctx, &legacyLockedSource{items: items, lock: lock}, opt))
 }
 
-// FindFromSource displays the picker over a Source and returns the selected
-// items as strings, or ErrAbort if the user cancels. With Opt.Multi=false the
-// returned slice always has exactly one element.
+// FindFromSource displays the picker over a Source and returns the selection,
+// or ErrAbort if the user cancels. With Opt.Multi=false the result carries at
+// most one element. See Result for the empty-selection case.
 //
 // Unlike Find, FindFromSource supports both adding and removing items while
 // the picker is open: callers mutate the source via SliceSource (or any
 // custom Source) and the picker resyncs on the next 30ms tick. Cursor and
 // selection are preserved across resyncs by item identity, not slice index.
-func FindFromSource(ctx context.Context, src Source, opt Opt) ([]string, error) {
+func FindFromSource(ctx context.Context, src Source, opt Opt) (Result, error) {
 	f := &finder{}
 	return f.FindFromSource(ctx, src, opt)
 }
 
 // FindFromSource is the picker-method form, used by tests that need to inject
 // a mocked terminal.
-func (f *finder) FindFromSource(ctx context.Context, src Source, opt Opt) ([]string, error) {
-	idxs, err := f.find(ctx, src, opt)
+func (f *finder) FindFromSource(ctx context.Context, src Source, opt Opt) (Result, error) {
+	return f.result(f.find(ctx, src, opt))
+}
+
+// result packages a finished run's indices into a Result, attaching the items
+// they name and the query as typed on exit. Errors pass through, but the query
+// still rides along: a cancelled picker can tell the caller what was typed.
+func (f *finder) result(idxs []int, err error) (Result, error) {
+	res := Result{Query: f.query()}
 	if err != nil {
-		return nil, err
+		return res, err
 	}
-	return f.itemsAtLocked(idxs), nil
+	res.Indices = idxs
+	res.Items = f.itemsAtLocked(idxs)
+	return res, nil
+}
+
+// query returns the picker's query as typed. Safe before initFinder has run
+// (returns ""), which is the case when find() bails on a nil source.
+func (f *finder) query() string {
+	f.stateMu.RLock()
+	defer f.stateMu.RUnlock()
+	return string(f.state.input)
 }
 
 // itemsAtLocked translates indices into the picker's terminal items snapshot.
@@ -1218,27 +1250,37 @@ func (f *finder) unselectableLocked(idx int) bool {
 	return f.opt.Unselectable(f.state.items[idx])
 }
 
-// confirmSelection resolves what Enter should return. Three outcomes:
-//   - (nil, ErrAbort): nothing to confirm (no matches)
-//   - (nil, nil): the cursored item is unselectable; caller keeps the picker open
-//   - (idxs, nil): confirmed selection
-func (f *finder) confirmSelection() ([]int, error) {
+// anySelectableLocked reports whether any currently matched item can be
+// confirmed. False when nothing matches, or when Opt.Unselectable rules out
+// every match. Caller must hold f.stateMu (read or write).
+func (f *finder) anySelectableLocked() bool {
+	for _, idx := range f.state.matched {
+		if !f.unselectableLocked(idx) {
+			return true
+		}
+	}
+	return false
+}
+
+// confirmSelection resolves what Enter should do. Three outcomes:
+//   - (idxs, true): confirmed selection
+//   - ([]int{}, true): no matched item is selectable, so the picker cannot
+//     produce a selection -- end it with an empty result rather than trapping
+//     the user (Enter would otherwise be a dead key).
+//   - (nil, false): selectable matches exist but the cursor sits on an
+//     unselectable one; swallow Enter and keep the picker open.
+//
+// The distinction between the last two is the whole point: a dimmed row under
+// the cursor is a "not this one" nudge, whereas a wholly-unselectable match set
+// is a picker with nothing to pick.
+func (f *finder) confirmSelection() ([]int, bool) {
 	f.stateMu.RLock()
 	defer f.stateMu.RUnlock()
 
-	if len(f.state.matched) == 0 {
-		return nil, ErrAbort
-	}
-	if f.multi {
-		if len(f.state.selection) == 0 {
-			cur := f.state.matched[f.state.y]
-			if f.unselectableLocked(cur) {
-				return nil, nil
-			}
-			return []int{cur}, nil
-		}
-		// Selection is built via Tab, which already rejects unselectable items,
-		// so every entry here is selectable.
+	// Selection is built via Tab, which already rejects unselectable items, so
+	// every entry here is selectable -- and it survives the match set being
+	// filtered down to nothing, so it's checked before anySelectableLocked.
+	if f.multi && len(f.state.selection) > 0 {
 		poss, idxs := make([]int, 0, len(f.state.selection)), make([]int, 0, len(f.state.selection))
 		for idx, pos := range f.state.selection {
 			idxs = append(idxs, idx)
@@ -1247,13 +1289,16 @@ func (f *finder) confirmSelection() ([]int, error) {
 		sort.Slice(idxs, func(i, j int) bool {
 			return poss[i] < poss[j]
 		})
-		return idxs, nil
+		return idxs, true
+	}
+	if !f.anySelectableLocked() {
+		return []int{}, true
 	}
 	cur := f.state.matched[f.state.y]
 	if f.unselectableLocked(cur) {
-		return nil, nil
+		return nil, false
 	}
-	return []int{cur}, nil
+	return []int{cur}, true
 }
 
 func isInTesting() bool {

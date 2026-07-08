@@ -14,10 +14,12 @@ import (
 type stubSelector struct {
 	selectAnswers      []string
 	multiSelectAnswers [][]string
+	promptAnswers      []string
 	confirmAnswers     []bool
 
 	selectCalls      []selectCall
 	multiSelectCalls []selectCall
+	promptCalls      []selectCall
 	confirmCalls     []confirmCall
 }
 
@@ -63,6 +65,16 @@ func (s *stubSelector) MultiSelect(prompt string, options []string) ([]string, e
 	}
 	answer := s.multiSelectAnswers[0]
 	s.multiSelectAnswers = s.multiSelectAnswers[1:]
+	return answer, nil
+}
+
+func (s *stubSelector) Prompt(question string) (string, error) {
+	s.promptCalls = append(s.promptCalls, selectCall{Prompt: question})
+	if len(s.promptAnswers) == 0 {
+		return "", fmt.Errorf("stubSelector: unexpected Prompt call %q", question)
+	}
+	answer := s.promptAnswers[0]
+	s.promptAnswers = s.promptAnswers[1:]
 	return answer, nil
 }
 

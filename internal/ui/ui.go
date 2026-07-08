@@ -21,7 +21,7 @@ func selectShort(prompt string, options []string, initialQuery ...string) (strin
 	return selectWith(ff.Find, 2, prompt, options, initialQuery...)
 }
 
-func selectWith(finder func(context.Context, *[]string, sync.Locker, ff.Opt) ([]int, error), height int, prompt string, options []string, initialQuery ...string) (string, error) {
+func selectWith(finder func(context.Context, *[]string, sync.Locker, ff.Opt) (ff.Result, error), height int, prompt string, options []string, initialQuery ...string) (string, error) {
 	if len(options) == 0 {
 		return "", fmt.Errorf("no options provided")
 	}
@@ -31,14 +31,19 @@ func selectWith(finder func(context.Context, *[]string, sync.Locker, ff.Opt) ([]
 		opt.Query = initialQuery[0]
 	}
 
-	idxs, err := finder(context.Background(), &options, nil, opt)
+	res, err := finder(context.Background(), &options, nil, opt)
 	if err != nil {
 		if errors.Is(err, ff.ErrAbort) {
 			return "", ErrCancelled
 		}
 		return "", fmt.Errorf("running picker: %w", err)
 	}
-	return options[idxs[0]], nil
+	// Enter with nothing selectable under the query. These pickers offer no
+	// other way out, so treat it as the user backing out.
+	if len(res.Indices) == 0 {
+		return "", ErrCancelled
+	}
+	return options[res.Indices[0]], nil
 }
 
 // SelectStream is like Select but reads candidates from a SliceSource that
@@ -47,17 +52,39 @@ func selectWith(finder func(context.Context, *[]string, sync.Locker, ff.Opt) ([]
 // consumer is done; that also tells producers to stop.
 func SelectStream(ctx context.Context, prompt string, src *ff.SliceSource, unselectable func(string) bool) (string, error) {
 	opt := ff.Opt{Prompt: prompt + ": ", Height: 10, Reverse: true, Unselectable: unselectable}
-	selected, err := ff.FindFromSource(ctx, src, opt)
+	res, err := ff.FindFromSource(ctx, src, opt)
 	if err != nil {
 		if errors.Is(err, ff.ErrAbort) {
 			return "", ErrCancelled
 		}
 		return "", fmt.Errorf("running picker: %w", err)
 	}
-	if len(selected) == 0 {
-		return "", fmt.Errorf("no selection returned")
+	// Enter with nothing selectable under the query (e.g. every branch is
+	// checked out in another worktree). Nothing to hand back, so it reads as
+	// a cancellation -- callers already print their own "nothing selected".
+	if len(res.Items) == 0 {
+		return "", ErrCancelled
 	}
-	return selected[0], nil
+	return res.Items[0], nil
+}
+
+// Prompt reads a line of free text via the picker. The item list is empty, so
+// nothing is ever selectable and Enter can only mean "take what I typed" -- the
+// empty-selection case ff.Result documents. What comes back is the query
+// verbatim, "" included; validating it is the caller's job.
+//
+// Returns ErrCancelled on Esc/Ctrl-C.
+func Prompt(question string) (string, error) {
+	src := ff.NewSliceSourceFrom(nil)
+	opt := ff.Opt{Prompt: question + ": ", Height: 1, Reverse: true}
+	res, err := ff.FindFromSource(context.Background(), src, opt)
+	if err != nil {
+		if errors.Is(err, ff.ErrAbort) {
+			return "", ErrCancelled
+		}
+		return "", fmt.Errorf("running picker: %w", err)
+	}
+	return res.Query, nil
 }
 
 func confirmWith(selector func(string, []string, ...string) (string, error), prompt string, defaultYes bool) (bool, error) {
@@ -84,6 +111,7 @@ type Selector interface {
 	Select(prompt string, options []string, initialQuery ...string) (string, error)
 	SelectStream(ctx context.Context, prompt string, src *ff.SliceSource, unselectable func(string) bool) (string, error)
 	MultiSelect(prompt string, options []string) ([]string, error)
+	Prompt(question string) (string, error)
 	Confirm(prompt string, defaultYes bool) (bool, error)
 }
 
@@ -96,15 +124,19 @@ func MultiSelect(prompt string, options []string) ([]string, error) {
 	}
 	height := min(10, len(options))
 	opt := ff.Opt{Prompt: prompt + ": ", Height: height, Reverse: true, Multi: true}
-	idxs, err := ff.Find(context.Background(), &options, nil, opt)
+	res, err := ff.Find(context.Background(), &options, nil, opt)
 	if err != nil {
 		if errors.Is(err, ff.ErrAbort) {
 			return nil, ErrCancelled
 		}
 		return nil, fmt.Errorf("running picker: %w", err)
 	}
-	out := make([]string, len(idxs))
-	for i, idx := range idxs {
+	// Enter with nothing matched marks nothing; same as backing out.
+	if len(res.Indices) == 0 {
+		return nil, ErrCancelled
+	}
+	out := make([]string, len(res.Indices))
+	for i, idx := range res.Indices {
 		out[i] = options[idx]
 	}
 	return out, nil
@@ -124,6 +156,10 @@ func (RealSelector) SelectStream(ctx context.Context, prompt string, src *ff.Sli
 
 func (RealSelector) MultiSelect(prompt string, options []string) ([]string, error) {
 	return MultiSelect(prompt, options)
+}
+
+func (RealSelector) Prompt(question string) (string, error) {
+	return Prompt(question)
 }
 
 func (RealSelector) Confirm(prompt string, defaultYes bool) (bool, error) {
