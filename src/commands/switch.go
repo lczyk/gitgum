@@ -79,8 +79,12 @@ func (s *SwitchCommand) Execute(args []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// includeCurrent: the current branch shows in the list but is unselectable
+	// -- it carries the checked-out marker for this worktree, so
+	// isCheckedOutElsewhere blocks it. Keeping it visible means the list isn't
+	// missing the branch you're staring at in the status line above.
 	src := streamBranches(ctx, r, s.err(), currentBranch, trackingRemote, remotes,
-		branchStreamOpts{markCheckedOut: true})
+		branchStreamOpts{includeCurrent: true, markCheckedOut: true})
 
 	selected, err := s.sel().SelectStream(ctx, "Select a branch to switch to", src, isCheckedOutElsewhere)
 	cancel()

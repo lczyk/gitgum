@@ -62,9 +62,9 @@ type branchEntry struct {
 
 // branchStreamOpts tunes streamBranches for its three consumers.
 type branchStreamOpts struct {
-	// includeCurrent emits the current branch. switch filters it out (you can't
-	// switch to where you are); delete keeps it so it's visible but unselectable;
-	// branch keeps it because branching off HEAD is the common case.
+	// includeCurrent emits the current branch. switch and delete keep it so it's
+	// visible but unselectable (the checked-out marker for this worktree blocks
+	// it); branch keeps it because branching off HEAD is the common case.
 	includeCurrent bool
 	// markCheckedOut appends checkedOutSuffix to branches checked out in another
 	// worktree, which isCheckedOutElsewhere then blocks. switch and delete want
