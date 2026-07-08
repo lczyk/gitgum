@@ -8,6 +8,10 @@ module completions {
     [ "patch" "minor" "major" ]
   }
 
+  def "nu-complete gitgum sections" [] {
+    [ "branch" "remote" "worktree" "changes" "head" ]
+  }
+
   def "nu-complete gitgum branches" [] {
     ^git for-each-ref --format='%(refname:short)' refs/heads refs/remotes | lines
   }
@@ -35,6 +39,7 @@ module completions {
   ]
 
   export extern "__GITGUM_CMD__ status" [
+    sections?: string@"nu-complete gitgum sections" # Comma-separated sections (default: changes,head)
     --flat                   # Flat porcelain list instead of tree
     --follow(-f): float      # Follow mode: refresh every N seconds (default 2)
     --help(-h)               # Show help

@@ -48,6 +48,7 @@ _gitgum() {
                     ;;
                 status)
                     _arguments \
+                        '1:sections:(branch remote worktree changes head)' \
                         '--flat[Flat porcelain list instead of tree]' \
                         '(-f --follow)'{-f,--follow}'[Follow mode: refresh every N seconds]' \
                         '(-h --help)'{-h,--help}'[Show help]' \

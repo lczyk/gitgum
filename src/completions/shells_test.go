@@ -61,6 +61,8 @@ var bins = []binSpec{
 			"changes", "untracked", "ignored",
 			// status flag names
 			"flat", "follow",
+			// status sections
+			"worktree", "changes", "head",
 			// release bumps
 			"patch", "minor", "major",
 			// completion shell choices
@@ -70,6 +72,7 @@ var bins = []binSpec{
 			{"top-level", []string{""}, []string{"switch", "branch", "clean", "release", "replay-list"}},
 			{"clean flags", []string{"clean", "--"}, []string{"--changes", "--untracked", "--ignored", "--all", "--yes"}},
 			{"status flags", []string{"status", "--"}, []string{"--flat", "--follow"}},
+			{"status sections", []string{"status", ""}, []string{"branch", "remote", "worktree", "changes", "head"}},
 			{"completion shells", []string{"completion", ""}, []string{"bash", "fish", "zsh", "nu"}},
 			{"release bumps", []string{"release", ""}, []string{"patch", "minor", "major"}},
 		},

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"time"
@@ -17,21 +16,35 @@ import (
 type StatusCommand struct {
 	cmdIO
 	Flat   bool     `long:"flat" description:"show changes as flat porcelain list instead of tree"`
-	Follow *float64 `long:"follow" short:"f" optional:"yes" optional-value:"2" description:"follow mode: refresh every N seconds (default 2, min 1). suppresses branches/remotes; never fetches."`
+	Follow *float64 `long:"follow" short:"f" optional:"yes" optional-value:"2" description:"follow mode: refresh every N seconds (default 2, min 1). never fetches."`
+
+	// sections is resolved from the positional argument in Execute.
+	sections []statusSection
 }
 
+// Execute renders the sections named by the sole positional argument, a
+// comma-separated list like "branch,worktree" or "b,w". Defaults to "changes,head".
 func (s *StatusCommand) Execute(args []string) error {
 	if err := s.repo().CheckInRepo(); err != nil {
 		return err
 	}
+	if len(args) > 1 {
+		return fmt.Errorf("status takes at most one section list, got %d arguments", len(args))
+	}
+	spec := strings.Join(defaultSections, ",")
+	if len(args) == 1 {
+		spec = args[0]
+	}
+	var err error
+	if s.sections, err = parseSections(spec); err != nil {
+		return err
+	}
 	if s.Follow == nil {
-		return s.renderFull(s.out())
+		return s.renderSections(s.out(), s.sections)
 	}
 	return s.runFollow()
 }
 
-// renderFull writes the standard four-section status: branches, remotes,
-// changes, status. Used by the non-follow path.
 func statusHeader(label string) string {
 	prefix := "- " + label + " "
 	w, _, err := term.GetSize(int(os.Stdout.Fd()))
@@ -43,71 +56,6 @@ func statusHeader(label string) string {
 		pad = 3
 	}
 	return prefix + strings.Repeat("-", pad)
-}
-
-func (s *StatusCommand) renderFull(out io.Writer) error {
-	printHeader := func(label string) {
-		fmt.Fprintln(out, paint(ansiDim, statusHeader(label)))
-	}
-
-	printHeader("BRANCHES")
-	stdout, _, err := s.repo().Run("branch", "-vv", "--color=never")
-	if err != nil {
-		return fmt.Errorf("getting branches: %w", err)
-	}
-	fmt.Fprintln(out, renderBranchList(stdout))
-
-	stdout, _, err = s.repo().Run("remote", "-v")
-	if err != nil {
-		return fmt.Errorf("getting remotes: %w", err)
-	}
-	remotes := parseRemotes(stdout)
-	if len(remotes) > 0 {
-		printHeader("REMOTES")
-		for _, remote := range remotes {
-			fmt.Fprintln(out, remote)
-		}
-	}
-
-	return s.renderBody(out)
-}
-
-// renderBody writes only the CHANGES + STATUS sections. Shared between the
-// non-follow render and the follow-loop redraw. Runs `git status` only --
-// no fetch, no remote ops.
-func (s *StatusCommand) renderBody(out io.Writer) error {
-	printHeader := func(label string) {
-		fmt.Fprintln(out, paint(ansiDim, statusHeader(label)))
-	}
-
-	stdout, _, err := s.repo().Run("status", "--short", "--branch")
-	if err != nil {
-		return fmt.Errorf("getting status: %w", err)
-	}
-	lines := strings.Split(stdout, "\n")
-
-	changeLines := lines[1:]
-	hasChanges := false
-	for _, l := range changeLines {
-		if l != "" {
-			hasChanges = true
-			break
-		}
-	}
-	if hasChanges {
-		printHeader("CHANGES")
-		if s.Flat {
-			fmt.Fprintln(out, strings.Join(changeLines, "\n"))
-		} else {
-			entries := parseChangeLines(changeLines)
-			annotateNumstats(s.repo(), entries)
-			renderTree(buildTree(entries), out)
-		}
-	}
-
-	printHeader("STATUS")
-	fmt.Fprintln(out, lines[0])
-	return nil
 }
 
 func (s *StatusCommand) runFollow() error {
@@ -150,7 +98,7 @@ func (s *StatusCommand) runFollow() error {
 	// changed files changed, not when an existing file's diff size did.
 	refreshCache := func() {
 		var buf bytes.Buffer
-		cachedErr = s.renderBody(&buf)
+		cachedErr = s.renderSections(&buf, s.sections)
 		body := strings.Trim(buf.String(), "\n")
 		cachedLines = nil
 		if body != "" {
