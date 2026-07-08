@@ -53,6 +53,10 @@ eval "$(gitgum completion zsh)"
 
 Pick a branch to switch to. Local and remote branches stream into the picker live, deduplicated. For remote selections, gitgum offers to retarget tracking, fast-forward / reset to the remote tip, or create a new tracking branch as appropriate.
 
+### `gitgum branch`
+
+Create a new branch and switch to it. Pick the start point from the same live picker `switch` uses -- including the current branch, and branches checked out in other worktrees -- then type the new name. Existing local branches are listed while you type, so a colliding name shows up before you commit to it; picking a remote branch as the start point creates the new branch with `--no-track`, so a later `gg push` won't target someone else's branch.
+
 ### `gitgum status`
 
 Print branches, remotes, and a tree-formatted view of the working-tree changes (modified files get an inline `(+a,-d)` line-change count). Pass `--flat` for a porcelain list instead of the tree. Pass `--follow` / `-f` (optional `=N` interval, default 2s, min 1) to refresh in an alt-screen with `j/k g/G PgUp/PgDn` scroll and `q` to exit; in follow mode the branches and remotes sections are suppressed and no remote ops run -- only `git status` is called.
