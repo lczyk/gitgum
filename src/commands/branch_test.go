@@ -43,6 +43,33 @@ func TestBranchCommand_CreatesOffPickedLocalBranch(t *testing.T) {
 	assert.Equal(t, head, feature)
 }
 
+// Cutting a branch off a detached HEAD is how commits made there stop being
+// unreachable, so `branch` offers HEAD as a start point -- unlike `switch`,
+// which can only refuse to check it out.
+func TestBranchCommand_CreatesOffDetachedHEAD(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.CreateCommit(t, dir, "a.txt", "a", "chore: second")
+	temp_repo.RunGit(t, dir, "checkout", "--detach", "HEAD~1")
+	temp_repo.CreateCommit(t, dir, "b.txt", "b", "feat: work done while detached")
+	detached := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "HEAD"))
+	short := detachedShortSHA(git.Repo{Dir: dir}, "")
+
+	var buf strings.Builder
+	stub := &stubSelector{
+		selectAnswers: []string{"local: HEAD (detached at " + short + ")"},
+		promptAnswers: []string{"feat/rescued"},
+	}
+	cmd := &BranchCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute(nil))
+	assert.Equal(t, currentBranchIn(t, dir), "feat/rescued")
+	assert.ContainsString(t, buf.String(), "Created and switched to branch 'feat/rescued' off '"+short+"'.")
+
+	// the branch carries the once-orphaned commit
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "feat/rescued")), detached)
+}
+
 // The current branch is a valid start point -- and the most common one -- so it
 // must be offered rather than filtered out the way switch does.
 func TestBranchCommand_CreatesOffCurrentBranch(t *testing.T) {
@@ -207,6 +234,7 @@ func TestStartPointFor(t *testing.T) {
 	}{
 		"local":            {selected: "local: feature", want: startPoint{ref: "feature"}},
 		"local with slash": {selected: "local: feat/login", want: startPoint{ref: "feat/login"}},
+		"detached head":    {selected: "local: HEAD (detached at cf10b5f)", want: startPoint{ref: "cf10b5f"}},
 		"local/remote":     {selected: "local/remote: origin/feat/login", want: startPoint{ref: "feat/login"}},
 		"remote": {selected: "remote: origin/feat/login", want: startPoint{
 			ref: "origin/feat/login", remote: "origin", branch: "feat/login",

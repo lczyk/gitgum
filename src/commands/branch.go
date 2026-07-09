@@ -46,8 +46,10 @@ func (b *BranchCommand) Execute(args []string) error {
 	// includeCurrent: branching off the branch you're on is the common case.
 	// markCheckedOut: off, and no unselectable predicate -- unlike switch and
 	// delete, a branch checked out in another worktree is a fine start point.
+	// detachedAt: likewise a fine start point, and the only way to keep the
+	// commits made on a detached HEAD.
 	src := streamBranches(ctx, r, b.err(), currentBranch, trackingRemote, remotes,
-		branchStreamOpts{includeCurrent: true})
+		branchStreamOpts{includeCurrent: true, detachedAt: detachedShortSHA(r, currentBranch)})
 
 	selected, err := b.sel().SelectStream(ctx, "Select a branch to branch off", src, nil)
 	cancel()
@@ -119,6 +121,11 @@ func startPointFor(selected string) (startPoint, error) {
 	}
 	switch typ {
 	case "local":
+		// a detached HEAD is not a branch, but its commit is a start point --
+		// and cutting a branch off it is how those commits stop being orphans.
+		if short, ok := detachedEntrySHA(name); ok {
+			return startPoint{ref: short}, nil
+		}
 		return startPoint{ref: name}, nil
 	case "local/remote":
 		branch, ok := localRemoteBranch(name)
