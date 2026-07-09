@@ -34,7 +34,7 @@ func TestStatusCommand_InGitRepo(t *testing.T) {
 
 	require.NoError(t, err, "should succeed in git repo")
 	output := buf.String()
-	assert.ContainsString(t, output, "## ")
+	assert.ContainsString(t, output, "* main")
 	for _, absent := range []string{"BRANCHES", "REMOTES", "CHANGES"} {
 		if strings.Contains(output, absent) {
 			t.Errorf("clean repo default status should not emit %s section, got:\n%s", absent, output)
