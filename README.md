@@ -57,6 +57,8 @@ Pick a branch to switch to. Local and remote branches stream into the picker liv
 
 Create a new branch and switch to it. Pick the start point from the same live picker `switch` uses -- including the current branch, and branches checked out in other worktrees -- then type the new name. Existing local branches are listed while you type, so a colliding name shows up before you commit to it; picking a remote branch as the start point creates the new branch with `--no-track`, so a later `gg push` won't target someone else's branch.
 
+On a detached HEAD the picker offers `HEAD (detached at <sha>)` as a start point, which is how commits made there stop being unreachable. `gg switch` shows the same row but refuses it -- a detached HEAD is not a branch to switch to.
+
 ### `gitgum status`
 
 Print one or more status sections, named by a comma-separated argument:
@@ -65,9 +67,20 @@ Print one or more status sections, named by a comma-separated argument:
 - `remote` (`r`) -- configured remotes
 - `worktree` (`w`) -- linked worktrees
 - `changes` (`c`) -- a tree-formatted view of the working-tree changes (modified files get an inline `(+a,-d)` line-change count)
-- `head` (`h`) -- the `## main...origin/main` summary line
+- `head` (`h`) -- the current branch and its upstream, as `* (origin/)main [ahead 7]`
 
 Sections render in the order given, and a repeated section moves to its last position -- `b,r,b` renders as `r,b`. Surrounding whitespace is ignored, so `gg status "b, r"` works. A single section prints bare; two or more get headers. `gg status` with no argument is `gg status changes,head`.
+
+On a detached HEAD, `head` names the commit and every ref that contains it -- local branches first, then remote-only branches, then tags, closest first. The `~N` suffix is the commit's distance below that ref, and is omitted when the commit sits off the ref's first-parent chain:
+
+```
+* HEAD cf10b5f (origin/)feat/x~1     # exactly one containing ref
+* HEAD cf10b5f (no branch)           # a commit no ref can reach
+* HEAD cf10b5f                       # several
+    (origin/)feat/x~1
+    feat/y~3
+    v1.2.0~4
+```
 
 Pass `--flat` for a porcelain list instead of the change tree. Pass `--follow` / `-f` (optional `=N` interval, default 2s, min 1) to refresh the selected sections in an alt-screen with `j/k g/G PgUp/PgDn` scroll and `q` to exit; no remote ops run in follow mode.
 
