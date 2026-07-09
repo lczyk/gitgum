@@ -42,6 +42,20 @@ func resolveCurrentBranchContext(r git.Repo) (currentBranch, trackingRemote, sta
 	return currentBranch, trackingRemote, "Current branch is: " + branchDisplay, nil
 }
 
+// detachedShortSHA returns the short sha HEAD is detached at, or "" when HEAD
+// is on a branch (currentBranch != "", per resolveCurrentBranchContext) or when
+// there is no commit to name yet.
+func detachedShortSHA(r git.Repo, currentBranch string) string {
+	if currentBranch != "" {
+		return ""
+	}
+	short, _, err := r.Run("rev-parse", "--short", "HEAD")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(short)
+}
+
 func (s *SwitchCommand) checkoutBranch(branch string) error {
 	if err := s.repo().Checkout(branch); err != nil {
 		return fmt.Errorf("could not switch to branch '%s': %w", branch, err)
@@ -81,12 +95,13 @@ func (s *SwitchCommand) Execute(args []string) error {
 
 	// includeCurrent: the current branch shows in the list but is unselectable
 	// -- it carries the checked-out marker for this worktree, so
-	// isCheckedOutElsewhere blocks it. Keeping it visible means the list isn't
-	// missing the branch you're staring at in the status line above.
+	// isUnselectable blocks it. Keeping it visible means the list isn't
+	// missing the branch you're staring at in the status line above. A detached
+	// HEAD has no such branch, so detachedAt stands in for it.
 	src := streamBranches(ctx, r, s.err(), currentBranch, trackingRemote, remotes,
-		branchStreamOpts{includeCurrent: true, markCheckedOut: true})
+		branchStreamOpts{includeCurrent: true, markCheckedOut: true, detachedAt: detachedShortSHA(r, currentBranch)})
 
-	selected, err := s.sel().SelectStream(ctx, "Select a branch to switch to", src, isCheckedOutElsewhere)
+	selected, err := s.sel().SelectStream(ctx, "Select a branch to switch to", src, isUnselectable)
 	cancel()
 	if err != nil {
 		fmt.Fprintln(s.err(), "No branch selected. Aborting switch.")

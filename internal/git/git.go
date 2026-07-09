@@ -113,17 +113,18 @@ func (r Repo) CheckInRepo() error {
 }
 
 // GetLocalBranches returns a list of local git branches.
+//
+// for-each-ref rather than `git branch`: the latter prepends a marker column
+// and, on a detached HEAD, emits a "(HEAD detached at abc1234)" pseudo-entry
+// that is not a branch and cannot be checked out.
 func (r Repo) GetLocalBranches() ([]string, error) {
-	stdout, _, err := r.run("branch")
+	stdout, _, err := r.run("for-each-ref", "--format=%(refname:short)", "refs/heads")
 	if err != nil {
 		return nil, err
 	}
 	var branches []string
 	for _, line := range strings.Split(stdout, "\n") {
-		branch := strings.TrimSpace(line)
-		branch = strings.TrimPrefix(branch, "* ")
-		branch = strings.TrimPrefix(branch, "+ ")
-		if branch != "" {
+		if branch := strings.TrimSpace(line); branch != "" {
 			branches = append(branches, branch)
 		}
 	}

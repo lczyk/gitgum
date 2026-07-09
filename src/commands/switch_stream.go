@@ -22,21 +22,44 @@ const streamDelay = 3 * time.Millisecond
 // key on this string -- keep them in sync via this const.
 const checkedOutMarker = " (checked out in "
 
+// detachedMarker tags the entry standing in for a detached HEAD. It names
+// where HEAD sits but is not a branch, so it can't be switched to; like
+// checkedOutMarker, the emitter and the unselectable predicate both key on it.
+const detachedMarker = "HEAD (detached at "
+
+// detachedEntry renders the picker row for a detached HEAD at short sha.
+func detachedEntry(short string) string {
+	return "local: " + detachedMarker + short + ")"
+}
+
+// detachedEntrySHA recovers the short sha from a detached-HEAD picker payload
+// ("HEAD (detached at cf10b5f)"), the name half of a detachedEntry row.
+func detachedEntrySHA(name string) (string, bool) {
+	rest, ok := strings.CutPrefix(name, detachedMarker)
+	if !ok {
+		return "", false
+	}
+	return strings.TrimSuffix(rest, ")"), true
+}
+
 // checkedOutSuffix renders the display suffix naming the blocking worktree.
 func checkedOutSuffix(worktreePath string) string {
 	return checkedOutMarker + filepath.Base(worktreePath) + " worktree)"
 }
 
-// isCheckedOutElsewhere is the picker's Unselectable predicate: an entry
-// carrying the checked-out marker can't be switched to (see checkedOutMarker).
-func isCheckedOutElsewhere(item string) bool {
-	return strings.Contains(item, checkedOutMarker)
+// isUnselectable is the picker's Unselectable predicate: an entry carrying
+// either marker names something `git checkout` would refuse -- a branch checked
+// out in another worktree, or a detached HEAD, which is not a branch at all.
+func isUnselectable(item string) bool {
+	return strings.Contains(item, checkedOutMarker) || strings.Contains(item, detachedMarker)
 }
 
 // parseBranchEntry splits a picker payload ("local: foo", "remote: origin/foo",
 // "local/remote: origin/foo") into its type tag and name. The name is whatever
 // followed the tag, suffixes included -- callers that enabled markCheckedOut
-// only ever see entries they made selectable, so no suffix reaches here.
+// only ever see entries they made selectable, so no checked-out suffix reaches
+// here. A detachedEntry does: `branch` lets you cut a branch off HEAD, and
+// startPointFor unwraps the name via detachedEntrySHA.
 func parseBranchEntry(selected string) (typ, name string, err error) {
 	typ, name, ok := strings.Cut(selected, ": ")
 	if !ok {
@@ -67,11 +90,15 @@ type branchStreamOpts struct {
 	// it); branch keeps it because branching off HEAD is the common case.
 	includeCurrent bool
 	// markCheckedOut appends checkedOutSuffix to branches checked out in another
-	// worktree, which isCheckedOutElsewhere then blocks. switch and delete want
+	// worktree, which isUnselectable then blocks. switch and delete want
 	// this -- git refuses both operations on such a branch. branch does not: a
 	// branch checked out elsewhere is a perfectly good start point, and the
 	// suffix would otherwise have to be stripped back off the picker payload.
 	markCheckedOut bool
+	// detachedAt is the short sha HEAD is detached at, "" when HEAD is on a
+	// branch. Set, it prepends an unselectable row naming the commit, so the
+	// picker isn't silent about where you actually are.
+	detachedAt string
 }
 
 // streamBranches collects local and remote branches concurrently, deduplicating
@@ -125,6 +152,10 @@ func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBr
 	// local and remote-tracked could race-display as "remote: ..." instead of
 	// "local/remote: ...", sending switch down the fetch/tracking-branch path
 	// for a branch that already exists locally.
+	if opts.detachedAt != "" {
+		src.Add(detachedEntry(opts.detachedAt))
+	}
+
 	streamLocalBranches(ctx, r, errOut, queue, currentBranch, checkedOut, opts.includeCurrent)
 	for _, remote := range remotes {
 		go streamRemoteBranches(ctx, r, errOut, queue, remote, currentBranch, trackingRemote, checkedOut)

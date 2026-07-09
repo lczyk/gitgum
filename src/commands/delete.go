@@ -51,7 +51,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 	src := streamBranches(ctx, r, d.err(), currentBranch, trackingRemote, remotes,
 		branchStreamOpts{includeCurrent: true, markCheckedOut: true})
 
-	selected, err := d.sel().SelectStream(ctx, "Select a branch to delete", src, isCheckedOutElsewhere)
+	selected, err := d.sel().SelectStream(ctx, "Select a branch to delete", src, isUnselectable)
 	cancel()
 	if err != nil {
 		if errors.Is(err, ui.ErrCancelled) {

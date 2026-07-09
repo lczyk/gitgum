@@ -234,7 +234,7 @@ func TestStreamBranches_CheckedOutElsewhereIsMarkedUnselectable(t *testing.T) {
 
 	require.That(t, feature != "", "feature branch should appear")
 	assert.ContainsString(t, feature, "(checked out in")
-	assert.That(t, isCheckedOutElsewhere(feature), "marked entry should be unselectable")
+	assert.That(t, isUnselectable(feature), "marked entry should be unselectable")
 }
 
 // Regression: in detached HEAD, rev-parse --abbrev-ref returns "HEAD" and
@@ -251,4 +251,39 @@ func TestResolveCurrentBranchContext_DetachedHEAD(t *testing.T) {
 	assert.Equal(t, currentBranch, "")
 	assert.Equal(t, trackingRemote, "")
 	assert.ContainsString(t, statusLine, "detached HEAD")
+}
+
+// Regression: `git branch` lists a "(HEAD detached at abc1234)" pseudo-entry,
+// which used to reach the picker as a selectable "local:" branch and fail on
+// checkout. The picker now names HEAD itself, and refuses to switch to it.
+func TestStreamBranches_DetachedHEAD(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.CreateCommit(t, dir, "a.txt", "a", "chore: second")
+	temp_repo.RunGit(t, dir, "checkout", "--detach", "HEAD~1")
+	r := git.Repo{Dir: dir}
+
+	short := detachedShortSHA(r, "")
+	require.That(t, short != "", "detached HEAD should have a short sha")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var errBuf bytes.Buffer
+	src := streamBranches(ctx, r, &errBuf, "", "", nil,
+		branchStreamOpts{includeCurrent: true, markCheckedOut: true, detachedAt: short})
+
+	var items []string
+	for range 50 {
+		time.Sleep(10 * time.Millisecond)
+		if items = src.Snapshot(); len(items) == 2 {
+			break
+		}
+	}
+	assert.Equal(t, len(items), 2)
+	assert.Equal(t, items[0], "local: HEAD (detached at "+short+")")
+	assert.That(t, isUnselectable(items[0]), "detached HEAD should be unselectable")
+
+	// the pseudo-entry no longer masquerades as a branch
+	assert.Equal(t, items[1], "local: main")
+	assert.That(t, !isUnselectable(items[1]), "main is not checked out anywhere")
 }
