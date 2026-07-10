@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/src/graph"
 )
 
@@ -81,11 +82,10 @@ func TestEdge_Determinism(t *testing.T) {
 		{ID: "merge", Label: "merge", Epoch: 4, Parents: []string{"a1", "b1"}, Lane: h("a")},
 	}
 	first := strings.Join(graph.Render(graph.Layout(nodes, graph.Opt{}), graph.Style{}), "\n")
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		out := strings.Join(graph.Render(graph.Layout(nodes, graph.Opt{}), graph.Style{}), "\n")
-		if out != first {
-			t.Fatalf("nondeterministic output on iteration %d:\n--- first ---\n%s\n--- got ---\n%s", i, first, out)
-		}
+		// Hard fail: once it drifts, the remaining 49 iterations say nothing new.
+		require.EqualLineByLine(t, out, first, "nondeterministic output on iteration", i)
 	}
 }
 
@@ -103,11 +103,9 @@ func TestEdge_NoEpoch(t *testing.T) {
 	first := strings.Join(graph.Render(graph.Layout(nodes, graph.Opt{}), graph.Style{}), "\n")
 	assert.ContainsString(t, first, "base", "base in output")
 	assert.ContainsString(t, first, "merge", "merge in output")
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		out := strings.Join(graph.Render(graph.Layout(nodes, graph.Opt{}), graph.Style{}), "\n")
-		if out != first {
-			t.Fatalf("nondeterministic output without Epoch on iteration %d:\n%s", i, out)
-		}
+		require.EqualLineByLine(t, out, first, "nondeterministic output without Epoch on iteration", i)
 	}
 }
 
@@ -123,14 +121,15 @@ func TestEdge_ConcurrentLayout(t *testing.T) {
 	}
 	want := strings.Join(graph.Render(graph.Layout(nodes, graph.Opt{}), graph.Style{}), "\n")
 	var wg sync.WaitGroup
-	for i := 0; i < 64; i++ {
+	for range 64 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			got := strings.Join(graph.Render(graph.Layout(nodes, graph.Opt{}), graph.Style{}), "\n")
-			if got != want {
-				t.Errorf("concurrent layout produced different output:\n%s", got)
-			}
+			// assert, not require: require's Fatalf calls runtime.Goexit, which
+			// only unwinds this goroutine -- the failure would go unreported and
+			// the test would pass. assert reports via Errorf, which is safe here.
+			assert.EqualLineByLine(t, got, want, "concurrent layout produced different output")
 		}()
 	}
 	wg.Wait()

@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/src/graph"
 )
 
@@ -44,11 +46,7 @@ func assertGraph(t *testing.T, nodes []graph.Node, expected string) {
 
 func assertGraphOpt(t *testing.T, nodes []graph.Node, opt graph.Opt, expected string) {
 	t.Helper()
-	got := renderOpt(nodes, opt)
-	expected = stripTrailingSpaces(strings.TrimRight(expected, "\n"))
-	if got != expected {
-		t.Errorf("graph output mismatch\n--- expected ---\n%s\n--- got ---\n%s\n--- end ---", expected, got)
-	}
+	assert.EqualLineByLine(t, renderOpt(nodes, opt), stripTrailingSpaces(strings.TrimRight(expected, "\n")))
 }
 
 func renderOpt(nodes []graph.Node, opt graph.Opt) string {
@@ -214,9 +212,9 @@ func TestScenario_Octopus(t *testing.T) {
 	// today so we notice regressions; once octopus support lands, replace
 	// with git's `*---.` golden.
 	got := renderTo(nodes)
-	if got == "" {
-		t.Fatal("octopus produced empty output")
-	}
+	// Hard fail: the golden below is `got` itself, so an empty render would
+	// compare equal to itself and pass without asserting anything.
+	require.NotEqual(t, got, "", "octopus produced empty output")
 	// Snapshot the current degraded output as expected; a future engine fix
 	// will update this golden.
 	expected := got
@@ -526,13 +524,8 @@ func TestOpt_NoSplitMarksOnlyClearsMarkers(t *testing.T) {
 		for _, rev := range []bool{false, true} {
 			marked := renderOpt(nodes, graph.Opt{Reverse: rev})
 			plain := renderOpt(nodes, graph.Opt{Reverse: rev, NoSplitMarks: true})
-			if !strings.ContainsAny(marked, "v^") {
-				t.Errorf("%s (reverse=%v): scenario draws no markers, so it proves nothing:\n%s", name, rev, marked)
-			}
-			if want := unmark.Replace(marked); plain != want {
-				t.Errorf("%s (reverse=%v): unmarked render is not the marked one with arrowheads flattened\n--- want ---\n%s\n--- got ---\n%s",
-					name, rev, want, plain)
-			}
+			assert.That(t, strings.ContainsAny(marked, "v^"), name, "draws no markers, so it proves nothing")
+			assert.EqualLineByLine(t, plain, unmark.Replace(marked), name, "reverse:", rev)
 		}
 	}
 }
@@ -673,12 +666,9 @@ func TestScenario_SharedParentDualMerge(t *testing.T) {
 	}
 
 	// Assert feature chain above main chain.
-	if positions["f1"] > positions["m1"] {
-		got := stripTrailingSpaces(strings.Join(lines, "\n"))
-		t.Errorf("feature chain should appear above main chain in oldest-first output\n"+
-			"f1 at position %d, m1 at position %d\n--- rendered ---\n%s",
-			positions["f1"], positions["m1"], got)
-	}
+	assert.That(t, positions["f1"] < positions["m1"],
+		"feature chain should appear above main chain in oldest-first output; f1 at",
+		positions["f1"], "m1 at", positions["m1"], "\n"+stripTrailingSpaces(strings.Join(lines, "\n")))
 }
 
 func TestScenario_CatchUpReusesIdleCol(t *testing.T) {
@@ -770,10 +760,7 @@ func TestScenario_CrissCross(t *testing.T) {
 	// Just assert no panic and a non-empty render -- exact glyph layout
 	// here is less important than the crash regression.
 	lr := graph.Layout(nodes, graph.Opt{})
-	lines := graph.Render(lr, graph.Style{})
-	if len(lines) == 0 {
-		t.Fatal("expected non-empty render")
-	}
+	assert.That(t, len(graph.Render(lr, graph.Style{})) > 0, "expected non-empty render")
 }
 
 func TestScenario_BackAndForthCatchUps(t *testing.T) {
@@ -794,11 +781,8 @@ func TestScenario_BackAndForthCatchUps(t *testing.T) {
 		{ID: "E", Label: "E", Epoch: iso(8), Parents: []string{"D", "f3"}, Lane: h("main")},
 	}
 	lr := graph.Layout(nodes, graph.Opt{})
-	if lr.Columns > 3 {
-		lines := graph.Render(lr, graph.Style{})
-		t.Errorf("expected at most 3 cols (main, feat, single routing); got %d\n%s",
-			lr.Columns, strings.Join(lines, "\n"))
-	}
+	assert.That(t, lr.Columns <= 3, "expected at most 3 cols (main, feat, single routing); got",
+		lr.Columns, "\n"+strings.Join(graph.Render(lr, graph.Style{}), "\n"))
 }
 
 func TestScenario_OctopusDedupTerms(t *testing.T) {
