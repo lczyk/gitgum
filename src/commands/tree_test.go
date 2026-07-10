@@ -171,31 +171,6 @@ func TestHandleFollowKey_TinyScreen(t *testing.T) {
 	assert.Equal(t, off, 1) // page clamped to 1
 }
 
-func TestSwapGraphSlashes(t *testing.T) {
-	cases := map[string]struct {
-		in, want string
-	}{
-		"plain forward slash":   {"|/  ", "|\\  "},
-		"plain back slash":      {"|\\  ", "|/  "},
-		"no slashes":            {"* | abc", "* | abc"},
-		"slashes only in graph": {"|/ abc/def", "|\\ abc/def"},
-		"ansi-wrapped slash": {
-			"\x1b[32m|\x1b[m\x1b[32m/\x1b[m  ",
-			"\x1b[32m|\x1b[m\x1b[32m\\\x1b[m  ",
-		},
-		"ansi prefix then hash": {
-			"* \x1b[32m|\x1b[m \x1b[33m90a0808\x1b[m C/D",
-			"* \x1b[32m|\x1b[m \x1b[33m90a0808\x1b[m C/D",
-		},
-	}
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			got := swapGraphSlashes(tc.in)
-			assert.Equal(t, got, tc.want)
-		})
-	}
-}
-
 func TestTreeCommand_Execute(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)

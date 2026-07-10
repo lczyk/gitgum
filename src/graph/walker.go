@@ -286,34 +286,27 @@ func (w *walkState) emit(row []Glyph, gaps []Glyph, commit *Node) {
 	w.commits = append(w.commits, commit)
 }
 
-// finish reverses to oldest-first, swaps slashes (in both column glyphs and
-// gaps, since the y-flip turns every `/` into `\` and vice versa), and pads to
-// width.
+// finish reverses to oldest-first, mirrors every glyph (in both column glyphs
+// and gaps, since the y-flip turns every `/` into `\` and vice versa), and pads
+// to width.
 func (w *walkState) finish() LayoutResult {
 	n := len(w.rows)
 	out := make([]Row, n)
-	swap := func(dst, src []Glyph) {
+	flip := func(dst, src []Glyph) {
 		for c := range dst {
 			if c >= len(src) {
 				continue
 			}
-			switch src[c] {
-			case GlyphSlash:
-				dst[c] = GlyphBackslash
-			case GlyphBackslash:
-				dst[c] = GlyphSlash
-			default:
-				dst[c] = src[c]
-			}
+			dst[c] = mirror(src[c])
 		}
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		g := make([]Glyph, w.width)
-		swap(g, w.rows[n-1-i])
+		flip(g, w.rows[n-1-i])
 		var gap []Glyph
 		if src := w.gaps[n-1-i]; src != nil {
 			gap = make([]Glyph, w.width)
-			swap(gap, src)
+			flip(gap, src)
 		}
 		out[i] = Row{Commit: w.commits[n-1-i], Glyphs: g, Gap: gap}
 	}

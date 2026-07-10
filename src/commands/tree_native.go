@@ -3,7 +3,6 @@ package commands
 import (
 	"fmt"
 	"io"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -60,20 +59,18 @@ func (t *TreeCommand) renderNative(w io.Writer, sinceArg string, maxCount int) e
 	}
 
 	lr := graph.Layout(nodes)
+	if t.Reverse {
+		// Flip in glyph space rather than by rewriting rendered lines: the graph
+		// knows which characters are edges, a text pass would have to guess.
+		lr = lr.Reversed()
+	}
 
 	st := graph.Style{}
 	if useColor {
 		st = graph.Style{LinePrefix: ansiRed, LineSuffix: ansiReset}
 	}
 
-	lines := graph.Render(lr, st)
-	if t.Reverse {
-		slices.Reverse(lines)
-		for i, line := range lines {
-			lines[i] = swapGraphSlashes(line)
-		}
-	}
-	for _, line := range lines {
+	for _, line := range graph.Render(lr, st) {
 		fmt.Fprintln(w, line)
 	}
 	return nil

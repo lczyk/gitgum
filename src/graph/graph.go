@@ -9,6 +9,8 @@
 //	lines := graph.Render(lr, graph.Style{}) // or pass a populated Style
 package graph
 
+import "slices"
+
 // Node is a vertex in the commit DAG. Parents is a forward edge list
 // (this -> parent). The engine builds reverse (child) edges internally.
 //
@@ -71,6 +73,19 @@ func (g Glyph) String() string {
 	panic("graph: unknown Glyph value")
 }
 
+// mirror returns g reflected across a horizontal axis -- the glyph that draws
+// the same edge once row order is flipped. Diagonals swap handedness; the rest
+// are symmetric.
+func mirror(g Glyph) Glyph {
+	switch g {
+	case GlyphSlash:
+		return GlyphBackslash
+	case GlyphBackslash:
+		return GlyphSlash
+	}
+	return g
+}
+
 // Style controls the ANSI styling applied to graph glyphs. LinePrefix /
 // LineSuffix wrap the line glyphs (`|`, `/`, `\`). StarPrefix / StarSuffix
 // wrap commit markers (`*`). Spaces are written unwrapped.
@@ -101,4 +116,21 @@ type Row struct {
 type LayoutResult struct {
 	Rows    []Row
 	Columns int
+}
+
+// Reversed flips lr into newest-first display order: rows reversed and every
+// glyph vertically mirrored, so each diagonal keeps pointing along its own edge.
+// It reorders and rewrites lr's slices in place and returns lr; the pre-call
+// value is spent.
+func (lr LayoutResult) Reversed() LayoutResult {
+	slices.Reverse(lr.Rows)
+	for _, row := range lr.Rows {
+		for c, g := range row.Glyphs {
+			row.Glyphs[c] = mirror(g)
+		}
+		for c, g := range row.Gap {
+			row.Gap[c] = mirror(g)
+		}
+	}
+	return lr
 }
