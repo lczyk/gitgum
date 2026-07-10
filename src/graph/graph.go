@@ -5,11 +5,9 @@
 //
 // Typical usage:
 //
-//	lr := graph.Layout(nodes)
+//	lr := graph.Layout(nodes, graph.Opt{}) // or pass a populated Opt
 //	lines := graph.Render(lr, graph.Style{}) // or pass a populated Style
 package graph
-
-import "slices"
 
 // Node is a vertex in the commit DAG. Parents is a forward edge list
 // (this -> parent). The engine builds reverse (child) edges internally.
@@ -128,25 +126,9 @@ type Row struct {
 }
 
 // LayoutResult is the computed output of Layout. Rows is in oldest-first
-// display order. Columns is the maximum lane index used.
+// display order, or newest-first under Opt.Reverse. Columns is the maximum
+// lane index used.
 type LayoutResult struct {
 	Rows    []Row
 	Columns int
-}
-
-// Reversed flips lr into newest-first display order: rows reversed and every
-// glyph vertically mirrored, so each diagonal keeps pointing along its own edge.
-// It reorders and rewrites lr's slices in place and returns lr; the pre-call
-// value is spent.
-func (lr LayoutResult) Reversed() LayoutResult {
-	slices.Reverse(lr.Rows)
-	for _, row := range lr.Rows {
-		for c, g := range row.Glyphs {
-			row.Glyphs[c] = mirror(g)
-		}
-		for c, g := range row.Gap {
-			row.Gap[c] = mirror(g)
-		}
-	}
-	return lr
 }

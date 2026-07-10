@@ -182,14 +182,14 @@ func octopusFan(k int) []graph.Node {
 func benchLayout(b *testing.B, nodes []graph.Node) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = graph.Layout(nodes)
+		_ = graph.Layout(nodes, graph.Opt{})
 	}
 }
 
 func benchLayoutAndRender(b *testing.B, nodes []graph.Node) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		lr := graph.Layout(nodes)
+		lr := graph.Layout(nodes, graph.Opt{})
 		_ = graph.Render(lr, graph.Style{})
 	}
 }
@@ -215,7 +215,7 @@ func BenchmarkRender_Parallel100x10(b *testing.B) {
 // loop so regressions in the per-row formatter / slot packer surface
 // independently of layout work.
 func benchRenderOnly(b *testing.B, nodes []graph.Node, st graph.Style) {
-	lr := graph.Layout(nodes)
+	lr := graph.Layout(nodes, graph.Opt{})
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

@@ -19,7 +19,7 @@ func TestRender_Linear(t *testing.T) {
 		{ID: "c", Label: "c third commit", Parents: []string{"b"}, Epoch: 200},
 	}
 
-	lr := graph.Layout(nodes)
+	lr := graph.Layout(nodes, graph.Opt{})
 	lines := graph.Render(lr, graph.Style{})
 
 	// Oldest first: a, then b, then c. No branching, so all in column 0.
@@ -55,7 +55,7 @@ func TestRender_Fork(t *testing.T) {
 		{ID: "c", Label: "c branch2", Parents: []string{"a"}, Epoch: 101},
 	}
 
-	lr := graph.Layout(nodes)
+	lr := graph.Layout(nodes, graph.Opt{})
 	lines := graph.Render(lr, graph.Style{})
 
 	// Two columns: main branch (a→b) in col 0, branch2 (c) in col 1.
@@ -82,7 +82,7 @@ func TestRender_Merge(t *testing.T) {
 		{ID: "d", Label: "d merge", Parents: []string{"b", "c"}, Epoch: 200},
 	}
 
-	lr := graph.Layout(nodes)
+	lr := graph.Layout(nodes, graph.Opt{})
 	lines := graph.Render(lr, graph.Style{})
 
 	// Should have 2 columns at the merge point.
@@ -110,7 +110,7 @@ func TestRender_Style(t *testing.T) {
 		LinePrefix: "<L>", LineSuffix: "</L>",
 		StarPrefix: "<S>", StarSuffix: "</S>",
 	}
-	lr := graph.Layout(nodes)
+	lr := graph.Layout(nodes, graph.Opt{})
 	lines := graph.Render(lr, st)
 	assert.That(t, len(lines) >= 3, "at least 3 rows produced")
 	// First row: "* base" -> star wrapped, then ' base'.
@@ -126,7 +126,7 @@ func TestRender_SingleNode(t *testing.T) {
 		{ID: "root", Label: "root initial", Parents: nil, Epoch: 1},
 	}
 
-	lr := graph.Layout(nodes)
+	lr := graph.Layout(nodes, graph.Opt{})
 	lines := graph.Render(lr, graph.Style{})
 
 	assert.Equal(t, len(lines), 1)

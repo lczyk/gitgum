@@ -11,7 +11,7 @@ import (
 
 func TestRender_Empty(t *testing.T) {
 	t.Parallel()
-	lr := Layout(nil)
+	lr := Layout(nil, Opt{})
 	assert.Equal(t, len(lr.Rows), 0)
 	assert.Equal(t, lr.Columns, 0)
 	lines := Render(lr, Style{})
@@ -26,7 +26,7 @@ func TestRender_TopologicalCorrection(t *testing.T) {
 		{ID: "child", Label: "c child", Parents: []string{"parent"}, Epoch: 0},
 	}
 
-	lr := Layout(nodes)
+	lr := Layout(nodes, Opt{})
 
 	// Verify internal row assignment: parent must be at lower row than child.
 	pState := findNode(lr, "parent")

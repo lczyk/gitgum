@@ -31,9 +31,10 @@ type walkState struct {
 	gaps    [][]Glyph   // parallel to rows: trailing-slot diagonals (crossings)
 	commits []*Node     // parallel to rows; nil on connector rows
 	width   int
+	opt     Opt
 }
 
-func layoutWalker(nodes []Node) LayoutResult {
+func layoutWalker(nodes []Node, opt Opt) LayoutResult {
 	if len(nodes) == 0 {
 		return LayoutResult{}
 	}
@@ -41,12 +42,12 @@ func layoutWalker(nodes []Node) LayoutResult {
 	// it gives each node a stable row (newest = highest) with the nice
 	// "second parent right after its merge" placement.
 	st := newLayoutState(nodes)
-	st.sort()
+	st.sort(opt)
 	order := make([]*nodeState, len(st.nodes))
 	copy(order, st.nodes)
 	sort.Slice(order, func(i, j int) bool { return order[i].row > order[j].row }) // newest first
 
-	w := &walkState{idx: st.idx}
+	w := &walkState{idx: st.idx, opt: opt}
 	for _, ns := range order {
 		w.place(ns)
 	}
@@ -177,7 +178,7 @@ func (w *walkState) routeMerge(from, to int) {
 	if to == from {
 		return
 	}
-	split := []int{to}
+	split := w.splitCols(nil, to)
 	if to > from {
 		w.diag(2*from+1, 2*to-1, GlyphBackslash, nil, split) // rightward, descending
 	} else {
@@ -252,13 +253,18 @@ func (w *walkState) collapse(myCol int, extras []int) {
 				w.lanes[c] = nil
 			}
 		}
-	}, withSink(extras, myCol))
+	}, w.splitCols(extras, myCol))
 }
 
-// withSink returns cols plus the fan's own column, which forks (or receives) an
-// edge just like the branch lanes do and so is marked on the same terms. Copies
-// rather than appending in place: callers keep using cols after this.
-func withSink(cols []int, myCol int) []int {
+// splitCols names the columns a fan marks: its branch lanes plus its own, which
+// forks (or receives) an edge just like they do and so is marked on the same
+// terms. Copies rather than appending in place, since callers keep using cols
+// after this. Every split marker in the layout is routed through here, so
+// Opt.NoSplitMarks switches them all off in one place.
+func (w *walkState) splitCols(cols []int, myCol int) []int {
+	if w.opt.NoSplitMarks {
+		return nil
+	}
 	out := make([]int, 0, len(cols)+1)
 	out = append(out, cols...)
 	return append(out, myCol)
@@ -295,7 +301,7 @@ func (w *walkState) fanOut(myCol int, newCols []int) {
 				w.lanes[c] = saved[i] // pipe from this row on
 			}
 		}
-	}, withSink(newCols, myCol))
+	}, w.splitCols(newCols, myCol))
 	// Any lane the sweep didn't reach (its col is at/beyond maxC's gap) settles now.
 	for i, c := range newCols {
 		if w.lanes[c] == nil {
@@ -325,29 +331,43 @@ func (w *walkState) emit(row []Glyph, gaps []Glyph, commit *Node) {
 	w.commits = append(w.commits, commit)
 }
 
-// finish reverses to oldest-first, mirrors every glyph (in both column glyphs
-// and gaps, since the y-flip turns every `/` into `\` and vice versa), and pads
-// to width.
+// finish turns the walker's newest-first rows into the requested display order
+// and pads them to width. The default is oldest-first, which means reversing the
+// rows and mirroring every glyph -- in both column glyphs and gaps, since the
+// y-flip turns each `/` into `\`, each `^` into `v`, and vice versa.
+//
+// Opt.Reverse asks for newest-first, which is the order the walker already built
+// and the orientation it already drew, so that case is simply the flip not
+// happening. Reversing twice would land back here anyway.
 func (w *walkState) finish() LayoutResult {
 	n := len(w.rows)
 	out := make([]Row, n)
-	flip := func(dst, src []Glyph) {
+	flip := !w.opt.Reverse
+	copyRow := func(dst, src []Glyph) {
 		for c := range dst {
 			if c >= len(src) {
 				continue
 			}
-			dst[c] = mirror(src[c])
+			if flip {
+				dst[c] = mirror(src[c])
+			} else {
+				dst[c] = src[c]
+			}
 		}
 	}
 	for i := range n {
-		g := make([]Glyph, w.width)
-		flip(g, w.rows[n-1-i])
-		var gap []Glyph
-		if src := w.gaps[n-1-i]; src != nil {
-			gap = make([]Glyph, w.width)
-			flip(gap, src)
+		src := i // newest-first, as built
+		if flip {
+			src = n - 1 - i
 		}
-		out[i] = Row{Commit: w.commits[n-1-i], Glyphs: g, Gap: gap}
+		g := make([]Glyph, w.width)
+		copyRow(g, w.rows[src])
+		var gap []Glyph
+		if s := w.gaps[src]; s != nil {
+			gap = make([]Glyph, w.width)
+			copyRow(gap, s)
+		}
+		out[i] = Row{Commit: w.commits[src], Glyphs: g, Gap: gap}
 	}
 	return LayoutResult{Rows: out, Columns: w.width}
 }

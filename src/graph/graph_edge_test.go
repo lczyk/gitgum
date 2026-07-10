@@ -22,7 +22,7 @@ func TestEdge_CyclicGraph(t *testing.T) {
 		{ID: "a", Label: "a", Parents: []string{"b"}, Epoch: 1},
 		{ID: "b", Label: "b", Parents: []string{"a"}, Epoch: 2},
 	}
-	lr := graph.Layout(nodes)
+	lr := graph.Layout(nodes, graph.Opt{})
 	commitRows := 0
 	for _, r := range lr.Rows {
 		if r.Commit != nil {
@@ -39,7 +39,7 @@ func TestEdge_SelfParent(t *testing.T) {
 	nodes := []graph.Node{
 		{ID: "a", Label: "a", Parents: []string{"a"}, Epoch: 1},
 	}
-	lr := graph.Layout(nodes)
+	lr := graph.Layout(nodes, graph.Opt{})
 	assert.That(t, len(lr.Rows) >= 1, "at least one row")
 }
 
@@ -51,7 +51,7 @@ func TestEdge_MissingParent(t *testing.T) {
 	nodes := []graph.Node{
 		{ID: "child", Label: "child", Parents: []string{"phantom"}, Epoch: 1},
 	}
-	lr := graph.Layout(nodes)
+	lr := graph.Layout(nodes, graph.Opt{})
 	lines := graph.Render(lr, graph.Style{})
 	assert.Equal(t, len(lines), 1)
 	assert.ContainsString(t, lines[0], "child", "child line present")
@@ -65,7 +65,7 @@ func TestEdge_DuplicateID(t *testing.T) {
 		{ID: "a", Label: "a-first", Epoch: 1},
 		{ID: "a", Label: "a-second", Epoch: 2},
 	}
-	assert.Panic(t, func() { graph.Layout(nodes) }, func(t testing.TB, rec any) {
+	assert.Panic(t, func() { graph.Layout(nodes, graph.Opt{}) }, func(t testing.TB, rec any) {
 		assert.ContainsString(t, rec.(string), "duplicate", "panic should mention duplicate, got %q", rec)
 	})
 }
@@ -80,9 +80,9 @@ func TestEdge_Determinism(t *testing.T) {
 		{ID: "b1", Label: "b1", Epoch: 3, Parents: []string{"base"}, Lane: h("b")},
 		{ID: "merge", Label: "merge", Epoch: 4, Parents: []string{"a1", "b1"}, Lane: h("a")},
 	}
-	first := strings.Join(graph.Render(graph.Layout(nodes), graph.Style{}), "\n")
+	first := strings.Join(graph.Render(graph.Layout(nodes, graph.Opt{}), graph.Style{}), "\n")
 	for i := 0; i < 50; i++ {
-		out := strings.Join(graph.Render(graph.Layout(nodes), graph.Style{}), "\n")
+		out := strings.Join(graph.Render(graph.Layout(nodes, graph.Opt{}), graph.Style{}), "\n")
 		if out != first {
 			t.Fatalf("nondeterministic output on iteration %d:\n--- first ---\n%s\n--- got ---\n%s", i, first, out)
 		}
@@ -100,11 +100,11 @@ func TestEdge_NoEpoch(t *testing.T) {
 		{ID: "b", Label: "b", Parents: []string{"base"}},
 		{ID: "merge", Label: "merge", Parents: []string{"a", "b"}},
 	}
-	first := strings.Join(graph.Render(graph.Layout(nodes), graph.Style{}), "\n")
+	first := strings.Join(graph.Render(graph.Layout(nodes, graph.Opt{}), graph.Style{}), "\n")
 	assert.ContainsString(t, first, "base", "base in output")
 	assert.ContainsString(t, first, "merge", "merge in output")
 	for i := 0; i < 20; i++ {
-		out := strings.Join(graph.Render(graph.Layout(nodes), graph.Style{}), "\n")
+		out := strings.Join(graph.Render(graph.Layout(nodes, graph.Opt{}), graph.Style{}), "\n")
 		if out != first {
 			t.Fatalf("nondeterministic output without Epoch on iteration %d:\n%s", i, out)
 		}
@@ -121,13 +121,13 @@ func TestEdge_ConcurrentLayout(t *testing.T) {
 		{ID: "side1", Label: "side1", Epoch: 3, Parents: []string{"base"}},
 		{ID: "merge", Label: "merge", Epoch: 4, Parents: []string{"main1", "side1"}},
 	}
-	want := strings.Join(graph.Render(graph.Layout(nodes), graph.Style{}), "\n")
+	want := strings.Join(graph.Render(graph.Layout(nodes, graph.Opt{}), graph.Style{}), "\n")
 	var wg sync.WaitGroup
 	for i := 0; i < 64; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			got := strings.Join(graph.Render(graph.Layout(nodes), graph.Style{}), "\n")
+			got := strings.Join(graph.Render(graph.Layout(nodes, graph.Opt{}), graph.Style{}), "\n")
 			if got != want {
 				t.Errorf("concurrent layout produced different output:\n%s", got)
 			}

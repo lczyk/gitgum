@@ -39,13 +39,21 @@ func h(name string) int64 {
 
 func assertGraph(t *testing.T, nodes []graph.Node, expected string) {
 	t.Helper()
-	lr := graph.Layout(nodes)
-	lines := graph.Render(lr, graph.Style{})
-	got := stripTrailingSpaces(strings.Join(lines, "\n"))
+	assertGraphOpt(t, nodes, graph.Opt{}, expected)
+}
+
+func assertGraphOpt(t *testing.T, nodes []graph.Node, opt graph.Opt, expected string) {
+	t.Helper()
+	got := renderOpt(nodes, opt)
 	expected = stripTrailingSpaces(strings.TrimRight(expected, "\n"))
 	if got != expected {
 		t.Errorf("graph output mismatch\n--- expected ---\n%s\n--- got ---\n%s\n--- end ---", expected, got)
 	}
+}
+
+func renderOpt(nodes []graph.Node, opt graph.Opt) string {
+	lines := graph.Render(graph.Layout(nodes, opt), graph.Style{})
+	return stripTrailingSpaces(strings.Join(lines, "\n"))
 }
 
 // stripTrailingSpaces removes per-line trailing whitespace so layout-focused
@@ -216,7 +224,7 @@ func TestScenario_Octopus(t *testing.T) {
 }
 
 func renderTo(nodes []graph.Node) string {
-	lr := graph.Layout(nodes)
+	lr := graph.Layout(nodes, graph.Opt{})
 	return strings.Join(graph.Render(lr, graph.Style{}), "\n")
 }
 
@@ -465,6 +473,70 @@ v/
 	assertGraph(t, nodes, expected)
 }
 
+// markerScenarios are node sets whose renders exercise every place a split
+// marker can appear: both fan directions, and a routed merge edge.
+func markerScenarios() map[string][]graph.Node {
+	return map[string][]graph.Node{
+		"back merge": {
+			{ID: "base", Label: "base", Epoch: iso(1), Lane: h("main")},
+			{ID: "feat1", Label: "feat1", Epoch: iso(2), Parents: []string{"base"}, Lane: h("feat")},
+			{ID: "main1", Label: "main1", Epoch: iso(3), Parents: []string{"base"}, Lane: h("main")},
+			{ID: "m", Label: "m", Epoch: iso(4), Parents: []string{"main1", "feat1"}, Lane: h("main")},
+			{ID: "f", Label: "f", Epoch: iso(5), Parents: []string{"feat1", "m"}, Lane: h("feat")},
+		},
+		"octopus": {
+			{ID: "A", Label: "A", Epoch: iso(1), Lane: h("main")},
+			{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}, Lane: h("b")},
+			{ID: "C", Label: "C", Epoch: iso(3), Parents: []string{"A"}, Lane: h("c")},
+			{ID: "D", Label: "D", Epoch: iso(4), Parents: []string{"A"}, Lane: h("d")},
+			{ID: "M", Label: "M", Epoch: iso(5), Parents: []string{"A", "B", "C", "D"}, Lane: h("main")},
+		},
+		"three parallel": {
+			{ID: "base", Label: "base", Epoch: iso(1), Lane: h("main")},
+			{ID: "a1", Label: "a1", Epoch: iso(2), Parents: []string{"base"}, Lane: h("a")},
+			{ID: "b1", Label: "b1", Epoch: iso(3), Parents: []string{"base"}, Lane: h("b")},
+			{ID: "c1", Label: "c1", Epoch: iso(4), Parents: []string{"base"}, Lane: h("c")},
+		},
+	}
+}
+
+func TestOpt_NoSplitMarks(t *testing.T) {
+	t.Parallel()
+	// Markers off restores exactly what `git log --graph` draws.
+	expected := `* base
+|\
+| * main1
+* | feat1
+|\|
+| * m
+|/
+* f`
+	assertGraphOpt(t, markerScenarios()["back merge"], graph.Opt{NoSplitMarks: true}, expected)
+}
+
+func TestOpt_NoSplitMarksOnlyClearsMarkers(t *testing.T) {
+	t.Parallel()
+	// A marker never occupies a cell that would otherwise be blank -- it always
+	// overwrites a pipe. So switching them off must change those cells and
+	// nothing else: not the row count, not the column count, not one space. Any
+	// drift in glyph placement between the two modes shows up here as a diff,
+	// which a hand-written golden per mode would quietly let through.
+	unmark := strings.NewReplacer("v", "|", "^", "|")
+	for name, nodes := range markerScenarios() {
+		for _, rev := range []bool{false, true} {
+			marked := renderOpt(nodes, graph.Opt{Reverse: rev})
+			plain := renderOpt(nodes, graph.Opt{Reverse: rev, NoSplitMarks: true})
+			if !strings.ContainsAny(marked, "v^") {
+				t.Errorf("%s (reverse=%v): scenario draws no markers, so it proves nothing:\n%s", name, rev, marked)
+			}
+			if want := unmark.Replace(marked); plain != want {
+				t.Errorf("%s (reverse=%v): unmarked render is not the marked one with arrowheads flattened\n--- want ---\n%s\n--- got ---\n%s",
+					name, rev, want, plain)
+			}
+		}
+	}
+}
+
 func TestScenario_ReversedMirrorsMarkers(t *testing.T) {
 	t.Parallel()
 	// Reversed() flips row order and every glyph with it: diagonals swap hands
@@ -482,11 +554,7 @@ func TestScenario_ReversedMirrorsMarkers(t *testing.T) {
 | /
 ^/
 * base`
-	lr := graph.Layout(nodes).Reversed()
-	got := stripTrailingSpaces(strings.Join(graph.Render(lr, graph.Style{}), "\n"))
-	if want := stripTrailingSpaces(expected); got != want {
-		t.Errorf("reversed output mismatch\n--- expected ---\n%s\n--- got ---\n%s\n--- end ---", want, got)
-	}
+	assertGraphOpt(t, nodes, graph.Opt{Reverse: true}, expected)
 }
 
 func TestScenario_EmptyLabel(t *testing.T) {
@@ -591,7 +659,7 @@ func TestScenario_SharedParentDualMerge(t *testing.T) {
 	// feature chain (f1, f2) should appear before the main chain (m1...m7)
 	// because the inner merge's walk places non-first parent (m7 chain)
 	// at higher rows. Git --graph produces this order too.
-	lr := graph.Layout(nodes)
+	lr := graph.Layout(nodes, graph.Opt{})
 	lines := graph.Render(lr, graph.Style{})
 
 	// Find commit positions.
@@ -701,7 +769,7 @@ func TestScenario_CrissCross(t *testing.T) {
 	}
 	// Just assert no panic and a non-empty render -- exact glyph layout
 	// here is less important than the crash regression.
-	lr := graph.Layout(nodes)
+	lr := graph.Layout(nodes, graph.Opt{})
 	lines := graph.Render(lr, graph.Style{})
 	if len(lines) == 0 {
 		t.Fatal("expected non-empty render")
@@ -725,7 +793,7 @@ func TestScenario_BackAndForthCatchUps(t *testing.T) {
 		{ID: "f3", Label: "f3", Epoch: iso(7), Parents: []string{"f2", "D"}, Lane: h("f")},
 		{ID: "E", Label: "E", Epoch: iso(8), Parents: []string{"D", "f3"}, Lane: h("main")},
 	}
-	lr := graph.Layout(nodes)
+	lr := graph.Layout(nodes, graph.Opt{})
 	if lr.Columns > 3 {
 		lines := graph.Render(lr, graph.Style{})
 		t.Errorf("expected at most 3 cols (main, feat, single routing); got %d\n%s",

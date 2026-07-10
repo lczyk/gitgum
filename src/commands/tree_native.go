@@ -50,7 +50,7 @@ func (t *TreeCommand) renderNative(w io.Writer, sinceArg string, maxCount int) e
 	}
 
 	useColor := colorEnabled()
-	nodes, err := parseNativeCommits(stdout, useColor, !t.NoHeadFloat)
+	nodes, err := parseNativeCommits(stdout, useColor)
 	if err != nil {
 		return fmt.Errorf("parsing git log output: %w", err)
 	}
@@ -58,12 +58,12 @@ func (t *TreeCommand) renderNative(w io.Writer, sinceArg string, maxCount int) e
 		return nil
 	}
 
-	lr := graph.Layout(nodes)
-	if t.Reverse {
-		// Flip in glyph space rather than by rewriting rendered lines: the graph
-		// knows which characters are edges, a text pass would have to guess.
-		lr = lr.Reversed()
-	}
+	// Reverse is a layout concern, not a text one: the graph knows which
+	// characters are edges, a pass over rendered lines would have to guess.
+	lr := graph.Layout(nodes, graph.Opt{
+		Reverse:     t.Reverse,
+		NoHeadFloat: t.NoHeadFloat,
+	})
 
 	st := graph.Style{}
 	if useColor {
@@ -166,7 +166,10 @@ func (t *TreeCommand) headFloatLines(colorFlag, raw string, windowIDs []string) 
 //
 // Branch-name hints are interned into int64 lane ids via a per-call map
 // so repeated names share a lane.
-func parseNativeCommits(raw string, useColor, floatHead bool) ([]graph.Node, error) {
+//
+// IsHead records which commit is checked out, always. Whether that sinks it to
+// the bottom is Layout's call, via graph.Opt.NoHeadFloat.
+func parseNativeCommits(raw string, useColor bool) ([]graph.Node, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, nil
@@ -217,7 +220,7 @@ func parseNativeCommits(raw string, useColor, floatHead bool) ([]graph.Node, err
 			Parents: parents,
 			Epoch:   epoch,
 			Lane:    lane,
-			IsHead:  floatHead && isHeadDecoration(rawLabel),
+			IsHead:  isHeadDecoration(rawLabel),
 		})
 	}
 	return nodes, nil

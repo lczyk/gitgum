@@ -80,11 +80,13 @@ func newLayoutState(nodes []Node) *layoutState {
 // stagger rows for fork / merge / catch-up edges. It runs the active-lanes
 // row-walker (walker.go): a single newest-first sweep that keeps one column
 // per live edge, so lanes never disconnect.
-func Layout(nodes []Node) LayoutResult {
+//
+// Pass the zero Opt for the defaults.
+func Layout(nodes []Node, opt Opt) LayoutResult {
 	if len(nodes) == 0 {
 		return LayoutResult{}
 	}
-	return layoutWalker(nodes)
+	return layoutWalker(nodes, opt)
 }
 
 // insertionSortChildren stable-sorts a parent's children slice in place.
@@ -162,7 +164,7 @@ func (st *layoutState) headDescendants() map[string]bool {
 	return set
 }
 
-func (st *layoutState) sort() {
+func (st *layoutState) sort(opt Opt) {
 	n := len(st.nodes)
 	if n == 0 {
 		return
@@ -177,8 +179,11 @@ func (st *layoutState) sort() {
 	// headSide is HEAD plus its descendant-closure (the commits that must render
 	// below it). Floating these ahead of everything else in the ready queue sinks
 	// HEAD to the lowest row the DAG allows -- the bottom row when it's a tip.
-	// Empty (no IsHead node) leaves ordering untouched.
-	headSide := st.headDescendants()
+	// Empty (no IsHead node, or the caller opted out) leaves ordering untouched.
+	var headSide map[string]bool
+	if !opt.NoHeadFloat {
+		headSide = st.headDescendants()
+	}
 
 	// Ready set: nodes whose children are all placed (tips first).
 	ready := make([]*nodeState, 0)
