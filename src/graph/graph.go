@@ -52,6 +52,11 @@ const (
 	GlyphStar                   // "*"
 	GlyphSlash                  // "/"
 	GlyphBackslash              // "\"
+	// GlyphV marks the point where an edge leaves a lane and no commit sits
+	// there -- the arrowhead stands in for the `*` a commit would have drawn.
+	GlyphV // "v"
+	// GlyphCaret is GlyphV's vertical mirror, used on rows drawn newest-first.
+	GlyphCaret // "^"
 )
 
 // String returns the single-character ASCII representation of g. Panics
@@ -69,22 +74,33 @@ func (g Glyph) String() string {
 		return "/"
 	case GlyphBackslash:
 		return "\\"
+	case GlyphV:
+		return "v"
+	case GlyphCaret:
+		return "^"
 	}
 	panic("graph: unknown Glyph value")
 }
 
 // mirror returns g reflected across a horizontal axis -- the glyph that draws
-// the same edge once row order is flipped. Diagonals swap handedness; the rest
-// are symmetric.
+// the same edge once row order is flipped. Diagonals swap handedness and the
+// split marker flips its arrowhead; the rest are symmetric.
 func mirror(g Glyph) Glyph {
 	switch g {
 	case GlyphSlash:
 		return GlyphBackslash
 	case GlyphBackslash:
 		return GlyphSlash
+	case GlyphV:
+		return GlyphCaret
+	case GlyphCaret:
+		return GlyphV
 	}
 	return g
 }
+
+// isSplitMark reports whether g is one of the two split-point arrowheads.
+func isSplitMark(g Glyph) bool { return g == GlyphV || g == GlyphCaret }
 
 // Style controls the ANSI styling applied to graph glyphs. LinePrefix /
 // LineSuffix wrap the line glyphs (`|`, `/`, `\`). StarPrefix / StarSuffix

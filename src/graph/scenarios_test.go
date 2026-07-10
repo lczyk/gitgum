@@ -90,11 +90,11 @@ func TestScenario_SingleMerge(t *testing.T) {
 		{ID: "merge", Label: "merge", Epoch: iso(5), Parents: []string{"main1", "side2"}, Lane: h("main")},
 	}
 	expected := `* base
-|\
+v\
 * | main1
 | * side1
 | * side2
-|/
+v/
 * merge`
 	assertGraph(t, nodes, expected)
 }
@@ -110,13 +110,13 @@ func TestScenario_TwoBranches(t *testing.T) {
 		{ID: "m2", Label: "merge_f2", Epoch: iso(5), Parents: []string{"m1", "f2a"}, Lane: h("main")},
 	}
 	expected := `* base
-|\
+v\
 | * f1a
-|/
+v/
 * merge_f1
-|\
+v\
 | * f2a
-|/
+v/
 * merge_f2`
 	assertGraph(t, nodes, expected)
 }
@@ -133,7 +133,7 @@ func TestScenario_ParallelOpen(t *testing.T) {
 		{ID: "b2", Label: "b2", Epoch: iso(5), Parents: []string{"b1"}, Lane: h("b")},
 	}
 	expected := `* base
-|\
+v\
 | * a1
 | * a2
 * b1
@@ -154,14 +154,14 @@ func TestScenario_NestedMerge(t *testing.T) {
 		{ID: "merge_outer", Label: "merge_outer", Epoch: iso(6), Parents: []string{"main1", "merge_inner"}, Lane: h("main")},
 	}
 	expected := `* base
-|\
+v\
 * | main1
 | * outer1
-| |\
+| v\
 | | * inner1
-| |/
+| v/
 | * merge_inner
-|/
+v/
 * merge_outer`
 	assertGraph(t, nodes, expected)
 }
@@ -179,14 +179,14 @@ func TestScenario_CrossMerge(t *testing.T) {
 	// Cross-merge: both of base's side children (a1, b1) open their own lane
 	// off the fork before a1 merges b1, then main merges a.
 	expected := `* base
-|\
+v\
 | \
-| |\
+| v\
 | * | a1
 | | * b1
-| |/
+| v/
 | * a_merges_b
-|/
+v/
 * main_merges_a`
 	assertGraph(t, nodes, expected)
 }
@@ -233,13 +233,13 @@ func TestScenario_WideStagger(t *testing.T) {
 		{ID: "merge", Label: "merge_far", Epoch: iso(7), Parents: []string{"m4", "far1"}, Lane: h("main")},
 	}
 	expected := `* base
-|\
+v\
 * | m1
 * | m2
 * | m3
 * | m4
 | * far1
-|/
+v/
 * merge_far`
 	assertGraph(t, nodes, expected)
 }
@@ -296,9 +296,9 @@ func TestScenario_ThreeParallel(t *testing.T) {
 		{ID: "c1", Label: "c1", Epoch: iso(4), Parents: []string{"base"}, Lane: h("c")},
 	}
 	expected := `* base
-|\
+v\
 | \
-| |\
+| v\
 | | * a1
 | * b1
 * c1`
@@ -321,12 +321,12 @@ func TestScenario_BackMerge(t *testing.T) {
 	// --graph. Row order is not load-bearing for layout correctness; the
 	// catch-up `|\|` weave is.
 	expected := `* base
-|\
+v\
 | * main1
 * | feat1
-|\|
+v\|
 | * main_merges_feat
-|/
+v/
 * feat_merges_main`
 	assertGraph(t, nodes, expected)
 }
@@ -346,7 +346,7 @@ func TestScenario_MergeOldIntoNew(t *testing.T) {
 		{ID: "merge_old", Label: "merge_old", Epoch: iso(9), Parents: []string{"m6", "old1"}, Lane: h("main")},
 	}
 	expected := `* base
-|\
+v\
 * | m1
 * | m2
 * | m3
@@ -354,7 +354,7 @@ func TestScenario_MergeOldIntoNew(t *testing.T) {
 * | m5
 * | m6
 | * old1
-|/
+v/
 * merge_old`
 	assertGraph(t, nodes, expected)
 }
@@ -372,19 +372,121 @@ func TestScenario_DeepNested(t *testing.T) {
 		{ID: "main_merges_L1", Label: "main_merges_L1", Epoch: iso(7), Parents: []string{"base", "L1_merges_L2"}, Lane: h("main")},
 	}
 	expected := `* base
-|\
+v\
 | * l1a
-| |\
+| v\
 | | * l2a
-| | |\
+| | v\
 | | | * l3a
-| | |/
+| | v/
 | | * L2_merges_L3
-| |/
+| v/
 | * L1_merges_L2
-|/
+v/
 * main_merges_L1`
 	assertGraph(t, nodes, expected)
+}
+
+func TestScenario_SplitWithoutCommit(t *testing.T) {
+	t.Parallel()
+	// M's second parent P already carries a live lane (C, newer, sits on it), so
+	// M's merge edge joins that lane part-way up rather than at P's own commit --
+	// the `v\|` weave, marked on the lane the edge leaves. The edge's other end
+	// needs no marker: M's own `*` sits there.
+	nodes := []graph.Node{
+		{ID: "base", Label: "base", Epoch: iso(1), Lane: h("main")},
+		{ID: "P", Label: "P", Epoch: iso(2), Parents: []string{"base"}, Lane: h("main")},
+		{ID: "Q", Label: "Q", Epoch: iso(3), Parents: []string{"base"}, Lane: h("q")},
+		{ID: "X", Label: "X", Epoch: iso(4), Parents: []string{"P"}, Lane: h("x")},
+		{ID: "M", Label: "M", Epoch: iso(5), Parents: []string{"Q", "P"}, Lane: h("q")},
+		{ID: "C", Label: "C", Epoch: iso(6), Parents: []string{"P"}, Lane: h("main")},
+	}
+	expected := `* base
+v\
+* | P
+v\|
+| \
+| |\
+| | * X
+| * Q
+v\|
+| * M
+* C`
+	assertGraph(t, nodes, expected)
+}
+
+func TestScenario_CrossedLaneUnmarked(t *testing.T) {
+	t.Parallel()
+	// A marker means "this lane's edge parts here", so only the lane a diagonal
+	// actually leaves gets one -- never a lane it merely passes over. b's fan
+	// reaches out to e across the lane at col 1, weaving `| |\|`: col 1 keeps its
+	// pipe. Marking the column left of every gap diagonal, which is what the rest
+	// of the layout looks like it does, would wrongly light that one up.
+	nodes := []graph.Node{
+		{ID: "a", Label: "a", Epoch: iso(1)},
+		{ID: "b", Label: "b", Epoch: iso(2)},
+		{ID: "e", Label: "e", Epoch: iso(3), Parents: []string{"a", "b"}},
+		{ID: "f", Label: "f", Epoch: iso(4), Parents: []string{"b", "a"}},
+	}
+	expected := `  * a
+  v\
+* | | b
+v\| |
+| \ |
+| |\|
+| | * e
+v/
+* f`
+	assertGraph(t, nodes, expected)
+}
+
+func TestScenario_MergeFanMarkers(t *testing.T) {
+	t.Parallel()
+	// 3-parent octopus, exercising a fan-in wider than one column. Each lane the
+	// fan draws in takes a marker on its last pipe row -- `| v/` for B's, `v/` for
+	// the merge's own -- while C's, outermost, never draws a pipe inside the fan
+	// and so carries none. The fan-out above mirrors it row for row.
+	nodes := []graph.Node{
+		{ID: "A", Label: "A", Epoch: iso(1), Lane: h("main")},
+		{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}, Lane: h("b")},
+		{ID: "C", Label: "C", Epoch: iso(3), Parents: []string{"A"}, Lane: h("c")},
+		{ID: "M", Label: "M", Epoch: iso(4), Parents: []string{"A", "B", "C"}, Lane: h("main")},
+	}
+	expected := `* A
+v\
+| \
+| v\
+| | * C
+| * | B
+| v/
+| /
+v/
+* M`
+	assertGraph(t, nodes, expected)
+}
+
+func TestScenario_ReversedMirrorsMarkers(t *testing.T) {
+	t.Parallel()
+	// Reversed() flips row order and every glyph with it: diagonals swap hands
+	// and each `v` becomes the `^` that points back along the same edge.
+	nodes := []graph.Node{
+		{ID: "base", Label: "base", Epoch: iso(1), Lane: h("main")},
+		{ID: "a1", Label: "a1", Epoch: iso(2), Parents: []string{"base"}, Lane: h("a")},
+		{ID: "b1", Label: "b1", Epoch: iso(3), Parents: []string{"base"}, Lane: h("b")},
+		{ID: "c1", Label: "c1", Epoch: iso(4), Parents: []string{"base"}, Lane: h("c")},
+	}
+	expected := `* c1
+| * b1
+| | * a1
+| ^/
+| /
+^/
+* base`
+	lr := graph.Layout(nodes).Reversed()
+	got := stripTrailingSpaces(strings.Join(graph.Render(lr, graph.Style{}), "\n"))
+	if want := stripTrailingSpaces(expected); got != want {
+		t.Errorf("reversed output mismatch\n--- expected ---\n%s\n--- got ---\n%s\n--- end ---", want, got)
+	}
 }
 
 func TestScenario_EmptyLabel(t *testing.T) {
@@ -409,10 +511,10 @@ func TestScenario_TopoSkewMerge(t *testing.T) {
 		{ID: "merge_side", Label: "merge_side", Epoch: iso(300), Parents: []string{"main1", "side_old"}, Lane: h("main")},
 	}
 	expected := `* base
-|\
+v\
 * | main1
 | * side_old
-|/
+v/
 * merge_side`
 	assertGraph(t, nodes, expected)
 }
@@ -427,7 +529,7 @@ func TestScenario_DanglingTip(t *testing.T) {
 		{ID: "m2", Label: "m2", Epoch: iso(4), Parents: []string{"m1"}, Lane: h("main")},
 	}
 	expected := `* base
-|\
+v\
 | * feat1
 * m1
 * m2`
@@ -535,19 +637,19 @@ func TestScenario_CatchUpReusesIdleCol(t *testing.T) {
 		{ID: "final", Label: "final", Epoch: iso(10), Parents: []string{"m2", "mp"}, Lane: h("main")},
 	}
 	expected := `* A
-|\
+v\
 | * f1
 * | m1
 * | m2
-|\|
+v\|
 | * M
 | * s1
-| |\
+| v\
 | * | p1
 | | * p2
-| |/
+| v/
 | * mp
-|/
+v/
 * final`
 	assertGraph(t, nodes, expected)
 }
@@ -568,16 +670,16 @@ func TestScenario_SequentialSideBranches(t *testing.T) {
 	}
 	expected := `* A
 * B
-|\
+v\
 | \
-| |\
+| v\
 | | * s1
 | |/
 | /
-|/|
+v/|
 * | M1
 | * s2
-|/
+v/
 * M2`
 	assertGraph(t, nodes, expected)
 }
@@ -637,6 +739,9 @@ func TestScenario_OctopusDedupTerms(t *testing.T) {
 	// three side children (B, C, D) its own live lane, so the fan-out cascades
 	// across four columns and each edge terms back with its own `|/` step. The
 	// merge `*` is padded by the three non-first parents (6 slots).
+	//
+	// The fan-in is the vertical reflection of the fan-out, markers included:
+	// `| | v\` on the way out, `| | v/` on the way back.
 	nodes := []graph.Node{
 		{ID: "A", Label: "A", Epoch: iso(1), Lane: h("main")},
 		{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}, Lane: h("b")},
@@ -645,19 +750,19 @@ func TestScenario_OctopusDedupTerms(t *testing.T) {
 		{ID: "M", Label: "M", Epoch: iso(5), Parents: []string{"A", "B", "C", "D"}, Lane: h("main")},
 	}
 	expected := `* A
-|\
+v\
 | \
-| |\
+| v\
 | | \
-| | |\
+| | v\
 | | | * D
 | | * | C
 | * | | B
-| | |/
+| | v/
 | | /
-| |/
+| v/
 | /
-|/
+v/
 * M`
 	assertGraph(t, nodes, expected)
 }
@@ -676,11 +781,11 @@ func TestScenario_StashWithIndex(t *testing.T) {
 		{ID: "M", Label: "M", Epoch: iso(4), Parents: []string{"A"}, Lane: h("main")},
 	}
 	expected := `* A
-|\
+v\
 | \
-| |\
+| v\
 | | * B
-| |/
+| v/
 | * C
 * M`
 	assertGraph(t, nodes, expected)

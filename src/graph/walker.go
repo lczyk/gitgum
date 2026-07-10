@@ -1,6 +1,9 @@
 package graph
 
-import "sort"
+import (
+	"slices"
+	"sort"
+)
 
 // ------ active-lanes row-walker ------------------------------------------------
 //
@@ -117,7 +120,15 @@ func (w *walkState) targetCol(id string) int {
 // weave), column primary on even d (a bare `\` crossing that column's slot).
 // beforeRow, if set, runs just before each row is built so callers can update
 // lane state (merge / birth) as the front reaches a column.
-func (w *walkState) diag(dStart, dEnd int, glyph Glyph, beforeRow func(d int)) {
+//
+// split lists columns whose pipe should render as a split marker on the row
+// where the front sits in the gap beside them -- the row on which the diagonal
+// parts from that lane, one row below the lane's undivided stretch. The front
+// only ever passes one side of a split column while that column still draws a
+// pipe, so plain adjacency (|d - 2c| == 1) picks the right row from either
+// direction; the pipe check rejects the far side, where the lane is gone, and
+// with it any lane that never drew a pipe within the sweep at all.
+func (w *walkState) diag(dStart, dEnd int, glyph Glyph, beforeRow func(d int), split []int) {
 	step := 1
 	if dEnd < dStart {
 		step = -1
@@ -131,6 +142,11 @@ func (w *walkState) diag(dStart, dEnd int, glyph Glyph, beforeRow func(d int)) {
 		if d%2 == 1 {
 			gaps = make([]Glyph, len(w.lanes))
 			gaps[(d-1)/2] = glyph // diagonal in the inter-column gap
+			for _, c := range split {
+				if abs(d-2*c) == 1 && row[c] == GlyphPipe {
+					row[c] = GlyphCaret
+				}
+			}
 		} else {
 			row[d/2] = glyph // diagonal crossing a column's primary slot
 		}
@@ -141,19 +157,31 @@ func (w *walkState) diag(dStart, dEnd int, glyph Glyph, beforeRow func(d int)) {
 	}
 }
 
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
 // routeMerge draws a diagonal from a merge commit at `from` to an already-live
 // parent lane at `to`, crossing any lanes in between at the shared half-column
 // slope. The edge leaves `from` and arrives beside `to` (both endpoints in the
 // adjacent gap), so the lanes at `from` and `to` keep their pipes and the edge
 // just joins the destination.
+//
+// The `from` end abuts the merge commit's own `*`; the `to` end parts from a
+// bare stretch of its lane, so `to` takes the split marker. Only `to` -- the
+// lanes the diagonal crosses on the way are merely passed over, not forked.
 func (w *walkState) routeMerge(from, to int) {
 	if to == from {
 		return
 	}
+	split := []int{to}
 	if to > from {
-		w.diag(2*from+1, 2*to-1, GlyphBackslash, nil) // rightward, descending
+		w.diag(2*from+1, 2*to-1, GlyphBackslash, nil, split) // rightward, descending
 	} else {
-		w.diag(2*from-1, 2*to+1, GlyphSlash, nil) // leftward, descending
+		w.diag(2*from-1, 2*to+1, GlyphSlash, nil, split) // leftward, descending
 	}
 }
 
@@ -202,6 +230,11 @@ func (w *walkState) pipeRow() []Glyph {
 // reached stay as pipes, non-extra survivors are crossed for the one row the
 // diagonal sits on their column. The front runs from the gap left of the
 // furthest extra (2*maxE-1) down to the gap right of the sink (2*myCol+1).
+//
+// The sink and each extra is a lane the fan parts from, so each takes a split
+// marker on its final pipe row -- `v\` for the sink, `| v\` and out for the
+// extras. The furthest extra never gets one: the front starts already past its
+// pipe, so its first drawn row is its own commit.
 func (w *walkState) collapse(myCol int, extras []int) {
 	if len(extras) == 0 {
 		return
@@ -219,7 +252,16 @@ func (w *walkState) collapse(myCol int, extras []int) {
 				w.lanes[c] = nil
 			}
 		}
-	})
+	}, withSink(extras, myCol))
+}
+
+// withSink returns cols plus the fan's own column, which forks (or receives) an
+// edge just like the branch lanes do and so is marked on the same terms. Copies
+// rather than appending in place: callers keep using cols after this.
+func withSink(cols []int, myCol int) []int {
+	out := make([]int, 0, len(cols)+1)
+	out = append(out, cols...)
+	return append(out, myCol)
 }
 
 // fanOut draws the diagonal from a merge at myCol out to its extra-parent lanes
@@ -227,6 +269,12 @@ func (w *walkState) collapse(myCol int, extras []int) {
 // "in transit" (nil, undrawn) until the front reaches it, then settles into a
 // pipe. The front runs from the gap right of myCol (2*myCol+1) up to the gap
 // left of the furthest new col (2*maxC-1).
+//
+// Being collapse's mirror, the marker rule mirrors too: the merge's own column
+// and each new lane take one on their last pipe row before the diagonal claims
+// the column below (`v/` at the sink, `| v/` and out). The furthest lane is in
+// transit for the whole sweep, so it never draws a pipe to mark -- its edge is
+// spoken for by the marker on the lane to its left.
 func (w *walkState) fanOut(myCol int, newCols []int) {
 	if len(newCols) == 0 {
 		return
@@ -247,7 +295,7 @@ func (w *walkState) fanOut(myCol int, newCols []int) {
 				w.lanes[c] = saved[i] // pipe from this row on
 			}
 		}
-	})
+	}, withSink(newCols, myCol))
 	// Any lane the sweep didn't reach (its col is at/beyond maxC's gap) settles now.
 	for i, c := range newCols {
 		if w.lanes[c] == nil {
@@ -257,24 +305,15 @@ func (w *walkState) fanOut(myCol int, newCols []int) {
 }
 
 // emit appends a row (padding to the running width). gaps may be nil. Connector
-// rows (no commit) that carry no diagonal -- in either the column glyphs or the
-// gaps -- are pure pipes between two commit rows, redundant, so they're dropped.
+// rows (no commit) that carry neither a diagonal nor a split marker -- in either
+// the column glyphs or the gaps -- are pure pipes between two commit rows,
+// redundant, so they're dropped.
 func (w *walkState) emit(row []Glyph, gaps []Glyph, commit *Node) {
 	if commit == nil {
-		hasDiag := false
-		for _, g := range row {
-			if g == GlyphSlash || g == GlyphBackslash {
-				hasDiag = true
-				break
-			}
+		drawn := func(g Glyph) bool {
+			return g == GlyphSlash || g == GlyphBackslash || isSplitMark(g)
 		}
-		for _, g := range gaps {
-			if g == GlyphSlash || g == GlyphBackslash {
-				hasDiag = true
-				break
-			}
-		}
-		if !hasDiag {
+		if !slices.ContainsFunc(row, drawn) && !slices.ContainsFunc(gaps, drawn) {
 			return
 		}
 	}

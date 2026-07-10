@@ -106,7 +106,8 @@ func renderRowInto(buf []byte, slotsBuf *[]Glyph, row Row, numCols int, st Style
 // writeSlotsTo emits glyph runs of identical Glyph as a single styled
 // write. Lines (`|`/`/`/`\`) are wrapped with Style.LinePrefix/LineSuffix,
 // stars with Style.StarPrefix/StarSuffix; spaces and unstyled cases go
-// straight to the buffer.
+// straight to the buffer. Split markers (`v`/`^`) stand in for a commit that
+// isn't there, so they take the star's styling.
 func writeSlotsTo(buf []byte, slots []Glyph, st Style) []byte {
 	if len(slots) == 0 {
 		return buf
@@ -124,7 +125,7 @@ func writeSlotsTo(buf []byte, slots []Glyph, st Style) []byte {
 			for range n {
 				buf = append(buf, ' ')
 			}
-		case GlyphStar:
+		case GlyphStar, GlyphV, GlyphCaret:
 			if st.StarPrefix == "" && st.StarSuffix == "" {
 				for range n {
 					buf = append(buf, ch...)
