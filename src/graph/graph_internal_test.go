@@ -34,6 +34,26 @@ func TestRender_TopologicalCorrection(t *testing.T) {
 	assert.That(t, pState.row < cState.row, "parent row %d before child row %d", pState.row, cState.row)
 }
 
+func TestRender_GapDiagonalPastLastPipe(t *testing.T) {
+	t.Parallel()
+	// A crossing diagonal can land in a trailing gap slot (right of column c)
+	// with no pipe at column c and nothing active further right -- an edge
+	// routed across an empty column, or a birth diagonal over a not-yet-settled
+	// lane. The right edge must extend to cover that gap glyph; counting only
+	// primary column glyphs truncates it, dropping the diagonal and leaving a
+	// bare pipe row.
+	lr := LayoutResult{
+		Columns: 3,
+		Rows: []Row{{
+			Glyphs: []Glyph{GlyphPipe, GlyphSpace, GlyphSpace},
+			Gap:    []Glyph{GlyphSpace, GlyphBackslash, GlyphSpace},
+		}},
+	}
+	lines := Render(lr, Style{})
+	assert.Equal(t, len(lines), 1)
+	assert.Equal(t, lines[0], "|  \\")
+}
+
 // findNode locates a node's nodeState by ID for white-box assertions.
 func findNode(lr LayoutResult, id string) struct{ row, col int } {
 	for _, r := range lr.Rows {
