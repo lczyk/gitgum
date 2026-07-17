@@ -96,6 +96,10 @@ Defaults to the last two weeks. Override with `--since=<expr>` (any value `git l
 
 Push the current branch. Picks a remote interactively when the branch has no upstream, or confirms a push to the existing tracking branch.
 
+### `gitgum pull`
+
+Fetch the current branch's upstream and integrate it. Reports "already up to date" when there's nothing new; otherwise picks the strategy interactively -- fast-forward only (the default, refuses a merge commit), rebase, or merge. Uncommitted tracked changes are stashed before the pull and popped after, matching the other commands. A shallow clone stays shallow: only new commits are fetched, old history is not backfilled. Errors if the branch has no upstream configured.
+
 ### `gitgum delete`
 
 Interactively delete a local branch and optionally its remote tracking branch. The command will:
