@@ -21,6 +21,7 @@ type Options struct {
 	Completion commands.CompletionCommand `command:"completion" description:"Output shell completion script"`
 	Status     commands.StatusCommand     `command:"status" description:"Show the status of the current git repository"`
 	Push       commands.PushCommand       `command:"push" description:"Push the current branch to a remote repository"`
+	Pull       commands.PullCommand       `command:"pull" description:"Fetch and integrate the current branch's upstream"`
 	Clean      commands.CleanCommand      `command:"clean" description:"Discard working tree changes and untracked files"`
 	Delete     commands.DeleteCommand     `command:"delete" description:"Delete a local branch and optionally its remote tracking branch"`
 	ReplayList commands.ReplayListCommand `command:"replay-list" description:"List commits on branch A since divergence from trunk B"`
@@ -71,7 +72,7 @@ func main() {
 
 	// If no command provided, use fuzzyfinder to select one
 	if len(os.Args) == 1 {
-		cmds := []string{"switch", "branch", "status", "tree", "push", "clean", "empty", "help"}
+		cmds := []string{"switch", "branch", "status", "tree", "push", "pull", "clean", "empty", "help"}
 		selected, err := ui.Select("Select command", cmds)
 		if err != nil {
 			if errors.Is(err, ui.ErrCancelled) {
