@@ -82,15 +82,30 @@ func renderRowInto(buf []byte, slotsBuf *[]Glyph, row Row, numCols int, st Style
 			lastActive = c
 		}
 	}
+	// Gaps hold crossing diagonals a half-slot right of their column. One that
+	// sits past the last active pipe -- a birth diagonal over a not-yet-settled
+	// lane, or an edge routed across an empty column -- still has to render.
+	// Counting only primary glyphs would truncate it off the right edge,
+	// dropping the diagonal and leaving a bare pipe row (the diagonal then
+	// appears to skip a column each step, only surfacing on its even-slot rows).
+	lastGap := -1
+	for c := 0; c < numCols && c < len(row.Gap); c++ {
+		if row.Gap[c] != GlyphSpace {
+			lastGap = c
+		}
+	}
 	if row.Commit == nil {
-		if lastActive < 0 {
+		if lastActive < 0 && lastGap < 0 {
 			return buf
 		}
 	} else if lastActive < 0 {
 		lastActive = 0
 	}
 
-	slotEnd := 2 * (lastActive + 1)
+	slotEnd := 2 * (lastActive + 1) // through the last active column's trailing gap
+	if g := 2*lastGap + 2; g > slotEnd {
+		slotEnd = g // extend to cover a diagonal in a trailing gap slot
+	}
 	buf = writeSlotsTo(buf, slots[:slotEnd], st)
 
 	if row.Commit == nil {
