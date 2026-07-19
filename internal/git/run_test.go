@@ -80,6 +80,29 @@ func TestRunReadIgnoresUserGlobalConfig(t *testing.T) {
 	assert.That(t, !strings.Contains(stdout, "\x1b["), "stdout should not contain ansi escapes when read profile is active")
 }
 
+// Network reads go through runReadNet, which -- unlike runRead -- must keep
+// the user's global gitconfig so private-repo auth (credential helpers,
+// url.*.insteadOf, http.*.extraHeader) survives. Probe with a custom config
+// key the read prelude does not lock: runReadNet sees it, plain runRead does
+// not (it blanks GIT_CONFIG_GLOBAL to /dev/null).
+func TestRunReadNetHonoursUserGlobalConfig(t *testing.T) {
+	dir := temp_repo.NewRepo(t)
+	cfgDir := t.TempDir()
+	cfg := filepath.Join(cfgDir, "config")
+	require.NoError(t, os.WriteFile(cfg, []byte("[gitgum]\n\tmarker = netauth\n"), 0o644))
+	t.Setenv("GIT_CONFIG_GLOBAL", cfg)
+
+	r := Repo{Dir: dir}
+
+	got, _, err := r.runReadNet(context.Background(), "config", "--get", "gitgum.marker")
+	require.NoError(t, err)
+	assert.Equal(t, strings.TrimSpace(got), "netauth")
+
+	// The same key is invisible to plain runRead, which blanks global config.
+	blanked, _, _ := r.runRead(context.Background(), "config", "--get", "gitgum.marker")
+	assert.Equal(t, strings.TrimSpace(blanked), "")
+}
+
 // GIT_DIR in the env must not redirect reads away from r.Dir.
 func TestRunReadIgnoresGitDirEnv(t *testing.T) {
 	dir := temp_repo.NewRepo(t)
