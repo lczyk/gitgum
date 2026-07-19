@@ -407,7 +407,7 @@ func stubHooks(termW, termH int, restoreCalled *bool, raised *os.Signal) hooks {
 			}, nil
 		},
 		getSize:     func() (int, int) { return termW, termH },
-		queryRow:    func() int { return 0 },
+		queryRow:    func() (int, []byte) { return 0, nil },
 		closeIO:     func() {},
 		notifyWinch: func(chan<- os.Signal) {},
 		notifySig:   func(chan<- os.Signal) {},
@@ -909,4 +909,58 @@ func TestUTF8ContinuationCount(t *testing.T) {
 	for _, tc := range tests {
 		assert.Equal(t, utf8ContinuationCount(tc.b), tc.want)
 	}
+}
+
+// splitCPR must pull the cursor row out of the terminal's reply and hand back
+// everything else as type-ahead -- including bytes interleaved with the reply --
+// while dropping the reply itself (a user can't type a raw CPR).
+func TestSplitCPR(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       string
+		wantRow  int
+		wantRest string
+	}{
+		{"plain reply", "\x1b[24;1R", 24, ""},
+		{"multi-digit row", "\x1b[120;40R", 120, ""},
+		{"type-ahead around reply", "he\x1b[24;1Rllo", 24, "hello"},
+		{"type-ahead, no reply", "hello", 0, "hello"},
+		{"arrow key preserved", "\x1b[A", 0, "\x1b[A"},
+		{"bare esc preserved", "\x1b", 0, "\x1b"},
+		{"unfinished reply preserved", "\x1b[24;1", 0, "\x1b[24;1"},
+		{"last reply wins", "\x1b[5;1R\x1b[9;1R", 9, ""},
+		{"empty", "", 0, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			row, rest := splitCPR([]byte(tt.in))
+			assert.Equal(t, row, tt.wantRow)
+			assert.Equal(t, string(rest), tt.wantRest)
+		})
+	}
+}
+
+// Type-ahead captured by queryRow at Init (keystrokes typed before the picker
+// was ready) must be replayed ahead of live input, not dropped -- the fix for
+// lost leading characters. "he" comes from queryRow, "llo" from the input.
+func TestReadLoop_ReplaysPendingTypeAhead(t *testing.T) {
+	s, _, _ := newTestScreen(5, 80, 24, strings.NewReader(""))
+	s.queryRow = func() (int, []byte) { return 0, []byte("he") }
+	fake := &fakeInputSource{bytes: [][]byte{{'l', 'l', 'o'}}}
+	s.input = fake
+
+	require.NoError(t, s.Init())
+
+	got := make([]byte, 0, 5)
+	for range 5 {
+		select {
+		case b := <-s.bytesCh:
+			got = append(got, b)
+		case <-time.After(time.Second):
+			s.Fini()
+			t.Fatalf("timed out after %d bytes: %q", len(got), got)
+		}
+	}
+	assert.Equal(t, string(got), "hello")
+	s.Fini()
 }
