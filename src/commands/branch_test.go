@@ -235,7 +235,10 @@ func TestStartPointFor(t *testing.T) {
 		"local":            {selected: "local: feature", want: startPoint{ref: "feature"}},
 		"local with slash": {selected: "local: feat/login", want: startPoint{ref: "feat/login"}},
 		"detached head":    {selected: "local: HEAD (detached at cf10b5f)", want: startPoint{ref: "cf10b5f"}},
-		"local/remote":     {selected: "local/remote: origin/feat/login", want: startPoint{ref: "feat/login"}},
+		// current branch carries the HEAD marker for search; it strips back off.
+		"current local":        {selected: "local: main (checked out here. HEAD)", want: startPoint{ref: "main"}},
+		"current local/remote": {selected: "local/remote: origin/main (checked out here. HEAD)", want: startPoint{ref: "main"}},
+		"local/remote":         {selected: "local/remote: origin/feat/login", want: startPoint{ref: "feat/login"}},
 		"remote": {selected: "remote: origin/feat/login", want: startPoint{
 			ref: "origin/feat/login", remote: "origin", branch: "feat/login",
 		}},

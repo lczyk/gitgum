@@ -237,9 +237,10 @@ func TestStreamBranches_CheckedOutElsewhereIsMarkedUnselectable(t *testing.T) {
 	assert.That(t, isUnselectable(feature), "marked entry should be unselectable")
 }
 
-// The branch checked out in the current worktree reads "(checked out here)"
-// rather than naming the worktree, and stays unselectable -- you're already
-// on it, so `git checkout` is a no-op.
+// The branch checked out in the current worktree reads "(checked out here.
+// HEAD)" rather than naming the worktree -- the "HEAD" token lets you type HEAD
+// to surface it. In switch/delete (markCheckedOut) it stays unselectable --
+// you're already on it, so `git checkout` is a no-op.
 func TestStreamBranches_CurrentBranchReadsHere(t *testing.T) {
 	t.Parallel()
 
@@ -268,7 +269,7 @@ func TestStreamBranches_CurrentBranchReadsHere(t *testing.T) {
 	}
 
 	require.That(t, entry != "", "current branch should appear")
-	assert.ContainsString(t, entry, "(checked out here)")
+	assert.ContainsString(t, entry, "(checked out here. HEAD)")
 	assert.That(t, !strings.Contains(entry, "worktree"), "current branch should not name a worktree")
 	assert.That(t, isUnselectable(entry), "current branch should be unselectable")
 }
