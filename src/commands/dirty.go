@@ -25,12 +25,19 @@ var errDirtyTreeAborted = errors.New("aborted: working tree not clean")
 // the stash message ("gitgum <label> auto-stash") so users can identify
 // auto-stashes left behind.
 func handleDirtyTree(c *cmdIO, label string) (cleanup func(), err error) {
-	noop := func() {}
-
 	dirty, err := c.repo().DirtyTrackedLines()
 	if err != nil {
-		return noop, err
+		return func() {}, err
 	}
+	return handleDirtyLines(c, label, dirty)
+}
+
+// handleDirtyLines is handleDirtyTree with the working-tree scan already done --
+// dirty is DirtyTrackedLines' output. Callers that fetch the status concurrently
+// with their other pre-picker reads (branch, switch) use this so the scan isn't
+// serialised behind them; everyone else goes through handleDirtyTree.
+func handleDirtyLines(c *cmdIO, label string, dirty []string) (cleanup func(), err error) {
+	noop := func() {}
 	if len(dirty) == 0 {
 		return noop, nil
 	}
