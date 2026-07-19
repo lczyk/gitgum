@@ -239,7 +239,7 @@ func (r Repo) GetCurrentBranchUpstream() (string, error) {
 
 // RemoteBranchExists checks if a branch exists on a remote.
 func (r Repo) RemoteBranchExists(remote, branch string) (bool, error) {
-	_, _, err := r.run("ls-remote", "--exit-code", "--heads", remote, branch)
+	_, _, err := r.runReadNet(context.Background(), "ls-remote", "--exit-code", "--heads", remote, branch)
 	if err != nil {
 		return false, nil
 	}
@@ -253,7 +253,7 @@ func (r Repo) RemoteBranchExists(remote, branch string) (bool, error) {
 // exit (auth failure, DNS/network error, etc.) means the remote itself
 // couldn't be queried.
 func (r Repo) RemoteBranchReachability(remote, branch string) (exists, reachable bool) {
-	_, _, err := r.run("ls-remote", "--exit-code", "--heads", remote, branch)
+	_, _, err := r.runReadNet(context.Background(), "ls-remote", "--exit-code", "--heads", remote, branch)
 	if err == nil {
 		return true, true
 	}

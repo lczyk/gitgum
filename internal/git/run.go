@@ -123,6 +123,22 @@ func (r Repo) runRead(ctx context.Context, args ...string) (string, string, erro
 	return runCaptured(ctx, full, readEnv())
 }
 
+// runReadNet executes a read-only git invocation that talks to a remote
+// (ls-remote and friends). It keeps the read prelude for parse-stable output
+// but uses the write env, which preserves the user's global/system gitconfig.
+// That config is where private-repo auth lives -- credential helpers,
+// url.*.insteadOf rewrites, http.*.extraHeader, ssh settings -- so blanking it
+// (as runRead does) makes network reads fail to authenticate and look like the
+// remote is unreachable. GIT_TERMINAL_PROMPT=0 still holds, so missing creds
+// fail fast instead of hanging on a prompt.
+func (r Repo) runReadNet(ctx context.Context, args ...string) (string, string, error) {
+	if err := ensureMinVersion(ctx); err != nil {
+		return "", "", err
+	}
+	full := buildArgs(r.Dir, readPrelude, args, false)
+	return runCaptured(ctx, full, writeEnv())
+}
+
 // runWrite executes a write git invocation. User identity, signing, and
 // hooks are preserved.
 func (r Repo) runWrite(ctx context.Context, args ...string) (string, string, error) {
