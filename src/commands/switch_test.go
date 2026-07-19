@@ -237,6 +237,42 @@ func TestStreamBranches_CheckedOutElsewhereIsMarkedUnselectable(t *testing.T) {
 	assert.That(t, isUnselectable(feature), "marked entry should be unselectable")
 }
 
+// The branch checked out in the current worktree reads "(checked out here)"
+// rather than naming the worktree, and stays unselectable -- you're already
+// on it, so `git checkout` is a no-op.
+func TestStreamBranches_CurrentBranchReadsHere(t *testing.T) {
+	t.Parallel()
+
+	dir := temp_repo.NewRepo(t)
+	r := git.Repo{Dir: dir}
+	remotes, err := r.GetRemotes()
+	require.NoError(t, err)
+
+	current := currentBranchIn(t, dir)
+
+	var errBuf bytes.Buffer
+	src := streamBranches(context.Background(), r, &errBuf, current, "", remotes,
+		branchStreamOpts{markCheckedOut: true, includeCurrent: true})
+
+	var entry string
+	for i := 0; i < 50; i++ {
+		time.Sleep(10 * time.Millisecond)
+		for _, item := range src.Snapshot() {
+			if strings.Contains(item, current) {
+				entry = item
+			}
+		}
+		if entry != "" {
+			break
+		}
+	}
+
+	require.That(t, entry != "", "current branch should appear")
+	assert.ContainsString(t, entry, "(checked out here)")
+	assert.That(t, !strings.Contains(entry, "worktree"), "current branch should not name a worktree")
+	assert.That(t, isUnselectable(entry), "current branch should be unselectable")
+}
+
 // Regression: in detached HEAD, rev-parse --abbrev-ref returns "HEAD" and
 // HEAD@{u} fails with "HEAD does not point to a branch". Previously this
 // propagated as a "getting tracking remote" error and broke `gg switch`.
