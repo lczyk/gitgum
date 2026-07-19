@@ -20,9 +20,17 @@ const streamDelay = 3 * time.Millisecond
 // for a branch checked out anywhere (including the current worktree -- you're
 // already on it), so these entries are shown but made unselectable (see
 // switch.go). It's the shared prefix of both suffix variants ("in <wt>
-// worktree)" and "here)"), so the emitter and the unselectable predicate stay
-// in sync via this const.
+// worktree)" and "here. HEAD)"), so the emitter and the unselectable predicate
+// stay in sync via this const.
 const checkedOutMarker = " (checked out "
+
+// currentBranchMarker tags the branch checked out in the current worktree --
+// the one you're on. The trailing "HEAD" is a search token: typing "HEAD" in
+// the picker surfaces the current branch (a `branch` start point, and just
+// visible in switch/delete). It shares checkedOutMarker's prefix, so switch and
+// delete still treat it as unselectable; `branch` leaves it selectable and
+// strips the marker back off in parseBranchEntry.
+const currentBranchMarker = checkedOutMarker + "here. HEAD)"
 
 // detachedMarker tags the entry standing in for a detached HEAD. It names
 // where HEAD sits but is not a branch, so it can't be switched to; like
@@ -44,13 +52,10 @@ func detachedEntrySHA(name string) (string, bool) {
 	return strings.TrimSuffix(rest, ")"), true
 }
 
-// checkedOutSuffix renders the display suffix for a checked-out branch. When
-// the blocking worktree is the current one (current is true) it reads "here"
-// rather than naming the worktree -- the branch is the one you're already on.
-func checkedOutSuffix(worktreePath string, current bool) string {
-	if current {
-		return checkedOutMarker + "here)"
-	}
+// checkedOutSuffix renders the display suffix for a branch checked out in
+// another worktree (never the current one -- that branch gets
+// currentBranchMarker instead, keyed on separately in streamLocalBranches).
+func checkedOutSuffix(worktreePath string) string {
 	return checkedOutMarker + "in " + filepath.Base(worktreePath) + " worktree)"
 }
 
@@ -72,6 +77,10 @@ func parseBranchEntry(selected string) (typ, name string, err error) {
 	if !ok {
 		return "", "", fmt.Errorf("invalid selection: %s", selected)
 	}
+	// The current branch is selectable in `branch` (branch off HEAD) and carries
+	// currentBranchMarker for search; strip it so the name is the bare ref. Git
+	// branch names can't contain spaces, so the marker can't be part of one.
+	name = strings.TrimSuffix(name, currentBranchMarker)
 	return typ, name, nil
 }
 
@@ -209,13 +218,15 @@ func streamLocalBranches(ctx context.Context, r git.Repo, errOut io.Writer, queu
 				dedupKey: "local:" + branch,
 			}
 		}
-		// checked out in some worktree -> show but mark unselectable;
-		// `git checkout <branch>` would fail (or is a no-op for the current
-		// branch). The current branch's worktree is this one, so it reads
-		// "here"; any other branch names its blocking worktree. dedupKey stays
-		// clean.
-		if wt, ok := checkedOut[branch]; ok {
-			entry.display += checkedOutSuffix(wt, branch == currentBranch)
+		// The current branch always carries currentBranchMarker (the "HEAD"
+		// search token) -- it's this worktree's checkout, so no other worktree
+		// can also hold it. Any other branch checked out elsewhere gets the
+		// worktree suffix, which isUnselectable then blocks (switch/delete refuse
+		// it). dedupKey stays clean either way.
+		if branch == currentBranch {
+			entry.display += currentBranchMarker
+		} else if wt, ok := checkedOut[branch]; ok {
+			entry.display += checkedOutSuffix(wt)
 		}
 		select {
 		case queue <- entry:
@@ -244,7 +255,7 @@ func streamRemoteBranches(ctx context.Context, r git.Repo, errOut io.Writer, que
 		// local landing name; if that's checked out elsewhere it'd fail, so
 		// show but mark unselectable. skip the current branch (own ref).
 		if wt, ok := checkedOut[branch]; ok && branch != currentBranch {
-			entry.display += checkedOutSuffix(wt, false)
+			entry.display += checkedOutSuffix(wt)
 		}
 		select {
 		case queue <- entry:
