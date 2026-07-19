@@ -19,27 +19,44 @@ func (d *DeleteCommand) Execute(args []string) error {
 		return err
 	}
 
-	// cheap guard for the genuinely-empty repo (no commits yet), where
-	// resolveCurrentBranchContext's rev-parse HEAD below would fail with a
-	// cryptic message. NOTE: a repo with zero local branches but existing remote
-	// branches isn't caught here -- in a normal working repo you always have at
-	// least one local branch, so this only fires on a fresh init.
-	locals, err := r.GetLocalBranches()
-	if err != nil {
-		return fmt.Errorf("getting local branches: %w", err)
-	}
-	if len(locals) == 0 {
-		return fmt.Errorf("no local branches found")
-	}
-
-	currentBranch, trackingRemote, _, err := resolveCurrentBranchContext(r)
-	if err != nil {
+	// The picker can't open until these read-only queries return, so run them
+	// concurrently -- see runConcurrent.
+	//
+	// The empty-repo guard runs first so its error wins: on a genuinely-empty
+	// repo (no commits yet) resolveCurrentBranchContext's rev-parse HEAD fails
+	// with a cryptic message, but runConcurrent returns errors in fn order, so
+	// the clear "no local branches found" takes precedence. NOTE: a repo with
+	// zero local branches but existing remote branches isn't caught -- in a
+	// normal working repo you always have at least one local branch, so this
+	// only fires on a fresh init.
+	var (
+		currentBranch, trackingRemote string
+		remotes                       []string
+	)
+	if err := runConcurrent(
+		func() error {
+			locals, err := r.GetLocalBranches()
+			if err != nil {
+				return fmt.Errorf("getting local branches: %w", err)
+			}
+			if len(locals) == 0 {
+				return fmt.Errorf("no local branches found")
+			}
+			return nil
+		},
+		func() (err error) {
+			currentBranch, trackingRemote, _, err = resolveCurrentBranchContext(r)
+			return err
+		},
+		func() (err error) {
+			remotes, err = r.GetRemotes()
+			if err != nil {
+				return fmt.Errorf("getting remotes: %w", err)
+			}
+			return nil
+		},
+	); err != nil {
 		return err
-	}
-
-	remotes, err := r.GetRemotes()
-	if err != nil {
-		return fmt.Errorf("getting remotes: %w", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

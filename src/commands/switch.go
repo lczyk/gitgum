@@ -69,13 +69,36 @@ func (s *SwitchCommand) Execute(args []string) error {
 		return err
 	}
 
-	currentBranch, trackingRemote, statusLine, err := resolveCurrentBranchContext(r)
-	if err != nil {
+	// The picker can't open until these read-only queries return, so run them
+	// concurrently rather than serialising the working-tree scan behind the
+	// branch/remote lookups -- see runConcurrent.
+	var (
+		currentBranch, trackingRemote, statusLine string
+		remotes                                   []string
+		dirty                                     []string
+	)
+	if err := runConcurrent(
+		func() (err error) {
+			currentBranch, trackingRemote, statusLine, err = resolveCurrentBranchContext(r)
+			return err
+		},
+		func() (err error) {
+			remotes, err = r.GetRemotes()
+			if err != nil {
+				return fmt.Errorf("getting remotes: %w", err)
+			}
+			return nil
+		},
+		func() (err error) {
+			dirty, err = r.DirtyTrackedLines()
+			return err
+		},
+	); err != nil {
 		return err
 	}
 	fmt.Fprintln(s.out(), statusLine)
 
-	cleanup, err := handleDirtyTree(&s.cmdIO, "switch")
+	cleanup, err := handleDirtyLines(&s.cmdIO, "switch", dirty)
 	if err != nil {
 		if errors.Is(err, errDirtyTreeAborted) {
 			fmt.Fprintln(s.out(), "Aborted.")
@@ -84,11 +107,6 @@ func (s *SwitchCommand) Execute(args []string) error {
 		return err
 	}
 	defer cleanup()
-
-	remotes, err := r.GetRemotes()
-	if err != nil {
-		return fmt.Errorf("getting remotes: %w", err)
-	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
