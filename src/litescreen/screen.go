@@ -53,9 +53,13 @@ import (
 // touching real terminals or the global signal table. Embedded into Screen
 // so call sites read as `s.enterRaw()` etc. rather than `s.hooks.enterRaw()`.
 type hooks struct {
-	enterRaw    func() (restore func(), err error)
-	getSize     func() (int, int)
-	queryRow    func() int // 1-indexed cursor row at Init time; 0 = unknown (fall back to bottom-anchored layout)
+	enterRaw func() (restore func(), err error)
+	getSize  func() (int, int)
+	// queryRow returns the 1-indexed cursor row at Init time (0 = unknown, so
+	// fall back to bottom-anchored layout) plus any type-ahead the user typed
+	// before the picker was ready -- Init replays it into the key stream instead
+	// of dropping it.
+	queryRow    func() (row int, pending []byte)
 	closeIO     func()
 	notifyWinch func(chan<- os.Signal)
 	notifySig   func(chan<- os.Signal)
@@ -82,7 +86,7 @@ func realHooks(in *os.File, out *os.File) hooks {
 			}
 			return w, h
 		},
-		queryRow:    func() int { return queryCursorRow(in, out) },
+		queryRow:    func() (int, []byte) { return queryCursorRow(in, out) },
 		closeIO:     func() { in.Close(); out.Close() },
 		notifyWinch: func(ch chan<- os.Signal) { signal.Notify(ch, syscall.SIGWINCH) },
 		notifySig:   func(ch chan<- os.Signal) { signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM) },
@@ -196,6 +200,12 @@ type Screen struct {
 	quit     chan struct{}
 	readDone chan struct{}
 	bytesCh  chan byte
+
+	// pending is type-ahead captured by queryRow at Init (keystrokes typed
+	// before the picker was ready). readLoop replays it ahead of live input.
+	// Set once in Init before the readLoop goroutine starts and only touched by
+	// that goroutine after, so no lock is needed.
+	pending []byte
 }
 
 // resolveHeight turns the user-supplied Height value into an actual row
@@ -460,7 +470,7 @@ func headlessHooks(size func() (int, int)) hooks {
 	return hooks{
 		enterRaw:    func() (func(), error) { return func() {}, nil },
 		getSize:     size,
-		queryRow:    func() int { return 0 },
+		queryRow:    func() (int, []byte) { return 0, nil },
 		closeIO:     func() {},
 		notifyWinch: func(chan<- os.Signal) {},
 		notifySig:   func(chan<- os.Signal) {},
@@ -470,29 +480,38 @@ func headlessHooks(size func() (int, int)) hooks {
 }
 
 // queryCursorRow asks the terminal for the cursor's current row using DSR
-// (\e[6n) and parses the reply (\e[Y;XR). Returns the 1-indexed row, or 0
-// on error/timeout — callers fall back to bottom-anchored layout in that
-// case. Called from Init before any keystroke reader is attached, so the
-// reply bytes don't race with the input loop.
+// (\e[6n) and parses the reply, a cursor-position report (\e[<row>;<col>R).
+// Returns the 1-indexed row (0 on error/timeout -> callers fall back to
+// bottom-anchored layout) and any type-ahead the user typed before the picker
+// was ready, so Init can replay it into the key stream instead of dropping it.
+//
+// Type-ahead sits in the tty queue ahead of (or interleaved with) the reply, so
+// we read the lot, pull the row out via splitCPR, and hand back everything that
+// isn't a cursor-position report. A CPR is never something a user can type, so a
+// stray one (e.g. a stale reply from a prior query) is dropped rather than
+// replayed as junk keys.
 //
 // Reads via raw syscall.Read on the fd in non-blocking mode; *os.File's
 // runtime poller doesn't reliably support SetReadDeadline on /dev/tty
 // opened via os.OpenFile (darwin), and a goroutine + blocking Read could
 // strand a reader that later steals user keystrokes.
-func queryCursorRow(in *os.File, out *os.File) int {
+func queryCursorRow(in *os.File, out *os.File) (row int, pending []byte) {
 	fd := int(in.Fd())
 	if err := syscall.SetNonblock(fd, true); err != nil {
-		return 0
+		return 0, nil
 	}
 	defer syscall.SetNonblock(fd, false)
 
-	// Drain any pending bytes (stale DSR responses from a prior run, queued
-	// keystrokes, etc.) so our parse sees only the response to the query
-	// we're about to send.
-	drainBuf := make([]byte, 64)
+	var got []byte
+	buf := make([]byte, 64)
+
+	// Drain whatever's already queued -- type-ahead typed while the caller was
+	// still preparing -- before the query, keeping it (unlike a plain flush) so
+	// it can be replayed once the reply is separated out below.
 	for range 16 {
-		n, err := syscall.Read(fd, drainBuf)
+		n, err := syscall.Read(fd, buf)
 		if n > 0 {
+			got = append(got, buf[:n]...)
 			continue
 		}
 		if err == syscall.EAGAIN || err == syscall.EWOULDBLOCK || n == 0 {
@@ -501,17 +520,18 @@ func queryCursorRow(in *os.File, out *os.File) int {
 	}
 
 	if _, err := out.Write([]byte("\x1b[6n")); err != nil {
-		return 0
+		_, pending = splitCPR(got)
+		return 0, pending
 	}
 
-	var got []byte
-	buf := make([]byte, 32)
 	deadline := time.Now().Add(200 * time.Millisecond)
 	for time.Now().Before(deadline) {
 		n, err := syscall.Read(fd, buf)
 		if n > 0 {
 			got = append(got, buf[:n]...)
-			if bytes.IndexByte(got, 'R') >= 0 {
+			// Stop once a *complete* CPR is in hand -- a bare typed 'R' or a
+			// half-arrived reply mustn't cut the read short.
+			if row, _ = splitCPR(got); row > 0 {
 				break
 			}
 			continue
@@ -521,32 +541,59 @@ func queryCursorRow(in *os.File, out *os.File) int {
 			continue
 		}
 		if err != nil {
-			return 0
+			break
 		}
 	}
 
-	i := bytes.Index(got, []byte("\x1b["))
-	if i < 0 {
-		return 0
-	}
-	body := got[i+2:]
-	end := bytes.IndexByte(body, 'R')
-	if end < 0 {
-		return 0
-	}
-	body = body[:end]
-	semi := bytes.IndexByte(body, ';')
-	if semi < 0 {
-		return 0
-	}
-	row := 0
-	for _, c := range body[:semi] {
-		if c < '0' || c > '9' {
-			return 0
+	row, pending = splitCPR(got)
+	return row, pending
+}
+
+// splitCPR scans b for cursor-position reports (\e[<row>;<col>R) the terminal
+// writes in reply to a DSR query. It returns the row from the last such report
+// (0 if none) and b with every report removed -- what's left is genuine
+// type-ahead. The last report wins because our fresh reply trails any stale one.
+func splitCPR(b []byte) (row int, rest []byte) {
+	for i := 0; i < len(b); {
+		if r, n, ok := matchCPR(b[i:]); ok {
+			row = r
+			i += n
+			continue
 		}
+		rest = append(rest, b[i])
+		i++
+	}
+	return row, rest
+}
+
+// matchCPR reports whether b starts with a cursor-position report
+// (\e[<row>;<col>R) and, if so, the row and the byte length consumed. It
+// deliberately rejects anything else (bare ESC, arrow keys \e[A, an unfinished
+// \e[24;1) so splitCPR preserves those bytes as type-ahead.
+func matchCPR(b []byte) (row, n int, ok bool) {
+	if len(b) < 2 || b[0] != 0x1b || b[1] != '[' {
+		return 0, 0, false
+	}
+	i := 2
+	rowStart := i
+	for i < len(b) && b[i] >= '0' && b[i] <= '9' {
+		i++
+	}
+	if i == rowStart || i >= len(b) || b[i] != ';' {
+		return 0, 0, false
+	}
+	for _, c := range b[rowStart:i] {
 		row = row*10 + int(c-'0')
 	}
-	return row
+	i++ // skip ';'
+	colStart := i
+	for i < len(b) && b[i] >= '0' && b[i] <= '9' {
+		i++
+	}
+	if i == colStart || i >= len(b) || b[i] != 'R' {
+		return 0, 0, false
+	}
+	return row, i + 1, true // +1 for 'R'
 }
 
 func (s *Screen) Init() error {
@@ -557,7 +604,8 @@ func (s *Screen) Init() error {
 	s.restore = restore
 
 	w, termH := s.getSize()
-	cursorRow := s.queryRow()
+	cursorRow, pending := s.queryRow()
+	s.pending = pending
 	out, yOrigin, fb := initSequence(s.height, w, termH, cursorRow)
 	s.yOrigin = yOrigin
 	s.fb = fb
@@ -817,6 +865,19 @@ func (s *Screen) ChannelEvents(out chan<- tcell.Event, quit <-chan struct{}) {
 // inputSource if EAGAIN simulation is wanted).
 func (s *Screen) readLoop(out chan<- byte) {
 	defer close(out)
+
+	// Replay type-ahead captured during Init ahead of live input, so keystrokes
+	// typed before the picker was ready land in the query box rather than being
+	// lost. Ordered first because they were typed first.
+	for _, b := range s.pending {
+		select {
+		case out <- b:
+		case <-s.quit:
+			return
+		}
+	}
+	s.pending = nil
+
 	if err := s.input.setup(); err != nil {
 		return
 	}
