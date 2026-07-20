@@ -60,12 +60,36 @@ func (p *PullCommand) Execute(args []string) error {
 		return nil
 	}
 
-	mode, err := p.selectMode(currentBranch, upstream)
+	// Only a genuine divergence justifies the strategy picker. Work out where
+	// local sits relative to upstream:
+	//   - strictly behind: ff-only / rebase / merge all collapse to the same
+	//     fast-forward, so the picker would offer three labels for one outcome.
+	//     Skip it and fast-forward directly.
+	//   - strictly ahead: nothing upstream to integrate at all.
+	//   - diverged (each side has unique commits): the mode changes the result,
+	//     so ask.
+	localAhead, err := p.repo().IsBranchAheadOfRemote(currentBranch, upstream)
 	if err != nil {
-		if errors.Is(err, ui.ErrCancelled) {
-			return nil
+		return fmt.Errorf("checking divergence: %w", err)
+	}
+	upstreamAhead, err := p.repo().IsBranchAheadOfRemote(upstream, currentBranch)
+	if err != nil {
+		return fmt.Errorf("checking divergence: %w", err)
+	}
+	if localAhead && !upstreamAhead {
+		fmt.Fprintf(p.out(), "Nothing to pull. Local branch '%s' is ahead of '%s'.\n", currentBranch, upstream)
+		return nil
+	}
+
+	mode := git.PullFFOnly // strictly behind: every mode fast-forwards.
+	if localAhead {        // diverged: let the user pick how to reconcile.
+		mode, err = p.selectMode(currentBranch, upstream)
+		if err != nil {
+			if errors.Is(err, ui.ErrCancelled) {
+				return nil
+			}
+			return err
 		}
-		return err
 	}
 
 	cleanup, err := handleDirtyTree(&p.cmdIO, "pull")
