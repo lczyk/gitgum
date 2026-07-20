@@ -65,7 +65,6 @@ func (c *CleanCommand) Execute(args []string) error {
 		}
 		fmt.Fprintf(c.out(), "  %s\n", file)
 	}
-	fmt.Fprintln(c.out())
 
 	if !c.Yes {
 		confirmed, err := c.sel().Confirm("Proceed with cleanup? This cannot be undone", false)
