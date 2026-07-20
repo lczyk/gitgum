@@ -64,25 +64,50 @@ func TestPullCommand_AlreadyUpToDate(t *testing.T) {
 	assert.Equal(t, len(stub.selectCalls), 0)
 }
 
-// upstream moved ahead, local is strictly behind: fast-forward only advances
-// HEAD to the remote head with no merge commit.
+// upstream moved ahead, local is strictly behind: the strategy picker is
+// pointless (all three modes fast-forward identically), so it is skipped and
+// HEAD advances to the remote head with no merge commit.
 func TestPullCommand_FastForward(t *testing.T) {
 	t.Parallel()
 	local, remote := temp_repo.NewRepoWithRemote(t)
 	remoteHead := advanceRemote(t, remote, "feature.txt", "x", "feat: upstream commit")
 
 	var buf strings.Builder
-	stub := &stubSelector{selectAnswers: []string{git.PullFFOnly.String()}}
+	stub := &stubSelector{}
 	cmd := &PullCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: local}}}
 
 	err := cmd.Execute(nil)
 	require.NoError(t, err)
 
+	assert.Equal(t, len(stub.selectCalls), 0, "ff-able pull must not show the picker")
 	localHead := strings.TrimSpace(temp_repo.RunGit(t, local, "rev-parse", "HEAD"))
 	assert.Equal(t, localHead, remoteHead)
 	merges := strings.TrimSpace(temp_repo.RunGit(t, local, "rev-list", "--merges", "HEAD"))
 	assert.Equal(t, merges, "", "fast-forward must not create a merge commit")
 	assert.ContainsString(t, buf.String(), "Pulled")
+}
+
+// local moved ahead while upstream stood still: nothing to pull, and the picker
+// is skipped -- ff-only would only fail and rebase/merge are no-ops.
+func TestPullCommand_LocalAhead(t *testing.T) {
+	t.Parallel()
+	local, _ := temp_repo.NewRepoWithRemote(t)
+	before := strings.TrimSpace(temp_repo.RunGit(t, local, "rev-parse", "HEAD"))
+	temp_repo.CreateCommit(t, local, "local.txt", "l", "feat: local commit")
+	head := strings.TrimSpace(temp_repo.RunGit(t, local, "rev-parse", "HEAD"))
+
+	var buf strings.Builder
+	stub := &stubSelector{}
+	cmd := &PullCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: local}}}
+
+	err := cmd.Execute(nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, len(stub.selectCalls), 0, "nothing-to-pull must not show the picker")
+	assert.ContainsString(t, buf.String(), "Nothing to pull")
+	after := strings.TrimSpace(temp_repo.RunGit(t, local, "rev-parse", "HEAD"))
+	assert.Equal(t, after, head, "HEAD must not move")
+	assert.NotEqual(t, after, before, "local commit stays")
 }
 
 // local and upstream diverged (each has a unique commit): rebase replays the
