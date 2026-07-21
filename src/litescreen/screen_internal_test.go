@@ -738,7 +738,7 @@ func TestScreen_ReadLoop_ForwardsBytes(t *testing.T) {
 // raw mode, or signal handlers.
 
 func TestInitSequence_Fullscreen(t *testing.T) {
-	out, yOrigin, fb := initSequence(0, 80, 24, 0)
+	out, yOrigin, fb, _ := initSequence(0, 80, 24, 0)
 	got := string(out)
 	assert.Equal(t, yOrigin, 0)
 	assert.Equal(t, fb.width, 80)
@@ -750,7 +750,7 @@ func TestInitSequence_Fullscreen(t *testing.T) {
 }
 
 func TestInitSequence_Inline(t *testing.T) {
-	out, yOrigin, fb := initSequence(5, 80, 24, 0)
+	out, yOrigin, fb, _ := initSequence(5, 80, 24, 0)
 	got := string(out)
 	assert.Equal(t, yOrigin, 19) // 24-5
 	assert.Equal(t, fb.width, 80)
@@ -763,7 +763,7 @@ func TestInitSequence_Inline(t *testing.T) {
 }
 
 func TestInitSequence_NegativeHeight(t *testing.T) {
-	out, yOrigin, fb := initSequence(-2, 80, 24, 0)
+	out, yOrigin, fb, _ := initSequence(-2, 80, 24, 0)
 	got := string(out)
 	assert.Equal(t, fb.height, 22) // termH + height = 24 + (-2)
 	assert.Equal(t, yOrigin, 2)    // termH - rows = 24 - 22
@@ -771,11 +771,11 @@ func TestInitSequence_NegativeHeight(t *testing.T) {
 }
 
 func TestFiniSequence(t *testing.T) {
-	full := string(finiSequence(0))
+	full := string(finiSequence(true, 0))
 	assert.ContainsString(t, full, "\x1b[?1049l", "fullscreen fini emits rmcup; got %q", full)
 	assert.ContainsString(t, full, "\x1b[?25h", "fullscreen fini shows cursor; got %q", full)
 
-	inline := string(finiSequence(19))
+	inline := string(finiSequence(false, 19))
 	assert.ContainsString(t, inline, "\x1b[20;1H\x1b[J", "inline fini clears region at yOrigin+1; got %q", inline)
 	assert.ContainsString(t, inline, "\x1b[?25h", "inline fini shows cursor; got %q", inline)
 	// Inline must NOT leave alt-screen — we never entered it.
@@ -783,7 +783,7 @@ func TestFiniSequence(t *testing.T) {
 }
 
 func TestResizeSequence_Fullscreen(t *testing.T) {
-	out, yOrigin, rows := resizeSequence(0, 100, 30, 80, 0)
+	out, yOrigin, rows := resizeSequence(0, 100, 30, 80, 0, true)
 	got := string(out)
 	assert.Equal(t, yOrigin, 0)
 	assert.Equal(t, rows, 30)
@@ -793,7 +793,7 @@ func TestResizeSequence_Fullscreen(t *testing.T) {
 
 func TestResizeSequence_InlineExpand(t *testing.T) {
 	// width grew (60 → 80). No \x1b[2J — preserve content above.
-	out, yOrigin, rows := resizeSequence(5, 80, 24, 60, 19)
+	out, yOrigin, rows := resizeSequence(5, 80, 24, 60, 19, false)
 	got := string(out)
 	assert.Equal(t, yOrigin, 19)
 	assert.Equal(t, rows, 5)
@@ -803,7 +803,7 @@ func TestResizeSequence_InlineExpand(t *testing.T) {
 
 func TestResizeSequence_InlineNarrow(t *testing.T) {
 	// width shrank (100 → 60) → wipe viewport.
-	out, yOrigin, rows := resizeSequence(5, 60, 24, 100, 19)
+	out, yOrigin, rows := resizeSequence(5, 60, 24, 100, 19, false)
 	got := string(out)
 	assert.Equal(t, yOrigin, 19)
 	assert.Equal(t, rows, 5)
@@ -813,7 +813,7 @@ func TestResizeSequence_InlineNarrow(t *testing.T) {
 
 func TestResizeSequence_InlineSameWidth(t *testing.T) {
 	// Width unchanged (80 == 80) → minimal clear.
-	out, yOrigin, rows := resizeSequence(5, 80, 24, 80, 19)
+	out, yOrigin, rows := resizeSequence(5, 80, 24, 80, 19, false)
 	got := string(out)
 	assert.Equal(t, yOrigin, 19)
 	assert.Equal(t, rows, 5)
@@ -825,7 +825,7 @@ func TestResizeSequence_InlineSameWidth(t *testing.T) {
 // must render starting at cursorRow, not at termH-rows (legacy bottom anchor).
 func TestInitSequence_InlineMidScreenAnchor(t *testing.T) {
 	// 20-row terminal, picker height 3, cursor on row 6: region rows 6–8.
-	out, yOrigin, fb := initSequence(3, 211, 20, 6)
+	out, yOrigin, fb, _ := initSequence(3, 211, 20, 6)
 	got := string(out)
 	assert.Equal(t, yOrigin, 5) // 0-indexed: row 6 in 1-indexed
 	assert.Equal(t, fb.height, 3)
@@ -842,7 +842,7 @@ func TestInitSequence_InlineMidScreenAnchor(t *testing.T) {
 // bottom, matching pre-DSR behavior.
 func TestInitSequence_InlineCursorBottomAnchored(t *testing.T) {
 	// Cursor at row 20 (bottom): 3 rows can't fit below; clamp to bottom.
-	out, yOrigin, _ := initSequence(3, 80, 20, 20)
+	out, yOrigin, _, _ := initSequence(3, 80, 20, 20)
 	got := string(out)
 	assert.Equal(t, yOrigin, 17) // termH-rows = 20-3
 	assert.ContainsString(t, got, "\x1b[18;1H\x1b[J",
@@ -852,7 +852,7 @@ func TestInitSequence_InlineCursorBottomAnchored(t *testing.T) {
 // TestInitSequence_InlineCursorRowZero covers the DSR-failed fallback: when
 // the cursor row is unknown, we anchor at the bottom (legacy behavior).
 func TestInitSequence_InlineCursorRowZero(t *testing.T) {
-	out, yOrigin, _ := initSequence(5, 80, 24, 0)
+	out, yOrigin, _, _ := initSequence(5, 80, 24, 0)
 	got := string(out)
 	assert.Equal(t, yOrigin, 19)
 	assert.ContainsString(t, got, "\x1b[20;1H\x1b[J",
@@ -865,7 +865,7 @@ func TestInitSequence_InlineCursorRowZero(t *testing.T) {
 func TestResizeSequence_PreservesMidScreenAnchor(t *testing.T) {
 	// Picker was anchored at row 6 (yOrigin=5) with height 3; SIGWINCH fires
 	// with the same dimensions. yOrigin must stay at 5, not jump to 17.
-	_, yOrigin, rows := resizeSequence(3, 211, 20, 211, 5)
+	_, yOrigin, rows := resizeSequence(3, 211, 20, 211, 5, false)
 	assert.Equal(t, yOrigin, 5)
 	assert.Equal(t, rows, 3)
 }
@@ -875,7 +875,7 @@ func TestResizeSequence_PreservesMidScreenAnchor(t *testing.T) {
 func TestResizeSequence_FallsBackWhenAnchorOverflows(t *testing.T) {
 	// Picker anchored at yOrigin=15 with height 5; terminal shrinks from
 	// 24 rows to 18. yOrigin+rows = 20 > 18 → clamp to termH-rows = 13.
-	_, yOrigin, rows := resizeSequence(5, 80, 18, 80, 15)
+	_, yOrigin, rows := resizeSequence(5, 80, 18, 80, 15, false)
 	assert.Equal(t, yOrigin, 13)
 	assert.Equal(t, rows, 5)
 }

@@ -44,8 +44,10 @@ import (
 //   - inline (height nonzero, less than termH): occupies last N rows of
 //     the main screen, preserving prior terminal output above
 //
-// The current mode is encoded in yOrigin: yOrigin == 0 means fullscreen,
-// yOrigin > 0 means inline.
+// The mode is resolved once at Init and recorded in Screen.fullscreen; it
+// stays pinned for the whole run even if the terminal is resized across the
+// height threshold. yOrigin is purely the region's first row (0 in
+// fullscreen, and also 0 for an inline region anchored at the top row).
 
 // hooks bundles every OS-side dependency the renderer touches. Production
 // wires these to /dev/tty + term + os/signal in realHooks(); tests pass
@@ -172,6 +174,12 @@ type Screen struct {
 
 	height  int // raw height arg to New; see resolveHeight
 	yOrigin int // first row of region (0-indexed); 0 in fullscreen
+
+	// fullscreen records the render mode resolved at Init and pins it for the
+	// whole run: resize never flips it, and Fini keys its cleanup off it.
+	// yOrigin alone can't encode the mode -- an inline region anchored at the
+	// terminal's top row also has yOrigin == 0.
+	fullscreen bool
 
 	restore func() // set by Init via enterRaw, called by cleanup
 
@@ -606,9 +614,10 @@ func (s *Screen) Init() error {
 	w, termH := s.getSize()
 	cursorRow, pending := s.queryRow()
 	s.pending = pending
-	out, yOrigin, fb := initSequence(s.height, w, termH, cursorRow)
+	out, yOrigin, fb, fullscreen := initSequence(s.height, w, termH, cursorRow)
 	s.yOrigin = yOrigin
 	s.fb = fb
+	s.fullscreen = fullscreen
 	s.out.Write(out)
 	s.cursorVisible = false
 
@@ -634,10 +643,10 @@ func (s *Screen) Init() error {
 
 // initSequence is the pure-byte composition for Init: given the user's
 // height policy, current terminal size, and current cursor row (1-indexed,
-// 0 = unknown), returns the byte stream to emit, plus the resolved yOrigin
-// and a fresh framebuf. Pulled out of Init so the byte stream is testable
-// without /dev/tty + raw mode + signals.
-func initSequence(height, termW, termH, cursorRow int) (out []byte, yOrigin int, fb *framebuf) {
+// 0 = unknown), returns the byte stream to emit, the resolved yOrigin, a
+// fresh framebuf, and the resolved render mode. Pulled out of Init so the
+// byte stream is testable without /dev/tty + raw mode + signals.
+func initSequence(height, termW, termH, cursorRow int) (out []byte, yOrigin int, fb *framebuf, fullscreen bool) {
 	rows, fullscreen := resolveHeight(height, termH)
 	fb = newFramebuf(termW, rows)
 	var buf bytes.Buffer
@@ -667,7 +676,7 @@ func initSequence(height, termW, termH, cursorRow int) (out []byte, yOrigin int,
 		yOrigin = finalRow - rows
 		fmt.Fprintf(&buf, "\x1b[%d;1H\x1b[J", yOrigin+1)
 	}
-	return buf.Bytes(), yOrigin, fb
+	return buf.Bytes(), yOrigin, fb, fullscreen
 }
 
 // signalLoop catches SIGINT/SIGTERM, restores the terminal, and re-raises
@@ -687,12 +696,12 @@ func (s *Screen) signalLoop(ch <-chan os.Signal) {
 }
 
 // cleanup restores the terminal to its pre-Init state. Idempotent: safe to
-// call from both Fini and the signal goroutine. Mode is derived from
-// yOrigin: 0 means fullscreen (alt-screen needs rmcup), nonzero means
-// inline (clear region).
+// call from both Fini and the signal goroutine. Mode comes from the
+// fullscreen flag pinned at Init (alt-screen needs rmcup; inline clears its
+// region).
 func (s *Screen) cleanup() {
 	s.cleanupOnce.Do(func() {
-		s.out.Write(finiSequence(s.yOrigin))
+		s.out.Write(finiSequence(s.fullscreen, s.yOrigin))
 		if s.restore != nil {
 			s.restore()
 			s.restore = nil
@@ -700,11 +709,12 @@ func (s *Screen) cleanup() {
 	})
 }
 
-// finiSequence is the pure-byte composition for Fini, given the yOrigin
-// that was set up at Init time. yOrigin == 0 → fullscreen → leave alt-screen.
-// yOrigin > 0 → inline → clear region.
-func finiSequence(yOrigin int) []byte {
-	if yOrigin == 0 {
+// finiSequence is the pure-byte composition for Fini. Fullscreen leaves the
+// alt-screen; inline clears the region starting at yOrigin. The mode is an
+// explicit parameter -- yOrigin alone is ambiguous, since an inline region
+// anchored at the terminal's top row also has yOrigin == 0.
+func finiSequence(fullscreen bool, yOrigin int) []byte {
+	if fullscreen {
 		return []byte("\x1b[m\x1b[?25h\x1b[?1049l")
 	}
 	return []byte(fmt.Sprintf("\x1b[m\x1b[%d;1H\x1b[J\x1b[?25h", yOrigin+1))
@@ -920,7 +930,7 @@ func (s *Screen) handleResize() (int, int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	w, termH := s.getSize()
-	out, yOrigin, rows := resizeSequence(s.height, w, termH, s.fb.width, s.yOrigin)
+	out, yOrigin, rows := resizeSequence(s.height, w, termH, s.fb.width, s.yOrigin, s.fullscreen)
 	s.yOrigin = yOrigin
 	s.out.Write(out)
 	s.fb.resize(w, rows)
@@ -928,13 +938,21 @@ func (s *Screen) handleResize() (int, int) {
 }
 
 // resizeSequence is the pure-byte composition for handleResize. Given the
-// height policy, new terminal size, previous framebuf width, and previous
-// yOrigin (so a mid-screen anchor survives a spurious SIGWINCH), returns the
-// byte stream + new yOrigin + new picker row count.
-func resizeSequence(height, termW, termH, prevWidth, prevYOrigin int) (out []byte, yOrigin, rows int) {
-	rows, fullscreen := resolveHeight(height, termH)
+// height policy, new terminal size, previous framebuf width, previous
+// yOrigin (so a mid-screen anchor survives a spurious SIGWINCH), and the
+// render mode pinned at Init, returns the byte stream + new yOrigin + new
+// picker row count.
+//
+// The mode never flips mid-run: a fullscreen picker stays in the alt screen
+// (spanning however many rows the terminal now has), and an inline picker
+// stays on the main screen with its rows clamped to the terminal height.
+// Re-deriving the mode from resolveHeight here would flip it without the
+// matching alt-screen enter/leave, desynchronising Fini's cleanup.
+func resizeSequence(height, termW, termH, prevWidth, prevYOrigin int, fullscreen bool) (out []byte, yOrigin, rows int) {
+	rows, _ = resolveHeight(height, termH)
 	var buf bytes.Buffer
 	if fullscreen {
+		rows = termH
 		yOrigin = 0
 		buf.WriteString("\x1b[2J\x1b[H")
 	} else {
