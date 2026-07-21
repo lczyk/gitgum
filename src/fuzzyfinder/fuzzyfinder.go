@@ -191,7 +191,11 @@ func (f *finder) initFinder(items []string, opt Opt) error {
 	f.state.matched = makeMatched(len(f.state.items))
 
 	if !isInTesting() {
-		f.drawTimer = time.AfterFunc(0, func() {
+		// Create the draw timer stopped -- it only ever fires via draw()'s
+		// Reset. A zero delay here would race the Stop below and could emit one
+		// spurious frame before the first real draw, so start it far in the
+		// future and cancel it immediately.
+		f.drawTimer = time.AfterFunc(time.Hour, func() {
 			f.stateMu.Lock()
 			f._draw()
 			f.stateMu.Unlock()
