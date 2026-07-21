@@ -49,6 +49,7 @@ func (p *PushCommand) Execute(args []string) error {
 		}
 
 		fmt.Fprintf(p.out(), "Current branch already has a remote tracking branch: %s\n", remoteBranch)
+		p.showPushDelta(remoteCommit, localCommit)
 		confirmed, err := p.sel().Confirm("Do you want to push to the remote tracking branch?", true)
 		if err != nil {
 			if errors.Is(err, ui.ErrCancelled) {
@@ -153,6 +154,7 @@ func (p *PushCommand) Execute(args []string) error {
 		return nil
 	}
 
+	p.showPushDelta(remoteCommit, localCommit)
 	confirmed, err := p.sel().Confirm(fmt.Sprintf("Remote branch '%s' already exists. Do you want to push to it?",
 		expectedRemoteBranchName), true)
 	if err != nil {
@@ -170,6 +172,17 @@ func (p *PushCommand) Execute(args []string) error {
 	}
 	fmt.Fprintf(p.out(), "Pushed to remote branch '%s'.\n", expectedRemoteBranchName)
 	return nil
+}
+
+// showPushDelta prints a compact-summary of the commits about to be pushed
+// (remote tip -> local tip) in the same style as `gg diff`, so the user sees
+// what they're sending before confirming. Best-effort: a render hiccup never
+// blocks the push.
+func (p *PushCommand) showPushDelta(remoteCommit, localCommit string) {
+	summary, err := compactSummary(p.repo(), remoteCommit+".."+localCommit)
+	if err == nil && summary != "" {
+		fmt.Fprintln(p.out(), summary)
+	}
 }
 
 // handleStaleUpstream is called when the local branch matches its

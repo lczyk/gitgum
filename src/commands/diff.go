@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/src/litescreen"
 )
 
@@ -153,39 +154,46 @@ func doCountUntrackedLines(path string) numstat {
 	return numstat{added: lines}
 }
 
-func (d *DiffCommand) collectDiff(level string) (string, error) {
+// compactSummary runs `git diff --compact-summary` with the extra args (paths,
+// ranges, --cached, ...), coloured per the environment. Repo.Run TrimSpaces
+// stdout, eating the leading space git emits on every row; it is restored so
+// the first row aligns with the rest. Empty diff -> "" (no leading space).
+func compactSummary(r git.Repo, extra ...string) (string, error) {
 	colorFlag := "--color=never"
 	if colorEnabled() {
 		colorFlag = "--color=always"
 	}
-	// Repo.Run TrimSpaces stdout, which eats the leading space git
-	// --compact-summary emits on every row. Restore it so the first row
-	// aligns with the rest.
-	restore := func(s string) string {
-		if s == "" {
-			return s
-		}
-		return " " + s
+	args := append([]string{"diff", "--compact-summary", colorFlag}, extra...)
+	out, _, err := r.Run(args...)
+	if err != nil {
+		return "", err
 	}
+	if out == "" {
+		return "", nil
+	}
+	return " " + out, nil
+}
+
+func (d *DiffCommand) collectDiff(level string) (string, error) {
 	switch level {
 	case "work":
-		out, _, err := d.repo().Run("diff", "--compact-summary", colorFlag)
+		out, err := compactSummary(d.repo())
 		if err != nil {
 			return "", fmt.Errorf("git diff: %w", err)
 		}
-		return restore(out), nil
+		return out, nil
 	case "index":
-		out, _, err := d.repo().Run("diff", "--cached", "--compact-summary", colorFlag)
+		out, err := compactSummary(d.repo(), "--cached")
 		if err != nil {
 			return "", fmt.Errorf("git diff --cached: %w", err)
 		}
-		return restore(out), nil
+		return out, nil
 	case "head":
-		out, _, err := d.repo().Run("diff", "--compact-summary", colorFlag, "HEAD~1..HEAD")
+		out, err := compactSummary(d.repo(), "HEAD~1..HEAD")
 		if err != nil {
 			return "", nil
 		}
-		return restore(out), nil
+		return out, nil
 	case "untracked":
 		entries, err := d.collectUntrackedEntries()
 		if err != nil {

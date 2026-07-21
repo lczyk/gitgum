@@ -104,6 +104,17 @@ func (p *PullCommand) Execute(args []string) error {
 	if err := p.repo().Integrate(mode, upstream); err != nil {
 		return err
 	}
+
+	// Render what landed in the same style as `gg diff` (coloured
+	// compact-summary) rather than git's plain --stat, which Integrate
+	// suppresses. Best-effort: a pull that succeeded is not failed by a
+	// diff-render hiccup.
+	if newCommit, err := p.repo().GetCommitHash(currentBranch); err == nil && newCommit != localCommit {
+		if summary, derr := compactSummary(p.repo(), localCommit+".."+newCommit); derr == nil && summary != "" {
+			fmt.Fprintln(p.out(), summary)
+		}
+	}
+
 	fmt.Fprintf(p.out(), "Pulled '%s' into '%s' (%s).\n", upstream, currentBranch, mode)
 	return nil
 }

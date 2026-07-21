@@ -26,11 +26,13 @@ func (r Repo) Integrate(mode PullMode, upstream string) error {
 	var args []string
 	switch mode {
 	case PullFFOnly:
-		args = []string{"merge", "--ff-only", upstream}
+		// --no-stat: the caller renders its own compact-summary of what landed,
+		// so git's plain diffstat would just be a duplicate.
+		args = []string{"merge", "--no-stat", "--ff-only", upstream}
 	case PullRebase:
 		args = []string{"rebase", upstream}
 	case PullMerge:
-		args = []string{"merge", upstream}
+		args = []string{"merge", "--no-stat", upstream}
 	default:
 		return fmt.Errorf("unknown pull mode %d", mode)
 	}
