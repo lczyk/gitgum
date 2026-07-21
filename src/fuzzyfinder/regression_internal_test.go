@@ -1,7 +1,10 @@
 package fuzzyfinder
 
 import (
+	"context"
+	"runtime"
 	"testing"
+	"time"
 
 	"github.com/lczyk/assert"
 	"github.com/lczyk/assert/require"
@@ -45,4 +48,25 @@ func TestRegressionConfirmSnapshotBeatsResync(t *testing.T) {
 	res, err := f.result(idxs, nil)
 	require.NoError(t, err)
 	assert.EqualArrays(t, []string{"bravo"}, res.Items)
+}
+
+// When initialisation fails, find() must not leak the resync goroutine.
+// Regression: the goroutine was spawned before initFinder and blocked on a
+// channel that only closed on success, so an init error left it parked forever.
+// (initFinder fails deterministically here because the headless test env has no
+// tty for the real screen backend.)
+func TestRegressionNoGoroutineLeakOnInitFailure(t *testing.T) {
+	src := NewSliceSourceFrom([]string{"a", "b"}) // Versioned: would spawn resync
+	before := runtime.NumGoroutine()
+
+	f := &finder{} // nil term -> initFinder builds a real screen and fails
+	_, err := f.find(context.Background(), src, Opt{})
+	if err == nil {
+		t.Fatal("expected init failure with no tty, got nil")
+	}
+
+	// No goroutine may outlive the failed init.
+	assert.Eventually(t, func() bool {
+		return runtime.NumGoroutine() <= before
+	}, time.Second, 10*time.Millisecond, "resync goroutine leaked after init failure")
 }
