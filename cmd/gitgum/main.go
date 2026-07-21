@@ -29,6 +29,7 @@ type Options struct {
 	Release    commands.ReleaseCommand    `command:"release" description:"Bump VERSION (or latest tag), commit, and tag"`
 	Tree       commands.TreeCommand       `command:"tree" description:"Print a colored commit graph across all branches"`
 	Diff       commands.DiffCommand       `command:"diff" description:"Show working-tree diff with --compact-summary"`
+	Doctor     commands.DoctorCommand     `command:"doctor" description:"Diagnose known inconsistencies in the repo's remote/worktree layout"`
 }
 
 // isFollowArg reports whether an arg is -f / --follow, optionally with an =value.
