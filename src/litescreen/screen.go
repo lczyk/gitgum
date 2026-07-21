@@ -623,6 +623,9 @@ func matchCPR(b []byte) (row, n int, ok bool) {
 func (s *Screen) Init() error {
 	restore, err := s.enterRaw()
 	if err != nil {
+		// Callers bail on an Init error without calling Fini, so the tty fds
+		// opened at construction must be released here.
+		s.closeIO()
 		return fmt.Errorf("raw mode: %w", err)
 	}
 	s.restore = restore
