@@ -198,7 +198,7 @@ func (f *finder) initFinder(items []string, opt Opt) error {
 	if opt.Query != "" {
 		f.state.input = []rune(opt.Query)
 		f.state.cursorX = runewidth.StringWidth(opt.Query)
-		f.state.x = len(opt.Query)
+		f.state.x = len(f.state.input)
 		f.filter()
 	}
 
