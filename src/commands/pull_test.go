@@ -87,6 +87,26 @@ func TestPullCommand_FastForward(t *testing.T) {
 	assert.ContainsString(t, buf.String(), "Pulled")
 }
 
+// a fast-forward pull renders what landed as a compact-summary (like gg diff),
+// not git's plain --stat: added files carry the "(new)" annotation.
+func TestPullCommand_RendersCompactSummary(t *testing.T) {
+	t.Parallel()
+	local, remote := temp_repo.NewRepoWithRemote(t)
+	advanceRemote(t, remote, "feature.txt", "x\ny\n", "feat: upstream commit")
+
+	var buf strings.Builder
+	stub := &stubSelector{}
+	cmd := &PullCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: local}}}
+
+	err := cmd.Execute(nil)
+	require.NoError(t, err)
+
+	out := buf.String()
+	assert.ContainsString(t, out, "feature.txt")
+	assert.ContainsString(t, out, "(new)") // compact-summary marker, absent from plain --stat
+	assert.ContainsString(t, out, "Pulled")
+}
+
 // local moved ahead while upstream stood still: nothing to pull, and the picker
 // is skipped -- ff-only would only fail and rebase/merge are no-ops.
 func TestPullCommand_LocalAhead(t *testing.T) {

@@ -105,6 +105,34 @@ func TestPushCommand_UpstreamSet_AlreadyUpToDate(t *testing.T) {
 	assert.Equal(t, len(stub.confirmCalls), 0)
 }
 
+// local is ahead of an existing upstream: push renders a compact-summary of
+// what's being sent (like gg diff) before the confirm, then pushes.
+func TestPushCommand_UpstreamSet_ShowsDelta(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+
+	bareDir := t.TempDir()
+	temp_repo.RunGit(t, bareDir, "init", "--bare")
+	temp_repo.RunGit(t, dir, "remote", "add", "origin", bareDir)
+
+	branch := currentBranchIn(t, dir)
+	temp_repo.RunGit(t, dir, "push", "-u", "origin", branch)
+	// a new local commit puts local ahead of the upstream.
+	temp_repo.CreateCommit(t, dir, "feature.yml", "x\ny\n", "feat: local commit")
+
+	var buf strings.Builder
+	stub := &stubSelector{confirmAnswers: []bool{true}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	err := cmd.Execute(nil)
+	require.NoError(t, err)
+
+	out := buf.String()
+	assert.ContainsString(t, out, "feature.yml")
+	assert.ContainsString(t, out, "(new)") // compact-summary marker
+	assert.ContainsString(t, out, "Pushed to remote tracking branch")
+}
+
 // upstream configured and local matches the (stale) remote-tracking ref, but
 // the branch was deleted on the remote: push must notice via a live check and
 // offer to recreate it. Stub confirms the recreate prompt.
