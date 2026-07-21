@@ -1072,8 +1072,19 @@ func (f *finder) runLoop(ctx context.Context, opt *Opt) ([]int, error) {
 		defer f.term.Fini()
 	}
 
-	if opt.SelectOne && len(f.state.matched) == 1 && !f.unselectableLocked(f.state.matched[0]) {
-		return []int{f.state.matched[0]}, nil
+	if opt.SelectOne {
+		// Read matched under the lock: the resync goroutine is already running
+		// and may write it concurrently if this loop is scheduled past a tick.
+		f.stateMu.RLock()
+		only := len(f.state.matched) == 1 && !f.unselectableLocked(f.state.matched[0])
+		var idx int
+		if only {
+			idx = f.state.matched[0]
+		}
+		f.stateMu.RUnlock()
+		if only {
+			return []int{idx}, nil
+		}
 	}
 
 	go func() {
