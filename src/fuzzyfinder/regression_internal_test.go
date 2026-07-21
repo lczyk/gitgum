@@ -98,3 +98,19 @@ func TestRegressionResizePageSizeOffByOne(t *testing.T) {
 
 	assert.Equal(t, 10, f.state.cursorY)
 }
+
+// negRuneMask (query-line negation highlight) must match how matching.parse
+// decides what is a negated term. Regression: it highlighted a bare "!" that
+// parse ignores, and split terms only on space/tab while parse uses
+// strings.Fields (all Unicode whitespace).
+func TestRegressionNegRuneMaskParityWithParse(t *testing.T) {
+	// A lone "!" is not a negated term -> not highlighted.
+	assert.Nil(t, negRuneMask([]rune("!"), true))
+	assert.Nil(t, negRuneMask([]rune("foo ! bar"), true))
+
+	// A non-breaking space (U+00A0) is a strings.Fields separator, so the "!bc"
+	// term after it is recognised and highlighted.
+	got := negRuneMask([]rune("a"+"\u00a0"+"!bc"), true)
+	want := []bool{false, false, true, true, true} // a, NBSP, !, b, c
+	assert.EqualArrays(t, want, got)
+}
