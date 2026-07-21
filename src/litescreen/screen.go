@@ -841,7 +841,13 @@ func (s *Screen) ChannelEvents(out chan<- tcell.Event, quit <-chan struct{}) {
 		select {
 		case <-quit:
 			return
-		case <-winch:
+		case _, ok := <-winch:
+			// Fini closes winch; a closed channel is always ready, so without
+			// the ok check this case would loop, resizing against closed fds
+			// and fabricating resize events nobody drains.
+			if !ok {
+				return
+			}
 			w, h := s.handleResize()
 			select {
 			case out <- tcell.NewEventResize(w, h):
