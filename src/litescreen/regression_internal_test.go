@@ -98,3 +98,26 @@ func TestRegressionChannelEventsExitsOnWinchClose(t *testing.T) {
 		t.Fatal("ChannelEvents did not exit after winch close")
 	}
 }
+
+// Control runes stored in cells must not reach the output stream raw -- a
+// stray ESC/TAB/CR desyncs the terminal and breaks the cell-grid model.
+// Regression: flushTo wrote cell runes verbatim, so item strings carrying
+// control bytes (filenames from find, a trailing bare ESC in ansi input)
+// corrupted the terminal. tcell sanitises these; litescreen must too.
+func TestRegressionFlushSanitisesControlRunes(t *testing.T) {
+	fb := newFramebuf(4, 1)
+	fb.set(0, 0, liteCell{mainc: 0x1b})
+	fb.set(1, 0, liteCell{mainc: '\t'})
+	fb.set(2, 0, liteCell{mainc: 'a', combc: []rune{0x08}})
+	got := string(fb.flush(0, 0, 0, false))
+
+	assert.That(t, !strings.Contains(got, "\t"), "raw TAB in output: %q", got)
+	assert.That(t, !strings.Contains(got, "\x08"), "raw BS from combc in output: %q", got)
+	// Every ESC in the stream must start one of our own CSI sequences.
+	for i := 0; i < len(got); i++ {
+		if got[i] == 0x1b {
+			assert.That(t, i+1 < len(got) && got[i+1] == '[',
+				"bare ESC leaked into output at byte %d: %q", i, got)
+		}
+	}
+}
