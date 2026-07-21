@@ -1242,27 +1242,34 @@ func noColor() bool {
 }
 
 // negRuneMask marks which runes of input belong to a negated ('!'-prefixed)
-// whitespace-delimited term, for query-line highlighting. Returns nil when
-// negate is off or no term is negated (no allocation in the common case).
+// term, for query-line highlighting. Returns nil when negate is off or no term
+// is negated (no allocation in the common case).
+//
+// Word splitting and the negated-term test mirror matching.parse: terms are
+// split on any Unicode whitespace (as strings.Fields does), and a bare "!" is
+// not a negated term (parse drops it), so it isn't highlighted.
 func negRuneMask(input []rune, negate bool) []bool {
 	if !negate {
 		return nil
 	}
 	var mask []bool
-	wordStart := -1 // index of the term's first rune, or -1 between words
-	for i, r := range input {
-		if r == ' ' || r == '\t' {
-			wordStart = -1
+	for i := 0; i < len(input); {
+		if unicode.IsSpace(input[i]) {
+			i++
 			continue
 		}
-		if wordStart == -1 {
-			wordStart = i
+		start := i
+		for i < len(input) && !unicode.IsSpace(input[i]) {
+			i++
 		}
-		if input[wordStart] == '!' {
+		// Negated iff the term starts with '!' and has more than just '!'.
+		if input[start] == '!' && i-start > 1 {
 			if mask == nil {
 				mask = make([]bool, len(input))
 			}
-			mask[i] = true
+			for j := start; j < i; j++ {
+				mask[j] = true
+			}
 		}
 	}
 	return mask
