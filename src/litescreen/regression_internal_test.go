@@ -1,6 +1,7 @@
 package litescreen
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -135,4 +136,19 @@ func TestRegressionWideRuneLastColumnBlanked(t *testing.T) {
 	assert.That(t, !strings.Contains(got, string(wide)),
 		"wide rune emitted in last column: %q", got)
 	assert.ContainsString(t, got, "\x1b[1;4H ", "last column blanked instead")
+}
+
+// A failed Init must close the tty fds it opened. Regression: the raw-mode
+// error path returned early without closeIO, and callers that bail on the
+// error (fuzzyfinder does) have no handle to close them -- two leaked
+// /dev/tty fds per failed init.
+func TestRegressionInitFailureClosesIO(t *testing.T) {
+	s, _, _ := newTestScreen(10, 80, 24, strings.NewReader(""))
+	closed := false
+	s.closeIO = func() { closed = true }
+	s.enterRaw = func() (func(), error) { return nil, errors.New("raw mode boom") }
+
+	err := s.Init()
+	assert.Error(t, err, assert.AnyError)
+	assert.That(t, closed, "init failure must close the tty fds")
 }
