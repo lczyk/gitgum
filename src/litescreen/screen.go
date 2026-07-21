@@ -371,8 +371,18 @@ func (f *framebuf) flushTo(buf *bytes.Buffer, yOrigin, cx, cy int, cursorVisible
 			if r == 0 {
 				r = ' '
 			}
+			// Sanitise control runes (C0 + DEL): emitted raw they desync the
+			// terminal (a stray ESC starts an escape sequence, TAB/CR move the
+			// cursor) and break the cell-grid model. Item strings can carry
+			// them -- filenames from find, a trailing bare ESC in ansi input.
+			if r < 0x20 || r == 0x7f {
+				r = ' '
+			}
 			buf.WriteRune(r)
 			for _, cr := range c.combc {
+				if cr < 0x20 || cr == 0x7f {
+					continue
+				}
 				buf.WriteRune(cr)
 			}
 
