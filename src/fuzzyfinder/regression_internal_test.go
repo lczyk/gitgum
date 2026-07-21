@@ -2,10 +2,12 @@ package fuzzyfinder
 
 import (
 	"context"
+	"fmt"
 	"runtime"
 	"testing"
 	"time"
 
+	"github.com/gdamore/tcell/v2"
 	"github.com/lczyk/assert"
 	"github.com/lczyk/assert/require"
 )
@@ -69,4 +71,30 @@ func TestRegressionNoGoroutineLeakOnInitFailure(t *testing.T) {
 	assert.Eventually(t, func() bool {
 		return runtime.NumGoroutine() <= before
 	}, time.Second, 10*time.Millisecond, "resync goroutine leaked after init failure")
+}
+
+// The resize handler must recompute cursorY with the same page size the rest of
+// the picker uses. Regression: after the number-line was merged into the prompt
+// row, chrome above the items became 1 row (2 with a header), but the resize
+// branch still subtracted 2 (3 with a header) -- an off-by-one page size that
+// misaligned the cursor until the next scroll key.
+func TestRegressionResizePageSizeOffByOne(t *testing.T) {
+	f, m := NewWithMockedTerminal() // 60x10
+	items := make([]string, 30)
+	for i := range items {
+		items[i] = fmt.Sprintf("i%02d", i)
+	}
+	require.NoError(t, f.initFinder(items, Opt{}))
+	f.state.y = 10
+	f.state.cursorY = 1
+
+	// Resize to height 12: chrome above items is 1 row, so page size is 11 and
+	// the cursored item at y=10 sits on in-page row 10 (10 % 11), not 0.
+	m.SetSize(60, 12)
+	require.NoError(t, m.PostEvent(tcell.NewEventResize(60, 12)))
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, f.readKey(ctx))
+
+	assert.Equal(t, 10, f.state.cursorY)
 }
