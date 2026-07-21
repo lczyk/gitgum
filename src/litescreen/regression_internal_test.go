@@ -1,9 +1,12 @@
 package litescreen
 
 import (
+	"os"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/gdamore/tcell/v2"
 	"github.com/lczyk/assert"
 	"github.com/lczyk/assert/require"
 )
@@ -68,4 +71,30 @@ func TestRegressionResizeKeepsFullscreenMode(t *testing.T) {
 	s.Fini()
 	assert.ContainsString(t, out.String(), "\x1b[?1049l",
 		"picker that entered the alt screen must leave it on Fini")
+}
+
+// ChannelEvents must exit when the winch channel closes (Fini closes it while
+// the event loop may still be selecting on it). Regression: the receive
+// ignored the ok flag, and a closed channel is always ready -- the loop then
+// ran handleResize against closed fds and emitted fabricated resize events,
+// parking the goroutine forever on the send when nobody was draining.
+func TestRegressionChannelEventsExitsOnWinchClose(t *testing.T) {
+	s, _, _ := newTestScreen(10, 80, 24, strings.NewReader(""))
+	s.fb = newFramebuf(80, 10)
+	s.winch = make(chan os.Signal, 1)
+	s.bytesCh = make(chan byte) // open and empty: winch is the only ready case
+	close(s.winch)
+
+	events := make(chan tcell.Event, 4)
+	done := make(chan struct{})
+	go func() { s.ChannelEvents(events, nil); close(done) }()
+
+	select {
+	case <-done:
+		// clean exit, nothing emitted
+	case ev := <-events:
+		t.Fatalf("got fabricated event after winch close: %#v", ev)
+	case <-time.After(2 * time.Second):
+		t.Fatal("ChannelEvents did not exit after winch close")
+	}
 }
