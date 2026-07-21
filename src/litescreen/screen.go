@@ -720,6 +720,11 @@ func (s *Screen) signalLoop(ch <-chan os.Signal) {
 // region).
 func (s *Screen) cleanup() {
 	s.cleanupOnce.Do(func() {
+		// Hold the screen lock so the restore sequence can't interleave with
+		// a concurrent Show/Sync mid-write (the signal path calls cleanup
+		// from its own goroutine while a draw may be in flight).
+		s.mu.Lock()
+		defer s.mu.Unlock()
 		s.out.Write(finiSequence(s.fullscreen, s.yOrigin))
 		if s.restore != nil {
 			s.restore()
