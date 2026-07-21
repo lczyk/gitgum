@@ -3,6 +3,7 @@ package fuzzyfinder
 import (
 	"testing"
 
+	"github.com/lczyk/assert"
 	"github.com/lczyk/assert/require"
 )
 
@@ -22,4 +23,26 @@ func TestRegressionDrawStaleMatchedNoPanic(t *testing.T) {
 
 	// Must not panic.
 	f._draw()
+}
+
+// A resync that lands between Enter-confirmation and index-to-string
+// translation must not change which items the Result reports. Regression:
+// confirmSelection captured indices under lock but result() re-read
+// f.state.items afterwards, so a source swap in the gap returned whatever now
+// sat at those indices instead of what was under the cursor at Enter.
+func TestRegressionConfirmSnapshotBeatsResync(t *testing.T) {
+	f, m := NewWithMockedTerminal()
+	defer m.Fini()
+	require.NoError(t, f.initFinder([]string{"alpha", "bravo", "charlie"}, Opt{}))
+	f.state.y = 1 // cursor on "bravo"
+
+	idxs, done := f.confirmSelection()
+	require.That(t, done, "confirmSelection should confirm")
+
+	// Source wholesale-replaced before the caller translates indices.
+	f.updateItems([]string{"x", "y", "z"})
+
+	res, err := f.result(idxs, nil)
+	require.NoError(t, err)
+	assert.EqualArrays(t, []string{"bravo"}, res.Items)
 }
