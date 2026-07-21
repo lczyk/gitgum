@@ -172,7 +172,12 @@ func applySGR(params string, cur, base tcell.Style) tcell.Style {
 	//   buf:     accumulated R,G,B (mode 2) or N (mode 5)
 	var role, mode, need, bufLen int
 	var buf [3]int
-	// scan params: parse decimal ints separated by ';'. Empty / non-numeric -> 0.
+	// scan params: parse decimal ints separated by ';' or ':'. Empty /
+	// non-numeric -> 0. Colon is the ITU T.416 sub-parameter separator
+	// (kitty-style "38:5:196"); treating it like ';' parses those correctly.
+	// Trade-off: colon sub-parameters of other attributes (e.g. "4:3" curly
+	// underline) split into standalone params -- acceptable for the git/ls
+	// colouring this package targets.
 	n := 0
 	for i := 0; i <= len(params); i++ {
 		if i < len(params) {
@@ -181,7 +186,7 @@ func applySGR(params string, cur, base tcell.Style) tcell.Style {
 				n = n*10 + int(c-'0')
 				continue
 			}
-			if c != ';' {
+			if c != ';' && c != ':' {
 				// non-numeric, non-separator byte: skip silently
 				continue
 			}
