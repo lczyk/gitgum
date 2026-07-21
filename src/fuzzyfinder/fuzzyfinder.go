@@ -488,6 +488,13 @@ func (f *finder) _draw() {
 		if i > itemAreaHeight {
 			break
 		}
+		// A shrinking live source can briefly leave matched with indices past
+		// the current items slice (filter installs matches computed against a
+		// now-stale, larger snapshot). Skip them rather than index out of range;
+		// the next resync tick rebuilds a consistent matched.
+		if m < 0 || m >= len(f.state.items) {
+			continue
+		}
 		row := rowAt(firstItemOffset + i)
 		if i == f.state.cursorY {
 			style := tcell.StyleDefault.Foreground(tcell.ColorRed).Background(tcell.ColorBlack)
