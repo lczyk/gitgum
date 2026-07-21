@@ -3,6 +3,7 @@ package fuzzyfinder_test
 import (
 	"context"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/lczyk/assert"
@@ -48,4 +49,29 @@ func TestRegressionNonAsciiQuery(t *testing.T) {
 	res, err := f.Find(context.Background(), &it, nil, ff.Opt{Query: query})
 	require.NoError(t, err)
 	assert.Equal(t, acute+acute, res.Query)
+}
+
+// The query-line length cap must count display columns, not runes. Regression:
+// the cap compared the rune count against a column budget, so wide (2-column)
+// runes overflowed the line -- a full-width run twice as wide as the budget was
+// still accepted. At width 12 the budget is 9 columns, so 8 full-width runes
+// fit by rune count but must be capped at 4 by column width.
+func TestRegressionWideRuneLineCap(t *testing.T) {
+	t.Parallel()
+
+	f, term := ff.NewWithMockedTerminal()
+	term.SetSize(12, 10) // narrow: column budget is width-3 = 9
+	wide := rune(0x3042) // hiragana 'a', 2 columns wide
+	esc := key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone})
+
+	events := make([]tcell.Event, 0, 9)
+	for range 8 {
+		events = append(events, ch(wide))
+	}
+	events = append(events, esc)
+	term.SetEvents(events...)
+
+	it := []string{"placeholder"}
+	res, _ := f.Find(context.Background(), &it, nil, ff.Opt{})
+	assert.Equal(t, 4, utf8.RuneCountInString(res.Query))
 }
