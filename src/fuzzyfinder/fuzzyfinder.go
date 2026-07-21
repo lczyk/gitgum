@@ -811,7 +811,9 @@ func (f *finder) readKey(ctx context.Context) error {
 			if e.Rune() != 0 {
 				width, _ := f.term.Size()
 				maxLineWidth := width - 2 - 1
-				if len(f.state.input)+1 > maxLineWidth {
+				// Measure display columns, not rune count -- wide (CJK) runes
+				// take two columns each, so a rune-count cap lets them overflow.
+				if runewidth.StringWidth(string(f.state.input))+runewidth.RuneWidth(e.Rune()) > maxLineWidth {
 					// Discard inputted rune.
 					return nil
 				}
@@ -839,11 +841,13 @@ func (f *finder) readKey(ctx context.Context) error {
 			f.state.input = nil
 			f.state.cursorX = 0
 			f.state.x = 0
-		} else if len(f.state.input)+1 > maxLineWidth {
-			// Discard inputted rune.
-			f.state.input = f.state.input[:maxLineWidth]
-			f.state.cursorX = runewidth.StringWidth(string(f.state.input))
-			f.state.x = maxLineWidth
+		} else if runewidth.StringWidth(string(f.state.input)) > maxLineWidth {
+			// Shrunk below the query width: truncate by display columns so wide
+			// runes don't push the visible line past the new edge.
+			trunc := []rune(runewidth.Truncate(string(f.state.input), maxLineWidth, ""))
+			f.state.input = trunc
+			f.state.cursorX = runewidth.StringWidth(string(trunc))
+			f.state.x = len(trunc)
 		}
 	}
 	return nil
