@@ -132,6 +132,13 @@ type finder struct {
 	// sync on event processing without a fixed sleep. buffered 1 so
 	// the goroutine never blocks when no test is waiting.
 	filterDone chan struct{}
+
+	// confirmedItems is the item-string snapshot captured atomically with the
+	// confirmed indices (under the same lock), so a resync landing between
+	// confirmation and result translation can't swap which items are reported.
+	// nil until Enter confirms; the SelectOne short-circuit leaves it nil and
+	// result falls back to translating live.
+	confirmedItems []string
 }
 
 // chromeRows returns the count of non-item rows the picker draws around the
@@ -1184,7 +1191,13 @@ func (f *finder) result(idxs []int, err error) (Result, error) {
 		return res, err
 	}
 	res.Indices = idxs
-	res.Items = f.itemsAtLocked(idxs)
+	if f.confirmedItems != nil {
+		// Snapshot taken atomically with the indices at confirmation time;
+		// prefer it over a live re-read that a resync could have shifted.
+		res.Items = f.confirmedItems
+	} else {
+		res.Items = f.itemsAtLocked(idxs)
+	}
 	return res, nil
 }
 
@@ -1201,13 +1214,7 @@ func (f *finder) query() string {
 func (f *finder) itemsAtLocked(idxs []int) []string {
 	f.stateMu.RLock()
 	defer f.stateMu.RUnlock()
-	out := make([]string, 0, len(idxs))
-	for _, i := range idxs {
-		if i >= 0 && i < len(f.state.items) {
-			out = append(out, f.state.items[i])
-		}
-	}
-	return out
+	return f.itemsForLocked(idxs)
 }
 
 // negate reports whether fzf-style '!' negative needles are enabled.
@@ -1299,16 +1306,32 @@ func (f *finder) confirmSelection() ([]int, bool) {
 		sort.Slice(idxs, func(i, j int) bool {
 			return poss[i] < poss[j]
 		})
+		f.confirmedItems = f.itemsForLocked(idxs)
 		return idxs, true
 	}
 	if !f.anySelectableLocked() {
+		f.confirmedItems = []string{}
 		return []int{}, true
 	}
 	cur := f.state.matched[f.state.y]
 	if f.unselectableLocked(cur) {
 		return nil, false
 	}
+	f.confirmedItems = f.itemsForLocked([]int{cur})
 	return []int{cur}, true
+}
+
+// itemsForLocked translates indices into their item strings against the
+// current snapshot. Out-of-range indices are dropped. Caller must hold
+// f.stateMu (read or write).
+func (f *finder) itemsForLocked(idxs []int) []string {
+	out := make([]string, 0, len(idxs))
+	for _, i := range idxs {
+		if i >= 0 && i < len(f.state.items) {
+			out = append(out, f.state.items[i])
+		}
+	}
+	return out
 }
 
 func isInTesting() bool {
