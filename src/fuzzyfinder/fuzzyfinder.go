@@ -826,12 +826,10 @@ func (f *finder) readKey(ctx context.Context) error {
 		f.term.Clear()
 
 		width, height := f.term.Size()
-		// Recompute cursorY for the new page size (strict alignment).
-		newFirstItemOffset := 2
-		if len(f.opt.Header) > 0 {
-			newFirstItemOffset = 3
-		}
-		newPageSize := height - newFirstItemOffset
+		// Recompute cursorY for the new page size (strict alignment). Use the
+		// same chrome accounting as the normal path and _draw -- the number-line
+		// shares the prompt row, so chrome above items is chromeRows(opt).
+		newPageSize := height - chromeRows(*f.opt)
 		if newPageSize > 0 {
 			f.state.cursorY = f.state.y % newPageSize
 		}
