@@ -121,3 +121,18 @@ func TestRegressionFlushSanitisesControlRunes(t *testing.T) {
 		}
 	}
 }
+
+// A 2-column rune in the last column has no room for its second half.
+// Regression: flushTo emitted it anyway; terminals disagree on what happens
+// (clip, wrap-adjacent, shift) so the grid desyncs. fzf blanks that cell;
+// litescreen must too.
+func TestRegressionWideRuneLastColumnBlanked(t *testing.T) {
+	fb := newFramebuf(4, 1)
+	wide := rune(0x3042) // hiragana 'a', 2 columns
+	fb.set(3, 0, liteCell{mainc: wide})
+	got := string(fb.flush(0, 0, 0, false))
+
+	assert.That(t, !strings.Contains(got, string(wide)),
+		"wide rune emitted in last column: %q", got)
+	assert.ContainsString(t, got, "\x1b[1;4H ", "last column blanked instead")
+}
