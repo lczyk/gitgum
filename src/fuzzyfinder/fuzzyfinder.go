@@ -969,9 +969,13 @@ func (f *finder) find(ctx context.Context, src Source, opt Opt) ([]int, error) {
 	}
 	initial := src.Snapshot()
 
-	initialized := make(chan struct{})
+	// Init before spawning the resync goroutine: on failure we return here and
+	// the goroutine is never started, so it can't outlive a failed init.
+	if err := f.initFinder(initial, opt); err != nil {
+		return nil, fmt.Errorf("failed to initialize the fuzzy finder: %w", err)
+	}
+
 	go func() {
-		<-initialized
 		ticker := time.NewTicker(30 * time.Millisecond)
 		defer ticker.Stop()
 		for {
@@ -1001,10 +1005,6 @@ func (f *finder) find(ctx context.Context, src Source, opt Opt) ([]int, error) {
 		}
 	}()
 
-	if err := f.initFinder(initial, opt); err != nil {
-		return nil, fmt.Errorf("failed to initialize the fuzzy finder: %w", err)
-	}
-	close(initialized)
 	return f.runLoop(ctx, &opt)
 }
 
