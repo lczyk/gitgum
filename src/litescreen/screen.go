@@ -378,6 +378,12 @@ func (f *framebuf) flushTo(buf *bytes.Buffer, yOrigin, cx, cy int, cursorVisible
 			if r < 0x20 || r == 0x7f {
 				r = ' '
 			}
+			// A 2-column rune in the last column has no room for its second
+			// half; terminals disagree on clip vs wrap vs shift, so blank the
+			// cell instead (fzf does the same).
+			if x == f.width-1 && runewidth.RuneWidth(r) > 1 {
+				r = ' '
+			}
 			buf.WriteRune(r)
 			for _, cr := range c.combc {
 				if cr < 0x20 || cr == 0x7f {
