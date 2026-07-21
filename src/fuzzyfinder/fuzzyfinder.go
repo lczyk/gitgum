@@ -778,6 +778,9 @@ func (f *finder) readKey(ctx context.Context) error {
 			if !f.multi {
 				return nil
 			}
+			if len(f.state.matched) == 0 {
+				return nil
+			}
 			idx := f.state.matched[f.state.y]
 			// Unselectable items can't be toggled, but Tab still advances the
 			// cursor like a normal item.
