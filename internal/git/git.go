@@ -60,21 +60,20 @@ func (r Repo) run(args ...string) (string, string, error) {
 	return strings.TrimSpace(stdout), strings.TrimSpace(stderr), err
 }
 
-// Run is the exported, transitional read-only entry point for command
-// callers migrating off cmdrun.Run("git", ...). Behaviour mirrors the old
-// cmdrun.Run: trimmed stdout/stderr, background context. Specific named
-// helpers (GetCurrentBranch, LsRemote, etc.) are preferred where they
-// exist; this exists so the chokepoint can be enforced even for one-off
-// invocations that don't yet have a dedicated helper.
+// Run is the exported read-only entry point for one-off git invocations:
+// trimmed stdout/stderr, background context. Specific named helpers
+// (GetCurrentBranch, LsRemote, etc.) are preferred where they exist; this keeps
+// every read routed through the same chokepoint even for invocations that don't
+// yet have a dedicated helper.
 func (r Repo) Run(args ...string) (string, string, error) {
 	return r.run(args...)
 }
 
 func Run(args ...string) (string, string, error) { return CWD().Run(args...) }
 
-// RunWrite is the exported, transitional write entry point. Output is
-// captured (not streamed); callers TrimSpace as needed. Use for write
-// invocations that don't need live progress (e.g. branch -d, reset --hard).
+// RunWrite is the exported write entry point. Output is captured (not
+// streamed); callers TrimSpace as needed. Use for write invocations that don't
+// need live progress (e.g. branch -d, reset --hard).
 func (r Repo) RunWrite(args ...string) (string, string, error) {
 	return r.runWrite(context.Background(), args...)
 }
