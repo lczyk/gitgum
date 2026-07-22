@@ -100,7 +100,7 @@ func (c *CloneCommand) Execute(args []string) error {
 	}
 
 	if plan.remote != "" {
-		fmt.Fprintf(c.out(), "\nCloned into %s (remote %q).\n",
+		fmt.Fprintf(c.out(), "\nCloned into %s (remote \"%s\").\n",
 			paint(ansiBoldGreen, plan.dir), paint(ansiBoldCyan, plan.remote))
 	}
 	return nil
