@@ -47,8 +47,23 @@ _gitgum() {
                         '1:bump:(patch minor major)' \
                         && ret=0
                     ;;
-                switch|branch|checkout-pr|push|delete|empty)
+                switch|branch|checkout-pr|push|pull|doctor|delete|empty)
                     _arguments \
+                        '(-h --help)'{-h,--help}'[Show help]' \
+                        && ret=0
+                    ;;
+                tree)
+                    _arguments \
+                        '--since[Limit to commits since <expr> (empty for all history)]:since:' \
+                        '(-a --all)'{-a,--all}'[Show the full history]' \
+                        '(-f --follow)'{-f,--follow}'[Follow mode: refresh every N seconds]' \
+                        '(-h --help)'{-h,--help}'[Show help]' \
+                        && ret=0
+                    ;;
+                diff)
+                    _arguments \
+                        '(-m --mode)'{-m,--mode}'[Lock to a diff level: work, index, untracked, head]:mode:(work index untracked head)' \
+                        '(-f --follow)'{-f,--follow}'[Follow mode: refresh every N seconds]' \
                         '(-h --help)'{-h,--help}'[Show help]' \
                         && ret=0
                     ;;
@@ -77,6 +92,10 @@ _gitgum_commands() {
         'completion:Output shell completion script'
         'status:Show the status of the current git repository'
         'push:Push the current branch to a remote repository'
+        "pull:Fetch and integrate the current branch's upstream"
+        'tree:Print a colored commit graph across all branches'
+        'diff:Show working-tree diff with --compact-summary'
+        "doctor:Diagnose known inconsistencies in the repo's remote/worktree layout"
         'clean:Discard working tree changes and untracked files'
         'delete:Delete a local branch and optionally its remote tracking branch'
         'replay-list:List commits on branch A since divergence from trunk B'

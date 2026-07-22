@@ -56,9 +56,12 @@ var bins = []binSpec{
 		requiredContent: []string{
 			// subcommands
 			"clone", "switch", "branch", "checkout-pr", "completion", "status", "push",
+			"pull", "tree", "diff", "doctor",
 			"clean", "delete", "replay-list", "empty", "release",
 			// clone flag
 			"depth",
+			// tree / diff flags
+			"since", "mode",
 			// clean flag names (bare so fish's `-l changes` matches too)
 			"changes", "untracked", "ignored",
 			// status flag names
@@ -71,15 +74,17 @@ var bins = []binSpec{
 			"bash", "fish", "zsh", "nu",
 		},
 		cases: []completionCase{
-			{"top-level", []string{""}, []string{"clone", "switch", "branch", "clean", "release", "replay-list"}},
+			{"top-level", []string{""}, []string{"clone", "switch", "branch", "clean", "release", "replay-list", "pull", "tree", "diff", "doctor"}},
 			{"clone flags", []string{"clone", "--"}, []string{"--depth"}},
+			{"tree flags", []string{"tree", "--"}, []string{"--since", "--all", "--follow"}},
+			{"diff flags", []string{"diff", "--"}, []string{"--mode", "--follow"}},
 			{"clean flags", []string{"clean", "--"}, []string{"--changes", "--untracked", "--ignored", "--all", "--yes"}},
 			{"status flags", []string{"status", "--"}, []string{"--flat", "--follow"}},
 			{"status sections", []string{"status", ""}, []string{"branch", "remote", "worktree", "changes", "head"}},
 			{"completion shells", []string{"completion", ""}, []string{"bash", "fish", "zsh", "nu"}},
 			{"release bumps", []string{"release", ""}, []string{"patch", "minor", "major"}},
 		},
-		nuHelpExpect: []string{"clone", "switch", "branch", "checkout-pr", "completion", "clean", "release"},
+		nuHelpExpect: []string{"clone", "switch", "branch", "checkout-pr", "completion", "clean", "release", "pull", "tree", "diff", "doctor"},
 	},
 	{
 		cmdName: "ff",

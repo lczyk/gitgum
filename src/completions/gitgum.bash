@@ -35,6 +35,18 @@ _gitgum_completion() {
             gitgum,push)
                 cmd="gitgum_push"
                 ;;
+            gitgum,pull)
+                cmd="gitgum_pull"
+                ;;
+            gitgum,tree)
+                cmd="gitgum_tree"
+                ;;
+            gitgum,diff)
+                cmd="gitgum_diff"
+                ;;
+            gitgum,doctor)
+                cmd="gitgum_doctor"
+                ;;
             gitgum,clean)
                 cmd="gitgum_clean"
                 ;;
@@ -55,12 +67,22 @@ _gitgum_completion() {
 
     case "${cmd}" in
         gitgum)
-            opts="-h --help -v --version clone switch branch checkout-pr completion status push clean delete replay-list empty release"
+            opts="-h --help -v --version clone switch branch checkout-pr completion status push pull tree diff doctor clean delete replay-list empty release"
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        gitgum_switch|gitgum_branch|gitgum_checkout_pr|gitgum_push|gitgum_delete|gitgum_empty)
+        gitgum_switch|gitgum_branch|gitgum_checkout_pr|gitgum_push|gitgum_pull|gitgum_doctor|gitgum_delete|gitgum_empty)
             opts="-h --help"
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gitgum_tree)
+            opts="--since --all -a --follow -f -h --help"
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gitgum_diff)
+            opts="--mode -m --follow -f -h --help"
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;

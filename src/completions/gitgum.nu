@@ -56,6 +56,27 @@ module completions {
     --help(-h)               # Show help
   ]
 
+  export extern "__GITGUM_CMD__ pull" [
+    --help(-h)               # Show help
+  ]
+
+  export extern "__GITGUM_CMD__ tree" [
+    --since: string          # Limit to commits since <expr> (empty for all history)
+    --all(-a)                # Show the full history
+    --follow(-f): float      # Follow mode: refresh every N seconds
+    --help(-h)               # Show help
+  ]
+
+  export extern "__GITGUM_CMD__ diff" [
+    --mode(-m): string       # Lock to a diff level: work, index, untracked, head
+    --follow(-f): float      # Follow mode: refresh every N seconds
+    --help(-h)               # Show help
+  ]
+
+  export extern "__GITGUM_CMD__ doctor" [
+    --help(-h)               # Show help
+  ]
+
   export extern "__GITGUM_CMD__ clean" [
     --changes                # Discard staged and unstaged changes (default: true)
     --untracked              # Remove untracked files (default: true)
