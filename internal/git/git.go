@@ -212,6 +212,18 @@ func (r Repo) GetCommitHash(ref string) (string, error) {
 	return stdout, err
 }
 
+// EmptyTree returns the object id of the repo's empty tree, computed for its
+// hash algorithm (works for both sha1 and sha256 repos, unlike hardcoding the
+// well-known sha1 value). Diffing it against HEAD yields every tracked file as
+// an addition -- the whole-tree diffstat gg clone prints.
+func (r Repo) EmptyTree() (string, error) {
+	stdout, stderr, err := r.run("hash-object", "-t", "tree", "/dev/null")
+	if err != nil {
+		return "", fmt.Errorf("git hash-object empty tree: %w: %s", err, stderr)
+	}
+	return stdout, nil
+}
+
 // BranchExists checks if a local branch exists.
 func (r Repo) BranchExists(branch string) bool {
 	stdout, _, err := r.run("branch", "--list", branch, "--format=%(refname:short)")

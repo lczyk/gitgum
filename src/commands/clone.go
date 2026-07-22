@@ -85,12 +85,16 @@ func (c *CloneCommand) Execute(args []string) error {
 		return fmt.Errorf("git clone failed: %w\n%s", err, stderr)
 	}
 
-	// Show the tip commit's compact summary -- the same coloured diffstat
-	// `gg pull` prints, orienting you to the latest change in the fresh clone.
-	// Best-effort: a root-only or --depth 1 clone has no HEAD~1, so skip quietly.
+	// Show the whole tree's compact diffstat -- every file as an addition,
+	// diffed against the (runtime-resolved) empty tree -- the same coloured
+	// summary `gg pull` prints, so you see the shape of what you just cloned.
+	// Best-effort: a diagnostic hiccup never fails a successful clone.
 	if plan.dir != "" {
-		if summary, derr := compactSummary(git.Repo{Dir: plan.dir}, "HEAD~1..HEAD"); derr == nil && summary != "" {
-			fmt.Fprintln(c.out(), summary)
+		cloned := git.Repo{Dir: plan.dir}
+		if empty, err := cloned.EmptyTree(); err == nil {
+			if summary, derr := compactSummary(cloned, empty, "HEAD"); derr == nil && summary != "" {
+				fmt.Fprintln(c.out(), summary)
+			}
 		}
 	}
 
