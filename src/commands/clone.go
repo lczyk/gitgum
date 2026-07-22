@@ -85,6 +85,15 @@ func (c *CloneCommand) Execute(args []string) error {
 		return fmt.Errorf("git clone failed: %w\n%s", err, stderr)
 	}
 
+	// Show the tip commit's compact summary -- the same coloured diffstat
+	// `gg pull` prints, orienting you to the latest change in the fresh clone.
+	// Best-effort: a root-only or --depth 1 clone has no HEAD~1, so skip quietly.
+	if plan.dir != "" {
+		if summary, derr := compactSummary(git.Repo{Dir: plan.dir}, "HEAD~1..HEAD"); derr == nil && summary != "" {
+			fmt.Fprintln(c.out(), summary)
+		}
+	}
+
 	if plan.remote != "" {
 		fmt.Fprintf(c.out(), "\nCloned into %s (remote %q).\n",
 			paint(ansiBoldGreen, plan.dir), paint(ansiBoldCyan, plan.remote))
