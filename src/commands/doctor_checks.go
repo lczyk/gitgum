@@ -10,9 +10,10 @@ import (
 	"github.com/lczyk/gitgum/internal/git"
 )
 
-// checkRemoteNaming enforces gg's opinion that a github remote is named after
-// its user/org (nsklikas), not "origin". Non-github or unparseable urls can't be
-// judged, so they surface as warnings rather than violations.
+// checkRemoteNaming enforces gg's opinion that a remote on a known forge is
+// named after its user/org (nsklikas), not "origin". Urls on an unmodelled
+// forge (or unparseable ones) can't be judged, so they surface as warnings
+// rather than violations.
 func checkRemoteNaming(r git.Repo) []Finding {
 	remotes, err := r.GetRemotes()
 	if err != nil {
@@ -27,16 +28,16 @@ func checkRemoteNaming(r git.Repo) []Finding {
 				Message: fmt.Sprintf("could not read url for remote %q: %v", name, err)})
 			continue
 		}
-		user, _, ok := git.ParseGitHubURL(url)
-		if !ok {
+		ref, ok := git.ParseRepoRef(url)
+		if !ok || ref.Forge == git.ForgeUnknown {
 			out = append(out, Finding{Check: "remote-naming", Severity: SevWarning,
 				Message: fmt.Sprintf("remote %q has an unrecognised url %q; cannot verify its name", name, url)})
 			continue
 		}
-		if name != user {
+		if name != ref.User {
 			out = append(out, Finding{Check: "remote-naming", Severity: SevFixable,
-				Message: fmt.Sprintf("remote %q points at github user %q but is not named after it", name, user),
-				Fix:     fmt.Sprintf("git remote rename %s %s", name, user)})
+				Message: fmt.Sprintf("remote %q points at %s user %q but is not named after it", name, ref.Forge, ref.User),
+				Fix:     fmt.Sprintf("git remote rename %s %s", name, ref.User)})
 		}
 	}
 	return out
@@ -155,8 +156,8 @@ func canonicalRepoName(r git.Repo) (name string, ok bool, findings []Finding) {
 		if err != nil {
 			continue
 		}
-		if _, repo, ok := git.ParseGitHubURL(url); ok {
-			seen[repo] = true
+		if ref, ok := git.ParseRepoRef(url); ok && ref.Forge != git.ForgeUnknown {
+			seen[ref.Repo] = true
 		}
 	}
 	switch len(seen) {
