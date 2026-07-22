@@ -3,10 +3,73 @@ package commands
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 
 	"github.com/lczyk/gitgum/internal/git"
+	"github.com/lczyk/gitgum/internal/strutil"
 )
+
+var (
+	prRegex          = regexp.MustCompile(`^[a-f0-9]+\s+refs/pull/(\d+)/(head|merge)$`)
+	prSelectionRegex = regexp.MustCompile(`^PR #(\d+) \((head|merge)\)$`)
+)
+
+// PRRef is a pull request advertised by a remote (from git ls-remote).
+type PRRef struct {
+	Number int
+	Type   string // "head" or "merge"
+}
+
+// parsePRRefs extracts PR refs from git ls-remote output. When both head and
+// merge exist for a PR, head wins.
+func parsePRRefs(lsRemoteOutput string) []PRRef {
+	prMap := make(map[int]PRRef)
+
+	for _, line := range strutil.SplitLines(lsRemoteOutput) {
+		matches := prRegex.FindStringSubmatch(line)
+		if len(matches) != 3 {
+			continue
+		}
+		prNumber, _ := strconv.Atoi(matches[1]) // regex guarantees \d+
+		prType := matches[2]
+
+		existing, found := prMap[prNumber]
+		if !found || (existing.Type == "merge" && prType == "head") {
+			prMap[prNumber] = PRRef{Number: prNumber, Type: prType}
+		}
+	}
+
+	prRefs := make([]PRRef, 0, len(prMap))
+	for _, pr := range prMap {
+		prRefs = append(prRefs, pr)
+	}
+	sort.Slice(prRefs, func(i, j int) bool {
+		return prRefs[i].Number > prRefs[j].Number
+	})
+
+	return prRefs
+}
+
+// formatPROptions renders PR refs as picker labels ("PR #N (head)").
+func formatPROptions(prRefs []PRRef) []string {
+	options := make([]string, len(prRefs))
+	for i, pr := range prRefs {
+		options[i] = fmt.Sprintf("PR #%d (%s)", pr.Number, pr.Type)
+	}
+	return options
+}
+
+// parsePRSelection recovers the PR number and type from a picker label.
+func parsePRSelection(selection string) (int, string, error) {
+	matches := prSelectionRegex.FindStringSubmatch(selection)
+	if len(matches) != 3 {
+		return 0, "", fmt.Errorf("invalid PR selection format: %s", selection)
+	}
+	prNumber, _ := strconv.Atoi(matches[1]) // regex guarantees \d+
+	prType := matches[2]
+	return prNumber, prType, nil
+}
 
 // PR branches (from `gg checkout-pr`) are named pr/<remote>/<number> so the row
 // reads as a PR at a glance, and carry the same identity in repo-local config

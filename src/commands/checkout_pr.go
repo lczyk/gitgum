@@ -3,25 +3,12 @@ package commands
 import (
 	"errors"
 	"fmt"
-	"regexp"
-	"sort"
-	"strconv"
-
-	"github.com/lczyk/gitgum/internal/strutil"
 )
 
-var (
-	prRegex          = regexp.MustCompile(`^[a-f0-9]+\s+refs/pull/(\d+)/(head|merge)$`)
-	prSelectionRegex = regexp.MustCompile(`^PR #(\d+) \((head|merge)\)$`)
-)
-
+// CheckoutPRCommand is the interactive dispatcher: pick a remote, pick a PR,
+// check it out. The pure PR-ref listing/parsing it drives lives in pr.go.
 type CheckoutPRCommand struct {
 	cmdIO
-}
-
-type PRRef struct {
-	Number int
-	Type   string // "head" or "merge"
 }
 
 func (c *CheckoutPRCommand) Execute(args []string) error {
@@ -79,55 +66,6 @@ func (c *CheckoutPRCommand) getPRRefs(remote string) ([]PRRef, error) {
 	}
 
 	return parsePRRefs(stdout), nil
-}
-
-// parsePRRefs extracts PR refs from `git ls-remote` output.
-// when both head and merge exist for a PR, head wins.
-func parsePRRefs(lsRemoteOutput string) []PRRef {
-	prMap := make(map[int]PRRef)
-
-	for _, line := range strutil.SplitLines(lsRemoteOutput) {
-		matches := prRegex.FindStringSubmatch(line)
-		if len(matches) != 3 {
-			continue
-		}
-		prNumber, _ := strconv.Atoi(matches[1]) // regex guarantees \d+
-		prType := matches[2]
-
-		existing, found := prMap[prNumber]
-		if !found || (existing.Type == "merge" && prType == "head") {
-			prMap[prNumber] = PRRef{Number: prNumber, Type: prType}
-		}
-	}
-
-	prRefs := make([]PRRef, 0, len(prMap))
-	for _, pr := range prMap {
-		prRefs = append(prRefs, pr)
-	}
-	sort.Slice(prRefs, func(i, j int) bool {
-		return prRefs[i].Number > prRefs[j].Number
-	})
-
-	return prRefs
-}
-
-func formatPROptions(prRefs []PRRef) []string {
-	options := make([]string, len(prRefs))
-	for i, pr := range prRefs {
-		options[i] = fmt.Sprintf("PR #%d (%s)", pr.Number, pr.Type)
-	}
-	return options
-}
-
-func parsePRSelection(selection string) (int, string, error) {
-	matches := prSelectionRegex.FindStringSubmatch(selection)
-	if len(matches) != 3 {
-		return 0, "", fmt.Errorf("invalid PR selection format: %s", selection)
-	}
-
-	prNumber, _ := strconv.Atoi(matches[1]) // regex guarantees \d+
-	prType := matches[2]
-	return prNumber, prType, nil
 }
 
 func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType string) error {
