@@ -45,6 +45,9 @@ eval "$(gitgum completion bash)"
 
 # Zsh
 eval "$(gitgum completion zsh)"
+
+# Nushell (append to $nu.env-path, then `use` it)
+gitgum completion nu | save -f ~/.gitgum-completions.nu
 ```
 
 ## Commands
