@@ -2,59 +2,9 @@ package commands
 
 import (
 	"strings"
+
+	"github.com/lczyk/gitgum/internal/git"
 )
-
-// worktreeInfo is one entry parsed out of `git worktree list --porcelain`.
-type worktreeInfo struct {
-	path     string
-	head     string // full sha; "" for a bare entry
-	branch   string // short branch name; "" when detached or bare
-	detached bool
-	bare     bool
-}
-
-// parseWorktreePorcelain parses `git worktree list --porcelain` output:
-//
-//	worktree /path/to/main
-//	HEAD 26c3916...
-//	branch refs/heads/main
-//
-//	worktree /path/to/other
-//	HEAD abc1234...
-//	detached
-//
-// Entries are separated by blank lines; unknown attributes (locked,
-// prunable) are ignored.
-func parseWorktreePorcelain(raw string) []worktreeInfo {
-	var out []worktreeInfo
-	var cur *worktreeInfo
-	flush := func() {
-		if cur != nil {
-			out = append(out, *cur)
-			cur = nil
-		}
-	}
-	for line := range strings.SplitSeq(raw, "\n") {
-		line = strings.TrimRight(line, "\r")
-		switch {
-		case strings.HasPrefix(line, "worktree "):
-			flush()
-			cur = &worktreeInfo{path: strings.TrimPrefix(line, "worktree ")}
-		case cur == nil:
-			// stray line before the first worktree stanza
-		case strings.HasPrefix(line, "HEAD "):
-			cur.head = strings.TrimPrefix(line, "HEAD ")
-		case strings.HasPrefix(line, "branch "):
-			cur.branch = strings.TrimPrefix(strings.TrimPrefix(line, "branch "), "refs/heads/")
-		case line == "detached":
-			cur.detached = true
-		case line == "bare":
-			cur.bare = true
-		}
-	}
-	flush()
-	return out
-}
 
 // remoteSlashBranch renders a branch and its tracking remote in the shape
 // `gg switch` uses: "(remote/)branch". Parens bold yellow, remote bold red,
@@ -75,25 +25,25 @@ func remoteSlashBranch(remote, branch string, color bool) string {
 // shape `gg switch` uses for its status line: "(remote/)branch" when the
 // branch tracks a remote, bare branch name otherwise, "(detached HEAD)" /
 // "(bare)" for the special states.
-func worktreeBranchDisplay(wt worktreeInfo, trackingRemote string, color bool) string {
+func worktreeBranchDisplay(wt git.Worktree, trackingRemote string, color bool) string {
 	switch {
-	case wt.bare:
+	case wt.Bare:
 		if color {
 			return ansiBoldYellow + "(bare)" + ansiReset
 		}
 		return "(bare)"
-	case wt.detached:
+	case wt.Detached:
 		if color {
 			return ansiBoldCyan + "(detached HEAD)" + ansiReset
 		}
 		return "(detached HEAD)"
 	case trackingRemote != "":
-		return remoteSlashBranch(trackingRemote, wt.branch, color)
+		return remoteSlashBranch(trackingRemote, wt.Branch, color)
 	default:
 		if color {
-			return ansiBoldGreen + wt.branch + ansiReset
+			return ansiBoldGreen + wt.Branch + ansiReset
 		}
-		return wt.branch
+		return wt.Branch
 	}
 }
 
@@ -103,8 +53,8 @@ func worktreeBranchDisplay(wt worktreeInfo, trackingRemote string, color bool) s
 //	row 1: marker path hash
 //	row 2: checked-out ref, switch-style (indented)
 //	row 3: commit subject (indented, skipped when absent)
-func formatWorktreeRows(wt worktreeInfo, current bool, trackingRemote, subject string, color bool) []string {
-	hash := wt.head
+func formatWorktreeRows(wt git.Worktree, current bool, trackingRemote, subject string, color bool) []string {
+	hash := wt.Head
 	if len(hash) > 7 {
 		hash = hash[:7]
 	}
@@ -121,9 +71,9 @@ func formatWorktreeRows(wt worktreeInfo, current bool, trackingRemote, subject s
 	}
 	row1.WriteByte(' ')
 	if color {
-		row1.WriteString(ansiBoldGreen + wt.path + ansiReset)
+		row1.WriteString(ansiBoldGreen + wt.Path + ansiReset)
 	} else {
-		row1.WriteString(wt.path)
+		row1.WriteString(wt.Path)
 	}
 	if hash != "" {
 		row1.WriteByte(' ')

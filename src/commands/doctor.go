@@ -123,12 +123,11 @@ func checkUpstreams(r git.Repo) []Finding {
 //     worktrees of this repo (likely stray clones). Names only -- siblings are
 //     never opened.
 func checkLayout(r git.Repo) []Finding {
-	stdout, _, err := r.Run("worktree", "list", "--porcelain")
+	wts, err := r.Worktrees()
 	if err != nil {
 		return []Finding{{Check: "worktree-parent", Severity: SevWarning,
 			Message: fmt.Sprintf("could not list worktrees: %v", err)}}
 	}
-	wts := parseWorktreePorcelain(stdout)
 	if len(wts) == 0 {
 		return nil
 	}
@@ -136,15 +135,15 @@ func checkLayout(r git.Repo) []Finding {
 	repoName, nameOK, out := canonicalRepoName(r)
 
 	// The main worktree is listed first; its parent is the canonical home dir.
-	mainParent := filepath.Dir(wts[0].path)
+	mainParent := filepath.Dir(wts[0].Path)
 	wtPaths := map[string]bool{}
 	parents := map[string][]string{}
 
 	for _, wt := range wts {
-		if wt.bare {
+		if wt.Bare {
 			continue
 		}
-		clean := filepath.Clean(wt.path)
+		clean := filepath.Clean(wt.Path)
 		wtPaths[clean] = true
 		parent := filepath.Dir(clean)
 		parents[parent] = append(parents[parent], filepath.Base(clean))
