@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
-	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/src/litescreen"
 )
 
@@ -152,26 +151,6 @@ func doCountUntrackedLines(path string) numstat {
 		lines++
 	}
 	return numstat{added: lines}
-}
-
-// compactSummary runs `git diff --compact-summary` with the extra args (paths,
-// ranges, --cached, ...), coloured per the environment. Repo.Run TrimSpaces
-// stdout, eating the leading space git emits on every row; it is restored so
-// the first row aligns with the rest. Empty diff -> "" (no leading space).
-func compactSummary(r git.Repo, extra ...string) (string, error) {
-	colorFlag := "--color=never"
-	if colorEnabled() {
-		colorFlag = "--color=always"
-	}
-	args := append([]string{"diff", "--compact-summary", colorFlag}, extra...)
-	out, _, err := r.Run(args...)
-	if err != nil {
-		return "", err
-	}
-	if out == "" {
-		return "", nil
-	}
-	return " " + out, nil
 }
 
 func (d *DiffCommand) collectDiff(level string) (string, error) {
