@@ -139,11 +139,12 @@ func (s *SwitchCommand) Execute(args []string) error {
 }
 
 func (s *SwitchCommand) applySelection(selected string) error {
-	// Picking the branch you're already on (the HEAD row) means "update it":
-	// run the same flow as `gg pull`, which includes PR-branch handling.
+	// Every landing ends the same way: be on the branch, then bring it up to
+	// date via the shared pull flow (fetch + offer to integrate, PR-aware). The
+	// HEAD row is just the case where the checkout is a no-op -- you're already
+	// there -- so it goes straight to the update.
 	if strings.Contains(selected, currentBranchMarker) {
-		pull := &PullCommand{cmdIO: s.cmdIO}
-		return pull.Execute(nil)
+		return s.pullCurrent()
 	}
 
 	typ, name, err := parseBranchEntry(selected)
@@ -157,7 +158,7 @@ func (s *SwitchCommand) applySelection(selected string) error {
 			return err
 		}
 		fmt.Fprintf(s.out(), "Switched to branch '%s'.\n", name)
-		return nil
+		return s.pullCurrent()
 	case "local/remote":
 		branch, ok := localRemoteBranch(name)
 		if !ok {
@@ -167,8 +168,7 @@ func (s *SwitchCommand) applySelection(selected string) error {
 			return err
 		}
 		fmt.Fprintf(s.out(), "Switched to branch '%s'.\n", branch)
-		s.warnIfRemoteUnreachable(branch)
-		return nil
+		return s.pullCurrent()
 	case "remote":
 		remoteParts := strings.SplitN(name, "/", 2)
 		if len(remoteParts) != 2 {
@@ -178,4 +178,25 @@ func (s *SwitchCommand) applySelection(selected string) error {
 	default:
 		return fmt.Errorf("unknown branch type: %s", typ)
 	}
+}
+
+// pullCurrent updates the branch currently checked out via the shared pull
+// flow. A branch with no upstream (a purely local branch, never pushed) isn't
+// an error here -- there's simply nothing to pull -- so errNoUpstream is
+// reported and swallowed. PR branches and branches with an upstream integrate
+// as `gg pull` would.
+func (s *SwitchCommand) pullCurrent() error {
+	branch, err := s.repo().GetCurrentBranch()
+	if err != nil {
+		return fmt.Errorf("getting current branch: %w", err)
+	}
+	pull := &PullCommand{cmdIO: s.cmdIO}
+	if err := pull.pullBranch(branch); err != nil {
+		if errors.Is(err, errNoUpstream) {
+			fmt.Fprintf(s.out(), "Branch '%s' has no upstream; nothing to pull.\n", branch)
+			return nil
+		}
+		return err
+	}
+	return nil
 }

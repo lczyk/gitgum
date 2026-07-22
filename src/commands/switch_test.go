@@ -47,6 +47,37 @@ func TestApplySelection_Local(t *testing.T) {
 	assert.ContainsString(t, buf.String(), "Switched to branch 'feature'.")
 }
 
+// Selecting the branch you're already on (the HEAD row) pulls it: a branch
+// behind its upstream fast-forwards.
+func TestApplySelection_HEADFastForwards(t *testing.T) {
+	t.Parallel()
+	local, remote := temp_repo.NewRepoWithRemote(t)
+	remoteHead := advanceRemote(t, remote, "feature.txt", "x", "feat: upstream commit")
+
+	var buf strings.Builder
+	s := &SwitchCommand{cmdIO: cmdIO{Out: &buf, UI: &stubSelector{}, Repo: git.Repo{Dir: local}}}
+	// any payload carrying the HEAD marker routes to the pull-current path.
+	err := s.applySelection("local/remote: origin/main" + currentBranchMarker)
+	require.NoError(t, err)
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, local, "rev-parse", "HEAD")), remoteHead)
+}
+
+// Switching to a purely local branch (no upstream) still succeeds -- there's
+// nothing to pull, and that's not an error.
+func TestApplySelection_LocalNoUpstreamBenign(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "branch", "feature")
+
+	var buf strings.Builder
+	s := &SwitchCommand{cmdIO: cmdIO{Out: &buf, UI: &stubSelector{}, Repo: git.Repo{Dir: dir}}}
+	err := s.applySelection("local: feature")
+	require.NoError(t, err)
+	assert.Equal(t, currentBranchIn(t, dir), "feature")
+	assert.ContainsString(t, buf.String(), "Switched to branch 'feature'.")
+	assert.ContainsString(t, buf.String(), "nothing to pull")
+}
+
 func TestApplySelection_RemoteInvalidFormat(t *testing.T) {
 	t.Parallel()
 	s := &SwitchCommand{}
