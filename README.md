@@ -51,7 +51,7 @@ eval "$(gitgum completion zsh)"
 
 ### `gitgum clone URL [DIR]`
 
-Clone a repository like `git clone`, but pre-applying the `gg doctor` opinions so a fresh clone is already clean: the remote is named after the forge user/org (e.g. `canonical`) rather than `origin`, and the clone lands in a directory named exactly after the repo.
+Clone a repository like `git clone`, but pre-applying the [`gg doctor`](#gitgum-doctor) opinions so a fresh clone is already clean: the remote is named after the forge user/org (e.g. `canonical`) rather than `origin`, and the clone lands in a directory named exactly after the repo.
 
 It accepts the ways a repo can be spelled and normalises them:
 
@@ -112,6 +112,10 @@ git log --graph --oneline --all --decorate   # then reverse + flip diagonals
 ```
 Defaults to the last two weeks. Override with `--since=<expr>` (any value `git log --since` accepts: `1m`, `yesterday`, `2024-01-01`, `"3 weeks ago"`). Pass `--since=` (empty), or `--all` / `-a`, for the full history. Pass `--follow` / `-f` (optional `=N` interval) for an auto-refreshing alt-screen view with `j/k g/G` scroll.
 
+### `gitgum diff`
+
+Show the working-tree diff as a coloured `--compact-summary` (a diffstat), not a full patch. With no `--mode` it auto-cascades work -> index -> untracked -> head and shows the first non-empty level, so `gg diff` surfaces whatever there is to look at. `--mode` / `-m` locks to one level: `work` (unstaged), `index` (staged), `untracked`, or `head` (last commit). Pass `--follow` / `-f` (optional `=N` interval) for an auto-refreshing alt-screen view where number keys and `tab` pick and pin which levels are shown.
+
 ### `gitgum push`
 
 Push the current branch. Picks a remote interactively when the branch has no upstream, or confirms a push to the existing tracking branch.
@@ -157,9 +161,21 @@ Bump `VERSION` (or fall back to the latest `vX.Y.Z` tag), commit, and create an 
 
 Before committing, scans every tracked text file for lines mentioning the current version (line contains the word "version" + a boundaried token match), and offers them in a multi-select picker. Picked lines get a plain string-replace bump (no language-specific parsing) and ride in the release commit. Esc / no picks skips the auto-edits; the release proceeds either way. Binary files and files larger than 4 MiB are soft-skipped.
 
-### `gitgum completion fish|bash|zsh`
+### `gitgum completion fish|bash|zsh|nu`
 
 Print the shell completion script for the given shell.
+
+### `gitgum doctor`
+
+Diagnose known inconsistencies in the repo's remote / worktree layout and branch naming. Diagnose-only: it prints findings and always exits 0, never changing anything. Each finding is `fixable` (a deterministic issue, with a suggested command printed underneath) or `warning` (something gg can't safely resolve for you). A clean repo prints `no issues found.` The checks:
+
+- `remote-naming` -- a remote on a known forge (github, gitlab, codeberg) should be named after its user/org, not `origin` (fixable rename).
+- `upstream-consistency` -- local branches should all track a single remote (warning).
+- `dir-naming` / `worktree-parent` / `adjacent-worktree` -- worktree dirs should match `<repo>` / `<repo>-N`, sit next to the main worktree, and sibling dirs matching that pattern that aren't worktrees of this repo are flagged as likely stray clones.
+- `pr-branch-naming` -- a branch from the old `pr-N` scheme should be renamed to `pr/<remote>/<number>` (see [`checkout-pr`](#gitgum-checkout-pr)); fixable when the remote is unambiguous (a sole remote, or a sole forge remote), a warning otherwise.
+- `prunable-worktree` -- a registered worktree whose directory is gone (fixable by pruning).
+- `gone-upstream` -- a branch whose upstream was deleted on the remote (warning).
+- `duplicate-remote` -- two remotes pointing at the same url (warning).
 
 ## `fuzzyfinder` (`ff`) — the standalone CLI
 
@@ -178,11 +194,11 @@ Flags: `-m`/`--multi`, `-q`/`--query`, `-p`/`--prompt`, `--header`, `-1`/`--sele
 
 - [`cmd/gitgum`](cmd/gitgum) — gitgum binary entry point
 - [`cmd/fuzzyfinder`](cmd/fuzzyfinder) — `ff` binary entry point
-- [`src/commands`](src/commands) — one file per subcommand, each implements `flags.Commander`
+- [`src/commands`](src/commands) -- one subcommand per `flags.Commander`, split across one or more files (dispatch separate from core logic where it earns its keep)
 - [`src/fuzzyfinder`](src/fuzzyfinder) — picker library (originally a fork of `ktr0731/go-fuzzyfinder`, now substring-only matching and a custom renderer)
 - [`src/litescreen`](src/litescreen) — standalone tcell-free ANSI renderer; powers inline (`--height`) mode
 - [`internal/git`](internal/git) — git operations (the `Repo` type for parallel-safe tests, plus CWD-based free functions)
-- [`internal/cmdrun`](internal/cmdrun) — small `exec.Command` wrappers
+- [`internal/doctor`](internal/doctor) -- repo-health rules and the `Diagnose` engine behind `gg doctor` (presentation-free)
 - [`internal/ui`](internal/ui) — picker helpers (`Select`, `Confirm`, `ErrCancelled`)
 - [`internal/strutil`](internal/strutil) — string helpers
 - [`internal/testutil/temp_repo`](internal/testutil/temp_repo) — test fixtures
