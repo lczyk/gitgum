@@ -9,6 +9,7 @@ type Worktree struct {
 	Branch   string // short branch name; "" when detached or bare
 	Detached bool
 	Bare     bool
+	Prunable bool // registered but its gitdir/worktree is gone (git worktree prune candidate)
 }
 
 // Worktrees lists the repo's worktrees (the main worktree first, as git orders
@@ -61,6 +62,8 @@ func ParseWorktreePorcelain(raw string) []Worktree {
 			cur.Detached = true
 		case line == "bare":
 			cur.Bare = true
+		case line == "prunable" || strings.HasPrefix(line, "prunable "):
+			cur.Prunable = true
 		}
 	}
 	flush()

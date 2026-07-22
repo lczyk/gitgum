@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/lczyk/gitgum/internal/git"
@@ -42,6 +43,10 @@ var doctorChecks = []func(git.Repo) []Finding{
 	checkRemoteNaming,
 	checkUpstreams,
 	checkLayout,
+	checkPRBranchNaming,
+	checkPrunableWorktrees,
+	checkGoneUpstreams,
+	checkDuplicateRemotes,
 }
 
 // Diagnose runs every doctor check against r and returns the combined findings
@@ -137,8 +142,8 @@ func checkLayout(r git.Repo) []Finding {
 	parents := map[string][]string{}
 
 	for _, wt := range wts {
-		if wt.Bare {
-			continue
+		if wt.Bare || wt.Prunable {
+			continue // bare has no worktree dir; prunable's path is stale
 		}
 		clean := filepath.Clean(wt.Path)
 		wtPaths[clean] = true
@@ -233,6 +238,152 @@ func MatchesRepoDir(base, repo string) bool {
 		}
 	}
 	return true
+}
+
+// checkPRBranchNaming flags local branches using the old "pr-N" scheme (gg now
+// names PR branches pr/<remote>/<number>). When the remote is unambiguous -- a
+// sole remote, or a sole forge remote -- it's fixable with a rename; the new
+// name lets readPRMeta's name fallback drive gg pull. With several remotes the
+// remote can't be inferred, so it's a warning.
+func checkPRBranchNaming(r git.Repo) []Finding {
+	branches, err := r.GetLocalBranches()
+	if err != nil {
+		return []Finding{{Check: "pr-branch-naming", Severity: SevWarning,
+			Message: fmt.Sprintf("could not list branches: %v", err)}}
+	}
+	var numbers []int
+	var names []string
+	for _, b := range branches {
+		if n, ok := oldPRNumber(b); ok {
+			numbers = append(numbers, n)
+			names = append(names, b)
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+
+	remote, remoteOK := singleForgeRemote(r)
+	var out []Finding
+	for i, b := range names {
+		if remoteOK {
+			newName := fmt.Sprintf("pr/%s/%d", remote, numbers[i])
+			out = append(out, Finding{Check: "pr-branch-naming", Severity: SevFixable,
+				Message: fmt.Sprintf("branch %q uses the old pr-N naming; gg now names PR branches pr/<remote>/<number>", b),
+				Fix:     fmt.Sprintf("git branch -m %s %s", b, newName)})
+		} else {
+			out = append(out, Finding{Check: "pr-branch-naming", Severity: SevWarning,
+				Message: fmt.Sprintf("branch %q uses the old pr-N naming; rename to pr/<remote>/%d (which remote is ambiguous -- several configured)", b, numbers[i])})
+		}
+	}
+	return out
+}
+
+// oldPRNumber returns the PR number if b is exactly "pr-<digits>" (the old gg
+// PR branch scheme), and whether it matched.
+func oldPRNumber(b string) (int, bool) {
+	rest, ok := strings.CutPrefix(b, "pr-")
+	if !ok || rest == "" {
+		return 0, false
+	}
+	n, err := strconv.Atoi(rest)
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return n, true
+}
+
+// singleForgeRemote returns the remote to rename a PR branch against: the sole
+// remote if there's exactly one, else the sole forge remote if exactly one.
+// ok is false when the choice is ambiguous.
+func singleForgeRemote(r git.Repo) (string, bool) {
+	remotes, err := r.GetRemotes()
+	if err != nil {
+		return "", false
+	}
+	if len(remotes) == 1 {
+		return remotes[0], true
+	}
+	var forge []string
+	for _, name := range remotes {
+		url, err := r.RemoteURL(name)
+		if err != nil {
+			continue
+		}
+		if ref, ok := git.ParseRepoRef(url); ok && ref.Forge != git.ForgeUnknown {
+			forge = append(forge, name)
+		}
+	}
+	if len(forge) == 1 {
+		return forge[0], true
+	}
+	return "", false
+}
+
+// checkPrunableWorktrees flags worktrees git has marked prunable (registered but
+// their dir is gone). One prune clears them all.
+func checkPrunableWorktrees(r git.Repo) []Finding {
+	wts, err := r.Worktrees()
+	if err != nil {
+		return nil // checkLayout already surfaces a failed worktree listing
+	}
+	var stale []string
+	for _, wt := range wts {
+		if wt.Prunable {
+			stale = append(stale, wt.Path)
+		}
+	}
+	if len(stale) == 0 {
+		return nil
+	}
+	sort.Strings(stale)
+	return []Finding{{Check: "prunable-worktree", Severity: SevFixable,
+		Message: fmt.Sprintf("registered worktree(s) no longer on disk: %s", strings.Join(stale, ", ")),
+		Fix:     "git worktree prune"}}
+}
+
+// checkGoneUpstreams warns about branches whose upstream was deleted on the
+// remote. Whether to unset tracking or delete the branch is intent gg can't
+// guess, so it's unfixable.
+func checkGoneUpstreams(r git.Repo) []Finding {
+	gone, err := r.GoneUpstreams()
+	if err != nil {
+		return nil // checkUpstreams surfaces branch-listing failures
+	}
+	var out []Finding
+	for _, b := range gone {
+		out = append(out, Finding{Check: "gone-upstream", Severity: SevWarning,
+			Message: fmt.Sprintf("branch %q tracks an upstream that no longer exists on the remote; unset it (git branch --unset-upstream %s) or delete the branch", b, b)})
+	}
+	return out
+}
+
+// checkDuplicateRemotes warns when two remotes point at the same url -- usually
+// a leftover from a rename that added rather than renamed.
+func checkDuplicateRemotes(r git.Repo) []Finding {
+	remotes, err := r.GetRemotes()
+	if err != nil {
+		return nil // remote-naming surfaces remote-listing failures
+	}
+	byURL := map[string][]string{}
+	for _, name := range remotes {
+		url, err := r.RemoteURL(name)
+		if err != nil {
+			continue
+		}
+		byURL[url] = append(byURL[url], name)
+	}
+	var out []Finding
+	for _, url := range sortedKeys(toSet(byURL)) {
+		names := byURL[url]
+		if len(names) < 2 {
+			continue
+		}
+		sort.Strings(names)
+		out = append(out, Finding{Check: "duplicate-remote", Severity: SevWarning,
+			Message: fmt.Sprintf("remotes %s point at the same url %q", strings.Join(names, ", "), url)})
+	}
+	return out
 }
 
 func sortedKeys(m map[string]bool) []string {

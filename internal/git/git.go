@@ -131,6 +131,26 @@ func (r Repo) GetLocalBranches() ([]string, error) {
 	return branches, nil
 }
 
+// GoneUpstreams returns local branches whose configured upstream no longer
+// exists on the remote -- git marks these "[gone]" in %(upstream:track). A
+// branch with no upstream, or one that's merely ahead/behind, is not returned.
+func (r Repo) GoneUpstreams() ([]string, error) {
+	stdout, _, err := r.run("for-each-ref", "--format=%(refname:short) %(upstream:track)", "refs/heads")
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, line := range strings.Split(stdout, "\n") {
+		line = strings.TrimSpace(line)
+		// A gone branch's line is "<name> [gone]"; branch names can't contain
+		// spaces, so trimming the suffix leaves the bare name.
+		if name, ok := strings.CutSuffix(line, " [gone]"); ok && name != "" {
+			out = append(out, name)
+		}
+	}
+	return out, nil
+}
+
 // GetRemotes returns a list of git remotes.
 func (r Repo) GetRemotes() ([]string, error) {
 	stdout, _, err := r.run("remote")

@@ -156,6 +156,86 @@ func TestCheckLayout_CleanNoGithubRemote(t *testing.T) {
 	assert.Equal(t, len(findings), 0)
 }
 
+func TestCheckPRBranchNaming_SingleRemoteFixable(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "remote", "add", "origin", "https://github.com/lczyk/gitgum")
+	temp_repo.RunGit(t, dir, "branch", "pr-51")
+
+	findings := checkPRBranchNaming(git.Repo{Dir: dir})
+	require.Equal(t, len(findings), 1, "one old pr-N branch")
+	assert.Equal(t, findings[0].Check, "pr-branch-naming")
+	assert.Equal(t, findings[0].Severity, SevFixable)
+	assert.Equal(t, findings[0].Fix, "git branch -m pr-51 pr/origin/51")
+}
+
+func TestCheckPRBranchNaming_AmbiguousRemoteWarns(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "remote", "add", "a", "https://github.com/a/x")
+	temp_repo.RunGit(t, dir, "remote", "add", "b", "https://github.com/b/x")
+	temp_repo.RunGit(t, dir, "branch", "pr-7")
+
+	findings := checkPRBranchNaming(git.Repo{Dir: dir})
+	require.Equal(t, len(findings), 1, "one old pr-N branch")
+	assert.Equal(t, findings[0].Severity, SevWarning)
+	assert.Equal(t, findings[0].Fix, "")
+}
+
+func TestCheckPRBranchNaming_NewSchemeIgnored(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "remote", "add", "origin", "https://github.com/lczyk/gitgum")
+	temp_repo.RunGit(t, dir, "branch", "pr/origin/9")
+	temp_repo.RunGit(t, dir, "branch", "prancing") // not a PR branch
+
+	assert.Equal(t, len(checkPRBranchNaming(git.Repo{Dir: dir})), 0)
+}
+
+func TestCheckPrunableWorktrees(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	repo := filepath.Join(root, "gitgum")
+	initRepoAt(t, repo)
+	wtPath := filepath.Join(root, "gitgum-2")
+	temp_repo.RunGit(t, repo, "worktree", "add", wtPath, "-b", "feat")
+	require.NoError(t, os.RemoveAll(wtPath), "remove worktree dir out from under git")
+
+	findings := checkPrunableWorktrees(git.Repo{Dir: repo})
+	require.Equal(t, len(findings), 1, "the removed worktree is prunable")
+	assert.Equal(t, findings[0].Check, "prunable-worktree")
+	assert.Equal(t, findings[0].Severity, SevFixable)
+	assert.Equal(t, findings[0].Fix, "git worktree prune")
+}
+
+func TestCheckGoneUpstreams(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "remote", "add", "origin", "https://github.com/x/y")
+	// upstream configured, but refs/remotes/origin/main was never fetched -> gone.
+	temp_repo.RunGit(t, dir, "config", "branch.main.remote", "origin")
+	temp_repo.RunGit(t, dir, "config", "branch.main.merge", "refs/heads/main")
+
+	findings := checkGoneUpstreams(git.Repo{Dir: dir})
+	require.Equal(t, len(findings), 1, "main's upstream is gone")
+	assert.Equal(t, findings[0].Check, "gone-upstream")
+	assert.Equal(t, findings[0].Severity, SevWarning)
+	assert.ContainsString(t, findings[0].Message, "main")
+}
+
+func TestCheckDuplicateRemotes(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "remote", "add", "origin", "https://github.com/lczyk/gitgum")
+	temp_repo.RunGit(t, dir, "remote", "add", "dup", "https://github.com/lczyk/gitgum")
+
+	findings := checkDuplicateRemotes(git.Repo{Dir: dir})
+	require.Equal(t, len(findings), 1, "origin and dup share a url")
+	assert.Equal(t, findings[0].Severity, SevWarning)
+	assert.ContainsString(t, findings[0].Message, "dup")
+	assert.ContainsString(t, findings[0].Message, "origin")
+}
+
 // Diagnose aggregates findings from every check. A repo in a correctly-named
 // dir with a correctly-named remote is clean.
 func TestDiagnose_CleanRepo(t *testing.T) {
