@@ -28,6 +28,14 @@ func (p *PullCommand) Execute(args []string) error {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
 
+	// A checkout-pr branch has no normal upstream -- it mirrors a PR ref that
+	// git can't track. Re-fetch that ref instead of erroring on "no upstream".
+	if meta, ok, err := readPRMeta(p.repo(), currentBranch); err != nil {
+		return err
+	} else if ok {
+		return p.pullPR(currentBranch, meta)
+	}
+
 	upstream, err := p.repo().GetCurrentBranchUpstream()
 	if err != nil {
 		return fmt.Errorf("getting upstream: %w", err)
@@ -116,6 +124,74 @@ func (p *PullCommand) Execute(args []string) error {
 	}
 
 	fmt.Fprintf(p.out(), "Pulled '%s' into '%s' (%s).\n", upstream, currentBranch, mode)
+	return nil
+}
+
+// pullPR updates a checkout-pr branch to the latest PR head. It re-fetches the
+// PR ref (which may have been force-pushed) and moves the branch to it:
+//   - equal: already up to date.
+//   - branch strictly behind: fast-forward (no local commits to lose).
+//   - diverged (force-push, or local commits): the fetched head isn't a
+//     descendant, so a move means discarding local work -- confirm first
+//     (default no), matching `gg checkout-pr`'s reset-to-PR-state behaviour.
+func (p *PullCommand) pullPR(branch string, m prMeta) error {
+	if err := p.repo().Fetch(m.remote, m.ref()); err != nil {
+		return err
+	}
+
+	local, err := p.repo().GetCommitHash(branch)
+	if err != nil {
+		return fmt.Errorf("getting local commit: %w", err)
+	}
+	fetched, err := p.repo().GetCommitHash("FETCH_HEAD")
+	if err != nil {
+		return fmt.Errorf("getting fetched PR commit: %w", err)
+	}
+	if local == fetched {
+		fmt.Fprintf(p.out(), "Already up to date. Branch '%s' matches PR #%d (%s).\n", branch, m.number, m.typ)
+		return nil
+	}
+
+	// Does the branch carry commits the fetched head lacks? If not, the fetched
+	// head is a descendant and moving to it is a clean fast-forward.
+	localAhead, err := p.repo().IsBranchAheadOfRemote(branch, "FETCH_HEAD")
+	if err != nil {
+		return fmt.Errorf("checking divergence: %w", err)
+	}
+	if localAhead {
+		confirmed, err := p.sel().Confirm(
+			fmt.Sprintf("Branch '%s' has diverged from PR #%d (force-push or local commits). Reset it to the PR head, discarding local commits?", branch, m.number),
+			false,
+		)
+		if err != nil {
+			if errors.Is(err, ui.ErrCancelled) {
+				return nil
+			}
+			return err
+		}
+		if !confirmed {
+			fmt.Fprintln(p.out(), "Left branch unchanged.")
+			return nil
+		}
+	}
+
+	cleanup, err := handleDirtyTree(&p.cmdIO, "pull")
+	if err != nil {
+		if errors.Is(err, errDirtyTreeAborted) {
+			return nil
+		}
+		return err
+	}
+	defer cleanup()
+
+	if err := p.repo().ResetHard("FETCH_HEAD"); err != nil {
+		return fmt.Errorf("resetting to PR head: %w", err)
+	}
+
+	if summary, derr := compactSummary(p.repo(), local+".."+fetched); derr == nil && summary != "" {
+		fmt.Fprintln(p.out(), summary)
+	}
+	fmt.Fprintf(p.out(), "Updated '%s' to PR #%d (%s).\n", branch, m.number, m.typ)
 	return nil
 }
 

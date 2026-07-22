@@ -131,8 +131,9 @@ func parsePRSelection(selection string) (int, string, error) {
 }
 
 func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType string) error {
-	branchName := fmt.Sprintf("pr-%d", prNumber)
-	prRef := fmt.Sprintf("refs/pull/%d/%s", prNumber, prType)
+	meta := prMeta{remote: remote, number: prNumber, typ: prType}
+	branchName := prBranchName(remote, prNumber)
+	prRef := meta.ref()
 
 	if c.repo().BranchExists(branchName) {
 		confirmed, err := c.sel().Confirm(
@@ -145,6 +146,11 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 		if !confirmed {
 			if err := c.repo().Checkout(branchName); err != nil {
 				return fmt.Errorf("checking out existing branch '%s': %w", branchName, err)
+			}
+			// Backfill metadata in case the branch predates it, so a later
+			// `gg pull` can still update the PR.
+			if err := writePRMeta(c.repo(), branchName, meta); err != nil {
+				return fmt.Errorf("recording PR metadata: %w", err)
 			}
 			fmt.Fprintf(c.out(), "Switched to existing branch '%s'.\n", branchName)
 			return nil
@@ -161,6 +167,10 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 
 		if err := c.repo().ResetHard("FETCH_HEAD"); err != nil {
 			return fmt.Errorf("resetting branch: %w", err)
+		}
+
+		if err := writePRMeta(c.repo(), branchName, meta); err != nil {
+			return fmt.Errorf("recording PR metadata: %w", err)
 		}
 
 		fmt.Fprintf(c.out(), "Reset branch '%s' to PR #%d (%s).\n", branchName, prNumber, prType)
@@ -184,6 +194,10 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 
 	if err := c.repo().CheckoutNewBranch(branchName, "FETCH_HEAD"); err != nil {
 		return fmt.Errorf("creating and checking out branch: %w", err)
+	}
+
+	if err := writePRMeta(c.repo(), branchName, meta); err != nil {
+		return fmt.Errorf("recording PR metadata: %w", err)
 	}
 
 	fmt.Fprintf(c.out(), "Checked out PR #%d (%s) as branch '%s'.\n", prNumber, prType, branchName)

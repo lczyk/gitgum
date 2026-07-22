@@ -30,10 +30,18 @@ func TestCheckoutPRCommand_Execute_ChecksOutPR(t *testing.T) {
 
 	err := cmd.Execute(nil)
 	require.NoError(t, err)
-	assert.Equal(t, currentBranchIn(t, dir), "pr-1")
+	assert.Equal(t, currentBranchIn(t, dir), "pr/origin/1")
 	assert.Equal(t, len(stub.selectCalls), 2)
 	assert.ContainsString(t, stub.selectCalls[0].Prompt, "remote")
 	assert.ContainsString(t, stub.selectCalls[1].Prompt, "pull request")
+
+	// PR identity is recorded on the branch so `gg pull` can update it.
+	meta, ok, err := readPRMeta(git.Repo{Dir: dir}, "pr/origin/1")
+	require.NoError(t, err)
+	require.That(t, ok, "PR metadata should be recorded")
+	assert.Equal(t, meta.remote, "origin")
+	assert.Equal(t, meta.number, 1)
+	assert.Equal(t, meta.typ, "head")
 }
 
 func TestParsePRRefs(t *testing.T) {

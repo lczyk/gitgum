@@ -119,7 +119,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 	src := streamBranches(ctx, r, s.err(), currentBranch, trackingRemote, remotes,
 		branchStreamOpts{includeCurrent: true, markCheckedOut: true, detachedAt: detachedShortSHA(r, currentBranch)})
 
-	selected, err := s.sel().SelectStream(ctx, "Select a branch to switch to", src, isUnselectable)
+	selected, err := s.sel().SelectStream(ctx, "Select a branch to switch to", src, switchUnselectable)
 	cancel()
 	if err != nil {
 		fmt.Fprintln(s.err(), "No branch selected. Aborting switch.")
@@ -139,6 +139,13 @@ func (s *SwitchCommand) Execute(args []string) error {
 }
 
 func (s *SwitchCommand) applySelection(selected string) error {
+	// Picking the branch you're already on (the HEAD row) means "update it":
+	// run the same flow as `gg pull`, which includes PR-branch handling.
+	if strings.Contains(selected, currentBranchMarker) {
+		pull := &PullCommand{cmdIO: s.cmdIO}
+		return pull.Execute(nil)
+	}
+
 	typ, name, err := parseBranchEntry(selected)
 	if err != nil {
 		return err

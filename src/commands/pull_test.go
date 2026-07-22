@@ -26,6 +26,44 @@ func advanceRemote(t *testing.T, remoteBare, filename, content, msg string) stri
 	return strings.TrimSpace(temp_repo.RunGit(t, other, "rev-parse", "HEAD"))
 }
 
+// A checkout-pr branch has no upstream, but `gg pull` re-fetches the PR ref
+// and fast-forwards to its latest head.
+func TestPullCommand_PRBranchFastForward(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+
+	bareDir := t.TempDir()
+	temp_repo.RunGit(t, bareDir, "init", "--bare")
+	temp_repo.RunGit(t, dir, "remote", "add", "origin", bareDir)
+	temp_repo.RunGit(t, dir, "push", "origin", "HEAD")
+	headSHA := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "HEAD"))
+	temp_repo.RunGit(t, bareDir, "update-ref", "refs/pull/1/head", headSHA)
+
+	// Land on the PR branch via checkout-pr (records the metadata pull reads).
+	co := &CheckoutPRCommand{cmdIO: cmdIO{UI: &stubSelector{selectAnswers: []string{"origin", "PR #1 (head)"}}, Repo: git.Repo{Dir: dir}}}
+	require.NoError(t, co.Execute(nil))
+	require.Equal(t, currentBranchIn(t, dir), "pr/origin/1")
+
+	// Advance the PR head on the remote (a new commit fast-forward from it).
+	other := t.TempDir()
+	temp_repo.RunGit(t, other, "clone", bareDir, ".")
+	temp_repo.RunGit(t, other, "config", "user.name", "Other User")
+	temp_repo.RunGit(t, other, "config", "user.email", "other@example.com")
+	temp_repo.RunGit(t, other, "config", "commit.gpgsign", "false")
+	temp_repo.RunGit(t, other, "config", "core.hooksPath", ".git/hooks")
+	temp_repo.CreateCommit(t, other, "prfile.txt", "y", "feat: new pr commit")
+	newSHA := strings.TrimSpace(temp_repo.RunGit(t, other, "rev-parse", "HEAD"))
+	temp_repo.RunGit(t, other, "push", "origin", "HEAD:refs/pull/1/head")
+
+	var buf strings.Builder
+	pull := &PullCommand{cmdIO: cmdIO{Out: &buf, UI: &stubSelector{}, Repo: git.Repo{Dir: dir}}}
+	require.NoError(t, pull.Execute(nil))
+
+	assert.ContainsString(t, buf.String(), "Updated 'pr/origin/1' to PR #1")
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "HEAD")), newSHA)
+	assert.Equal(t, currentBranchIn(t, dir), "pr/origin/1")
+}
+
 func TestPullCommand_NotInGitRepo(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

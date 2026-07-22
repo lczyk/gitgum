@@ -66,6 +66,17 @@ func isUnselectable(item string) bool {
 	return strings.Contains(item, checkedOutMarker) || strings.Contains(item, detachedMarker)
 }
 
+// switchUnselectable is switch's predicate. It's isUnselectable with one
+// exception: the current branch (currentBranchMarker) is selectable -- picking
+// it means "pull the branch you're on" rather than a no-op re-checkout. Other
+// worktrees' checkouts and a detached HEAD stay blocked.
+func switchUnselectable(item string) bool {
+	if strings.Contains(item, currentBranchMarker) {
+		return false
+	}
+	return isUnselectable(item)
+}
+
 // parseBranchEntry splits a picker payload ("local: foo", "remote: origin/foo",
 // "local/remote: origin/foo") into its type tag and name. The name is whatever
 // followed the tag, suffixes included -- callers that enabled markCheckedOut
