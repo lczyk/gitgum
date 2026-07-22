@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/gitgum/internal/doctor"
 )
 
 func TestRenderFindings_Clean(t *testing.T) {
@@ -20,9 +21,9 @@ func TestRenderFindings_Grouped(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("FORCE_COLOR", "")
 	var buf bytes.Buffer
-	renderFindings(&buf, []Finding{
-		{Check: "upstream-consistency", Severity: SevWarning, Message: "two remotes"},
-		{Check: "remote-naming", Severity: SevFixable, Message: "misnamed", Fix: "git remote rename a b"},
+	renderFindings(&buf, []doctor.Finding{
+		{Check: "upstream-consistency", Severity: doctor.SevWarning, Message: "two remotes"},
+		{Check: "remote-naming", Severity: doctor.SevFixable, Message: "misnamed", Fix: "git remote rename a b"},
 	})
 	got := buf.String()
 	// fixable sorts before warning regardless of input order.

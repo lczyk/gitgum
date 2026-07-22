@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/lczyk/gitgum/internal/doctor"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/ui"
 )
@@ -174,7 +175,7 @@ func buildClonePlan(ref git.RepoRef, raw, dir string, depth int) clonePlan {
 		dir = ref.Repo // doctor's dir-naming wants the bare repo name.
 	}
 	var note string
-	if base := filepath.Base(filepath.Clean(dir)); !matchesRepoDir(base, ref.Repo) {
+	if base := filepath.Base(filepath.Clean(dir)); !doctor.MatchesRepoDir(base, ref.Repo) {
 		note = fmt.Sprintf("%s dir %q does not match doctor's %q / %q-N pattern; `gg doctor` will flag it.",
 			paint(ansiBoldYellow, "warning:"), base, ref.Repo, ref.Repo)
 	}

@@ -1,4 +1,9 @@
-package commands
+// Package doctor holds gg's repo-health rules and the engine that runs them.
+// It is presentation-free: Diagnose returns findings, and callers (the `doctor`
+// command, gg clone's dir-naming check) decide how to surface them. Keeping it
+// its own package gives a hard boundary -- nothing here depends on the command
+// layer.
+package doctor
 
 import (
 	"fmt"
@@ -9,12 +14,6 @@ import (
 
 	"github.com/lczyk/gitgum/internal/git"
 )
-
-// This file is the doctor engine: the repo-health rules and the runner that
-// produces findings, with no CLI/dispatch coupling. The `doctor` command (and
-// any other caller that wants to reason about repo health) runs Diagnose and
-// presents the []Finding however it likes. Command wiring and rendering live in
-// doctor_command.go.
 
 // Severity classifies a doctor finding.
 //
@@ -46,9 +45,7 @@ var doctorChecks = []func(git.Repo) []Finding{
 }
 
 // Diagnose runs every doctor check against r and returns the combined findings
-// in discovery order (unsorted -- presentation decides ordering). It is the
-// reusable entry point: the `doctor` command renders the result, but any caller
-// wanting to reason about repo health can run this and inspect the findings.
+// in discovery order (unsorted -- presentation decides ordering).
 func Diagnose(r git.Repo) []Finding {
 	var findings []Finding
 	for _, check := range doctorChecks {
@@ -148,7 +145,7 @@ func checkLayout(r git.Repo) []Finding {
 		parent := filepath.Dir(clean)
 		parents[parent] = append(parents[parent], filepath.Base(clean))
 
-		if nameOK && !matchesRepoDir(filepath.Base(clean), repoName) {
+		if nameOK && !MatchesRepoDir(filepath.Base(clean), repoName) {
 			out = append(out, Finding{Check: "dir-naming", Severity: SevFixable,
 				Message: fmt.Sprintf("worktree dir %q does not match the %q / %q-N pattern", clean, repoName, repoName),
 				Fix:     fmt.Sprintf("mv %s %s", clean, filepath.Join(parent, repoName))})
@@ -172,7 +169,7 @@ func checkLayout(r git.Repo) []Finding {
 		entries, err := os.ReadDir(mainParent)
 		if err == nil {
 			for _, e := range entries {
-				if !e.IsDir() || !matchesRepoDir(e.Name(), repoName) {
+				if !e.IsDir() || !MatchesRepoDir(e.Name(), repoName) {
 					continue
 				}
 				full := filepath.Join(mainParent, e.Name())
@@ -218,11 +215,11 @@ func canonicalRepoName(r git.Repo) (name string, ok bool, findings []Finding) {
 	}
 }
 
-// matchesRepoDir reports whether base is "<repo>" or "<repo>-N" for a positive
+// MatchesRepoDir reports whether base is "<repo>" or "<repo>-N" for a positive
 // integer N (the worktree-sibling naming pattern: foo, foo-2, foo-3). It is
-// also gg clone's dir-naming rule, so the two agree on what a clean dir looks
-// like.
-func matchesRepoDir(base, repo string) bool {
+// exported because gg clone shares this dir-naming rule, so the two agree on
+// what a clean dir looks like.
+func MatchesRepoDir(base, repo string) bool {
 	if base == repo {
 		return true
 	}

@@ -1,4 +1,4 @@
-package commands
+package doctor
 
 import (
 	"os"
@@ -29,10 +29,10 @@ func TestMatchesRepoDir(t *testing.T) {
 	yes := []string{"foo", "foo-2", "foo-3", "foo-42"}
 	no := []string{"foobar", "foo-", "foo-2a", "foo2", "bar", "foo-x", "-foo"}
 	for _, s := range yes {
-		assert.Equal(t, matchesRepoDir(s, "foo"), true)
+		assert.Equal(t, MatchesRepoDir(s, "foo"), true)
 	}
 	for _, s := range no {
-		assert.Equal(t, matchesRepoDir(s, "foo"), false)
+		assert.Equal(t, MatchesRepoDir(s, "foo"), false)
 	}
 }
 
