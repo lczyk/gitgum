@@ -59,11 +59,13 @@ It accepts the ways a repo can be spelled and normalises them:
 - host shorthand -- `github.com/user/repo`, `www.github.com/user/repo` (scheme and `www.` filled in / stripped)
 - bare shorthand -- `user/repo`, resolved by probing github, gitlab and codeberg for the repo's existence. Zero matches errors; one is used directly; several prompt a picker.
 
-`--depth N` makes a shallow clone. A url on a host gitgum doesn't model (self-hosted forge, bitbucket, a local path) falls back to plain `git clone` with git's default `origin`.
+`--depth N` makes a shallow clone. A url on a host gitgum doesn't model (self-hosted forge, bitbucket, a local path) falls back to plain `git clone` with git's default `origin`. After cloning it prints the tip commit's compact diffstat, the same one `gg pull` shows.
 
 ### `gitgum switch`
 
 Pick a branch to switch to. Local and remote branches stream into the picker live, deduplicated. For remote selections, gitgum offers to retarget tracking, fast-forward / reset to the remote tip, or create a new tracking branch as appropriate.
+
+The branch you're already on shows as the `HEAD` row and is selectable: picking it runs `gg pull` on the current branch (including the PR-branch handling below) so "update where I am" needs no separate command. A detached HEAD still can't be selected -- there's no branch to pull.
 
 ### `gitgum branch`
 
@@ -112,6 +114,8 @@ Push the current branch. Picks a remote interactively when the branch has no ups
 
 Fetch the current branch's upstream and integrate it. Reports "already up to date" when there's nothing new; otherwise picks the strategy interactively -- fast-forward only (the default, refuses a merge commit), rebase, or merge. Uncommitted tracked changes are stashed before the pull and popped after, matching the other commands. A shallow clone stays shallow: only new commits are fetched, old history is not backfilled. Errors if the branch has no upstream configured.
 
+On a `checkout-pr` branch (which has no upstream, see [`checkout-pr`](#gitgum-checkout-pr)) pull instead re-fetches the PR head: fast-forwards if the branch is behind, and on a diverged PR (force-push, or local commits) asks before resetting the branch to the PR head.
+
 ### `gitgum delete`
 
 Interactively delete a local branch and optionally its remote tracking branch. The command will:
@@ -131,7 +135,7 @@ Create an empty commit (`--allow-empty`) and optionally push it. Useful for kick
 
 ### `gitgum checkout-pr`
 
-Pick an open PR from a remote (`refs/pull/N/head` or `/merge`) and check it out locally.
+Pick an open PR from a remote (`refs/pull/N/head` or `/merge`) and check it out locally as `pr/<remote>/<number>` (e.g. `pr/origin/51`), so the branch reads as a PR at a glance. The PR's identity (remote, number, head/merge) is recorded in repo-local config on the branch, which lets a later `gg pull` re-fetch the PR head even though the branch has no upstream. Re-running on an existing PR branch offers to reset it to the latest PR state.
 
 ### `gitgum replay-list A B`
 
