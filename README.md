@@ -49,6 +49,18 @@ eval "$(gitgum completion zsh)"
 
 ## Commands
 
+### `gitgum clone URL [DIR]`
+
+Clone a repository like `git clone`, but pre-applying the `gg doctor` opinions so a fresh clone is already clean: the remote is named after the forge user/org (e.g. `canonical`) rather than `origin`, and the clone lands in a directory named exactly after the repo.
+
+It accepts the ways a repo can be spelled and normalises them:
+
+- full urls -- `https://...`, `ssh://...`, `git://...`, and scp `git@host:user/repo` (cloned verbatim, so an ssh url is not downgraded to https)
+- host shorthand -- `github.com/user/repo`, `www.github.com/user/repo` (scheme and `www.` filled in / stripped)
+- bare shorthand -- `user/repo`, resolved by probing github, gitlab and codeberg for the repo's existence. Zero matches errors; one is used directly; several prompt a picker.
+
+`--depth N` makes a shallow clone. A url on a host gitgum doesn't model (self-hosted forge, bitbucket, a local path) falls back to plain `git clone` with git's default `origin`.
+
 ### `gitgum switch`
 
 Pick a branch to switch to. Local and remote branches stream into the picker live, deduplicated. For remote selections, gitgum offers to retarget tracking, fast-forward / reset to the remote tip, or create a new tracking branch as appropriate.
