@@ -18,6 +18,12 @@ type PullCommand struct {
 // a merge commit or rewrite history behind your back.
 var pullModes = []git.PullMode{git.PullFFOnly, git.PullRebase, git.PullMerge}
 
+// errNoUpstream is the sentinel pullBranch returns when a non-PR branch has no
+// upstream. The `gg pull` command turns it into a user-facing error; `gg switch`
+// (which pulls after landing on a branch) treats it as benign -- a local-only
+// branch simply has nothing to pull.
+var errNoUpstream = errors.New("no upstream configured")
+
 func (p *PullCommand) Execute(args []string) error {
 	if err := p.repo().CheckInRepo(); err != nil {
 		return err
@@ -28,6 +34,19 @@ func (p *PullCommand) Execute(args []string) error {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
 
+	err = p.pullBranch(currentBranch)
+	if errors.Is(err, errNoUpstream) {
+		return fmt.Errorf("no upstream configured for branch '%s'", currentBranch)
+	}
+	return err
+}
+
+// pullBranch fetches and integrates the currently checked-out branch. It is the
+// reusable core behind both `gg pull` and `gg switch`'s post-checkout update.
+// The branch must already be checked out (git ops act on the working tree).
+// Returns errNoUpstream for a non-PR branch with no upstream, leaving the
+// caller to decide whether that's an error.
+func (p *PullCommand) pullBranch(currentBranch string) error {
 	// A checkout-pr branch has no normal upstream -- it mirrors a PR ref that
 	// git can't track. Re-fetch that ref instead of erroring on "no upstream".
 	if meta, ok, err := readPRMeta(p.repo(), currentBranch); err != nil {
@@ -41,7 +60,7 @@ func (p *PullCommand) Execute(args []string) error {
 		return fmt.Errorf("getting upstream: %w", err)
 	}
 	if upstream == "" {
-		return fmt.Errorf("no upstream configured for branch '%s'", currentBranch)
+		return errNoUpstream
 	}
 	remote, _, ok := strings.Cut(upstream, "/")
 	if !ok {
