@@ -15,6 +15,7 @@ import (
 
 // Options defines the global command structure
 type Options struct {
+	Clone      commands.CloneCommand      `command:"clone" description:"Clone a repository, applying gg doctor's naming rules"`
 	Switch     commands.SwitchCommand     `command:"switch" description:"Switch to a branch interactively"`
 	Branch     commands.BranchCommand     `command:"branch" description:"Create a new branch off an existing one and switch to it"`
 	CheckoutPR commands.CheckoutPRCommand `command:"checkout-pr" description:"Checkout a pull request from a remote repository"`

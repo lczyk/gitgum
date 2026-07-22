@@ -21,6 +21,13 @@ module completions {
     --version(-v)            # Show version
   ]
 
+  export extern "__GITGUM_CMD__ clone" [
+    url: string              # Repo url or user/repo shorthand
+    dir?: string             # Target directory (default: repo name)
+    --depth: int             # Create a shallow clone with the given history depth
+    --help(-h)               # Show help
+  ]
+
   export extern "__GITGUM_CMD__ switch" [
     --help(-h)               # Show help
   ]

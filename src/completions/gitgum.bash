@@ -14,6 +14,9 @@ _gitgum_completion() {
             ",$1")
                 cmd="gitgum"
                 ;;
+            gitgum,clone)
+                cmd="gitgum_clone"
+                ;;
             gitgum,switch)
                 cmd="gitgum_switch"
                 ;;
@@ -52,7 +55,7 @@ _gitgum_completion() {
 
     case "${cmd}" in
         gitgum)
-            opts="-h --help -v --version switch branch checkout-pr completion status push clean delete replay-list empty release"
+            opts="-h --help -v --version clone switch branch checkout-pr completion status push clean delete replay-list empty release"
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
@@ -68,6 +71,11 @@ _gitgum_completion() {
             ;;
         gitgum_completion)
             opts="bash fish zsh nu -h --help"
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gitgum_clone)
+            opts="--depth -h --help"
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;

@@ -14,6 +14,12 @@ _gitgum() {
     case $state in
         args)
             case $line[1] in
+                clone)
+                    _arguments \
+                        '--depth[Create a shallow clone with the given history depth]:depth:' \
+                        '(-h --help)'{-h,--help}'[Show help]' \
+                        && ret=0
+                    ;;
                 completion)
                     _arguments \
                         '1:shell:((bash\:"Bourne Again SHell" fish\:"Friendly Interactive SHell" zsh\:"Z shell" nu\:"Nushell"))' \
@@ -64,6 +70,7 @@ _gitgum() {
 _gitgum_commands() {
     local -a commands
     commands=(
+        'clone:Clone a repository, applying gg doctor'\''s naming rules'
         'switch:Switch to a branch interactively'
         'branch:Create a new branch off an existing one and switch to it'
         'checkout-pr:Checkout a pull request from a remote repository'
