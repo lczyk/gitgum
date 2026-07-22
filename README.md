@@ -59,13 +59,19 @@ It accepts the ways a repo can be spelled and normalises them:
 - host shorthand -- `github.com/user/repo`, `www.github.com/user/repo` (scheme and `www.` filled in / stripped)
 - bare shorthand -- `user/repo`, resolved by probing github, gitlab and codeberg for the repo's existence. Zero matches errors; one is used directly; several prompt a picker.
 
-`--depth N` makes a shallow clone. A url on a host gitgum doesn't model (self-hosted forge, bitbucket, a local path) falls back to plain `git clone` with git's default `origin`. After cloning it prints the tip commit's compact diffstat, the same one `gg pull` shows.
+`--depth N` makes a shallow clone. A url on a host gitgum doesn't model (self-hosted forge, bitbucket, a local path) falls back to plain `git clone` with git's default `origin`. After cloning it prints a compact diffstat of the whole tree (every file as an addition), the same coloured summary `gg pull` shows.
 
 ### `gitgum switch`
 
-Pick a branch to switch to. Local and remote branches stream into the picker live, deduplicated. For remote selections, gitgum offers to retarget tracking, fast-forward / reset to the remote tip, or create a new tracking branch as appropriate.
+Pick a branch to switch to. Local and remote branches stream into the picker live, deduplicated.
 
-The branch you're already on shows as the `HEAD` row and is selectable: picking it runs `gg pull` on the current branch (including the PR-branch handling below) so "update where I am" needs no separate command. A detached HEAD still can't be selected -- there's no branch to pull.
+Every selection lands the same way: end up on the branch, then bring it up to date via the [`pull`](#gitgum-pull) flow (fetch + integrate, ff-only by default, PR-aware). So:
+
+- a local branch -> checkout, then pull
+- a remote-only branch -> create a tracking branch (or switch to the existing local counterpart, re-pointing its tracking at this remote), then pull
+- the branch you're already on (the `HEAD` row, selectable) -> a no-op checkout, then pull -- "update where I am" with no separate command
+
+A branch with no upstream (a purely local branch) just reports there's nothing to pull; a detached HEAD stays unselectable (no branch to update).
 
 ### `gitgum branch`
 
