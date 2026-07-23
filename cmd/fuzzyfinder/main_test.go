@@ -5,11 +5,11 @@ import (
 	"bytes"
 	"context"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/lczyk/assert"
 	"github.com/lczyk/assert/require"
+	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
 func TestParseFlags(t *testing.T) {
@@ -34,26 +34,20 @@ func TestParseFlags_BadFlag(t *testing.T) {
 }
 
 func TestStreamItems(t *testing.T) {
-	var (
-		lock  sync.Mutex
-		items []string
-	)
-	err := streamItems(context.Background(), strings.NewReader("a\nb\r\n\nc\n"), &lock, &items, 0, true)
+	src := ff.NewSliceSource()
+	err := streamItems(context.Background(), strings.NewReader("a\nb\r\n\nc\n"), src, 0, true)
 	require.NoError(t, err)
 	want := []string{"a", "b", "c"}
-	assert.EqualArrays(t, items, want)
+	assert.EqualArrays(t, src.Snapshot(), want)
 }
 
 func TestStreamItems_StripsAnsi(t *testing.T) {
-	var (
-		lock  sync.Mutex
-		items []string
-	)
+	src := ff.NewSliceSource()
 	input := "\x1b[31mred\x1b[0m\nplain\n\x1b[1;32mboldgreen\x1b[m\n"
-	err := streamItems(context.Background(), strings.NewReader(input), &lock, &items, 0, true)
+	err := streamItems(context.Background(), strings.NewReader(input), src, 0, true)
 	require.NoError(t, err)
 	want := []string{"red", "plain", "boldgreen"}
-	assert.EqualArrays(t, items, want)
+	assert.EqualArrays(t, src.Snapshot(), want)
 }
 
 func TestReadFirstLine_StripsAnsi(t *testing.T) {
@@ -77,13 +71,11 @@ func TestParseFlags_Ansi(t *testing.T) {
 }
 
 func TestStreamItems_KeepsAnsiWhenStripDisabled(t *testing.T) {
-	var (
-		lock  sync.Mutex
-		items []string
-	)
+	src := ff.NewSliceSource()
 	input := "\x1b[31mred\x1b[0m\n"
-	err := streamItems(context.Background(), strings.NewReader(input), &lock, &items, 0, false)
+	err := streamItems(context.Background(), strings.NewReader(input), src, 0, false)
 	require.NoError(t, err)
+	items := src.Snapshot()
 	assert.Equal(t, len(items), 1)
 	assert.ContainsString(t, items[0], "\x1b[", "expected raw escape preserved")
 }

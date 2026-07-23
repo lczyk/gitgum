@@ -23,18 +23,6 @@ import (
 	runewidth "github.com/mattn/go-runewidth"
 )
 
-// newScreen returns the screen backend. Default is litescreen (our own
-// ANSI renderer) which supports both fullscreen and inline (Opt.Height)
-// modes. Set FF_RENDERER=legacy to fall back to tcell's alt-screen
-// renderer; tcell can't preserve scrollback so Opt.Height is ignored in
-// that case.
-func newScreen(height int) (screen, error) {
-	if os.Getenv("FF_RENDERER") == "legacy" {
-		return tcell.NewScreen()
-	}
-	return litescreen.New(height)
-}
-
 var (
 	// ErrAbort is returned from Find* functions when the user cancels the
 	// picker (Esc, Ctrl-C, Ctrl-D).
@@ -86,12 +74,15 @@ type state struct {
 	selectionIdx int
 }
 
-// screen is the subset of tcell.Screen the finder actually uses. Pulling it
-// out as a local interface lets us swap in a non-tcell renderer later (e.g.
-// an inline ANSI renderer that preserves terminal scrollback) without
-// touching the finder logic. tcell.Screen and tcell.SimulationScreen both
-// satisfy it implicitly.
-type screen interface {
+// Screen is the terminal surface the picker draws to: the subset of
+// tcell.Screen the finder actually uses. tcell.Screen, tcell.SimulationScreen,
+// and litescreen.Screen all satisfy it implicitly.
+//
+// The zero-behaviour default (Opt.Screen == nil) is a litescreen backend the
+// picker creates and owns. Inject your own via Opt.Screen to run on a
+// different backend or headless; the picker then owns its lifecycle
+// (Init / Fini / event wiring) for the duration of the run.
+type Screen interface {
 	Init() error
 	Fini()
 	Size() (int, int)
@@ -109,7 +100,12 @@ type screen interface {
 }
 
 type finder struct {
-	term      screen
+	term Screen
+	// ownTerm reports whether the picker owns term's lifecycle (Init /
+	// ChannelEvents / Fini). True when term came from Opt.Screen or was
+	// created by initFinder; false when a test preset f.term directly, in
+	// which case the test wires and tears down the screen itself.
+	ownTerm   bool
 	stateMu   sync.RWMutex
 	state     state
 	drawTimer *time.Timer
@@ -154,15 +150,24 @@ func chromeRows(opt Opt) int {
 
 func (f *finder) initFinder(items []string, opt Opt) error {
 	if f.term == nil {
+		f.term = opt.Screen
+	}
+	if f.term == nil {
 		screenH := opt.Height
 		if screenH > 0 {
 			screenH += chromeRows(opt)
 		}
-		s, err := newScreen(screenH)
+		s, err := litescreen.New(screenH)
 		if err != nil {
 			return fmt.Errorf("failed to new screen: %w", err)
 		}
 		f.term = s
+	}
+	// Screens from Opt.Screen and self-created ones are picker-owned; a
+	// term preset before the call (tests) is caller-owned and arrives
+	// already initialised with events wired.
+	if f.termEventsChan == nil {
+		f.ownTerm = true
 		if err := f.term.Init(); err != nil {
 			return fmt.Errorf("failed to initialize screen: %w", err)
 		}
@@ -1074,7 +1079,7 @@ func (f *finder) resetMatchedIdentity(n int) {
 }
 
 func (f *finder) runLoop(ctx context.Context, opt *Opt) ([]int, error) {
-	if !isInTesting() {
+	if f.ownTerm {
 		defer f.term.Fini()
 	}
 
@@ -1160,42 +1165,22 @@ func (f *finder) runLoop(ctx context.Context, opt *Opt) ([]int, error) {
 	}
 }
 
-// Find displays a fuzzy-finder UI over items and returns the selection, or
-// ErrAbort if the user cancels. With Opt.Multi=false the result carries at
-// most one element. See Result for the empty-selection case.
-//
-// Pass lock=nil for a static slice. Pass a non-nil lock when the slice may
-// grow concurrently — the picker re-snapshots under lock on a 30ms cadence.
-// Length-equal mutations (e.g. in-place edits or balanced add+remove) are not
-// detected on this path; for that, use FindFromSource with a SliceSource.
-func Find(ctx context.Context, items *[]string, lock sync.Locker, opt Opt) (Result, error) {
-	if items == nil {
-		return Result{}, errors.New("items pointer must not be nil")
-	}
-	f := &finder{}
-	return f.Find(ctx, items, lock, opt)
-}
-
-func (f *finder) Find(ctx context.Context, items *[]string, lock sync.Locker, opt Opt) (Result, error) {
-	return f.result(f.find(ctx, &legacyLockedSource{items: items, lock: lock}, opt))
-}
-
-// FindFromSource displays the picker over a Source and returns the selection,
+// Find displays a fuzzy-finder UI over a Source and returns the selection,
 // or ErrAbort if the user cancels. With Opt.Multi=false the result carries at
 // most one element. See Result for the empty-selection case.
 //
-// Unlike Find, FindFromSource supports both adding and removing items while
-// the picker is open: callers mutate the source via SliceSource (or any
-// custom Source) and the picker resyncs on the next 30ms tick. Cursor and
-// selection are preserved across resyncs by item identity, not slice index.
-func FindFromSource(ctx context.Context, src Source, opt Opt) (Result, error) {
+// The source may change while the picker is open: callers mutate it via
+// SliceSource (or any custom Source) and the picker resyncs on the next 30ms
+// tick. Cursor and selection are preserved across resyncs by item identity,
+// not slice index. For a static list, wrap it with NewSliceSourceFrom.
+func Find(ctx context.Context, src Source, opt Opt) (Result, error) {
 	f := &finder{}
-	return f.FindFromSource(ctx, src, opt)
+	return f.Find(ctx, src, opt)
 }
 
-// FindFromSource is the picker-method form, used by tests that need to inject
+// Find is the picker-method form, used by tests that need to inject
 // a mocked terminal.
-func (f *finder) FindFromSource(ctx context.Context, src Source, opt Opt) (Result, error) {
+func (f *finder) Find(ctx context.Context, src Source, opt Opt) (Result, error) {
 	return f.result(f.find(ctx, src, opt))
 }
 

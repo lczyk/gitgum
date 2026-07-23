@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"sync"
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
@@ -83,7 +82,6 @@ func TestFuzz(t *testing.T) {
 				}
 			}()
 
-			var mu sync.Mutex
 			items := trackNames()
 
 			finder, term := ff.NewWithMockedTerminal()
@@ -97,6 +95,7 @@ func TestFuzz(t *testing.T) {
 			if *hotReload {
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
+				src := ff.NewSliceSourceFrom(items)
 				go func() {
 					for {
 						select {
@@ -105,16 +104,14 @@ func TestFuzz(t *testing.T) {
 						default:
 							var s string
 							fuzzer.Fuzz(&s)
-							mu.Lock()
-							items = append(items, s)
-							mu.Unlock()
+							src.Add(s)
 						}
 					}
 				}()
-				_, err := finder.Find(ctx, &items, &mu, opt)
+				_, err := finder.Find(ctx, src, opt)
 				assert.Error(t, err, ff.ErrAbort)
 			} else {
-				_, err := finder.Find(context.Background(), &items, nil, opt)
+				_, err := finder.Find(context.Background(), ff.NewSliceSourceFrom(items), opt)
 				assert.Error(t, err, ff.ErrAbort)
 			}
 		})

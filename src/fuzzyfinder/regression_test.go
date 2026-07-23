@@ -24,7 +24,7 @@ func TestRegressionTabOnEmptyMatched(t *testing.T) {
 	term.SetEvents(append(append(runes("zzz"), tab), enter)...)
 
 	it := []string{"apple", "banana"}
-	res, err := f.Find(context.Background(), &it, nil, ff.Opt{Multi: true})
+	res, err := f.Find(context.Background(), ff.NewSliceSourceFrom(it), ff.Opt{Multi: true})
 	require.NoError(t, err)
 	assert.Equal(t, 0, len(res.Indices))
 	assert.Equal(t, "zzz", res.Query)
@@ -46,7 +46,7 @@ func TestRegressionNonAsciiQuery(t *testing.T) {
 	term.SetEvents(bs, enter)
 
 	it := []string{query + "x", "plain"}
-	res, err := f.Find(context.Background(), &it, nil, ff.Opt{Query: query})
+	res, err := f.Find(context.Background(), ff.NewSliceSourceFrom(it), ff.Opt{Query: query})
 	require.NoError(t, err)
 	assert.Equal(t, acute+acute, res.Query)
 }
@@ -72,6 +72,6 @@ func TestRegressionWideRuneLineCap(t *testing.T) {
 	term.SetEvents(events...)
 
 	it := []string{"placeholder"}
-	res, _ := f.Find(context.Background(), &it, nil, ff.Opt{})
+	res, _ := f.Find(context.Background(), ff.NewSliceSourceFrom(it), ff.Opt{})
 	assert.Equal(t, 4, utf8.RuneCountInString(res.Query))
 }

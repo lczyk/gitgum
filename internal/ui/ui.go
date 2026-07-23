@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 
 	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
 )
@@ -21,7 +20,7 @@ func selectShort(prompt string, options []string, initialQuery ...string) (strin
 	return selectWith(ff.Find, 2, prompt, options, initialQuery...)
 }
 
-func selectWith(finder func(context.Context, *[]string, sync.Locker, ff.Opt) (ff.Result, error), height int, prompt string, options []string, initialQuery ...string) (string, error) {
+func selectWith(finder func(context.Context, ff.Source, ff.Opt) (ff.Result, error), height int, prompt string, options []string, initialQuery ...string) (string, error) {
 	if len(options) == 0 {
 		return "", fmt.Errorf("no options provided")
 	}
@@ -31,7 +30,7 @@ func selectWith(finder func(context.Context, *[]string, sync.Locker, ff.Opt) (ff
 		opt.Query = initialQuery[0]
 	}
 
-	res, err := finder(context.Background(), &options, nil, opt)
+	res, err := finder(context.Background(), ff.NewSliceSourceFrom(options), opt)
 	if err != nil {
 		if errors.Is(err, ff.ErrAbort) {
 			return "", ErrCancelled
@@ -46,13 +45,13 @@ func selectWith(finder func(context.Context, *[]string, sync.Locker, ff.Opt) (ff
 	return options[res.Indices[0]], nil
 }
 
-// SelectStream is like Select but reads candidates from a SliceSource that
+// SelectStream is like Select but reads candidates from a Source that
 // may grow (or shrink) concurrently — used by callers that stream entries
 // from background goroutines (e.g. switch). ctx is cancelled when the
 // consumer is done; that also tells producers to stop.
-func SelectStream(ctx context.Context, prompt string, src *ff.SliceSource, unselectable func(string) bool) (string, error) {
+func SelectStream(ctx context.Context, prompt string, src ff.Source, unselectable func(string) bool) (string, error) {
 	opt := ff.Opt{Prompt: prompt + ": ", Height: 10, Reverse: true, Unselectable: unselectable}
-	res, err := ff.FindFromSource(ctx, src, opt)
+	res, err := ff.Find(ctx, src, opt)
 	if err != nil {
 		if errors.Is(err, ff.ErrAbort) {
 			return "", ErrCancelled
@@ -77,7 +76,7 @@ func SelectStream(ctx context.Context, prompt string, src *ff.SliceSource, unsel
 func Prompt(question string) (string, error) {
 	src := ff.NewSliceSourceFrom(nil)
 	opt := ff.Opt{Prompt: question + ": ", Height: 1, Reverse: true}
-	res, err := ff.FindFromSource(context.Background(), src, opt)
+	res, err := ff.Find(context.Background(), src, opt)
 	if err != nil {
 		if errors.Is(err, ff.ErrAbort) {
 			return "", ErrCancelled
@@ -109,7 +108,7 @@ func Confirm(prompt string, defaultYes bool) (bool, error) {
 // RealSelector (the zero value), which delegates to the package-level functions.
 type Selector interface {
 	Select(prompt string, options []string, initialQuery ...string) (string, error)
-	SelectStream(ctx context.Context, prompt string, src *ff.SliceSource, unselectable func(string) bool) (string, error)
+	SelectStream(ctx context.Context, prompt string, src ff.Source, unselectable func(string) bool) (string, error)
 	MultiSelect(prompt string, options []string) ([]string, error)
 	Prompt(question string) (string, error)
 	Confirm(prompt string, defaultYes bool) (bool, error)
@@ -124,7 +123,7 @@ func MultiSelect(prompt string, options []string) ([]string, error) {
 	}
 	height := min(10, len(options))
 	opt := ff.Opt{Prompt: prompt + ": ", Height: height, Reverse: true, Multi: true}
-	res, err := ff.Find(context.Background(), &options, nil, opt)
+	res, err := ff.Find(context.Background(), ff.NewSliceSourceFrom(options), opt)
 	if err != nil {
 		if errors.Is(err, ff.ErrAbort) {
 			return nil, ErrCancelled
@@ -150,7 +149,7 @@ func (RealSelector) Select(prompt string, options []string, initialQuery ...stri
 	return Select(prompt, options, initialQuery...)
 }
 
-func (RealSelector) SelectStream(ctx context.Context, prompt string, src *ff.SliceSource, unselectable func(string) bool) (string, error) {
+func (RealSelector) SelectStream(ctx context.Context, prompt string, src ff.Source, unselectable func(string) bool) (string, error) {
 	return SelectStream(ctx, prompt, src, unselectable)
 }
 

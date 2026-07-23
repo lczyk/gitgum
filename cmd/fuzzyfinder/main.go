@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/lczyk/gitgum/src/completions"
@@ -118,18 +117,15 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		cfg.opt.RedrawAggressive = true
 	}
 
-	var (
-		lock  sync.Mutex
-		items = []string{first}
-	)
+	src := ff.NewSliceSourceFrom([]string{first})
 	readErrCh := make(chan error, 1)
 	delay := streamDelay
 	if cfg.fast {
 		delay = 0
 	}
-	go func() { readErrCh <- streamItems(ctx, br, &lock, &items, delay, !cfg.opt.Ansi) }()
+	go func() { readErrCh <- streamItems(ctx, br, src, delay, !cfg.opt.Ansi) }()
 
-	res, findErr := ff.Find(ctx, &items, &lock, cfg.opt)
+	res, findErr := ff.Find(ctx, src, cfg.opt)
 	cancel()
 
 	if err := <-readErrCh; err != nil {
@@ -137,8 +133,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 
-	lock.Lock()
-	defer lock.Unlock()
+	items := src.Snapshot()
 
 	if findErr != nil && !errors.Is(findErr, ff.ErrAbort) {
 		fmt.Fprintf(stderr, "fuzzyfinder: %v\n", findErr)
@@ -188,11 +183,10 @@ func readFirstLine(r *bufio.Reader, stripAnsi bool) (string, error) {
 	}
 }
 
-// streamItems reads lines from r and appends them to *items under lock until
-// EOF or ctx is cancelled. ANSI escapes are stripped on ingest unless
-// stripAnsi is false (i.e. caller wants the picker to render colour via
-// Opt.Ansi downstream).
-func streamItems(ctx context.Context, r io.Reader, lock *sync.Mutex, items *[]string, delay time.Duration, stripAnsi bool) error {
+// streamItems reads lines from r and adds them to src until EOF or ctx is
+// cancelled. ANSI escapes are stripped on ingest unless stripAnsi is false
+// (i.e. caller wants the picker to render colour via Opt.Ansi downstream).
+func streamItems(ctx context.Context, r io.Reader, src *ff.SliceSource, delay time.Duration, stripAnsi bool) error {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	for scanner.Scan() {
@@ -211,9 +205,7 @@ func streamItems(ctx context.Context, r io.Reader, lock *sync.Mutex, items *[]st
 		if delay > 0 {
 			time.Sleep(delay)
 		}
-		lock.Lock()
-		*items = append(*items, line)
-		lock.Unlock()
+		src.Add(line)
 	}
 	return scanner.Err()
 }

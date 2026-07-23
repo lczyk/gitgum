@@ -22,9 +22,8 @@ type Opt struct {
 	//   0   fullscreen (alt-screen)
 	//   N>0 N visible item rows; prompt+number-line+header drawn above/below
 	//   N<0 terminal_rows + N (raw band size, unchanged from prior behavior)
-	// Honored only by the default litescreen renderer; ignored when the
-	// FF_RENDERER=legacy escape hatch is set (tcell can't preserve
-	// terminal scrollback).
+	// Honored only by the default litescreen renderer; a Screen injected
+	// via Opt.Screen interprets size itself.
 	Height int
 	// RedrawAggressive forces a full repaint on every draw instead of the
 	// O(diff) emit. Set this when a sibling process may write to the same
@@ -55,6 +54,12 @@ type Opt struct {
 	// term. A bare "!" is ignored. When false (default), '!' is treated as a
 	// literal character in the needle.
 	Negate bool
+	// Screen injects a custom rendering backend. Nil (default) makes the
+	// picker create its own litescreen backend sized by Height. When set,
+	// the screen must be uninitialised; the picker takes ownership for the
+	// duration of the run — it calls Init, wires event delivery, and Finis
+	// the screen on exit.
+	Screen Screen
 }
 
 func (o Opt) withDefaults() Opt {

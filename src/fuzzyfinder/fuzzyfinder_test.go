@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
@@ -104,7 +103,7 @@ func TestReal(t *testing.T) {
 		return
 	}
 	names := trackNames()
-	_, err := ff.Find(context.Background(), &names, nil, ff.Opt{})
+	_, err := ff.Find(context.Background(), ff.NewSliceSourceFrom(names), ff.Opt{})
 	require.NoError(t, err)
 }
 
@@ -271,7 +270,7 @@ func TestFind(t *testing.T) {
 
 			assertWithGolden(t, func() string {
 				names := trackNames()
-				_, err := f.Find(context.Background(), &names, nil, c.opt)
+				_, err := f.Find(context.Background(), ff.NewSliceSourceFrom(names), c.opt)
 				assert.Error(t, err, ff.ErrAbort)
 
 				res := term.GetResult()
@@ -345,7 +344,7 @@ func TestFind_pagination(t *testing.T) {
 
 			assertWithGolden(t, func() string {
 				items := makeNumberedItems(30)
-				_, err := f.Find(context.Background(), &items, nil, c.opt)
+				_, err := f.Find(context.Background(), ff.NewSliceSourceFrom(items), c.opt)
 				assert.Error(t, err, ff.ErrAbort)
 				return term.GetResult()
 			})
@@ -362,35 +361,7 @@ func TestFind_hotReload(t *testing.T) {
 
 	names := trackNames()
 	assertWithGolden(t, func() string {
-		_, err := f.Find(
-			context.Background(),
-			&names,
-			&sync.Mutex{},
-			ff.Opt{},
-		)
-		assert.Error(t, err, ff.ErrAbort)
-
-		res := term.GetResult()
-		return res
-	})
-}
-
-func TestFind_hotReloadLock(t *testing.T) {
-	t.Parallel()
-
-	f, term := ff.NewWithMockedTerminal()
-	events := append(runes("adrena"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
-	term.SetEvents(events...)
-
-	var mu sync.RWMutex
-	names := trackNames()
-	assertWithGolden(t, func() string {
-		_, err := f.Find(
-			context.Background(),
-			&names,
-			mu.RLocker(),
-			ff.Opt{},
-		)
+		_, err := f.Find(context.Background(), ff.NewSliceSourceFrom(names), ff.Opt{})
 		assert.Error(t, err, ff.ErrAbort)
 
 		res := term.GetResult()
@@ -420,7 +391,7 @@ func TestFind_enter(t *testing.T) {
 			term.SetEvents(events...)
 
 			names := trackNames()
-			res, err := f.Find(context.Background(), &names, nil, ff.Opt{})
+			res, err := f.Find(context.Background(), ff.NewSliceSourceFrom(names), ff.Opt{})
 			require.NoError(t, err)
 			assert.Equal(t, c.expected, res.Indices[0])
 		})
@@ -439,7 +410,7 @@ func TestFind_withContext(t *testing.T) {
 
 	assertWithGolden(t, func() string {
 		names := trackNames()
-		_, err := f.Find(cancelledCtx, &names, nil, ff.Opt{})
+		_, err := f.Find(cancelledCtx, ff.NewSliceSourceFrom(names), ff.Opt{})
 		assert.Error(t, err, context.Canceled)
 
 		res := term.GetResult()
@@ -459,7 +430,7 @@ func TestFind_WithQuery(t *testing.T) {
 		term.SetEvents(events...)
 
 		assertWithGolden(t, func() string {
-			res, err := f.Find(context.Background(), &things, nil, ff.Opt{})
+			res, err := f.Find(context.Background(), ff.NewSliceSourceFrom(things), ff.Opt{})
 			require.NoError(t, err)
 			assert.Equal(t, 0, res.Indices[0])
 			assert.Equal(t, "one", res.Query)
@@ -472,7 +443,7 @@ func TestFind_WithQuery(t *testing.T) {
 		term.SetEvents(events...)
 
 		assertWithGolden(t, func() string {
-			res, err := f.Find(context.Background(), &things, nil, ff.Opt{Query: "three2"})
+			res, err := f.Find(context.Background(), ff.NewSliceSourceFrom(things), ff.Opt{Query: "three2"})
 			require.NoError(t, err)
 			assert.Equal(t, 1, res.Indices[0])
 			return term.GetResult()
@@ -512,7 +483,7 @@ func TestFind_WithSelectOne(t *testing.T) {
 
 			assertWithGolden(t, func() string {
 				things := c.things
-				res, err := f.Find(context.Background(), &things, nil, ff.Opt{
+				res, err := f.Find(context.Background(), ff.NewSliceSourceFrom(things), ff.Opt{
 					Query:     c.query,
 					SelectOne: true,
 				})
@@ -572,7 +543,7 @@ func TestFindMulti(t *testing.T) {
 			term.SetEvents(events...)
 
 			names := trackNames()
-			res, err := f.Find(context.Background(), &names, nil, ff.Opt{Multi: true})
+			res, err := f.Find(context.Background(), ff.NewSliceSourceFrom(names), ff.Opt{Multi: true})
 			require.NoError(t, err)
 			if c.query != "" {
 				assert.Equal(t, 0, len(res.Indices))
@@ -603,7 +574,7 @@ func BenchmarkFind(b *testing.B) {
 			events := append(runes("adrele!!"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 			term.SetEvents(events...)
 			names := trackNames()
-			_, err := f.Find(context.Background(), &names, nil, ff.Opt{})
+			_, err := f.Find(context.Background(), ff.NewSliceSourceFrom(names), ff.Opt{})
 			assert.Error(b, err, ff.ErrAbort)
 		}
 	})
@@ -615,7 +586,7 @@ func BenchmarkFind(b *testing.B) {
 			events := append(runes("adrele!!"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 			term.SetEvents(events...)
 			names := trackNames()
-			_, err := f.Find(context.Background(), &names, nil, ff.Opt{})
+			_, err := f.Find(context.Background(), ff.NewSliceSourceFrom(names), ff.Opt{})
 			assert.Error(b, err, ff.ErrAbort)
 		}
 	})
@@ -627,7 +598,7 @@ func BenchmarkFind(b *testing.B) {
 			events := append(runes("adrele!!"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 			term.SetEvents(events...)
 			names := trackNames()
-			_, err := f.Find(context.Background(), &names, &sync.Mutex{}, ff.Opt{})
+			_, err := f.Find(context.Background(), ff.NewSliceSourceFrom(names), ff.Opt{})
 			assert.Error(b, err, ff.ErrAbort)
 		}
 	})
@@ -639,7 +610,7 @@ func BenchmarkFind(b *testing.B) {
 			events := append(runes("adrele!!"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 			term.SetEvents(events...)
 			names := trackNames()
-			_, err := f.Find(context.Background(), &names, &sync.Mutex{}, ff.Opt{})
+			_, err := f.Find(context.Background(), ff.NewSliceSourceFrom(names), ff.Opt{})
 			assert.Error(b, err, ff.ErrAbort)
 		}
 	})

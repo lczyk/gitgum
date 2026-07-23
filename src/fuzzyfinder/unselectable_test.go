@@ -28,7 +28,7 @@ func TestUnselectable(t *testing.T) {
 		term.SetEvents(append(runes("apple"), enter)...)
 
 		it := items
-		res, err := f.Find(context.Background(), &it, nil, ff.Opt{Unselectable: unsel})
+		res, err := f.Find(context.Background(), ff.NewSliceSourceFrom(it), ff.Opt{Unselectable: unsel})
 		require.NoError(t, err)
 		assert.Equal(t, 1, res.Indices[0])
 	})
@@ -41,7 +41,7 @@ func TestUnselectable(t *testing.T) {
 		term.SetEvents(enter, esc)
 
 		it := items
-		_, err := f.Find(context.Background(), &it, nil, ff.Opt{Unselectable: unsel})
+		_, err := f.Find(context.Background(), ff.NewSliceSourceFrom(it), ff.Opt{Unselectable: unsel})
 		assert.ErrorIs(t, err, ff.ErrAbort)
 	})
 
@@ -53,7 +53,7 @@ func TestUnselectable(t *testing.T) {
 		term.SetEvents(append(runes("header"), enter)...)
 
 		it := items
-		res, err := f.Find(context.Background(), &it, nil, ff.Opt{Unselectable: unsel})
+		res, err := f.Find(context.Background(), ff.NewSliceSourceFrom(it), ff.Opt{Unselectable: unsel})
 		require.NoError(t, err)
 		assert.Equal(t, 0, len(res.Indices))
 		assert.Equal(t, "header", res.Query)
@@ -65,7 +65,7 @@ func TestUnselectable(t *testing.T) {
 		term.SetEvents(append(runes("zzz"), enter)...)
 
 		it := items
-		res, err := f.Find(context.Background(), &it, nil, ff.Opt{Unselectable: unsel})
+		res, err := f.Find(context.Background(), ff.NewSliceSourceFrom(it), ff.Opt{Unselectable: unsel})
 		require.NoError(t, err)
 		assert.Equal(t, 0, len(res.Indices))
 		assert.Equal(t, "zzz", res.Query)
@@ -79,7 +79,7 @@ func TestUnselectable(t *testing.T) {
 		term.SetEvents(append(runes("appl"), enter)...)
 
 		it := items
-		res, err := f.Find(context.Background(), &it, nil, ff.Opt{
+		res, err := f.Find(context.Background(), ff.NewSliceSourceFrom(it), ff.Opt{
 			Unselectable: func(string) bool { return true },
 		})
 		require.NoError(t, err)
@@ -95,7 +95,7 @@ func TestUnselectable(t *testing.T) {
 		term.SetEvents(tab, tab, enter)
 
 		it := items
-		res, err := f.Find(context.Background(), &it, nil, ff.Opt{Multi: true, Unselectable: unsel})
+		res, err := f.Find(context.Background(), ff.NewSliceSourceFrom(it), ff.Opt{Multi: true, Unselectable: unsel})
 		require.NoError(t, err)
 		assert.EqualArrays(t, []int{1}, res.Indices)
 	})

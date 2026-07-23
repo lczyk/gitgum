@@ -44,7 +44,7 @@ func (s *stubSelector) Select(prompt string, options []string, initialQuery ...s
 	return answer, nil
 }
 
-func (s *stubSelector) SelectStream(ctx context.Context, prompt string, src *ff.SliceSource, unselectable func(string) bool) (string, error) {
+func (s *stubSelector) SelectStream(ctx context.Context, prompt string, src ff.Source, unselectable func(string) bool) (string, error) {
 	s.selectCalls = append(s.selectCalls, selectCall{Prompt: prompt, Stream: true})
 	if len(s.selectAnswers) == 0 {
 		return "", fmt.Errorf("stubSelector: unexpected SelectStream call %q", prompt)

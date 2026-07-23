@@ -119,30 +119,3 @@ func (s *SliceSource) Reset(items []string) {
 	s.mu.Unlock()
 	s.version.Add(1)
 }
-
-// legacyLockedSource adapts a caller-owned *[]string + sync.Locker (the
-// existing Find API) to the Source interface. It implements Versioned with
-// len(items) as the proxy counter — sufficient for the legacy append-only
-// contract; equal-length mutations will not be detected.
-type legacyLockedSource struct {
-	items *[]string
-	lock  sync.Locker
-}
-
-func (l *legacyLockedSource) Snapshot() []string {
-	if l.lock == nil {
-		return append([]string(nil), (*l.items)...)
-	}
-	l.lock.Lock()
-	defer l.lock.Unlock()
-	return append([]string(nil), (*l.items)...)
-}
-
-func (l *legacyLockedSource) Version() uint64 {
-	if l.lock == nil {
-		return uint64(len(*l.items))
-	}
-	l.lock.Lock()
-	defer l.lock.Unlock()
-	return uint64(len(*l.items))
-}

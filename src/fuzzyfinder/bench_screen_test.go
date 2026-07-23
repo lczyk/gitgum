@@ -5,7 +5,7 @@ import (
 )
 
 // BenchScreen is a minimal in-memory screen used by benchmarks. it
-// satisfies the package-local `screen` interface with a preallocated
+// satisfies the exported Screen interface with a preallocated
 // cell buffer so per-frame Clear / SetContent / Show do not allocate.
 // closer to a real terminal than tcell.SimulationScreen, which
 // allocates inside drawCell + CellBuffer.Fill on every flush.
