@@ -40,7 +40,7 @@ func TestPullCommand_PRBranchFastForward(t *testing.T) {
 	temp_repo.RunGit(t, bareDir, "update-ref", "refs/pull/1/head", headSHA)
 
 	// Land on the PR branch via checkout-pr (records the metadata pull reads).
-	co := &CheckoutPRCommand{cmdIO: cmdIO{UI: &stubSelector{selectAnswers: []string{"origin", "PR #1 (head)"}}, Repo: git.Repo{Dir: dir}}}
+	co := &CheckoutPRCommand{cmdIO: cmdIO{UI: &stubSelector{selectAnswers: []string{"PR #1 (head)"}}, Repo: git.Repo{Dir: dir}}}
 	require.NoError(t, co.Execute(nil))
 	require.Equal(t, currentBranchIn(t, dir), "pr/origin/1")
 
