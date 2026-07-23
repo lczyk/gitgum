@@ -2,7 +2,9 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
 )
 
@@ -40,6 +42,36 @@ func (r Repo) Integrate(mode PullMode, upstream string) error {
 		return fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(stderr))
 	}
 	return nil
+}
+
+// WouldRebaseConflict reports whether replaying `branch`'s commits onto
+// `upstream` (a pull --rebase) would hit textual conflicts, without touching
+// the working tree, index, or HEAD. It uses `git merge-tree --write-tree`,
+// which performs the three-way merge in memory and exits 1 on conflict, 0 on a
+// clean result.
+//
+// That tests a merge of the two tips rather than a commit-by-commit replay, so
+// it's a close proxy for rebase cleanliness rather than an exact oracle: the
+// net changes integrated are the same, so a clean merge-tree almost always
+// means a clean rebase and a conflicting one almost always means a conflicting
+// rebase. Callers use it to decide whether to offer a rebase, not to promise
+// one.
+//
+// --write-tree needs git >= 2.38; on older git the option is unknown and this
+// returns an error, which the caller should surface as "couldn't check" rather
+// than guess.
+func (r Repo) WouldRebaseConflict(upstream, branch string) (conflict bool, err error) {
+	_, stderr, err := r.run("merge-tree", "--write-tree", upstream, branch)
+	if err == nil {
+		return false, nil
+	}
+	// merge-tree exits 1 specifically for "merged, but with conflicts"; any
+	// other non-zero exit (bad ref, unknown option on old git) is a real error.
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return true, nil
+	}
+	return false, fmt.Errorf("git merge-tree: %w: %s", err, strings.TrimSpace(stderr))
 }
 
 func (mode PullMode) String() string {
