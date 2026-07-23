@@ -64,6 +64,17 @@ It accepts the ways a repo can be spelled and normalises them:
 
 `--depth N` makes a shallow clone. A url on a host gitgum doesn't model (self-hosted forge, bitbucket, a local path) falls back to plain `git clone` with git's default `origin`. After cloning it prints a compact diffstat of the whole tree (every file as an addition), the same coloured summary `gg pull` shows.
 
+### `gitgum add-remote REMOTE`
+
+Add a remote to the current repo the way `gg clone` names one: after the forge user/org, not `origin` -- so a repo with several remotes stays [`gg doctor`](#gitgum-doctor)-clean. It takes the same spellings as clone (see [`clone`](#gitgum-clone)) plus a forge-name shorthand:
+
+- full urls (kept verbatim, so an ssh remote isn't downgraded to https)
+- host shorthand -- `github.com/user/repo` (canonicalised to https)
+- forge-name shorthand -- `github/user/repo`, `gitlab/user/repo`, `codeberg/user/repo`, or the short aliases `gh/`, `gl/`, `cb/` (the leading token is a forge name, not a host)
+- bare shorthand -- `user/repo`, resolved by probing github, gitlab and codeberg (a picker on multiple hits)
+
+The remote is named after the user/org (`gg add-remote canonical/bonsai-rock` adds a remote called `canonical`). The add is transactional with the fetch: the remote is created, then fetched; if the fetch fails (bad url, unreachable repo) the remote is removed again, so nothing half-configured is left behind. Re-adding a remote that already points at the same url is a no-op; a name collision with a different url errors with a `git remote set-url` hint. Local-path remotes are not supported.
+
 ### `gitgum switch`
 
 Pick a branch to switch to. Local and remote branches stream into the picker live, deduplicated.
