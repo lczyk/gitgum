@@ -47,7 +47,7 @@ _gitgum() {
                         '1:bump:(patch minor major)' \
                         && ret=0
                     ;;
-                switch|branch|checkout-pr|push|pull|doctor|delete|empty)
+                switch|branch|checkout-pr|add-remote|push|pull|doctor|delete|empty)
                     _arguments \
                         '(-h --help)'{-h,--help}'[Show help]' \
                         && ret=0
@@ -89,6 +89,7 @@ _gitgum_commands() {
         'switch:Switch to a branch interactively'
         'branch:Create a new branch off an existing one and switch to it'
         'checkout-pr:Checkout a pull request from a remote repository'
+        'add-remote:Add a remote, applying gg doctor'\''s naming rules'
         'completion:Output shell completion script'
         'status:Show the status of the current git repository'
         'push:Push the current branch to a remote repository'

@@ -1,5 +1,5 @@
 function __fish_gitgum_no_subcommand
-    not __fish_seen_subcommand_from clone switch branch checkout-pr completion status push pull tree diff doctor clean delete replay-list empty release
+    not __fish_seen_subcommand_from clone switch branch checkout-pr add-remote completion status push pull tree diff doctor clean delete replay-list empty release
 end
 
 function __fish_gitgum_branches
@@ -11,6 +11,7 @@ complete -c __GITGUM_CMD__ -n __fish_gitgum_no_subcommand -f -a clone -d "Clone 
 complete -c __GITGUM_CMD__ -n __fish_gitgum_no_subcommand -f -a switch -d 'Switch to a branch interactively'
 complete -c __GITGUM_CMD__ -n __fish_gitgum_no_subcommand -f -a branch -d 'Create a new branch off an existing one and switch to it'
 complete -c __GITGUM_CMD__ -n __fish_gitgum_no_subcommand -f -a checkout-pr -d 'Checkout a pull request from a remote repository'
+complete -c __GITGUM_CMD__ -n __fish_gitgum_no_subcommand -f -a add-remote -d "Add a remote, applying gg doctor's naming rules"
 complete -c __GITGUM_CMD__ -n __fish_gitgum_no_subcommand -f -a completion -d 'Output shell completion script'
 complete -c __GITGUM_CMD__ -n __fish_gitgum_no_subcommand -f -a status -d 'Show the status of the current git repository'
 complete -c __GITGUM_CMD__ -n __fish_gitgum_no_subcommand -f -a push -d 'Push the current branch to a remote repository'

@@ -19,6 +19,7 @@ type Options struct {
 	Switch     commands.SwitchCommand     `command:"switch" description:"Switch to a branch interactively"`
 	Branch     commands.BranchCommand     `command:"branch" description:"Create a new branch off an existing one and switch to it"`
 	CheckoutPR commands.CheckoutPRCommand `command:"checkout-pr" description:"Checkout a pull request from a remote repository"`
+	AddRemote  commands.AddRemoteCommand  `command:"add-remote" description:"Add a remote, applying gg doctor's naming rules"`
 	Completion commands.CompletionCommand `command:"completion" description:"Output shell completion script"`
 	Status     commands.StatusCommand     `command:"status" description:"Show the status of the current git repository"`
 	Push       commands.PushCommand       `command:"push" description:"Push the current branch to a remote repository"`

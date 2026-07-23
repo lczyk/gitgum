@@ -26,6 +26,9 @@ _gitgum_completion() {
             gitgum,checkout-pr)
                 cmd="gitgum_checkout_pr"
                 ;;
+            gitgum,add-remote)
+                cmd="gitgum_add_remote"
+                ;;
             gitgum,completion)
                 cmd="gitgum_completion"
                 ;;
@@ -67,11 +70,11 @@ _gitgum_completion() {
 
     case "${cmd}" in
         gitgum)
-            opts="-h --help -v --version clone switch branch checkout-pr completion status push pull tree diff doctor clean delete replay-list empty release"
+            opts="-h --help -v --version clone switch branch checkout-pr add-remote completion status push pull tree diff doctor clean delete replay-list empty release"
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        gitgum_switch|gitgum_branch|gitgum_checkout_pr|gitgum_push|gitgum_pull|gitgum_doctor|gitgum_delete|gitgum_empty)
+        gitgum_switch|gitgum_branch|gitgum_checkout_pr|gitgum_add_remote|gitgum_push|gitgum_pull|gitgum_doctor|gitgum_delete|gitgum_empty)
             opts="-h --help"
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0

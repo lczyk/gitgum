@@ -108,13 +108,21 @@ func (c *CloneCommand) Execute(args []string) error {
 
 // resolveShorthand turns a bare "user/repo" into a concrete forge by probing
 // each modelled forge for the repo's existence. Zero matches errors; one match
-// is used directly; several prompt a picker (github-first order preserved).
+// is used directly; several prompt a picker (github-first order preserved). It
+// supplies the real network probe (unless one was injected for tests) and
+// delegates to the package-level resolveShorthand.
 func (c *CloneCommand) resolveShorthand(ref git.RepoRef) (git.RepoRef, error) {
 	probe := c.probe
 	if probe == nil {
 		probe = func(u string) bool { return c.repo().RemoteReachable(u) }
 	}
+	return resolveShorthand(c.sel(), probe, ref)
+}
 
+// resolveShorthand probes each modelled forge (concurrently) for a bare
+// "user/repo" ref and returns the ref pinned to the forge that has it. Shared
+// by clone and add-remote. probe must be non-nil.
+func resolveShorthand(sel ui.Selector, probe func(string) bool, ref git.RepoRef) (git.RepoRef, error) {
 	// probe every forge concurrently -- independent network reads, so the wait
 	// is max(probe) not sum(probe). preference order (github first) is preserved
 	// by collecting hits from the ordered forge list afterwards.
@@ -146,7 +154,7 @@ func (c *CloneCommand) resolveShorthand(ref git.RepoRef) (git.RepoRef, error) {
 	case 1:
 		ref.Forge = byURL[hitURLs[0]]
 	default:
-		picked, err := c.sel().Select(
+		picked, err := sel.Select(
 			fmt.Sprintf("%s/%s exists on several forges; pick one", ref.User, ref.Repo), hitURLs)
 		if err != nil {
 			if errors.Is(err, ui.ErrCancelled) {

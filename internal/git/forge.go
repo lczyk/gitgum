@@ -74,6 +74,61 @@ func ForgeFromHost(host string) Forge {
 	return ForgeUnknown
 }
 
+// forgeAliases maps short spellings to a modelled forge, on top of the
+// canonical names in knownForges. Canonical names stay the single source for
+// display (String()); these are input-only conveniences.
+var forgeAliases = map[string]Forge{
+	"gh": ForgeGitHub,
+	"gl": ForgeGitLab,
+	"cb": ForgeCodeberg,
+}
+
+// ForgeFromName maps a forge name to a modelled forge: the canonical name
+// ("github", "gitlab", "codeberg") or a short alias ("gh", "gl", "cb").
+// Case-insensitive; an unrecognised (or empty) name yields ForgeUnknown. This
+// is what resolves the "github/user/repo" (or "gh/user/repo") shorthand, where
+// the leading token is a forge *name* rather than a host.
+func ForgeFromName(name string) Forge {
+	name = strings.ToLower(strings.TrimSpace(name))
+	for _, e := range knownForges {
+		if e.name == name {
+			return e.forge
+		}
+	}
+	if f, ok := forgeAliases[name]; ok {
+		return f
+	}
+	return ForgeUnknown
+}
+
+// looksLikeHost reports whether s is plausibly a hostname (as opposed to a
+// path segment or a bare user name). A host has a dot-separated label and
+// neither a leading nor trailing dot -- which rules out "." / ".." and the
+// "./" / "../" prefixes of a local path, so those fall through to shorthand
+// parsing (and get rejected as non-user/repo) rather than masquerading as a
+// host and producing a bogus "https://../..." url.
+func looksLikeHost(s string) bool {
+	return strings.Contains(s, ".") &&
+		!strings.HasPrefix(s, ".") && !strings.HasSuffix(s, ".")
+}
+
+// forgeNameHost reports the canonical host for a "forge/user/repo" shorthand:
+// name must be a known forge NAME (not a host) and rest must be exactly
+// "user/repo". Anything else yields "" so the caller falls back to bare
+// "user/repo" shorthand -- this keeps "github/x" (a user literally named
+// "github") and deeper local paths from being misread as a forge prefix.
+func forgeNameHost(name, rest string) string {
+	f := ForgeFromName(name)
+	if f == ForgeUnknown {
+		return ""
+	}
+	tail := strings.TrimSuffix(strings.Trim(rest, "/"), ".git")
+	if p := strings.Split(tail, "/"); len(p) == 2 && p[0] != "" && p[1] != "" {
+		return f.Host()
+	}
+	return ""
+}
+
 // RepoRef is a parsed repo identity: which forge (if recognised), the raw host
 // as written, and the user/org + repo. Host is "" for a bare "user/repo"
 // shorthand, non-empty (but possibly unmodelled) for anything with a host.
@@ -104,10 +159,11 @@ func (r RepoRef) URLOn(f Forge) string {
 // ParseRepoRef normalises the repo spellings gg accepts into a RepoRef. It is
 // the generalisation of ParseGitHubURL across all forges plus shorthand:
 //
-//	full urls:      https://github.com/USER/REPO(.git), git@github.com:USER/REPO,
-//	                ssh://git@github.com/USER/REPO(.git), git://github.com/USER/REPO
-//	host shorthand: github.com/USER/REPO, www.github.com/USER/REPO (scheme optional)
-//	bare shorthand: USER/REPO (no host -> Forge/Host unset; caller probes)
+//	full urls:       https://github.com/USER/REPO(.git), git@github.com:USER/REPO,
+//	                 ssh://git@github.com/USER/REPO(.git), git://github.com/USER/REPO
+//	host shorthand:  github.com/USER/REPO, www.github.com/USER/REPO (scheme optional)
+//	forge shorthand: github/USER/REPO (leading forge NAME, not host -> Forge set)
+//	bare shorthand:  USER/REPO (no host -> Forge/Host unset; caller probes)
 //
 // ok is false when it can't pull a user + repo out at all (a lone token, an
 // absolute/deep local path, empty input). A recognised host sets Forge; an
@@ -135,8 +191,10 @@ func ParseRepoRef(raw string) (RepoRef, bool) {
 		host, path = s[:colon], s[colon+1:]
 	case slash != -1:
 		first := s[:slash]
-		if strings.Contains(first, ".") {
+		if looksLikeHost(first) {
 			host, path = first, s[slash+1:] // host/path url form
+		} else if h := forgeNameHost(first, s[slash+1:]); h != "" {
+			host, path = h, s[slash+1:] // forge-name shorthand: github/user/repo
 		} else {
 			hasHost = false // bare user/repo shorthand
 			path = s

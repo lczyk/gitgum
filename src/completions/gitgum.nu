@@ -40,6 +40,11 @@ module completions {
     --help(-h)               # Show help
   ]
 
+  export extern "__GITGUM_CMD__ add-remote" [
+    remote: string           # Repo url, forge/user/repo, or user/repo shorthand
+    --help(-h)               # Show help
+  ]
+
   export extern "__GITGUM_CMD__ completion" [
     shell: string@"nu-complete gitgum shell" # Shell type
     --help(-h)               # Show help

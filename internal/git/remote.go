@@ -28,6 +28,29 @@ func ParseGitHubURL(raw string) (user, repo string, ok bool) {
 	return ref.User, ref.Repo, true
 }
 
+// AddRemote configures a new remote named name pointing at url
+// (`git remote add name url`). It errors if a remote by that name already
+// exists.
+func (r Repo) AddRemote(name, url string) error {
+	if _, stderr, err := r.RunWrite("remote", "add", name, url); err != nil {
+		return fmt.Errorf("git remote add %s: %w: %s", name, err, stderr)
+	}
+	return nil
+}
+
+func AddRemote(name, url string) error { return CWD().AddRemote(name, url) }
+
+// RemoveRemote deletes the named remote (`git remote remove name`). Used to
+// roll back a freshly-added remote when a follow-up fetch fails.
+func (r Repo) RemoveRemote(name string) error {
+	if _, stderr, err := r.RunWrite("remote", "remove", name); err != nil {
+		return fmt.Errorf("git remote remove %s: %w: %s", name, err, stderr)
+	}
+	return nil
+}
+
+func RemoveRemote(name string) error { return CWD().RemoveRemote(name) }
+
 // RemoteReachable reports whether `git ls-remote <url>` succeeds, i.e. the repo
 // exists and is readable (public, or private with the caller's creds). A
 // network failure or a missing repo both read as false; GIT_TERMINAL_PROMPT=0
