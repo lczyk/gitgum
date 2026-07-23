@@ -55,7 +55,7 @@ var bins = []binSpec{
 		bashFn:  "_gitgum_completion",
 		requiredContent: []string{
 			// subcommands
-			"clone", "switch", "branch", "checkout-pr", "completion", "status", "push",
+			"clone", "switch", "branch", "checkout-pr", "add-remote", "completion", "status", "push",
 			"pull", "tree", "diff", "doctor",
 			"clean", "delete", "replay-list", "empty", "release",
 			// clone flag
@@ -84,7 +84,7 @@ var bins = []binSpec{
 			{"completion shells", []string{"completion", ""}, []string{"bash", "fish", "zsh", "nu"}},
 			{"release bumps", []string{"release", ""}, []string{"patch", "minor", "major"}},
 		},
-		nuHelpExpect: []string{"clone", "switch", "branch", "checkout-pr", "completion", "clean", "release", "pull", "tree", "diff", "doctor"},
+		nuHelpExpect: []string{"clone", "switch", "branch", "checkout-pr", "add-remote", "completion", "clean", "release", "pull", "tree", "diff", "doctor"},
 	},
 	{
 		cmdName: "ff",

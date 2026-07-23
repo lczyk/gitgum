@@ -26,6 +26,21 @@ func TestParseRepoRef(t *testing.T) {
 		{"github.com/canonical/cbs-tools", ForgeGitHub, "github.com", "canonical", "cbs-tools", true},
 		{"www.github.com/canonical/cbs-tools", ForgeGitHub, "github.com", "canonical", "cbs-tools", true},
 		{"WWW.GitHub.com/canonical/cbs-tools", ForgeGitHub, "github.com", "canonical", "cbs-tools", true},
+		// forge-name shorthand: leading forge NAME (not host) sets the forge
+		{"github/canonical/rust-rock", ForgeGitHub, "github.com", "canonical", "rust-rock", true},
+		{"gitlab/canonical/cbs-tools", ForgeGitLab, "gitlab.com", "canonical", "cbs-tools", true},
+		{"codeberg/lczyk/gitgum.git", ForgeCodeberg, "codeberg.org", "lczyk", "gitgum", true},
+		{"GitHub/canonical/rust-rock", ForgeGitHub, "github.com", "canonical", "rust-rock", true},
+		// short forge aliases
+		{"gh/rockcrafters/bonsai-rock", ForgeGitHub, "github.com", "rockcrafters", "bonsai-rock", true},
+		{"gl/canonical/cbs-tools", ForgeGitLab, "gitlab.com", "canonical", "cbs-tools", true},
+		{"cb/lczyk/gitgum", ForgeCodeberg, "codeberg.org", "lczyk", "gitgum", true},
+		// forge name with only two segments stays bare shorthand (user "github")
+		{"github/gitgum", ForgeUnknown, "", "github", "gitgum", true},
+		// forge name with a deeper path is not a forge prefix -> rejected
+		{"github/canonical/rust-rock/extra", ForgeUnknown, "", "", "", false},
+		// a non-forge leading token with 3 segments is still a rejected deep path
+		{"notaforge/canonical/rust-rock", ForgeUnknown, "", "", "", false},
 		// bare shorthand: no host, forge unknown, user/repo set
 		{"canonical/cbs-tools", ForgeUnknown, "", "canonical", "cbs-tools", true},
 		{"lczyk/gitgum.git", ForgeUnknown, "", "lczyk", "gitgum", true},
@@ -35,6 +50,9 @@ func TestParseRepoRef(t *testing.T) {
 		// rejects
 		{"https://github.com/onlyuser", ForgeUnknown, "", "", "", false},
 		{"/local/path/to/repo", ForgeUnknown, "", "", "", false},
+		// local paths whose leading segment has a dot must not masquerade as a host
+		{"../some/local/repo", ForgeUnknown, "", "", "", false},
+		{"./foo/bar/baz", ForgeUnknown, "", "", "", false},
 		{"github.com", ForgeUnknown, "", "", "", false},
 		{"", ForgeUnknown, "", "", "", false},
 	}
@@ -59,6 +77,27 @@ func TestRepoRefURLOn(t *testing.T) {
 	for f, want := range cases {
 		if got := ref.URLOn(f); got != want {
 			t.Errorf("URLOn(%v) = %q, want %q", f, got, want)
+		}
+	}
+}
+
+func TestForgeFromName(t *testing.T) {
+	t.Parallel()
+	cases := map[string]Forge{
+		"github":     ForgeGitHub,
+		"GitHub":     ForgeGitHub,
+		" gitlab ":   ForgeGitLab,
+		"codeberg":   ForgeCodeberg,
+		"gh":         ForgeGitHub,
+		"GL":         ForgeGitLab,
+		"cb":         ForgeCodeberg,
+		"github.com": ForgeUnknown, // a host is not a name
+		"bitbucket":  ForgeUnknown,
+		"":           ForgeUnknown,
+	}
+	for name, want := range cases {
+		if got := ForgeFromName(name); got != want {
+			t.Errorf("ForgeFromName(%q) = %v, want %v", name, got, want)
 		}
 	}
 }
