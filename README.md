@@ -134,6 +134,8 @@ Show the working-tree diff as a coloured `--compact-summary` (a diffstat), not a
 
 Push the current branch. Picks a remote interactively when the branch has no upstream, or confirms a push to the existing tracking branch.
 
+When the branch has an upstream, push fetches first so it compares against fresh remote state rather than a stale tracking ref, then acts on where local sits: strictly ahead pushes as usual; the remote holding commits you lack (a plain push would be rejected as non-fast-forward) is handled without dropping you into a surprise rejection. If a `pull --rebase` would apply cleanly it offers to rebase and push the result; if it would conflict it errors and points you at `gg pull` to integrate manually. A branch that is merely behind is offered a fast-forward instead.
+
 ### `gitgum pull`
 
 Fetch the current branch's upstream and integrate it. Reports "already up to date" when there's nothing new; otherwise picks the strategy interactively -- fast-forward only (the default, refuses a merge commit), rebase, or merge. Uncommitted tracked changes are stashed before the pull and popped after, matching the other commands. A shallow clone stays shallow: only new commits are fetched, old history is not backfilled. Errors if the branch has no upstream configured.
