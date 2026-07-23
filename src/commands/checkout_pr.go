@@ -26,10 +26,15 @@ func (c *CheckoutPRCommand) Execute(args []string) error {
 		return fmt.Errorf("no remotes")
 	}
 
-	remote, err := c.sel().Select("Select a remote to fetch PR from", remotes)
-	if err != nil {
-		fmt.Fprintln(c.err(), "No remote selected. Aborting checkout-pr.")
-		return err
+	var remote string
+	if len(remotes) == 1 {
+		remote = remotes[0] // only one remote: no point asking.
+	} else {
+		remote, err = c.sel().Select("Select a remote to fetch PR from", remotes)
+		if err != nil {
+			fmt.Fprintln(c.err(), "No remote selected. Aborting checkout-pr.")
+			return err
+		}
 	}
 
 	prRefs, err := c.getPRRefs(remote)
