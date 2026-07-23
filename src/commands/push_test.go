@@ -198,6 +198,117 @@ func pushRepoWithStaleUpstream(t *testing.T, branch string) (dir, bareDir string
 	return dir, bareDir
 }
 
+// remote diverged from local (each side has a commit the other lacks) and a
+// rebase would apply cleanly (different files): push offers pull --rebase, and
+// on confirm rebases + pushes the result.
+func TestPushCommand_Diverged_OffersRebaseAndPushes(t *testing.T) {
+	t.Parallel()
+	dir, bareDir, branch := pushRepoWithRemoteAhead(t, "remote.txt", "remote change\n")
+	// local commit on a different file -> clean rebase.
+	temp_repo.CreateCommit(t, dir, "local.txt", "local change\n", "feat: local commit")
+
+	var buf strings.Builder
+	stub := &stubSelector{confirmAnswers: []bool{true}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	err := cmd.Execute(nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, len(stub.confirmCalls), 1)
+	assert.ContainsString(t, stub.confirmCalls[0].Prompt, "diverged")
+	assert.ContainsString(t, buf.String(), "Rebased")
+
+	// origin now carries both the remote and the (rebased) local commit.
+	log := temp_repo.RunGit(t, bareDir, "log", "--format=%s", branch)
+	assert.ContainsString(t, log, "feat: local commit")
+	assert.ContainsString(t, log, "remote commit")
+}
+
+// same diverged setup, user declines the rebase: push exits cleanly and does
+// not touch the remote.
+func TestPushCommand_Diverged_DeclineDoesNotPush(t *testing.T) {
+	t.Parallel()
+	dir, bareDir, branch := pushRepoWithRemoteAhead(t, "remote.txt", "remote change\n")
+	temp_repo.CreateCommit(t, dir, "local.txt", "local change\n", "feat: local commit")
+
+	stub := &stubSelector{confirmAnswers: []bool{false}}
+	cmd := &PushCommand{cmdIO: cmdIO{UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	err := cmd.Execute(nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, len(stub.confirmCalls), 1)
+	log := temp_repo.RunGit(t, bareDir, "log", "--format=%s", branch)
+	assert.That(t, !strings.Contains(log, "feat: local commit"), "local commit must not reach remote on decline")
+}
+
+// remote diverged and a rebase would conflict (both sides touched the same
+// file): push errors before prompting, telling the user to integrate manually.
+func TestPushCommand_Diverged_ConflictErrors(t *testing.T) {
+	t.Parallel()
+	dir, _, _ := pushRepoWithRemoteAhead(t, "conflict.txt", "remote version\n")
+	// local commit on the SAME file with different content -> rebase conflict.
+	temp_repo.CreateCommit(t, dir, "conflict.txt", "local version\n", "feat: local commit")
+
+	stub := &stubSelector{}
+	cmd := &PushCommand{cmdIO: cmdIO{UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	err := cmd.Execute(nil)
+	assert.Error(t, err, assert.AnyError, "conflicting divergence should error")
+	assert.ContainsString(t, err.Error(), "would conflict")
+	assert.Equal(t, len(stub.confirmCalls), 0)
+}
+
+// local strictly behind the remote (no local commits): a plain push is
+// rejected, so push offers a fast-forward pull --rebase; there is nothing to
+// push afterwards.
+func TestPushCommand_Behind_OffersFastForward(t *testing.T) {
+	t.Parallel()
+	dir, _, branch := pushRepoWithRemoteAhead(t, "remote.txt", "remote change\n")
+
+	var buf strings.Builder
+	stub := &stubSelector{confirmAnswers: []bool{true}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	err := cmd.Execute(nil)
+	require.NoError(t, err)
+
+	assert.ContainsString(t, buf.String(), "Fast-forwarded")
+	assert.ContainsString(t, buf.String(), "Nothing to push")
+	// local now carries the remote commit.
+	log := temp_repo.RunGit(t, dir, "log", "--format=%s", branch)
+	assert.ContainsString(t, log, "remote commit")
+}
+
+// pushRepoWithRemoteAhead builds a local repo tracking origin/<branch> whose
+// remote has advanced by one commit (touching `file`) that local hasn't fetched
+// yet: origin is strictly ahead and local's remote-tracking ref is stale. The
+// extra commit is pushed via a throwaway clone so the local working copy is
+// untouched. Returns (localDir, bareDir, branch).
+func pushRepoWithRemoteAhead(t *testing.T, file, content string) (dir, bareDir, branch string) {
+	t.Helper()
+	dir = temp_repo.NewRepo(t)
+	bareDir = t.TempDir()
+	temp_repo.RunGit(t, bareDir, "init", "--bare")
+	temp_repo.RunGit(t, dir, "remote", "add", "origin", bareDir)
+
+	branch = currentBranchIn(t, dir)
+	temp_repo.RunGit(t, dir, "push", "-u", "origin", branch)
+
+	// advance origin from a separate clone; local stays put with a stale ref.
+	other := t.TempDir()
+	temp_repo.RunGit(t, other, "clone", bareDir, ".")
+	temp_repo.RunGit(t, other, "config", "user.name", "Other User")
+	temp_repo.RunGit(t, other, "config", "user.email", "other@example.com")
+	temp_repo.RunGit(t, other, "config", "commit.gpgsign", "false")
+	// pin hooks to the local dir so a global commit-msg hook (e.g. a
+	// conventional-commits guard) doesn't reject this fixture commit.
+	temp_repo.RunGit(t, other, "config", "core.hooksPath", ".git/hooks")
+	temp_repo.CreateCommit(t, other, file, content, "feat: remote commit")
+	temp_repo.RunGit(t, other, "push", "origin", branch)
+	return dir, bareDir, branch
+}
+
 // when local matches remote but no tracking is configured, push sets the
 // upstream without prompting (no UI interaction needed).
 func TestPushCommand_AlreadyUpToDate_SetsUpstream(t *testing.T) {
