@@ -50,7 +50,7 @@ func (t *TreeCommand) renderNative(w io.Writer, sinceArg string, maxCount int) e
 	}
 
 	useColor := colorEnabled()
-	nodes, err := parseNativeCommits(stdout, useColor)
+	nodes, err := parseNativeCommits(stdout, useColor, !t.NoHeadFloat)
 	if err != nil {
 		return fmt.Errorf("parsing git log output: %w", err)
 	}
@@ -60,10 +60,7 @@ func (t *TreeCommand) renderNative(w io.Writer, sinceArg string, maxCount int) e
 
 	// Reverse is a layout concern, not a text one: the graph knows which
 	// characters are edges, a pass over rendered lines would have to guess.
-	lr := graph.Layout(nodes, graph.Opt{
-		Reverse:     t.Reverse,
-		NoHeadFloat: t.NoHeadFloat,
-	})
+	lr := graph.Layout(nodes, graph.Opt{Reverse: t.Reverse})
 
 	st := graph.Style{}
 	if useColor {
@@ -164,19 +161,15 @@ func (t *TreeCommand) headFloatLines(colorFlag, raw string, windowIDs []string) 
 // each Label with ANSI escapes when color is on. Each commit is one line:
 // "<hash> <parents>\x00<hash> <decorations> <subject>\x00<epoch>"
 //
-// Branch-name hints are interned into int64 lane ids via a per-call map
-// so repeated names share a lane.
-//
-// IsHead records which commit is checked out, always. Whether that sinks it to
-// the bottom is Layout's call, via graph.Opt.NoHeadFloat.
-func parseNativeCommits(raw string, useColor bool) ([]graph.Node, error) {
+// floatHead controls whether the checked-out commit (HEAD decoration) gets
+// Node.Float set, sinking it and its descendants to the bottom of the layout.
+func parseNativeCommits(raw string, useColor, floatHead bool) ([]graph.Node, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, nil
 	}
 	lines := strings.Split(raw, "\n")
 	nodes := make([]graph.Node, 0, len(lines))
-	laneIds := map[string]int64{}
 	for _, line := range lines {
 		if line == "" {
 			continue
@@ -201,15 +194,6 @@ func parseNativeCommits(raw string, useColor bool) ([]graph.Node, error) {
 		if len(seg) > 2 {
 			epoch, _ = strconv.ParseInt(strings.TrimSpace(seg[2]), 10, 64)
 		}
-		var lane int64
-		if name := extractLaneName(rawLabel); name != "" {
-			lid, ok := laneIds[name]
-			if !ok {
-				lid = int64(len(laneIds) + 1)
-				laneIds[name] = lid
-			}
-			lane = lid
-		}
 		label := rawLabel
 		if useColor {
 			label = colorLabel(rawLabel)
@@ -219,39 +203,10 @@ func parseNativeCommits(raw string, useColor bool) ([]graph.Node, error) {
 			Label:   label,
 			Parents: parents,
 			Epoch:   epoch,
-			Lane:    lane,
-			IsHead:  isHeadDecoration(rawLabel),
+			Float:   floatHead && isHeadDecoration(rawLabel),
 		})
 	}
 	return nodes, nil
-}
-
-// extractLaneName parses the first branch name from git's %d decoration
-// string. Format: "abc1234 (HEAD -> main, origin/main) subject" -> "main".
-// Returns "" if no ref decoration is present.
-//
-// The full ref name is kept as the lane key, remote prefix included
-// ("lczyk/rust" stays "lczyk/rust", not "rust"). Collapsing the prefix would
-// merge a remote-tracking ref onto the same lane as a diverged local branch of
-// the same basename, pulling two distinct tips onto one column -- which flattens
-// an open fork between them. Refs that point at the same commit carry both
-// decorations on one node anyway, so distinct keys cost nothing there.
-func extractLaneName(label string) string {
-	if idx := strings.Index(label, " ("); idx >= 0 {
-		rest := label[idx+2:]
-		if end := strings.Index(rest, ")"); end >= 0 {
-			refs := rest[:end]
-			refs = strings.TrimPrefix(refs, "HEAD -> ")
-			if comma := strings.Index(refs, ","); comma >= 0 {
-				refs = refs[:comma]
-			}
-			refs = strings.TrimSpace(refs)
-			if refs != "" && !strings.HasPrefix(refs, "tag: ") {
-				return refs
-			}
-		}
-	}
-	return ""
 }
 
 // isHeadDecoration reports whether the %d decoration marks the checked-out

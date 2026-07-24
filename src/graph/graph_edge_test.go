@@ -26,7 +26,7 @@ func TestEdge_CyclicGraph(t *testing.T) {
 	lr := graph.Layout(nodes, graph.Opt{})
 	commitRows := 0
 	for _, r := range lr.Rows {
-		if r.Commit != nil {
+		if r.Node != nil {
 			commitRows++
 		}
 	}
@@ -77,9 +77,9 @@ func TestEdge_Determinism(t *testing.T) {
 	t.Parallel()
 	nodes := []graph.Node{
 		{ID: "base", Label: "base", Epoch: 1},
-		{ID: "a1", Label: "a1", Epoch: 2, Parents: []string{"base"}, Lane: h("a")},
-		{ID: "b1", Label: "b1", Epoch: 3, Parents: []string{"base"}, Lane: h("b")},
-		{ID: "merge", Label: "merge", Epoch: 4, Parents: []string{"a1", "b1"}, Lane: h("a")},
+		{ID: "a1", Label: "a1", Epoch: 2, Parents: []string{"base"}},
+		{ID: "b1", Label: "b1", Epoch: 3, Parents: []string{"base"}},
+		{ID: "merge", Label: "merge", Epoch: 4, Parents: []string{"a1", "b1"}},
 	}
 	first := strings.Join(graph.Render(graph.Layout(nodes, graph.Opt{}), graph.Style{}), "\n")
 	for i := range 50 {

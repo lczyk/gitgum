@@ -2,7 +2,8 @@ package graph
 
 import "unsafe"
 
-// Render produces output lines in `git log --graph --oneline` style.
+// Render produces output lines: graph glyphs, then a space, then the row's
+// node Label (in the style of `git log --graph --oneline` output).
 // Style controls graph-glyph ANSI wrapping; pass the zero Style for plain
 // ASCII. Labels are appended verbatim -- callers wanting per-segment
 // coloring should embed ANSI escapes in Node.Label before calling Layout.
@@ -23,8 +24,8 @@ func Render(lr LayoutResult, st Style) []string {
 	estBytes := 0
 	for _, row := range lr.Rows {
 		estBytes += 2 * lr.Columns
-		if row.Commit != nil {
-			estBytes += len(row.Commit.Label) + 1
+		if row.Node != nil {
+			estBytes += len(row.Node.Label) + 1
 		}
 		if styleOverhead := len(st.LinePrefix) + len(st.LineSuffix) + len(st.StarPrefix) + len(st.StarSuffix); styleOverhead > 0 {
 			estBytes += styleOverhead * 4
@@ -55,8 +56,9 @@ func Render(lr LayoutResult, st Style) []string {
 func renderRowInto(buf []byte, slotsBuf *[]Glyph, row Row, numCols int, st Style) []byte {
 	// Build slot grid by packing left-to-right. Diagonals (`/`, `\`) slide
 	// into the previous col's trailing-space slot, and the next col's
-	// primary slides up too -- this is git's compressed `|\|` cross-routing
-	// pattern. Without packing, multi-col layouts get extra whitespace.
+	// primary slides up too -- the compressed `|\|` cross-routing pattern
+	// (as in git's graph.c). Without packing, multi-col layouts get extra
+	// whitespace.
 	slots := (*slotsBuf)[:0]
 	for c := 0; c < numCols; c++ {
 		g := row.Glyphs[c]
@@ -75,7 +77,7 @@ func renderRowInto(buf []byte, slotsBuf *[]Glyph, row Row, numCols int, st Style
 	*slotsBuf = slots
 
 	// Determine right edge: stagger rows render up to the rightmost col with
-	// non-space content; commit rows do the same (with at least col 0).
+	// non-space content; node rows do the same (with at least col 0).
 	lastActive := -1
 	for c := 0; c < numCols; c++ {
 		if row.Glyphs[c] != GlyphSpace {
@@ -94,7 +96,7 @@ func renderRowInto(buf []byte, slotsBuf *[]Glyph, row Row, numCols int, st Style
 			lastGap = c
 		}
 	}
-	if row.Commit == nil {
+	if row.Node == nil {
 		if lastActive < 0 && lastGap < 0 {
 			return buf
 		}
@@ -108,20 +110,20 @@ func renderRowInto(buf []byte, slotsBuf *[]Glyph, row Row, numCols int, st Style
 	}
 	buf = writeSlotsTo(buf, slots[:slotEnd], st)
 
-	if row.Commit == nil {
+	if row.Node == nil {
 		return buf
 	}
 
 	// Label is opaque -- callers embed ANSI codes pre-Layout if they want
 	// per-segment coloring.
-	buf = append(buf, row.Commit.Label...)
+	buf = append(buf, row.Node.Label...)
 	return buf
 }
 
 // writeSlotsTo emits glyph runs of identical Glyph as a single styled
 // write. Lines (`|`/`/`/`\`) are wrapped with Style.LinePrefix/LineSuffix,
 // stars with Style.StarPrefix/StarSuffix; spaces and unstyled cases go
-// straight to the buffer. Split markers (`v`/`^`) stand in for a commit that
+// straight to the buffer. Split markers (`v`/`^`) stand in for a node that
 // isn't there, so they take the star's styling.
 func writeSlotsTo(buf []byte, slots []Glyph, st Style) []byte {
 	if len(slots) == 0 {

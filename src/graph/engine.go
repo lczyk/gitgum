@@ -59,7 +59,7 @@ func newLayoutState(nodes []Node) *layoutState {
 			}
 		}
 	}
-	// Sort children deterministically: first-parent children first (mainline
+	// Sort children deterministically: primary-edge children first (lane
 	// continuity), then by date, then by ID. Map iteration above randomizes
 	// append order; without this every phase that iterates children is unstable.
 	// Children lists are tiny (almost always 2-4 entries); a manual stable
@@ -76,7 +76,7 @@ func newLayoutState(nodes []Node) *layoutState {
 }
 
 // Layout takes a slice of Nodes and returns a layout result describing how
-// each commit maps to a (row, col) pair in the rendered output, plus any
+// each node maps to a (row, col) pair in the rendered output, plus any
 // stagger rows for fork / merge / catch-up edges. It runs the active-lanes
 // row-walker (walker.go): a single newest-first sweep that keeps one column
 // per live edge, so lanes never disconnect.
@@ -90,7 +90,7 @@ func Layout(nodes []Node, opt Opt) LayoutResult {
 }
 
 // insertionSortChildren stable-sorts a parent's children slice in place.
-// Order: first-parent children first (mainline continuity), then by
+// Order: primary-edge children first (lane continuity), then by
 // epoch, then label, then ID. Inlined and allocation-free; suitable for
 // the tiny slices (2-4 entries typical) that get sorted on every Layout
 // call.
@@ -135,21 +135,11 @@ type layoutState struct {
 
 // ------ topological sort --------------------------------------------------------------------------
 
-// headDescendants returns the set of node IDs covering the IsHead node and all
-// its descendants (reachable via child edges). Returns nil when no node sets
-// IsHead, so the caller's ordering is unaffected.
-func (st *layoutState) headDescendants() map[string]bool {
-	var head *nodeState
-	for _, ns := range st.nodes {
-		if ns.IsHead {
-			head = ns
-			break
-		}
-	}
-	if head == nil {
-		return nil
-	}
-	set := map[string]bool{}
+// floatClosure returns the set of node IDs covering every Float-flagged node
+// and all their descendants (reachable via child edges). Returns nil when no
+// node sets Float, so the caller's ordering is unaffected.
+func (st *layoutState) floatClosure() map[string]bool {
+	var set map[string]bool
 	var walk func(ns *nodeState)
 	walk = func(ns *nodeState) {
 		if set[ns.ID] {
@@ -160,11 +150,18 @@ func (st *layoutState) headDescendants() map[string]bool {
 			walk(c)
 		}
 	}
-	walk(head)
+	for _, ns := range st.nodes {
+		if ns.Float {
+			if set == nil {
+				set = map[string]bool{}
+			}
+			walk(ns)
+		}
+	}
 	return set
 }
 
-func (st *layoutState) sort(opt Opt) {
+func (st *layoutState) sort() {
 	n := len(st.nodes)
 	if n == 0 {
 		return
@@ -176,14 +173,12 @@ func (st *layoutState) sort(opt Opt) {
 		indeg[ns.ID] = len(ns.children)
 	}
 
-	// headSide is HEAD plus its descendant-closure (the commits that must render
-	// below it). Floating these ahead of everything else in the ready queue sinks
-	// HEAD to the lowest row the DAG allows -- the bottom row when it's a tip.
-	// Empty (no IsHead node, or the caller opted out) leaves ordering untouched.
-	var headSide map[string]bool
-	if !opt.NoHeadFloat {
-		headSide = st.headDescendants()
-	}
+	// floatSet is the Float-flagged nodes plus their descendant-closures (the
+	// nodes that must render below them). Draining these ahead of everything
+	// else in the ready queue sinks each flagged node to the lowest row the
+	// DAG allows -- the bottom row when it's a tip. Empty (no Float nodes)
+	// leaves ordering untouched.
+	floatSet := st.floatClosure()
 
 	// Ready set: nodes whose children are all placed (tips first).
 	ready := make([]*nodeState, 0)
@@ -196,8 +191,8 @@ func (st *layoutState) sort(opt Opt) {
 	placed := make(map[string]bool, n)
 	row := n - 1 // assign rows newest-first
 
-	// walk places ns and recurses into non-first-parent ancestors immediately,
-	// so second-parent branches appear right after the merge. first-parent
+	// walk places ns and recurses into non-primary ancestors immediately, so
+	// secondary-parent chains appear right after the merge node. primary-edge
 	// continuations go through the ready queue keyed by date.
 	var walk func(ns *nodeState)
 	walk = func(ns *nodeState) {
@@ -208,14 +203,14 @@ func (st *layoutState) sort(opt Opt) {
 		ns.row = row
 		row--
 
-		// Pre-decrement first parent's indeg before descending into non-first
-		// parents. When a non-first parent chain reaches a node that's also
-		// shared with our first parent (e.g. m7 = outer's first-parent AND
-		// inner's second-parent), the descendant's decrement will see the
+		// Pre-decrement the primary parent's indeg before descending into
+		// non-primary parents. When a non-primary parent chain reaches a node
+		// that's also shared with our primary parent (e.g. m7 = outer's primary
+		// AND inner's secondary parent), the descendant's decrement will see the
 		// already-reduced count and hit 0, walking the shared chain depth-first
 		// from the descendant. Without this pre-decrement, the shared chain
-		// gets stranded until our trailing first-parent block runs, by which
-		// time the descendant has already walked its own first-parent chain --
+		// gets stranded until our trailing primary-parent block runs, by which
+		// time the descendant has already walked its own primary chain --
 		// flipping their relative ordering.
 		var fp *nodeState
 		if len(ns.Parents) > 0 {
@@ -225,9 +220,9 @@ func (st *layoutState) sort(opt Opt) {
 			}
 		}
 
-		// Non-first parents: process depth-first, immediately. This places
-		// side-branch commits in rows above the merge commit in newest-first
-		// order (= just below merge in oldest-first output).
+		// Non-primary parents: process depth-first, immediately. This places
+		// side-chain nodes in rows above the merge node in newest-first
+		// order (= just below the merge in oldest-first output).
 		for i := 1; i < len(ns.Parents); i++ {
 			pid := ns.Parents[i]
 			p := st.idx[pid]
@@ -240,7 +235,7 @@ func (st *layoutState) sort(opt Opt) {
 			}
 		}
 
-		// First parent: walk if ready and not already placed by a shared-chain
+		// Primary parent: walk if ready and not already placed by a shared-chain
 		// descent above. Falls through to ready queue when not yet reachable
 		// (other children still pending).
 		if fp != nil && !placed[fp.ID] && indeg[fp.ID] == 0 {
@@ -252,8 +247,8 @@ func (st *layoutState) sort(opt Opt) {
 		// Pick newest ready node (date-ordered queue).
 		sort.Slice(ready, func(i, j int) bool {
 			a, b := ready[i], ready[j]
-			if ah, bh := headSide[a.ID], headSide[b.ID]; ah != bh {
-				return ah // head-side tips drain first -> sink to the bottom
+			if af, bf := floatSet[a.ID], floatSet[b.ID]; af != bf {
+				return af // float-side tips drain first -> sink to the bottom
 			}
 			if a.Epoch != b.Epoch {
 				return a.Epoch > b.Epoch

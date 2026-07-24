@@ -7,47 +7,52 @@ import (
 
 // ------ active-lanes row-walker ------------------------------------------------
 //
-// Model: walk commits newest-first maintaining `lanes` -- one column per live
-// edge, each carrying the id of the parent commit it heads toward. A column
+// Model: walk nodes newest-first maintaining `lanes` -- one column per live
+// edge, each carrying the id of the parent node it heads toward. A column
 // hosts exactly one edge at a time, so occupancy is exact by construction and
 // a lane can never be packed onto a column another edge crosses. That is the
 // whole point: it dissolves the disconnection class the legacy compaction hit.
 //
-// Per commit we emit: optional fan-in connector rows (children converging),
-// the commit row, optional fan-out connector rows (extra parents diverging).
+// Per node we emit: optional fan-in connector rows (children converging),
+// the node row, optional fan-out connector rows (extra parents diverging).
 // Diagonals step one column per row so every edge is a continuous path.
 //
 // Output is built newest-first then reversed (and slashes swapped) to match
 // the oldest-first LayoutResult contract the rest of the package expects.
+//
+// Column choice follows that newest-first walk, so in the default oldest-first
+// output a lane can be born well to the right of columns that look free beside
+// it: those columns were occupied when the lane was allocated, and their own
+// lanes end higher up the page. The gutter is wide, not broken -- read the
+// lane's own endpoints before suspecting a dropped edge.
 
 type laneEdge struct {
-	target string // parent commit id this lane heads toward
+	target string // parent node id this lane heads toward
 }
 
 type walkState struct {
-	idx     map[string]*nodeState
-	lanes   []*laneEdge // nil = free column
-	rows    [][]Glyph   // newest-first; reversed at the end
-	gaps    [][]Glyph   // parallel to rows: trailing-slot diagonals (crossings)
-	commits []*Node     // parallel to rows; nil on connector rows
-	width   int
-	opt     Opt
+	lanes    []*laneEdge // nil = free column
+	rows     [][]Glyph   // newest-first; reversed at the end
+	gaps     [][]Glyph   // parallel to rows: trailing-slot diagonals (crossings)
+	rowNodes []*Node     // parallel to rows; nil on connector rows
+	width    int
+	opt      Opt
 }
 
 func layoutWalker(nodes []Node, opt Opt) LayoutResult {
 	if len(nodes) == 0 {
 		return LayoutResult{}
 	}
-	// Reuse the legacy state construction + topo sort purely for ordering:
-	// it gives each node a stable row (newest = highest) with the nice
-	// "second parent right after its merge" placement.
+	// The topo sort (engine.go) fixes row order only: each node gets a stable
+	// row (newest = highest) with the nice "secondary parent right after its
+	// merge" placement. Column assignment is all done here in the walker.
 	st := newLayoutState(nodes)
-	st.sort(opt)
+	st.sort()
 	order := make([]*nodeState, len(st.nodes))
 	copy(order, st.nodes)
 	sort.Slice(order, func(i, j int) bool { return order[i].row > order[j].row }) // newest first
 
-	w := &walkState{idx: st.idx, opt: opt}
+	w := &walkState{opt: opt}
 	for _, ns := range order {
 		w.place(ns)
 	}
@@ -55,23 +60,23 @@ func layoutWalker(nodes []Node, opt Opt) LayoutResult {
 	return w.finish()
 }
 
-// place handles one commit: fan-in, commit row, fan-out.
+// place handles one node: fan-in, node row, fan-out.
 func (w *walkState) place(ns *nodeState) {
 	id := ns.ID
 
-	// columns whose edge targets this commit (its children's edges)
+	// columns whose edge targets this node (its children's edges)
 	hits := w.hits(id)
 	var myCol int
 	if len(hits) > 0 {
 		myCol = hits[0]
-		// fan-in: bring the extra child lanes into myCol before the commit row
+		// fan-in: bring the extra child lanes into myCol before the node row
 		w.collapse(myCol, hits[1:])
 	} else {
 		myCol = w.allocNear(0)
 		w.lanes[myCol] = &laneEdge{}
 	}
 
-	// commit row
+	// node row
 	row := w.pipeRow()
 	row[myCol] = GlyphStar
 	w.emit(row, nil, ns.Node)
@@ -119,6 +124,12 @@ func (w *walkState) targetCol(id string) int {
 // at 2c+1) from dStart to dEnd inclusive, one half-step per row, so every
 // diagonal in the layout climbs at the same angle -- gap slot on odd d (`|\|`
 // weave), column primary on even d (a bare `\` crossing that column's slot).
+//
+// The even-d rows overwrite whatever sits in that column, live lane included:
+// a diagonal passing over an occupied column replaces its pipe for that single
+// row, so the lane reads as pipe / diagonal / pipe down the page. That is the
+// intended crossover look, not a severed lane -- don't "fix" it by skipping the
+// row or the diagonal loses a step and stops being a continuous path.
 // beforeRow, if set, runs just before each row is built so callers can update
 // lane state (merge / birth) as the front reaches a column.
 //
@@ -165,13 +176,13 @@ func abs(n int) int {
 	return n
 }
 
-// routeMerge draws a diagonal from a merge commit at `from` to an already-live
+// routeMerge draws a diagonal from a merge node at `from` to an already-live
 // parent lane at `to`, crossing any lanes in between at the shared half-column
 // slope. The edge leaves `from` and arrives beside `to` (both endpoints in the
 // adjacent gap), so the lanes at `from` and `to` keep their pipes and the edge
 // just joins the destination.
 //
-// The `from` end abuts the merge commit's own `*`; the `to` end parts from a
+// The `from` end abuts the merge node's own `*`; the `to` end parts from a
 // bare stretch of its lane, so `to` takes the split marker. Only `to` -- the
 // lanes the diagonal crosses on the way are merely passed over, not forked.
 func (w *walkState) routeMerge(from, to int) {
@@ -235,7 +246,7 @@ func (w *walkState) pipeRow() []Glyph {
 // The sink and each extra is a lane the fan parts from, so each takes a split
 // marker on its final pipe row -- `v\` for the sink, `| v\` and out for the
 // extras. The furthest extra never gets one: the front starts already past its
-// pipe, so its first drawn row is its own commit.
+// pipe, so its first drawn row is its own node.
 func (w *walkState) collapse(myCol int, extras []int) {
 	if len(extras) == 0 {
 		return
@@ -247,7 +258,7 @@ func (w *walkState) collapse(myCol int, extras []int) {
 		}
 	}
 	w.diag(2*maxE-1, 2*myCol+1, GlyphSlash, func(d int) {
-		// Merge any extra the front has now reached (its pipe at/right of d).
+		// Absorb any extra the front has now reached (its pipe at/right of d).
 		for _, c := range extras {
 			if 2*c >= d && w.lanes[c] != nil {
 				w.lanes[c] = nil
@@ -256,7 +267,7 @@ func (w *walkState) collapse(myCol int, extras []int) {
 	}, w.splitCols(extras, myCol))
 }
 
-// splitCols names the columns a fan marks: its branch lanes plus its own, which
+// splitCols names the columns a fan marks: its fan-arm lanes plus its own, which
 // forks (or receives) an edge just like they do and so is marked on the same
 // terms. Copies rather than appending in place, since callers keep using cols
 // after this. Every split marker in the layout is routed through here, so
@@ -311,11 +322,11 @@ func (w *walkState) fanOut(myCol int, newCols []int) {
 }
 
 // emit appends a row (padding to the running width). gaps may be nil. Connector
-// rows (no commit) that carry neither a diagonal nor a split marker -- in either
-// the column glyphs or the gaps -- are pure pipes between two commit rows,
+// rows (no node) that carry neither a diagonal nor a split marker -- in either
+// the column glyphs or the gaps -- are pure pipes between two node rows,
 // redundant, so they're dropped.
-func (w *walkState) emit(row []Glyph, gaps []Glyph, commit *Node) {
-	if commit == nil {
+func (w *walkState) emit(row []Glyph, gaps []Glyph, node *Node) {
+	if node == nil {
 		drawn := func(g Glyph) bool {
 			return g == GlyphSlash || g == GlyphBackslash || isSplitMark(g)
 		}
@@ -328,7 +339,7 @@ func (w *walkState) emit(row []Glyph, gaps []Glyph, commit *Node) {
 	}
 	w.rows = append(w.rows, row)
 	w.gaps = append(w.gaps, gaps)
-	w.commits = append(w.commits, commit)
+	w.rowNodes = append(w.rowNodes, node)
 }
 
 // finish turns the walker's newest-first rows into the requested display order
@@ -367,7 +378,7 @@ func (w *walkState) finish() LayoutResult {
 			gap = make([]Glyph, w.width)
 			copyRow(gap, s)
 		}
-		out[i] = Row{Commit: w.commits[src], Glyphs: g, Gap: gap}
+		out[i] = Row{Node: w.rowNodes[src], Glyphs: g, Gap: gap}
 	}
 	return LayoutResult{Rows: out, Columns: w.width}
 }

@@ -84,7 +84,7 @@ func parallelBranches(k, length int) []graph.Node {
 // each catch-up needs a routing col, but they're non-overlapping in time
 // so a single routing col should serve all of them.
 func backAndForthCatchups(n int) []graph.Node {
-	nodes := []graph.Node{{ID: "A", Label: "A", Epoch: 0, Lane: 1}}
+	nodes := []graph.Node{{ID: "A", Label: "A", Epoch: 0}}
 	mainPrev := "A"
 	featPrev := ""
 	for i := 0; i < n; i++ {
@@ -99,12 +99,11 @@ func backAndForthCatchups(n int) []graph.Node {
 					return featPrev
 				}(),
 			},
-			Lane: 2,
 		})
 		c := fmt.Sprintf("c%d", i)
 		nodes = append(nodes, graph.Node{
 			ID: c, Label: c, Epoch: int64(i*4 + 2),
-			Parents: []string{mainPrev, f1}, Lane: 1,
+			Parents: []string{mainPrev, f1},
 		})
 		mainPrev = c
 		featPrev = f1
@@ -117,18 +116,18 @@ func backAndForthCatchups(n int) []graph.Node {
 // merge back to main. Stresses pushed-intro-to-commit-row behavior and
 // lane reuse in col 1.
 func sequentialSideBranches(n int) []graph.Node {
-	nodes := []graph.Node{{ID: "base", Label: "base", Epoch: 0, Lane: 1}}
+	nodes := []graph.Node{{ID: "base", Label: "base", Epoch: 0}}
 	prev := "base"
 	for i := 0; i < n; i++ {
 		s := fmt.Sprintf("s%d", i)
 		m := fmt.Sprintf("M%d", i)
 		nodes = append(nodes, graph.Node{
 			ID: s, Label: s, Epoch: int64(i*2 + 1),
-			Parents: []string{prev}, Lane: 2,
+			Parents: []string{prev},
 		})
 		nodes = append(nodes, graph.Node{
 			ID: m, Label: m, Epoch: int64(i*2 + 2),
-			Parents: []string{prev, s}, Lane: 1,
+			Parents: []string{prev, s},
 		})
 		prev = m
 	}
@@ -140,7 +139,7 @@ func sequentialSideBranches(n int) []graph.Node {
 // an inner merge nested in the outer's other-parent subtree. Repeats the
 // pattern n times to stress the topo-sort pre-decrement path.
 func sharedParentDualMerge(n int) []graph.Node {
-	nodes := []graph.Node{{ID: "root", Label: "root", Epoch: 0, Lane: 1}}
+	nodes := []graph.Node{{ID: "root", Label: "root", Epoch: 0}}
 	prev := "root"
 	for i := 0; i < n; i++ {
 		mTip := fmt.Sprintf("m%d", i)
@@ -148,10 +147,10 @@ func sharedParentDualMerge(n int) []graph.Node {
 		inner := fmt.Sprintf("inner%d", i)
 		outer := fmt.Sprintf("outer%d", i)
 		nodes = append(nodes,
-			graph.Node{ID: mTip, Label: mTip, Epoch: int64(i*5 + 1), Parents: []string{prev}, Lane: 1},
-			graph.Node{ID: fTip, Label: fTip, Epoch: int64(i*5 + 2), Parents: []string{prev}, Lane: 2},
-			graph.Node{ID: inner, Label: inner, Epoch: int64(i*5 + 3), Parents: []string{fTip, mTip}, Lane: 2},
-			graph.Node{ID: outer, Label: outer, Epoch: int64(i*5 + 4), Parents: []string{mTip, inner}, Lane: 1},
+			graph.Node{ID: mTip, Label: mTip, Epoch: int64(i*5 + 1), Parents: []string{prev}},
+			graph.Node{ID: fTip, Label: fTip, Epoch: int64(i*5 + 2), Parents: []string{prev}},
+			graph.Node{ID: inner, Label: inner, Epoch: int64(i*5 + 3), Parents: []string{fTip, mTip}},
+			graph.Node{ID: outer, Label: outer, Epoch: int64(i*5 + 4), Parents: []string{mTip, inner}},
 		)
 		prev = outer
 	}
@@ -162,19 +161,19 @@ func sharedParentDualMerge(n int) []graph.Node {
 // parents are single-commit branches off a shared root; after compaction
 // they share col 1, exercising the term-stagger dedup path.
 func octopusFan(k int) []graph.Node {
-	nodes := []graph.Node{{ID: "A", Label: "A", Epoch: 0, Lane: 1}}
+	nodes := []graph.Node{{ID: "A", Label: "A", Epoch: 0}}
 	parents := []string{"A"}
 	for i := 1; i < k; i++ {
 		id := fmt.Sprintf("p%d", i)
 		nodes = append(nodes, graph.Node{
 			ID: id, Label: id, Epoch: int64(i),
-			Parents: []string{"A"}, Lane: int64(i + 2),
+			Parents: []string{"A"},
 		})
 		parents = append(parents, id)
 	}
 	nodes = append(nodes, graph.Node{
 		ID: "M", Label: "M", Epoch: int64(k + 1),
-		Parents: parents, Lane: 1,
+		Parents: parents,
 	})
 	return nodes
 }

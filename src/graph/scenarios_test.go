@@ -23,22 +23,6 @@ import (
 // the engine; only relative ordering does, so a tiny offset suffices.
 func iso(secs int) int64 { return int64(secs) }
 
-// h interns a branch-name string into a deterministic non-zero int64
-// via FNV-1a. Identical strings always return the same value -- the
-// engine treats matching Lane ints as the same lane, so this lets
-// tests keep their readable branch-name strings.
-func h(name string) int64 {
-	if name == "" {
-		return 0
-	}
-	var hash uint64 = 14695981039346656037
-	for i := 0; i < len(name); i++ {
-		hash ^= uint64(name[i])
-		hash *= 1099511628211
-	}
-	return int64(hash)
-}
-
 func assertGraph(t *testing.T, nodes []graph.Node, expected string) {
 	t.Helper()
 	assertGraphOpt(t, nodes, graph.Opt{}, expected)
@@ -91,9 +75,9 @@ func TestScenario_SingleMerge(t *testing.T) {
 	nodes := []graph.Node{
 		{ID: "base", Label: "base", Epoch: iso(1)},
 		{ID: "side1", Label: "side1", Epoch: iso(2), Parents: []string{"base"}},
-		{ID: "side2", Label: "side2", Epoch: iso(3), Parents: []string{"side1"}, Lane: h("side")},
-		{ID: "main1", Label: "main1", Epoch: iso(4), Parents: []string{"base"}, Lane: h("main")},
-		{ID: "merge", Label: "merge", Epoch: iso(5), Parents: []string{"main1", "side2"}, Lane: h("main")},
+		{ID: "side2", Label: "side2", Epoch: iso(3), Parents: []string{"side1"}},
+		{ID: "main1", Label: "main1", Epoch: iso(4), Parents: []string{"base"}},
+		{ID: "merge", Label: "merge", Epoch: iso(5), Parents: []string{"main1", "side2"}},
 	}
 	expected := `* base
 v\
@@ -109,11 +93,11 @@ func TestScenario_TwoBranches(t *testing.T) {
 	t.Parallel()
 	// base ← f1a; main merges f1; ← f2a; main merges f2.
 	nodes := []graph.Node{
-		{ID: "base", Label: "base", Epoch: iso(1), Lane: h("main")},
-		{ID: "f1a", Label: "f1a", Epoch: iso(2), Parents: []string{"base"}, Lane: h("f1")},
-		{ID: "m1", Label: "merge_f1", Epoch: iso(3), Parents: []string{"base", "f1a"}, Lane: h("main")},
-		{ID: "f2a", Label: "f2a", Epoch: iso(4), Parents: []string{"m1"}, Lane: h("f2")},
-		{ID: "m2", Label: "merge_f2", Epoch: iso(5), Parents: []string{"m1", "f2a"}, Lane: h("main")},
+		{ID: "base", Label: "base", Epoch: iso(1)},
+		{ID: "f1a", Label: "f1a", Epoch: iso(2), Parents: []string{"base"}},
+		{ID: "m1", Label: "merge_f1", Epoch: iso(3), Parents: []string{"base", "f1a"}},
+		{ID: "f2a", Label: "f2a", Epoch: iso(4), Parents: []string{"m1"}},
+		{ID: "m2", Label: "merge_f2", Epoch: iso(5), Parents: []string{"m1", "f2a"}},
 	}
 	expected := `* base
 v\
@@ -132,11 +116,11 @@ func TestScenario_ParallelOpen(t *testing.T) {
 	// base; a1, a2 on branch a; b1, b2 on branch b. Both branches still open
 	// (no merge back). git renders main with stagger out to side.
 	nodes := []graph.Node{
-		{ID: "base", Label: "base", Epoch: iso(1), Lane: h("main")},
-		{ID: "a1", Label: "a1", Epoch: iso(2), Parents: []string{"base"}, Lane: h("a")},
-		{ID: "a2", Label: "a2", Epoch: iso(3), Parents: []string{"a1"}, Lane: h("a")},
-		{ID: "b1", Label: "b1", Epoch: iso(4), Parents: []string{"base"}, Lane: h("b")},
-		{ID: "b2", Label: "b2", Epoch: iso(5), Parents: []string{"b1"}, Lane: h("b")},
+		{ID: "base", Label: "base", Epoch: iso(1)},
+		{ID: "a1", Label: "a1", Epoch: iso(2), Parents: []string{"base"}},
+		{ID: "a2", Label: "a2", Epoch: iso(3), Parents: []string{"a1"}},
+		{ID: "b1", Label: "b1", Epoch: iso(4), Parents: []string{"base"}},
+		{ID: "b2", Label: "b2", Epoch: iso(5), Parents: []string{"b1"}},
 	}
 	expected := `* base
 v\
@@ -152,12 +136,12 @@ func TestScenario_NestedMerge(t *testing.T) {
 	// base; outer1 on outer; inner1 on inner (off outer); outer merges inner;
 	// main1 on main; main merges outer.
 	nodes := []graph.Node{
-		{ID: "base", Label: "base", Epoch: iso(1), Lane: h("main")},
-		{ID: "outer1", Label: "outer1", Epoch: iso(2), Parents: []string{"base"}, Lane: h("outer")},
-		{ID: "inner1", Label: "inner1", Epoch: iso(3), Parents: []string{"outer1"}, Lane: h("inner")},
-		{ID: "main1", Label: "main1", Epoch: iso(4), Parents: []string{"base"}, Lane: h("main")},
-		{ID: "merge_inner", Label: "merge_inner", Epoch: iso(5), Parents: []string{"outer1", "inner1"}, Lane: h("outer")},
-		{ID: "merge_outer", Label: "merge_outer", Epoch: iso(6), Parents: []string{"main1", "merge_inner"}, Lane: h("main")},
+		{ID: "base", Label: "base", Epoch: iso(1)},
+		{ID: "outer1", Label: "outer1", Epoch: iso(2), Parents: []string{"base"}},
+		{ID: "inner1", Label: "inner1", Epoch: iso(3), Parents: []string{"outer1"}},
+		{ID: "main1", Label: "main1", Epoch: iso(4), Parents: []string{"base"}},
+		{ID: "merge_inner", Label: "merge_inner", Epoch: iso(5), Parents: []string{"outer1", "inner1"}},
+		{ID: "merge_outer", Label: "merge_outer", Epoch: iso(6), Parents: []string{"main1", "merge_inner"}},
 	}
 	expected := `* base
 v\
@@ -176,11 +160,11 @@ func TestScenario_CrossMerge(t *testing.T) {
 	t.Parallel()
 	// a merges b, then main merges a.
 	nodes := []graph.Node{
-		{ID: "base", Label: "base", Epoch: iso(1), Lane: h("main")},
-		{ID: "a1", Label: "a1", Epoch: iso(2), Parents: []string{"base"}, Lane: h("a")},
-		{ID: "b1", Label: "b1", Epoch: iso(3), Parents: []string{"base"}, Lane: h("b")},
-		{ID: "a_merges_b", Label: "a_merges_b", Epoch: iso(4), Parents: []string{"a1", "b1"}, Lane: h("a")},
-		{ID: "main_merges_a", Label: "main_merges_a", Epoch: iso(5), Parents: []string{"base", "a_merges_b"}, Lane: h("main")},
+		{ID: "base", Label: "base", Epoch: iso(1)},
+		{ID: "a1", Label: "a1", Epoch: iso(2), Parents: []string{"base"}},
+		{ID: "b1", Label: "b1", Epoch: iso(3), Parents: []string{"base"}},
+		{ID: "a_merges_b", Label: "a_merges_b", Epoch: iso(4), Parents: []string{"a1", "b1"}},
+		{ID: "main_merges_a", Label: "main_merges_a", Epoch: iso(5), Parents: []string{"base", "a_merges_b"}},
 	}
 	// Cross-merge: both of base's side children (a1, b1) open their own lane
 	// off the fork before a1 merges b1, then main merges a.
@@ -201,11 +185,11 @@ func TestScenario_Octopus(t *testing.T) {
 	t.Parallel()
 	// Octopus merge: 3 parents at once.
 	nodes := []graph.Node{
-		{ID: "base", Label: "base", Epoch: iso(1), Lane: h("main")},
-		{ID: "a1", Label: "a1", Epoch: iso(2), Parents: []string{"base"}, Lane: h("a")},
-		{ID: "b1", Label: "b1", Epoch: iso(3), Parents: []string{"base"}, Lane: h("b")},
-		{ID: "c1", Label: "c1", Epoch: iso(4), Parents: []string{"base"}, Lane: h("c")},
-		{ID: "octo", Label: "octo", Epoch: iso(5), Parents: []string{"base", "a1", "b1", "c1"}, Lane: h("main")},
+		{ID: "base", Label: "base", Epoch: iso(1)},
+		{ID: "a1", Label: "a1", Epoch: iso(2), Parents: []string{"base"}},
+		{ID: "b1", Label: "b1", Epoch: iso(3), Parents: []string{"base"}},
+		{ID: "c1", Label: "c1", Epoch: iso(4), Parents: []string{"base"}},
+		{ID: "octo", Label: "octo", Epoch: iso(5), Parents: []string{"base", "a1", "b1", "c1"}},
 	}
 	// Engine currently produces a degraded layout for octopus (skips n>2
 	// stagger). Expected string captures what the engine actually outputs
@@ -230,13 +214,13 @@ func TestScenario_WideStagger(t *testing.T) {
 	t.Parallel()
 	// Long mainline with side branch returning at end.
 	nodes := []graph.Node{
-		{ID: "base", Label: "base", Epoch: iso(1), Lane: h("main")},
-		{ID: "far1", Label: "far1", Epoch: iso(2), Parents: []string{"base"}, Lane: h("far")},
-		{ID: "m1", Label: "m1", Epoch: iso(3), Parents: []string{"base"}, Lane: h("main")},
-		{ID: "m2", Label: "m2", Epoch: iso(4), Parents: []string{"m1"}, Lane: h("main")},
-		{ID: "m3", Label: "m3", Epoch: iso(5), Parents: []string{"m2"}, Lane: h("main")},
-		{ID: "m4", Label: "m4", Epoch: iso(6), Parents: []string{"m3"}, Lane: h("main")},
-		{ID: "merge", Label: "merge_far", Epoch: iso(7), Parents: []string{"m4", "far1"}, Lane: h("main")},
+		{ID: "base", Label: "base", Epoch: iso(1)},
+		{ID: "far1", Label: "far1", Epoch: iso(2), Parents: []string{"base"}},
+		{ID: "m1", Label: "m1", Epoch: iso(3), Parents: []string{"base"}},
+		{ID: "m2", Label: "m2", Epoch: iso(4), Parents: []string{"m1"}},
+		{ID: "m3", Label: "m3", Epoch: iso(5), Parents: []string{"m2"}},
+		{ID: "m4", Label: "m4", Epoch: iso(6), Parents: []string{"m3"}},
+		{ID: "merge", Label: "merge_far", Epoch: iso(7), Parents: []string{"m4", "far1"}},
 	}
 	expected := `* base
 v\
@@ -254,8 +238,8 @@ func TestScenario_MultiRoot(t *testing.T) {
 	t.Parallel()
 	// Two disjoint root commits.
 	nodes := []graph.Node{
-		{ID: "r1", Label: "r1", Epoch: iso(1), Lane: h("main")},
-		{ID: "r2", Label: "r2", Epoch: iso(2), Lane: h("other")},
+		{ID: "r1", Label: "r1", Epoch: iso(1)},
+		{ID: "r2", Label: "r2", Epoch: iso(2)},
 	}
 	expected := `* r1
 * r2`
@@ -296,10 +280,10 @@ func TestScenario_ThreeParallel(t *testing.T) {
 	// live tip-edge its own column, so base's three children fan out across
 	// three columns rather than reusing one.
 	nodes := []graph.Node{
-		{ID: "base", Label: "base", Epoch: iso(1), Lane: h("main")},
-		{ID: "a1", Label: "a1", Epoch: iso(2), Parents: []string{"base"}, Lane: h("a")},
-		{ID: "b1", Label: "b1", Epoch: iso(3), Parents: []string{"base"}, Lane: h("b")},
-		{ID: "c1", Label: "c1", Epoch: iso(4), Parents: []string{"base"}, Lane: h("c")},
+		{ID: "base", Label: "base", Epoch: iso(1)},
+		{ID: "a1", Label: "a1", Epoch: iso(2), Parents: []string{"base"}},
+		{ID: "b1", Label: "b1", Epoch: iso(3), Parents: []string{"base"}},
+		{ID: "c1", Label: "c1", Epoch: iso(4), Parents: []string{"base"}},
 	}
 	expected := `* base
 v\
@@ -315,11 +299,11 @@ func TestScenario_BackMerge(t *testing.T) {
 	t.Parallel()
 	// main merges feat, then feat merges main back. Catch-up merge pattern.
 	nodes := []graph.Node{
-		{ID: "base", Label: "base", Epoch: iso(1), Lane: h("main")},
-		{ID: "feat1", Label: "feat1", Epoch: iso(2), Parents: []string{"base"}, Lane: h("feat")},
-		{ID: "main1", Label: "main1", Epoch: iso(3), Parents: []string{"base"}, Lane: h("main")},
-		{ID: "main_merges_feat", Label: "main_merges_feat", Epoch: iso(4), Parents: []string{"main1", "feat1"}, Lane: h("main")},
-		{ID: "feat_merges_main", Label: "feat_merges_main", Epoch: iso(5), Parents: []string{"feat1", "main_merges_feat"}, Lane: h("feat")},
+		{ID: "base", Label: "base", Epoch: iso(1)},
+		{ID: "feat1", Label: "feat1", Epoch: iso(2), Parents: []string{"base"}},
+		{ID: "main1", Label: "main1", Epoch: iso(3), Parents: []string{"base"}},
+		{ID: "main_merges_feat", Label: "main_merges_feat", Epoch: iso(4), Parents: []string{"main1", "feat1"}},
+		{ID: "feat_merges_main", Label: "feat_merges_main", Epoch: iso(5), Parents: []string{"feat1", "main_merges_feat"}},
 	}
 	// Topo walk pre-decrements first-parent indeg before non-first descents,
 	// so the shared parent (feat1, also m_m_f's second parent) is reachable
@@ -341,15 +325,15 @@ func TestScenario_MergeOldIntoNew(t *testing.T) {
 	t.Parallel()
 	// Long-lived old branch finally merged into a much-newer mainline.
 	nodes := []graph.Node{
-		{ID: "base", Label: "base", Epoch: iso(1), Lane: h("main")},
-		{ID: "old1", Label: "old1", Epoch: iso(2), Parents: []string{"base"}, Lane: h("old")},
-		{ID: "m1", Label: "m1", Epoch: iso(3), Parents: []string{"base"}, Lane: h("main")},
-		{ID: "m2", Label: "m2", Epoch: iso(4), Parents: []string{"m1"}, Lane: h("main")},
-		{ID: "m3", Label: "m3", Epoch: iso(5), Parents: []string{"m2"}, Lane: h("main")},
-		{ID: "m4", Label: "m4", Epoch: iso(6), Parents: []string{"m3"}, Lane: h("main")},
-		{ID: "m5", Label: "m5", Epoch: iso(7), Parents: []string{"m4"}, Lane: h("main")},
-		{ID: "m6", Label: "m6", Epoch: iso(8), Parents: []string{"m5"}, Lane: h("main")},
-		{ID: "merge_old", Label: "merge_old", Epoch: iso(9), Parents: []string{"m6", "old1"}, Lane: h("main")},
+		{ID: "base", Label: "base", Epoch: iso(1)},
+		{ID: "old1", Label: "old1", Epoch: iso(2), Parents: []string{"base"}},
+		{ID: "m1", Label: "m1", Epoch: iso(3), Parents: []string{"base"}},
+		{ID: "m2", Label: "m2", Epoch: iso(4), Parents: []string{"m1"}},
+		{ID: "m3", Label: "m3", Epoch: iso(5), Parents: []string{"m2"}},
+		{ID: "m4", Label: "m4", Epoch: iso(6), Parents: []string{"m3"}},
+		{ID: "m5", Label: "m5", Epoch: iso(7), Parents: []string{"m4"}},
+		{ID: "m6", Label: "m6", Epoch: iso(8), Parents: []string{"m5"}},
+		{ID: "merge_old", Label: "merge_old", Epoch: iso(9), Parents: []string{"m6", "old1"}},
 	}
 	expected := `* base
 v\
@@ -369,13 +353,13 @@ func TestScenario_DeepNested(t *testing.T) {
 	t.Parallel()
 	// 4 levels of nested merges.
 	nodes := []graph.Node{
-		{ID: "base", Label: "base", Epoch: iso(1), Lane: h("main")},
-		{ID: "l1a", Label: "l1a", Epoch: iso(2), Parents: []string{"base"}, Lane: h("L1")},
-		{ID: "l2a", Label: "l2a", Epoch: iso(3), Parents: []string{"l1a"}, Lane: h("L2")},
-		{ID: "l3a", Label: "l3a", Epoch: iso(4), Parents: []string{"l2a"}, Lane: h("L3")},
-		{ID: "L2_merges_L3", Label: "L2_merges_L3", Epoch: iso(5), Parents: []string{"l2a", "l3a"}, Lane: h("L2")},
-		{ID: "L1_merges_L2", Label: "L1_merges_L2", Epoch: iso(6), Parents: []string{"l1a", "L2_merges_L3"}, Lane: h("L1")},
-		{ID: "main_merges_L1", Label: "main_merges_L1", Epoch: iso(7), Parents: []string{"base", "L1_merges_L2"}, Lane: h("main")},
+		{ID: "base", Label: "base", Epoch: iso(1)},
+		{ID: "l1a", Label: "l1a", Epoch: iso(2), Parents: []string{"base"}},
+		{ID: "l2a", Label: "l2a", Epoch: iso(3), Parents: []string{"l1a"}},
+		{ID: "l3a", Label: "l3a", Epoch: iso(4), Parents: []string{"l2a"}},
+		{ID: "L2_merges_L3", Label: "L2_merges_L3", Epoch: iso(5), Parents: []string{"l2a", "l3a"}},
+		{ID: "L1_merges_L2", Label: "L1_merges_L2", Epoch: iso(6), Parents: []string{"l1a", "L2_merges_L3"}},
+		{ID: "main_merges_L1", Label: "main_merges_L1", Epoch: iso(7), Parents: []string{"base", "L1_merges_L2"}},
 	}
 	expected := `* base
 v\
@@ -400,12 +384,12 @@ func TestScenario_SplitWithoutCommit(t *testing.T) {
 	// the `v\|` weave, marked on the lane the edge leaves. The edge's other end
 	// needs no marker: M's own `*` sits there.
 	nodes := []graph.Node{
-		{ID: "base", Label: "base", Epoch: iso(1), Lane: h("main")},
-		{ID: "P", Label: "P", Epoch: iso(2), Parents: []string{"base"}, Lane: h("main")},
-		{ID: "Q", Label: "Q", Epoch: iso(3), Parents: []string{"base"}, Lane: h("q")},
-		{ID: "X", Label: "X", Epoch: iso(4), Parents: []string{"P"}, Lane: h("x")},
-		{ID: "M", Label: "M", Epoch: iso(5), Parents: []string{"Q", "P"}, Lane: h("q")},
-		{ID: "C", Label: "C", Epoch: iso(6), Parents: []string{"P"}, Lane: h("main")},
+		{ID: "base", Label: "base", Epoch: iso(1)},
+		{ID: "P", Label: "P", Epoch: iso(2), Parents: []string{"base"}},
+		{ID: "Q", Label: "Q", Epoch: iso(3), Parents: []string{"base"}},
+		{ID: "X", Label: "X", Epoch: iso(4), Parents: []string{"P"}},
+		{ID: "M", Label: "M", Epoch: iso(5), Parents: []string{"Q", "P"}},
+		{ID: "C", Label: "C", Epoch: iso(6), Parents: []string{"P"}},
 	}
 	expected := `* base
 v\
@@ -453,10 +437,10 @@ func TestScenario_MergeFanMarkers(t *testing.T) {
 	// the merge's own -- while C's, outermost, never draws a pipe inside the fan
 	// and so carries none. The fan-out above mirrors it row for row.
 	nodes := []graph.Node{
-		{ID: "A", Label: "A", Epoch: iso(1), Lane: h("main")},
-		{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}, Lane: h("b")},
-		{ID: "C", Label: "C", Epoch: iso(3), Parents: []string{"A"}, Lane: h("c")},
-		{ID: "M", Label: "M", Epoch: iso(4), Parents: []string{"A", "B", "C"}, Lane: h("main")},
+		{ID: "A", Label: "A", Epoch: iso(1)},
+		{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}},
+		{ID: "C", Label: "C", Epoch: iso(3), Parents: []string{"A"}},
+		{ID: "M", Label: "M", Epoch: iso(4), Parents: []string{"A", "B", "C"}},
 	}
 	expected := `* A
 v\
@@ -476,24 +460,24 @@ v/
 func markerScenarios() map[string][]graph.Node {
 	return map[string][]graph.Node{
 		"back merge": {
-			{ID: "base", Label: "base", Epoch: iso(1), Lane: h("main")},
-			{ID: "feat1", Label: "feat1", Epoch: iso(2), Parents: []string{"base"}, Lane: h("feat")},
-			{ID: "main1", Label: "main1", Epoch: iso(3), Parents: []string{"base"}, Lane: h("main")},
-			{ID: "m", Label: "m", Epoch: iso(4), Parents: []string{"main1", "feat1"}, Lane: h("main")},
-			{ID: "f", Label: "f", Epoch: iso(5), Parents: []string{"feat1", "m"}, Lane: h("feat")},
+			{ID: "base", Label: "base", Epoch: iso(1)},
+			{ID: "feat1", Label: "feat1", Epoch: iso(2), Parents: []string{"base"}},
+			{ID: "main1", Label: "main1", Epoch: iso(3), Parents: []string{"base"}},
+			{ID: "m", Label: "m", Epoch: iso(4), Parents: []string{"main1", "feat1"}},
+			{ID: "f", Label: "f", Epoch: iso(5), Parents: []string{"feat1", "m"}},
 		},
 		"octopus": {
-			{ID: "A", Label: "A", Epoch: iso(1), Lane: h("main")},
-			{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}, Lane: h("b")},
-			{ID: "C", Label: "C", Epoch: iso(3), Parents: []string{"A"}, Lane: h("c")},
-			{ID: "D", Label: "D", Epoch: iso(4), Parents: []string{"A"}, Lane: h("d")},
-			{ID: "M", Label: "M", Epoch: iso(5), Parents: []string{"A", "B", "C", "D"}, Lane: h("main")},
+			{ID: "A", Label: "A", Epoch: iso(1)},
+			{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}},
+			{ID: "C", Label: "C", Epoch: iso(3), Parents: []string{"A"}},
+			{ID: "D", Label: "D", Epoch: iso(4), Parents: []string{"A"}},
+			{ID: "M", Label: "M", Epoch: iso(5), Parents: []string{"A", "B", "C", "D"}},
 		},
 		"three parallel": {
-			{ID: "base", Label: "base", Epoch: iso(1), Lane: h("main")},
-			{ID: "a1", Label: "a1", Epoch: iso(2), Parents: []string{"base"}, Lane: h("a")},
-			{ID: "b1", Label: "b1", Epoch: iso(3), Parents: []string{"base"}, Lane: h("b")},
-			{ID: "c1", Label: "c1", Epoch: iso(4), Parents: []string{"base"}, Lane: h("c")},
+			{ID: "base", Label: "base", Epoch: iso(1)},
+			{ID: "a1", Label: "a1", Epoch: iso(2), Parents: []string{"base"}},
+			{ID: "b1", Label: "b1", Epoch: iso(3), Parents: []string{"base"}},
+			{ID: "c1", Label: "c1", Epoch: iso(4), Parents: []string{"base"}},
 		},
 	}
 }
@@ -535,10 +519,10 @@ func TestScenario_ReversedMirrorsMarkers(t *testing.T) {
 	// Reversed() flips row order and every glyph with it: diagonals swap hands
 	// and each `v` becomes the `^` that points back along the same edge.
 	nodes := []graph.Node{
-		{ID: "base", Label: "base", Epoch: iso(1), Lane: h("main")},
-		{ID: "a1", Label: "a1", Epoch: iso(2), Parents: []string{"base"}, Lane: h("a")},
-		{ID: "b1", Label: "b1", Epoch: iso(3), Parents: []string{"base"}, Lane: h("b")},
-		{ID: "c1", Label: "c1", Epoch: iso(4), Parents: []string{"base"}, Lane: h("c")},
+		{ID: "base", Label: "base", Epoch: iso(1)},
+		{ID: "a1", Label: "a1", Epoch: iso(2), Parents: []string{"base"}},
+		{ID: "b1", Label: "b1", Epoch: iso(3), Parents: []string{"base"}},
+		{ID: "c1", Label: "c1", Epoch: iso(4), Parents: []string{"base"}},
 	}
 	expected := `* c1
 | * b1
@@ -566,10 +550,10 @@ func TestScenario_TopoSkewMerge(t *testing.T) {
 	// Side branch dated BEFORE base (clock skew). Topology must override
 	// date when ordering rows.
 	nodes := []graph.Node{
-		{ID: "base", Label: "base", Epoch: iso(100), Lane: h("main")},
-		{ID: "side_old", Label: "side_old", Epoch: iso(1), Parents: []string{"base"}, Lane: h("side")},
-		{ID: "main1", Label: "main1", Epoch: iso(200), Parents: []string{"base"}, Lane: h("main")},
-		{ID: "merge_side", Label: "merge_side", Epoch: iso(300), Parents: []string{"main1", "side_old"}, Lane: h("main")},
+		{ID: "base", Label: "base", Epoch: iso(100)},
+		{ID: "side_old", Label: "side_old", Epoch: iso(1), Parents: []string{"base"}},
+		{ID: "main1", Label: "main1", Epoch: iso(200), Parents: []string{"base"}},
+		{ID: "merge_side", Label: "merge_side", Epoch: iso(300), Parents: []string{"main1", "side_old"}},
 	}
 	expected := `* base
 v\
@@ -584,10 +568,10 @@ func TestScenario_DanglingTip(t *testing.T) {
 	t.Parallel()
 	// Feature branch never merged while main continues past.
 	nodes := []graph.Node{
-		{ID: "base", Label: "base", Epoch: iso(1), Lane: h("main")},
-		{ID: "feat1", Label: "feat1", Epoch: iso(2), Parents: []string{"base"}, Lane: h("feat")},
-		{ID: "m1", Label: "m1", Epoch: iso(3), Parents: []string{"base"}, Lane: h("main")},
-		{ID: "m2", Label: "m2", Epoch: iso(4), Parents: []string{"m1"}, Lane: h("main")},
+		{ID: "base", Label: "base", Epoch: iso(1)},
+		{ID: "feat1", Label: "feat1", Epoch: iso(2), Parents: []string{"base"}},
+		{ID: "m1", Label: "m1", Epoch: iso(3), Parents: []string{"base"}},
+		{ID: "m2", Label: "m2", Epoch: iso(4), Parents: []string{"m1"}},
 	}
 	expected := `* base
 v\
@@ -601,9 +585,9 @@ func TestScenario_OrphanWithTag(t *testing.T) {
 	t.Parallel()
 	// Main branch with two commits + an orphan branch carrying a tag.
 	nodes := []graph.Node{
-		{ID: "m1", Label: "m1", Epoch: iso(1), Lane: h("main")},
-		{ID: "m2", Label: "m2", Epoch: iso(2), Parents: []string{"m1"}, Lane: h("main")},
-		{ID: "orph1", Label: "orph1 (tag: v-orph)", Epoch: iso(3), Lane: h("orph")},
+		{ID: "m1", Label: "m1", Epoch: iso(1)},
+		{ID: "m2", Label: "m2", Epoch: iso(2), Parents: []string{"m1"}},
+		{ID: "orph1", Label: "orph1 (tag: v-orph)", Epoch: iso(3)},
 	}
 	expected := `* m1
 * m2
@@ -631,22 +615,22 @@ func TestScenario_SharedParentDualMerge(t *testing.T) {
 		{ID: "root", Label: "root", Epoch: iso(1)},
 		{ID: "A", Label: "A", Epoch: iso(2), Parents: []string{"root"}},
 		// long main chain off A
-		{ID: "m1", Label: "m1", Epoch: iso(3), Parents: []string{"A"}, Lane: h("main")},
-		{ID: "m2", Label: "m2", Epoch: iso(4), Parents: []string{"m1"}, Lane: h("main")},
-		{ID: "m3", Label: "m3", Epoch: iso(5), Parents: []string{"m2"}, Lane: h("main")},
-		{ID: "m4", Label: "m4", Epoch: iso(6), Parents: []string{"m3"}, Lane: h("main")},
-		{ID: "m5", Label: "m5", Epoch: iso(7), Parents: []string{"m4"}, Lane: h("main")},
-		{ID: "m6", Label: "m6", Epoch: iso(8), Parents: []string{"m5"}, Lane: h("main")},
-		{ID: "m7", Label: "m7", Epoch: iso(9), Parents: []string{"m6"}, Lane: h("main")},
+		{ID: "m1", Label: "m1", Epoch: iso(3), Parents: []string{"A"}},
+		{ID: "m2", Label: "m2", Epoch: iso(4), Parents: []string{"m1"}},
+		{ID: "m3", Label: "m3", Epoch: iso(5), Parents: []string{"m2"}},
+		{ID: "m4", Label: "m4", Epoch: iso(6), Parents: []string{"m3"}},
+		{ID: "m5", Label: "m5", Epoch: iso(7), Parents: []string{"m4"}},
+		{ID: "m6", Label: "m6", Epoch: iso(8), Parents: []string{"m5"}},
+		{ID: "m7", Label: "m7", Epoch: iso(9), Parents: []string{"m6"}},
 		// short feature chain off A
-		{ID: "f1", Label: "f1", Epoch: iso(10), Parents: []string{"A"}, Lane: h("feat")},
-		{ID: "f2", Label: "f2", Epoch: iso(11), Parents: []string{"f1"}, Lane: h("feat")},
+		{ID: "f1", Label: "f1", Epoch: iso(10), Parents: []string{"A"}},
+		{ID: "f2", Label: "f2", Epoch: iso(11), Parents: []string{"f1"}},
 		// inner merge: feature is first parent, main is second
-		{ID: "inner", Label: "inner", Epoch: iso(12), Parents: []string{"f2", "m7"}, Lane: h("feat")},
-		{ID: "c1", Label: "c1", Epoch: iso(13), Parents: []string{"inner"}, Lane: h("feat")},
-		{ID: "c2", Label: "c2", Epoch: iso(14), Parents: []string{"c1"}, Lane: h("feat")},
+		{ID: "inner", Label: "inner", Epoch: iso(12), Parents: []string{"f2", "m7"}},
+		{ID: "c1", Label: "c1", Epoch: iso(13), Parents: []string{"inner"}},
+		{ID: "c2", Label: "c2", Epoch: iso(14), Parents: []string{"c1"}},
 		// outer merge: main chain (m7) is first parent, feature chain is second
-		{ID: "outer", Label: "outer", Epoch: iso(15), Parents: []string{"m7", "c2"}, Lane: h("main")},
+		{ID: "outer", Label: "outer", Epoch: iso(15), Parents: []string{"m7", "c2"}},
 		{ID: "tip", Label: "tip", Epoch: iso(16), Parents: []string{"outer"}},
 	}
 	// feature chain (f1, f2) should appear before the main chain (m1...m7)
@@ -659,8 +643,8 @@ func TestScenario_SharedParentDualMerge(t *testing.T) {
 	positions := map[string]int{}
 	idx := 0
 	for _, row := range lr.Rows {
-		if row.Commit != nil {
-			positions[row.Commit.ID] = idx
+		if row.Node != nil {
+			positions[row.Node.ID] = idx
 			idx++
 		}
 	}
@@ -683,16 +667,16 @@ func TestScenario_CatchUpReusesIdleCol(t *testing.T) {
 	// allocating a new col 3 -- otherwise the catch-up stagger inflates
 	// from 3 rows in 3 cols to 5 rows in 4 cols.
 	nodes := []graph.Node{
-		{ID: "A", Label: "A", Epoch: iso(1), Lane: h("main")},
-		{ID: "m1", Label: "m1", Epoch: iso(2), Parents: []string{"A"}, Lane: h("main")},
-		{ID: "m2", Label: "m2", Epoch: iso(3), Parents: []string{"m1"}, Lane: h("main")},
-		{ID: "f1", Label: "f1", Epoch: iso(4), Parents: []string{"A"}, Lane: h("feat")},
-		{ID: "M", Label: "M", Epoch: iso(5), Parents: []string{"f1", "m2"}, Lane: h("feat")},
-		{ID: "s1", Label: "s1", Epoch: iso(6), Parents: []string{"M"}, Lane: h("feat")},
-		{ID: "p1", Label: "p1", Epoch: iso(7), Parents: []string{"s1"}, Lane: h("feat")},
-		{ID: "p2", Label: "p2", Epoch: iso(8), Parents: []string{"s1"}, Lane: h("other")},
-		{ID: "mp", Label: "mp", Epoch: iso(9), Parents: []string{"p1", "p2"}, Lane: h("feat")},
-		{ID: "final", Label: "final", Epoch: iso(10), Parents: []string{"m2", "mp"}, Lane: h("main")},
+		{ID: "A", Label: "A", Epoch: iso(1)},
+		{ID: "m1", Label: "m1", Epoch: iso(2), Parents: []string{"A"}},
+		{ID: "m2", Label: "m2", Epoch: iso(3), Parents: []string{"m1"}},
+		{ID: "f1", Label: "f1", Epoch: iso(4), Parents: []string{"A"}},
+		{ID: "M", Label: "M", Epoch: iso(5), Parents: []string{"f1", "m2"}},
+		{ID: "s1", Label: "s1", Epoch: iso(6), Parents: []string{"M"}},
+		{ID: "p1", Label: "p1", Epoch: iso(7), Parents: []string{"s1"}},
+		{ID: "p2", Label: "p2", Epoch: iso(8), Parents: []string{"s1"}},
+		{ID: "mp", Label: "mp", Epoch: iso(9), Parents: []string{"p1", "p2"}},
+		{ID: "final", Label: "final", Epoch: iso(10), Parents: []string{"m2", "mp"}},
 	}
 	expected := `* A
 v\
@@ -719,12 +703,12 @@ func TestScenario_SequentialSideBranches(t *testing.T) {
 	// the walker gives each its own live lane, so s2 opens a fresh column
 	// alongside s1's rather than reusing it.
 	nodes := []graph.Node{
-		{ID: "A", Label: "A", Epoch: iso(1), Lane: h("main")},
-		{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}, Lane: h("main")},
-		{ID: "s1", Label: "s1", Epoch: iso(3), Parents: []string{"B"}, Lane: h("feat1")},
-		{ID: "M1", Label: "M1", Epoch: iso(4), Parents: []string{"B", "s1"}, Lane: h("main")},
-		{ID: "s2", Label: "s2", Epoch: iso(5), Parents: []string{"B"}, Lane: h("feat2")},
-		{ID: "M2", Label: "M2", Epoch: iso(6), Parents: []string{"M1", "s2"}, Lane: h("main")},
+		{ID: "A", Label: "A", Epoch: iso(1)},
+		{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}},
+		{ID: "s1", Label: "s1", Epoch: iso(3), Parents: []string{"B"}},
+		{ID: "M1", Label: "M1", Epoch: iso(4), Parents: []string{"B", "s1"}},
+		{ID: "s2", Label: "s2", Epoch: iso(5), Parents: []string{"B"}},
+		{ID: "M2", Label: "M2", Epoch: iso(6), Parents: []string{"M1", "s2"}},
 	}
 	expected := `* A
 * B
@@ -751,11 +735,11 @@ func TestScenario_CrissCross(t *testing.T) {
 	// scan iterated past len(st.lanes) because numCols was bumped by the
 	// first crossing's allocation (routing cols have no lanes entry).
 	nodes := []graph.Node{
-		{ID: "A", Label: "A", Epoch: iso(1), Lane: h("main")},
-		{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}, Lane: h("main")},
-		{ID: "C", Label: "C", Epoch: iso(3), Parents: []string{"A"}, Lane: h("feat")},
-		{ID: "M1", Label: "M1", Epoch: iso(4), Parents: []string{"B", "C"}, Lane: h("main")},
-		{ID: "M2", Label: "M2", Epoch: iso(5), Parents: []string{"C", "B"}, Lane: h("feat")},
+		{ID: "A", Label: "A", Epoch: iso(1)},
+		{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}},
+		{ID: "C", Label: "C", Epoch: iso(3), Parents: []string{"A"}},
+		{ID: "M1", Label: "M1", Epoch: iso(4), Parents: []string{"B", "C"}},
+		{ID: "M2", Label: "M2", Epoch: iso(5), Parents: []string{"C", "B"}},
 	}
 	// Just assert no panic and a non-empty render -- exact glyph layout
 	// here is less important than the crash regression.
@@ -771,14 +755,14 @@ func TestScenario_BackAndForthCatchUps(t *testing.T) {
 	// quadratically; routing cols are now reused across non-overlapping
 	// crossings. Asserts the rendering stays within a bounded col width.
 	nodes := []graph.Node{
-		{ID: "A", Label: "A", Epoch: iso(1), Lane: h("main")},
-		{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}, Lane: h("main")},
-		{ID: "f1", Label: "f1", Epoch: iso(3), Parents: []string{"A"}, Lane: h("f")},
-		{ID: "C", Label: "C", Epoch: iso(4), Parents: []string{"B", "f1"}, Lane: h("main")},
-		{ID: "f2", Label: "f2", Epoch: iso(5), Parents: []string{"f1", "C"}, Lane: h("f")},
-		{ID: "D", Label: "D", Epoch: iso(6), Parents: []string{"C", "f2"}, Lane: h("main")},
-		{ID: "f3", Label: "f3", Epoch: iso(7), Parents: []string{"f2", "D"}, Lane: h("f")},
-		{ID: "E", Label: "E", Epoch: iso(8), Parents: []string{"D", "f3"}, Lane: h("main")},
+		{ID: "A", Label: "A", Epoch: iso(1)},
+		{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}},
+		{ID: "f1", Label: "f1", Epoch: iso(3), Parents: []string{"A"}},
+		{ID: "C", Label: "C", Epoch: iso(4), Parents: []string{"B", "f1"}},
+		{ID: "f2", Label: "f2", Epoch: iso(5), Parents: []string{"f1", "C"}},
+		{ID: "D", Label: "D", Epoch: iso(6), Parents: []string{"C", "f2"}},
+		{ID: "f3", Label: "f3", Epoch: iso(7), Parents: []string{"f2", "D"}},
+		{ID: "E", Label: "E", Epoch: iso(8), Parents: []string{"D", "f3"}},
 	}
 	lr := graph.Layout(nodes, graph.Opt{})
 	assert.That(t, lr.Columns <= 3, "expected at most 3 cols (main, feat, single routing); got",
@@ -795,11 +779,11 @@ func TestScenario_OctopusDedupTerms(t *testing.T) {
 	// The fan-in is the vertical reflection of the fan-out, markers included:
 	// `| | v\` on the way out, `| | v/` on the way back.
 	nodes := []graph.Node{
-		{ID: "A", Label: "A", Epoch: iso(1), Lane: h("main")},
-		{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}, Lane: h("b")},
-		{ID: "C", Label: "C", Epoch: iso(3), Parents: []string{"A"}, Lane: h("c")},
-		{ID: "D", Label: "D", Epoch: iso(4), Parents: []string{"A"}, Lane: h("d")},
-		{ID: "M", Label: "M", Epoch: iso(5), Parents: []string{"A", "B", "C", "D"}, Lane: h("main")},
+		{ID: "A", Label: "A", Epoch: iso(1)},
+		{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}},
+		{ID: "C", Label: "C", Epoch: iso(3), Parents: []string{"A"}},
+		{ID: "D", Label: "D", Epoch: iso(4), Parents: []string{"A"}},
+		{ID: "M", Label: "M", Epoch: iso(5), Parents: []string{"A", "B", "C", "D"}},
 	}
 	expected := `* A
 v\
@@ -827,10 +811,10 @@ func TestScenario_StashWithIndex(t *testing.T) {
 	// C's edge), so C's second-parent edge into B routes through its own
 	// column rather than the compact `|\|` weave git draws.
 	nodes := []graph.Node{
-		{ID: "A", Label: "A", Epoch: iso(1), Lane: h("main")},
-		{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}, Lane: h("stash-idx")},
-		{ID: "C", Label: "C", Epoch: iso(3), Parents: []string{"A", "B"}, Lane: h("stash")},
-		{ID: "M", Label: "M", Epoch: iso(4), Parents: []string{"A"}, Lane: h("main")},
+		{ID: "A", Label: "A", Epoch: iso(1)},
+		{ID: "B", Label: "B", Epoch: iso(2), Parents: []string{"A"}},
+		{ID: "C", Label: "C", Epoch: iso(3), Parents: []string{"A", "B"}},
+		{ID: "M", Label: "M", Epoch: iso(4), Parents: []string{"A"}},
 	}
 	expected := `* A
 v\

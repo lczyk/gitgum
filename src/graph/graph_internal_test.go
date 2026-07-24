@@ -57,7 +57,7 @@ func TestRender_GapDiagonalPastLastPipe(t *testing.T) {
 // findNode locates a node's nodeState by ID for white-box assertions.
 func findNode(lr LayoutResult, id string) struct{ row, col int } {
 	for _, r := range lr.Rows {
-		if r.Commit != nil && r.Commit.ID == id {
+		if r.Node != nil && r.Node.ID == id {
 			// Find col by scanning glyphs for GlyphStar.
 			col := -1
 			for c, g := range r.Glyphs {
@@ -68,7 +68,7 @@ func findNode(lr LayoutResult, id string) struct{ row, col int } {
 			}
 			// Row index in Rows is not the engine row number; recover from
 			// position in Rows array (commit rows preserve oldest-first order).
-			return struct{ row, col int }{rowIndex(lr, r.Commit.ID), col}
+			return struct{ row, col int }{rowIndex(lr, r.Node.ID), col}
 		}
 	}
 	return struct{ row, col int }{-1, -1}
@@ -77,8 +77,8 @@ func findNode(lr LayoutResult, id string) struct{ row, col int } {
 func rowIndex(lr LayoutResult, id string) int {
 	idx := 0
 	for _, r := range lr.Rows {
-		if r.Commit != nil {
-			if r.Commit.ID == id {
+		if r.Node != nil {
+			if r.Node.ID == id {
 				return idx
 			}
 			idx++

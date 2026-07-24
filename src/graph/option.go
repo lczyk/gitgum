@@ -14,11 +14,7 @@ type Opt struct {
 	// becomes `^`.
 	Reverse bool
 	// NoSplitMarks draws a plain pipe where a lane's edge parts from it,
-	// instead of the `v` (or `^` under Reverse) that marks the split. The
-	// output then matches what `git log --graph` draws.
+	// instead of the `v` (or `^` under Reverse) that marks the split.
+	// (With marks off the output matches classic `git log --graph` style.)
 	NoSplitMarks bool
-	// NoHeadFloat ignores Node.IsHead when ordering rows. By default the
-	// checked-out commit and its descendant-closure sort ahead of everything
-	// else, sinking HEAD as low as the DAG allows.
-	NoHeadFloat bool
 }
