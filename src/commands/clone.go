@@ -204,9 +204,17 @@ func isBareSpelling(raw string) bool {
 	return !strings.Contains(raw, "://") && !strings.Contains(raw, "@")
 }
 
+// appendDepth adds the shallow-clone flags. --no-single-branch rides along with
+// --depth because git otherwise implies --single-branch, which bakes a
+// one-branch fetch refspec ("+refs/heads/main:refs/remotes/<r>/main") into the
+// clone's config. Every branch but the cloned one then has an upstream that git
+// cannot resolve -- `rev-parse @{u}` fatals with "not stored as a remote-tracking
+// branch" -- so pull and push on it break, long after the clone is forgotten.
+// Fetching every branch tip at the requested depth costs little and keeps the
+// clone usable.
 func appendDepth(args []string, depth int) []string {
 	if depth > 0 {
-		args = append(args, "--depth", strconv.Itoa(depth))
+		args = append(args, "--depth", strconv.Itoa(depth), "--no-single-branch")
 	}
 	return args
 }

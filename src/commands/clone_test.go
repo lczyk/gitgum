@@ -58,10 +58,13 @@ func TestBuildClonePlan(t *testing.T) {
 			wantDir:    "cbs-tools",
 		},
 		{
+			// --no-single-branch is deliberate: without it a shallow clone's
+			// fetch refspec covers one branch and every other branch's upstream
+			// becomes unresolvable.
 			name:       "codeberg + depth",
 			raw:        "codeberg.org/lczyk/gitgum",
 			depth:      1,
-			wantArgs:   []string{"clone", "-o", "lczyk", "--depth", "1", "https://codeberg.org/lczyk/gitgum", "gitgum"},
+			wantArgs:   []string{"clone", "-o", "lczyk", "--depth", "1", "--no-single-branch", "https://codeberg.org/lczyk/gitgum", "gitgum"},
 			wantRemote: "lczyk",
 			wantDir:    "gitgum",
 		},
@@ -107,7 +110,7 @@ func TestPlainClonePlan(t *testing.T) {
 	assert.Equal(t, p.remote, "")
 
 	p = plainClonePlan("../local", "dest", 2, "")
-	assert.EqualArrays(t, p.args, []string{"clone", "--depth", "2", "../local", "dest"})
+	assert.EqualArrays(t, p.args, []string{"clone", "--depth", "2", "--no-single-branch", "../local", "dest"})
 	assert.Equal(t, p.dir, "dest")
 }
 
