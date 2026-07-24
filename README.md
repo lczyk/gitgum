@@ -120,11 +120,22 @@ Pass `--flat` for a porcelain list instead of the change tree. Pass `--follow` /
 
 ### `gitgum tree`
 
-Print a colored commit graph across all branches, with the tip at the bottom (right above the next prompt) so it stays visible after the output scrolls. Roughly:
+Print a colored commit graph across all branches, oldest at the top, so the checked-out commit ends up at the bottom (right above the next prompt) and stays visible after the output scrolls. Roughly:
 ```bash
 git log --graph --oneline --all --decorate   # then reverse + flip diagonals
 ```
-Defaults to the last two weeks. Override with `--since=<expr>` (any value `git log --since` accepts: `1m`, `yesterday`, `2024-01-01`, `"3 weeks ago"`). Pass `--since=` (empty), or `--all` / `-a`, for the full history. Pass `--follow` / `-f` (optional `=N` interval) for an auto-refreshing alt-screen view with `j/k g/G` scroll.
+The graph is laid out by the in-tree [`src/graph`](src/graph) library rather than by `git log --graph`, which is what makes the reversed order and the HEAD placement possible.
+
+Defaults to the last two weeks. `--since=<expr>` takes one of four forms:
+
+- shorthand `<N><unit>` -- `2w`, `10d`, `1h`; units `s`/`m`/`h`/`d`/`w`/`y` (note `m` is minutes, not months)
+- an ISO date -- `2024-01-01`, optionally with a time (`2024-01-01T09:30`)
+- a bare integer -- depth, i.e. the last N commits
+- empty -- the full history
+
+Prose dates that `git log --since` would accept (`yesterday`, `3 weeks ago`) are not supported. Relative durations are measured back from the newest commit in the repo, not from now, so a tree stays useful on a repo you haven't touched in a while. `--all` / `-a` is an alias for `--since=`.
+
+By default the checked-out commit (and anything descending from it) sinks to the bottom of the graph even when another branch has newer commits; `--no-head-float` turns that off and orders purely by date. `--reverse` / `-r` flips the whole graph to newest-first, which is mostly useful in follow mode. Pass `--follow` / `-f` (optional `=N` interval) for an auto-refreshing alt-screen view with `j/k g/G` scroll.
 
 ### `gitgum diff`
 
