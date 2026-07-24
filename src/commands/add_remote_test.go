@@ -96,8 +96,8 @@ func TestAddRemoteCommand_RejectsLocalPath(t *testing.T) {
 	cmd.Args.Remote = "../some/local/repo"
 
 	err := cmd.Execute(nil)
-	require.Error(t, err, "not a repo ref")
-	assert.ContainsString(t, err.Error(), "not a repo ref")
+	require.Error(t, err, "not a resolvable repo ref")
+	assert.ContainsString(t, err.Error(), "not a resolvable repo ref")
 }
 
 // Re-adding a remote that already points at the resolved url is a quiet no-op
