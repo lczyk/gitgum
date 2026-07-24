@@ -16,6 +16,10 @@ type stubSelector struct {
 	multiSelectAnswers [][]string
 	promptAnswers      []string
 	confirmAnswers     []bool
+	// selectErrs scripts errors for Select / SelectStream, consumed before
+	// selectAnswers. Lets tests drive the cancellation paths (ui.ErrCancelled)
+	// that a scripted answer can't reach.
+	selectErrs []error
 
 	selectCalls      []selectCall
 	multiSelectCalls []selectCall
@@ -36,6 +40,9 @@ type confirmCall struct {
 
 func (s *stubSelector) Select(prompt string, options []string, initialQuery ...string) (string, error) {
 	s.selectCalls = append(s.selectCalls, selectCall{Prompt: prompt, Options: options})
+	if err := s.nextSelectErr(); err != nil {
+		return "", err
+	}
 	if len(s.selectAnswers) == 0 {
 		return "", fmt.Errorf("stubSelector: unexpected Select call %q", prompt)
 	}
@@ -46,6 +53,9 @@ func (s *stubSelector) Select(prompt string, options []string, initialQuery ...s
 
 func (s *stubSelector) SelectStream(ctx context.Context, prompt string, src ff.Source, unselectable func(string) bool) (string, error) {
 	s.selectCalls = append(s.selectCalls, selectCall{Prompt: prompt, Stream: true})
+	if err := s.nextSelectErr(); err != nil {
+		return "", err
+	}
 	if len(s.selectAnswers) == 0 {
 		return "", fmt.Errorf("stubSelector: unexpected SelectStream call %q", prompt)
 	}
@@ -56,6 +66,16 @@ func (s *stubSelector) SelectStream(ctx context.Context, prompt string, src ff.S
 		return "", fmt.Errorf("stubSelector: answer %q is unselectable", answer)
 	}
 	return answer, nil
+}
+
+// nextSelectErr pops the next scripted Select error, or nil when none is left.
+func (s *stubSelector) nextSelectErr() error {
+	if len(s.selectErrs) == 0 {
+		return nil
+	}
+	err := s.selectErrs[0]
+	s.selectErrs = s.selectErrs[1:]
+	return err
 }
 
 func (s *stubSelector) MultiSelect(prompt string, options []string) ([]string, error) {

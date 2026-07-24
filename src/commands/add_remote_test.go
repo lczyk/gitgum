@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
+	"github.com/lczyk/gitgum/internal/ui"
 )
 
 // resolveURL turns each accepted spelling into the url the remote will use:
@@ -157,4 +159,82 @@ func TestAddRemoteCommand_FetchFailureRollsBack(t *testing.T) {
 	remotes, err := git.Repo{Dir: dir}.GetRemotes()
 	require.NoError(t, err, "list remotes")
 	assert.Equal(t, len(remotes), 0) // rolled back
+}
+
+// A lone user token borrows the repo name and forge from the existing remotes,
+// which is how "add my fork" spells out.
+func TestAddRemoteRefFromExistingRemotes(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "remote", "add", "canonical", "https://github.com/canonical/sd-dev")
+
+	sel := &stubSelector{}
+	cmd := &AddRemoteCommand{cmdIO: cmdIO{UI: sel, Repo: git.Repo{Dir: dir}}}
+	ref, err := cmd.refFromExistingRemotes("lczyk")
+	require.NoError(t, err, "refFromExistingRemotes")
+	assert.Equal(t, ref.URL(), "https://github.com/lczyk/sd-dev")
+	assert.Equal(t, len(sel.selectCalls), 0)
+}
+
+// With no remotes at all there is nothing to borrow a repo name from.
+func TestAddRemoteRefFromExistingRemotes_NoRemotes(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+
+	cmd := &AddRemoteCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
+	_, err := cmd.refFromExistingRemotes("lczyk")
+	require.Error(t, err, "bare user")
+	assert.ContainsString(t, err.Error(), "bare user")
+}
+
+// Several remotes that name the same repo -- different owners, or the same one
+// spelled ssh and https -- collapse to a single candidate, so no picker runs.
+func TestAddRemoteRefFromExistingRemotes_Collapses(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "remote", "add", "upstream", "https://github.com/canonical/sd-dev")
+	temp_repo.RunGit(t, dir, "remote", "add", "origin", "git@github.com:someone/sd-dev.git")
+
+	sel := &stubSelector{}
+	cmd := &AddRemoteCommand{cmdIO: cmdIO{UI: sel, Repo: git.Repo{Dir: dir}}}
+	ref, err := cmd.refFromExistingRemotes("lczyk")
+	require.NoError(t, err, "refFromExistingRemotes")
+	assert.Equal(t, ref.URL(), "https://github.com/lczyk/sd-dev")
+	assert.Equal(t, len(sel.selectCalls), 0)
+}
+
+// Remotes naming genuinely different repos leave the choice open, so the user
+// picks which one the bare user should own.
+func TestAddRemoteRefFromExistingRemotes_Picks(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "remote", "add", "canonical", "https://github.com/canonical/sd-dev")
+	temp_repo.RunGit(t, dir, "remote", "add", "other", "https://gitlab.com/canonical/cbs-tools")
+
+	const want = "https://gitlab.com/lczyk/cbs-tools"
+	sel := &stubSelector{selectAnswers: []string{want}}
+	cmd := &AddRemoteCommand{cmdIO: cmdIO{UI: sel, Repo: git.Repo{Dir: dir}}}
+	ref, err := cmd.refFromExistingRemotes("lczyk")
+	require.NoError(t, err, "refFromExistingRemotes")
+	assert.Equal(t, ref.URL(), want)
+
+	require.Equal(t, len(sel.selectCalls), 1)
+	opts := sel.selectCalls[0].Options
+	assert.Equal(t, len(opts), 2)
+	assert.That(t, slices.Contains(opts, want), "picker offers the gitlab candidate, got", opts)
+	assert.That(t, slices.Contains(opts, "https://github.com/lczyk/sd-dev"), "picker offers the github candidate, got", opts)
+}
+
+// Cancelling the picker aborts instead of silently adding a remote.
+func TestAddRemoteRefFromExistingRemotes_PickerCancelled(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "remote", "add", "canonical", "https://github.com/canonical/sd-dev")
+	temp_repo.RunGit(t, dir, "remote", "add", "other", "https://gitlab.com/canonical/cbs-tools")
+
+	sel := &stubSelector{selectErrs: []error{ui.ErrCancelled}}
+	cmd := &AddRemoteCommand{cmdIO: cmdIO{UI: sel, Repo: git.Repo{Dir: dir}}}
+	_, err := cmd.refFromExistingRemotes("lczyk")
+	require.Error(t, err, "aborted")
+	assert.ContainsString(t, err.Error(), "aborted")
 }
