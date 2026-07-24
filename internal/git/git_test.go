@@ -190,6 +190,46 @@ func TestGetCurrentBranchUpstream(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "origin/main", upstream)
 	})
+
+	// A --single-branch clone maps only one branch in its fetch refspec, so any
+	// other branch's upstream has no remote-tracking ref and `rev-parse @{u}`
+	// fatals. The configured name is still the right answer.
+	t.Run("configured but not stored as a remote-tracking branch", func(t *testing.T) {
+		t.Parallel()
+		local, _ := temp_repo.NewRepoWithRemote(t)
+		temp_repo.RunGit(t, local, "checkout", "-b", "feature")
+		temp_repo.RunGit(t, local, "config", "branch.feature.remote", "origin")
+		temp_repo.RunGit(t, local, "config", "branch.feature.merge", "refs/heads/feature")
+		temp_repo.RunGit(t, local, "config", "remote.origin.fetch", "+refs/heads/main:refs/remotes/origin/main")
+
+		upstream, err := git.Repo{Dir: local}.GetCurrentBranchUpstream()
+		require.NoError(t, err)
+		assert.Equal(t, "origin/feature", upstream)
+	})
+
+	// Same missing ref, wider refspec: git maps the branch but has never fetched
+	// it (or it was pruned), so @{u} fatals with "unknown revision" instead. Still
+	// an upstream.
+	t.Run("configured but tracking ref absent", func(t *testing.T) {
+		t.Parallel()
+		dir := temp_repo.NewRepo(t)
+		temp_repo.RunGit(t, dir, "remote", "add", "origin", dir)
+		temp_repo.RunGit(t, dir, "fetch", "origin")
+		temp_repo.RunGit(t, dir, "branch", "--set-upstream-to=origin/main", "main")
+		temp_repo.RunGit(t, dir, "update-ref", "-d", "refs/remotes/origin/main")
+
+		upstream, err := git.Repo{Dir: dir}.GetCurrentBranchUpstream()
+		require.NoError(t, err)
+		assert.Equal(t, "origin/main", upstream)
+	})
+}
+
+func TestRefExists(t *testing.T) {
+	t.Parallel()
+
+	dir := temp_repo.NewRepo(t)
+	assert.That(t, git.Repo{Dir: dir}.RefExists("HEAD"), "HEAD should resolve")
+	assert.That(t, !git.Repo{Dir: dir}.RefExists("origin/nope"), "missing ref should not resolve")
 }
 
 func TestCheckedOutBranches(t *testing.T) {

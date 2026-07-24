@@ -62,7 +62,7 @@ func (p *PullCommand) pullBranch(currentBranch string) error {
 	if upstream == "" {
 		return errNoUpstream
 	}
-	remote, _, ok := strings.Cut(upstream, "/")
+	remote, remoteBranch, ok := strings.Cut(upstream, "/")
 	if !ok {
 		return fmt.Errorf("unexpected upstream format: %s", upstream)
 	}
@@ -71,6 +71,9 @@ func (p *PullCommand) pullBranch(currentBranch string) error {
 	// check below reads the freshly-updated remote-tracking ref rather than a
 	// stale cache. On a shallow clone this grabs new tip commits only.
 	if err := p.repo().Fetch(remote, ""); err != nil {
+		return err
+	}
+	if err := p.ensureUpstreamRef(remote, remoteBranch, upstream); err != nil {
 		return err
 	}
 
@@ -143,6 +146,48 @@ func (p *PullCommand) pullBranch(currentBranch string) error {
 	}
 
 	fmt.Fprintf(p.out(), "Pulled '%s' into '%s' (%s).\n", upstream, currentBranch, mode)
+	return nil
+}
+
+// ensureUpstreamRef guarantees the remote-tracking ref named by upstream exists
+// locally, so the commit lookups and divergence checks that follow have
+// something to read.
+//
+// The fetch above just ran the remote's configured refspecs, so a still-missing
+// tracking ref means one of exactly two things. Ask the remote which, rather
+// than guessing -- the two want opposite responses:
+//
+//   - the branch is gone from the remote (or was never pushed): there is nothing
+//     to pull and no fetch will conjure it. `gg doctor` already reports this as
+//     gone-upstream and prescribes the fix, so just name it here.
+//   - the branch is there: then the refspec cannot be covering it -- the
+//     signature of a --single-branch clone, which `git clone --depth` implies.
+//     Fetch that one ref explicitly, and say how to widen the refspec for good.
+//     Leaving their config alone is deliberate; a pull shouldn't rewrite it.
+func (p *PullCommand) ensureUpstreamRef(remote, remoteBranch, upstream string) error {
+	if p.repo().RefExists(upstream) {
+		return nil
+	}
+
+	// Reachability, not mere existence: an unreachable remote (auth, DNS) must
+	// not be reported as a deleted branch.
+	exists, reachable := p.repo().RemoteBranchReachability(remote, remoteBranch)
+	if !reachable {
+		return fmt.Errorf("no remote-tracking ref for '%s' and remote '%s' could not be queried", upstream, remote)
+	}
+	if !exists {
+		return fmt.Errorf("nothing to pull: upstream '%s' does not exist on remote '%s'", upstream, remote)
+	}
+
+	fmt.Fprintf(p.err(),
+		"%s remote '%s' has a narrow fetch refspec that does not cover '%s'; fetching it directly.\n"+
+			"      widen it permanently with: git config remote.%s.fetch '+refs/heads/*:refs/remotes/%s/*'\n",
+		paint(ansiBoldYellow, "note:"), remote, upstream, remote, remote)
+
+	spec := fmt.Sprintf("+refs/heads/%s:refs/remotes/%s", remoteBranch, upstream)
+	if err := p.repo().Fetch(remote, spec); err != nil {
+		return fmt.Errorf("fetching upstream ref '%s': %w", upstream, err)
+	}
 	return nil
 }
 

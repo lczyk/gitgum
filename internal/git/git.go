@@ -225,6 +225,14 @@ func (r Repo) CheckedOutBranches() (map[string]string, error) {
 	return out, nil
 }
 
+// RefExists reports whether ref resolves to a commit in this repo. Unlike
+// GetCommitHash it treats "no such ref" as a plain false rather than an error,
+// so callers can probe for a ref they may still need to fetch.
+func (r Repo) RefExists(ref string) bool {
+	_, _, err := r.run("rev-parse", "--verify", "--quiet", ref+"^{commit}")
+	return err == nil
+}
+
 // GetCommitHash returns the commit hash for a ref.
 func (r Repo) GetCommitHash(ref string) (string, error) {
 	stdout, _, err := r.run("rev-parse", ref)
@@ -257,15 +265,65 @@ func (r Repo) GetCurrentBranch() (string, error) {
 
 // GetCurrentBranchUpstream returns the upstream tracking branch for the current branch.
 // Returns ("", nil) if the current branch has no upstream configured.
+//
+// rev-parse @{u} is the fast path, but it fatals whenever it cannot hand back a
+// live remote-tracking ref -- and it has a different message for each way that
+// happens, none of which distinguishes "no upstream" from "upstream you just
+// can't see yet":
+//
+//   - "not stored as a remote-tracking branch": the remote's fetch refspec
+//     doesn't map the branch (what a --single-branch or shallow clone leaves
+//     every branch but the one it cloned in).
+//   - "ambiguous argument '@{u}': unknown revision": the refspec maps it, but
+//     the ref has never been fetched, or was pruned out from under the config.
+//
+// Whitelisting those strings is a losing game, so any failure falls through to
+// the config pair, which is where git actually records an upstream. Only if that
+// comes up empty too is this a real "no upstream" (or a real error).
 func (r Repo) GetCurrentBranchUpstream() (string, error) {
 	stdout, stderr, err := r.run("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
-	if err != nil && strings.Contains(stderr, "no upstream configured for branch") {
+	if err == nil {
+		return stdout, nil
+	}
+	upstream, cfgErr := r.currentBranchUpstreamFromConfig()
+	if cfgErr != nil {
+		return "", cfgErr
+	}
+	if upstream != "" {
+		return upstream, nil
+	}
+	if strings.Contains(stderr, "no upstream configured for branch") {
 		return "", nil
 	}
+	if stderr != "" {
+		return "", fmt.Errorf("%w: %s", err, stderr)
+	}
+	return "", err
+}
+
+// currentBranchUpstreamFromConfig rebuilds "<remote>/<branch>" straight from
+// branch.<name>.remote and .merge. Neither rev-parse @{u} nor for-each-ref's
+// %(upstream) can help here: both resolve through the remote's fetch refspec and
+// come up empty when it doesn't map the branch. The config pair is where git
+// actually records the upstream, so it survives a narrow refspec.
+func (r Repo) currentBranchUpstreamFromConfig() (string, error) {
+	branch, err := r.GetCurrentBranch()
 	if err != nil {
 		return "", err
 	}
-	return stdout, nil
+	remote, err := r.BranchConfigGet(branch, "remote")
+	if err != nil {
+		return "", err
+	}
+	merge, err := r.BranchConfigGet(branch, "merge")
+	if err != nil || remote == "" || merge == "" {
+		return "", err
+	}
+	merge = strings.TrimPrefix(merge, "refs/heads/")
+	if remote == "." { // upstream is a local branch; there is no remote to prefix.
+		return merge, nil
+	}
+	return remote + "/" + merge, nil
 }
 
 // RemoteBranchExists checks if a branch exists on a remote.
@@ -359,6 +417,7 @@ func GetBranchTrackingRemote(branch string) (string, error) {
 func CheckedOutBranches() (map[string]string, error) { return CWD().CheckedOutBranches() }
 func GetCommitHash(ref string) (string, error)       { return CWD().GetCommitHash(ref) }
 func BranchExists(branch string) bool                { return CWD().BranchExists(branch) }
+func RefExists(ref string) bool                      { return CWD().RefExists(ref) }
 func GetCurrentBranch() (string, error)              { return CWD().GetCurrentBranch() }
 func GetCurrentBranchUpstream() (string, error)      { return CWD().GetCurrentBranchUpstream() }
 func RemoteBranchExists(remote, branch string) (bool, error) {

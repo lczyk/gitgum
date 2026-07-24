@@ -292,3 +292,63 @@ func TestPullCommand_ShallowStaysShallow(t *testing.T) {
 	// ...but the clone is still shallow (old history not backfilled).
 	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, shallow, "rev-parse", "--is-shallow-repository")), "true")
 }
+
+// A --single-branch clone (which `git clone --depth` implies) maps one branch in
+// its fetch refspec, leaving every other branch with an upstream in config and
+// no remote-tracking ref. That used to surface as a bare
+// "getting upstream: exit status 128"; pull now fetches the ref explicitly,
+// warns about the refspec, and integrates as normal.
+func TestPullCommand_UpstreamNotCoveredByRefspec(t *testing.T) {
+	t.Parallel()
+	local, remote := temp_repo.NewRepoWithRemote(t)
+
+	// publish "feature" on the remote, one commit ahead of the clone.
+	other := t.TempDir()
+	temp_repo.RunGit(t, other, "clone", remote, ".")
+	temp_repo.RunGit(t, other, "config", "user.name", "Other User")
+	temp_repo.RunGit(t, other, "config", "user.email", "other@example.com")
+	temp_repo.RunGit(t, other, "config", "commit.gpgsign", "false")
+	temp_repo.RunGit(t, other, "config", "core.hooksPath", ".git/hooks")
+	temp_repo.RunGit(t, other, "checkout", "-b", "feature")
+	temp_repo.CreateCommit(t, other, "feature.txt", "x\n", "feat: on feature")
+	temp_repo.RunGit(t, other, "push", "origin", "feature")
+	remoteHead := strings.TrimSpace(temp_repo.RunGit(t, other, "rev-parse", "HEAD"))
+
+	// reproduce the single-branch clone's config: an upstream git can't resolve.
+	temp_repo.RunGit(t, local, "checkout", "-b", "feature")
+	temp_repo.RunGit(t, local, "config", "branch.feature.remote", "origin")
+	temp_repo.RunGit(t, local, "config", "branch.feature.merge", "refs/heads/feature")
+	temp_repo.RunGit(t, local, "config", "remote.origin.fetch", "+refs/heads/main:refs/remotes/origin/main")
+
+	var out, errBuf strings.Builder
+	stub := &stubSelector{}
+	cmd := &PullCommand{cmdIO: cmdIO{Out: &out, Err: &errBuf, UI: stub, Repo: git.Repo{Dir: local}}}
+
+	require.NoError(t, cmd.Execute(nil))
+
+	localHead := strings.TrimSpace(temp_repo.RunGit(t, local, "rev-parse", "HEAD"))
+	assert.Equal(t, localHead, remoteHead)
+	assert.ContainsString(t, errBuf.String(), "narrow fetch refspec")
+	assert.ContainsString(t, errBuf.String(), "git config remote.origin.fetch")
+	assert.Equal(t, len(stub.selectCalls), 0, "a fast-forward must not show the picker")
+}
+
+// Same missing tracking ref, opposite cause: the branch was never pushed (or was
+// deleted upstream), so no refspec widening would help. Say that, rather than
+// blaming the refspec and letting git's "couldn't find remote ref" fatal through.
+func TestPullCommand_UpstreamGoneFromRemote(t *testing.T) {
+	t.Parallel()
+	local, _ := temp_repo.NewRepoWithRemote(t)
+
+	temp_repo.RunGit(t, local, "checkout", "-b", "never-pushed")
+	temp_repo.RunGit(t, local, "config", "branch.never-pushed.remote", "origin")
+	temp_repo.RunGit(t, local, "config", "branch.never-pushed.merge", "refs/heads/never-pushed")
+
+	var out, errBuf strings.Builder
+	cmd := &PullCommand{cmdIO: cmdIO{Out: &out, Err: &errBuf, UI: &stubSelector{}, Repo: git.Repo{Dir: local}}}
+
+	err := cmd.Execute(nil)
+	require.Error(t, err, "does not exist on remote 'origin'")
+	assert.That(t, !strings.Contains(errBuf.String(), "narrow fetch refspec"),
+		"must not blame the refspec: ", errBuf.String())
+}
