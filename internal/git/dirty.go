@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -39,12 +40,16 @@ func (r Repo) DirtyTrackedLines() ([]string, error) {
 // duration of a stash op. gg uses stash internally only (release auto-
 // stash, switch_stream bookkeeping); firing user hooks on plumbing they
 // didn't initiate is a footgun.
+//
+// Callers must not append to it -- it's shared package state, and append
+// would write into its backing array the moment spare capacity exists.
+// slices.Concat always copies.
 var stashHooksOff = []string{"-c", "core.hooksPath=/dev/null"}
 
 // StashPush stashes tracked changes (staged + unstaged) under the given
 // message. Untracked files are not included.
 func (r Repo) StashPush(message string) error {
-	args := append(stashHooksOff, "stash", "push", "-m", message)
+	args := slices.Concat(stashHooksOff, []string{"stash", "push", "-m", message})
 	_, _, err := r.runWrite(context.Background(), args...)
 	if err != nil {
 		return fmt.Errorf("git stash push: %w", err)
@@ -57,7 +62,7 @@ func (r Repo) StashPush(message string) error {
 // conflict, git leaves the stash entry in place; the caller should treat
 // that as a manual-resolution situation rather than retrying.
 func (r Repo) StashPopIndex() error {
-	args := append(stashHooksOff, "stash", "pop", "--index")
+	args := slices.Concat(stashHooksOff, []string{"stash", "pop", "--index"})
 	_, _, err := r.runWrite(context.Background(), args...)
 	if err != nil {
 		return fmt.Errorf("git stash pop --index: %w", err)
