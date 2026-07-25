@@ -138,12 +138,7 @@ func (p *PushCommand) Execute(args []string) error {
 
 	expectedRemoteBranchName := selectedRemote + "/" + currentBranch
 
-	remoteBranchExists, err := p.repo().RemoteBranchExists(selectedRemote, currentBranch)
-	if err != nil {
-		return fmt.Errorf("checking remote branch: %w", err)
-	}
-
-	if !remoteBranchExists {
+	if !p.repo().RemoteBranchExists(selectedRemote, currentBranch) {
 		confirmed, err := p.sel().Confirm(fmt.Sprintf("No remote branch '%s' found. Do you want to create it?",
 			expectedRemoteBranchName), false)
 		if err != nil {

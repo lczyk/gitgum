@@ -326,13 +326,13 @@ func (r Repo) currentBranchUpstreamFromConfig() (string, error) {
 	return remote + "/" + merge, nil
 }
 
-// RemoteBranchExists checks if a branch exists on a remote.
-func (r Repo) RemoteBranchExists(remote, branch string) (bool, error) {
+// RemoteBranchExists checks if a branch exists on a remote. It is a bare
+// probe, like BranchExists and RefExists: an unreachable remote (auth, DNS)
+// reads as "absent" rather than surfacing. Callers that need to tell the two
+// apart want RemoteBranchReachability.
+func (r Repo) RemoteBranchExists(remote, branch string) bool {
 	_, _, err := r.runReadNet(context.Background(), "ls-remote", "--exit-code", "--heads", remote, branch)
-	if err != nil {
-		return false, nil
-	}
-	return true, nil
+	return err == nil
 }
 
 // RemoteBranchReachability distinguishes "branch missing on remote" from
@@ -420,7 +420,7 @@ func BranchExists(branch string) bool                { return CWD().BranchExists
 func RefExists(ref string) bool                      { return CWD().RefExists(ref) }
 func GetCurrentBranch() (string, error)              { return CWD().GetCurrentBranch() }
 func GetCurrentBranchUpstream() (string, error)      { return CWD().GetCurrentBranchUpstream() }
-func RemoteBranchExists(remote, branch string) (bool, error) {
+func RemoteBranchExists(remote, branch string) bool {
 	return CWD().RemoteBranchExists(remote, branch)
 }
 func IsBranchAheadOfRemote(local, remote string) (bool, error) {
