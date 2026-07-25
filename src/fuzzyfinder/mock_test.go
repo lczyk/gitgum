@@ -1,6 +1,8 @@
 package fuzzyfinder
 
 import (
+	"unicode/utf8"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/lczyk/gitgum/src/litescreen/ansi"
 	runewidth "github.com/mattn/go-runewidth"
@@ -35,7 +37,11 @@ func (m *TerminalMock) GetResult() string {
 
 	// set cursor for snapshot test
 	cursorX, cursorY, _ := m.GetCursor()
-	mainc, _, _, _ := m.GetContent(cursorX, cursorY)
+	// Get normalises an empty or zero-width cell to " "; the deprecated
+	// GetContent it replaces was defined as this plus a rune split, and only
+	// the leading rune is wanted here.
+	cellText, _, _ := m.Get(cursorX, cursorY)
+	mainc, _ := utf8.DecodeRuneInString(cellText)
 	if mainc == ' ' {
 		m.SetContent(cursorX, cursorY, '█', nil, tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDefault))
 	} else {
