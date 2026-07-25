@@ -328,9 +328,9 @@ func parseTagsDirective(line string) (prefixes []string, ok bool) {
 	if !ok {
 		return nil, false
 	}
-	for _, f := range strings.FieldsFunc(rest, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' }) {
-		prefixes = append(prefixes, f)
-	}
+	prefixes = append(prefixes, strings.FieldsFunc(rest, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\t'
+	})...)
 	return prefixes, true
 }
 
