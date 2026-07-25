@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/lczyk/gitgum/internal/git"
-	"github.com/lczyk/gitgum/internal/strutil"
 )
 
 // ReleaseCommand bumps the repo's VERSION (or falls back to the latest tag),
@@ -107,7 +106,7 @@ func (r *ReleaseCommand) Execute(args []string) error {
 		}
 		tags = buildRevisionTags(next, prefixes)
 	} else {
-		header, prefixes, current, _, err = readVersionOrFallback(repo, versionPath)
+		header, prefixes, current, err = readVersion(versionPath)
 		if err != nil {
 			return err
 		}
@@ -279,37 +278,13 @@ func defaultBranchPushRemote(r git.Repo, defaultBranch string) string {
 	return "origin"
 }
 
-// latestSemverTag returns the highest vX.Y.Z tag, or "" if none exist.
-func latestSemverTag(r git.Repo) string {
-	out, _, err := r.Run("tag", "--list", "v*", "--sort=-v:refname")
-	if err != nil || out == "" {
-		return ""
-	}
-	for _, line := range strutil.SplitLines(out) {
-		if _, err := parseSemver(strings.TrimPrefix(line, "v")); err == nil {
-			return line
-		}
-	}
-	return ""
-}
-
-// readVersionOrFallback reads VERSION at path, falling back to the latest
-// vX.Y.Z tag, then to "0.0.0". hasFile reports whether VERSION exists.
-func readVersionOrFallback(r git.Repo, path string) (header, prefixes []string, current string, hasFile bool, err error) {
-	header, prefixes, current, err = readVersion(path)
-	if err == nil {
-		return header, prefixes, current, true, nil
-	}
-	if !os.IsNotExist(err) {
-		return nil, nil, "", false, err
-	}
-	// VERSION absent — fall back.
-	if tag := latestSemverTag(r); tag != "" {
-		return nil, nil, strings.TrimPrefix(tag, "v"), false, nil
-	}
-	return nil, nil, "0.0.0", false, nil
-}
-
+// readVersion reads a VERSION / REVISION file: `#`-prefixed lines are header
+// (one of which may carry the `# tags:` directive), and the first non-comment
+// non-blank line is the current version.
+//
+// There is deliberately no fall back to the latest tag when the file is
+// missing: Execute already refuses to run without a VERSION or REVISION at the
+// repo root, so the file is the single source of truth for what gets bumped.
 func readVersion(path string) (header, prefixes []string, current string, err error) {
 	f, err := os.Open(path)
 	if err != nil {
