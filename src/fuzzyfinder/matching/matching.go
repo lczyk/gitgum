@@ -106,7 +106,7 @@ func containsFold(s, lowerSubstr string) bool {
 	end := len(s) - n
 	for start := 0; start <= end; start++ {
 		matched := true
-		for j := 0; j < n; j++ {
+		for j := range n {
 			a := s[start+j]
 			b := lowerSubstr[j]
 			if a == b {

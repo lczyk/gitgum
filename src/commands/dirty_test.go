@@ -128,7 +128,7 @@ func TestHandleDirtyTree_RestoresIndexAfterPop(t *testing.T) {
 
 	out := temp_repo.RunGit(t, dir, "status", "--porcelain")
 	gotStaged := map[string]string{}
-	for _, l := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+	for l := range strings.SplitSeq(strings.TrimRight(out, "\n"), "\n") {
 		if len(l) < 4 {
 			continue
 		}

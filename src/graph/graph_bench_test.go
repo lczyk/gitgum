@@ -10,7 +10,7 @@ import (
 // linearChain builds a chain of n commits, each parent of the next.
 func linearChain(n int) []graph.Node {
 	nodes := make([]graph.Node, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		var parents []string
 		if i > 0 {
 			parents = []string{fmt.Sprintf("c%d", i-1)}
@@ -30,7 +30,7 @@ func linearChain(n int) []graph.Node {
 func mergeSeries(n, every int) []graph.Node {
 	nodes := make([]graph.Node, 0, n*2)
 	prevMain := ""
-	for i := 0; i < n; i++ {
+	for i := range n {
 		mainID := fmt.Sprintf("m%d", i)
 		var p []string
 		if prevMain != "" {
@@ -63,9 +63,9 @@ func mergeSeries(n, every int) []graph.Node {
 // shared root. Stresses col allocation + compaction.
 func parallelBranches(k, length int) []graph.Node {
 	nodes := []graph.Node{{ID: "root", Label: "root", Epoch: 0}}
-	for b := 0; b < k; b++ {
+	for b := range k {
 		prev := "root"
-		for i := 0; i < length; i++ {
+		for i := range length {
 			id := fmt.Sprintf("b%dc%d", b, i)
 			nodes = append(nodes, graph.Node{
 				ID: id, Label: id,
@@ -87,7 +87,7 @@ func backAndForthCatchups(n int) []graph.Node {
 	nodes := []graph.Node{{ID: "A", Label: "A", Epoch: 0}}
 	mainPrev := "A"
 	featPrev := ""
-	for i := 0; i < n; i++ {
+	for i := range n {
 		f1 := fmt.Sprintf("f%d", i)
 		nodes = append(nodes, graph.Node{
 			ID: f1, Label: f1, Epoch: int64(i*4 + 1),
@@ -118,7 +118,7 @@ func backAndForthCatchups(n int) []graph.Node {
 func sequentialSideBranches(n int) []graph.Node {
 	nodes := []graph.Node{{ID: "base", Label: "base", Epoch: 0}}
 	prev := "base"
-	for i := 0; i < n; i++ {
+	for i := range n {
 		s := fmt.Sprintf("s%d", i)
 		m := fmt.Sprintf("M%d", i)
 		nodes = append(nodes, graph.Node{
@@ -141,7 +141,7 @@ func sequentialSideBranches(n int) []graph.Node {
 func sharedParentDualMerge(n int) []graph.Node {
 	nodes := []graph.Node{{ID: "root", Label: "root", Epoch: 0}}
 	prev := "root"
-	for i := 0; i < n; i++ {
+	for i := range n {
 		mTip := fmt.Sprintf("m%d", i)
 		fTip := fmt.Sprintf("f%d", i)
 		inner := fmt.Sprintf("inner%d", i)
@@ -180,14 +180,14 @@ func octopusFan(k int) []graph.Node {
 
 func benchLayout(b *testing.B, nodes []graph.Node) {
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = graph.Layout(nodes, graph.Opt{})
 	}
 }
 
 func benchLayoutAndRender(b *testing.B, nodes []graph.Node) {
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		lr := graph.Layout(nodes, graph.Opt{})
 		_ = graph.Render(lr, graph.Style{})
 	}
@@ -216,8 +216,7 @@ func BenchmarkRender_Parallel100x10(b *testing.B) {
 func benchRenderOnly(b *testing.B, nodes []graph.Node, st graph.Style) {
 	lr := graph.Layout(nodes, graph.Opt{})
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = graph.Render(lr, st)
 	}
 }

@@ -122,7 +122,7 @@ func (r Repo) GetLocalBranches() ([]string, error) {
 		return nil, err
 	}
 	var branches []string
-	for _, line := range strings.Split(stdout, "\n") {
+	for line := range strings.SplitSeq(stdout, "\n") {
 		if branch := strings.TrimSpace(line); branch != "" {
 			branches = append(branches, branch)
 		}
@@ -139,7 +139,7 @@ func (r Repo) GoneUpstreams() ([]string, error) {
 		return nil, err
 	}
 	var out []string
-	for _, line := range strings.Split(stdout, "\n") {
+	for line := range strings.SplitSeq(stdout, "\n") {
 		line = strings.TrimSpace(line)
 		// A gone branch's line is "<name> [gone]"; branch names can't contain
 		// spaces, so trimming the suffix leaves the bare name.
@@ -167,7 +167,7 @@ func (r Repo) GetRemoteBranches(remote string) ([]string, error) {
 	}
 	var branches []string
 	prefix := remote + "/"
-	for _, line := range strings.Split(stdout, "\n") {
+	for line := range strings.SplitSeq(stdout, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, prefix) && !strings.Contains(line, "HEAD ->") {
 			branches = append(branches, strings.TrimPrefix(line, prefix))
@@ -210,7 +210,7 @@ func (r Repo) CheckedOutBranches() (map[string]string, error) {
 		return nil, err
 	}
 	out := make(map[string]string)
-	for _, line := range strings.Split(stdout, "\n") {
+	for line := range strings.SplitSeq(stdout, "\n") {
 		// each worktree line is "<path> <sha> [branch]" for named branches;
 		// detached HEADs and bare worktrees use (...) instead of [branch].
 		start := strings.LastIndex(line, "[")

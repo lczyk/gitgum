@@ -84,7 +84,7 @@ func BenchmarkFindAll(b *testing.B) {
 		"Tiggers do not like honey",
 	}
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		matching.FindAll("cas hr", benchSlice, false)
 	}
 }

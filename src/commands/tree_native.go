@@ -152,7 +152,7 @@ func (t *TreeCommand) headFloatLines(colorFlag string, windowIDs []string) []str
 		if err != nil {
 			continue
 		}
-		for _, ln := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		for ln := range strings.SplitSeq(strings.TrimRight(out, "\n"), "\n") {
 			if ln == "" {
 				continue
 			}
@@ -232,7 +232,7 @@ func isHeadDecoration(label string) bool {
 	if end < 0 {
 		return false
 	}
-	for _, ref := range strings.Split(rest[:end], ", ") {
+	for ref := range strings.SplitSeq(rest[:end], ", ") {
 		ref = strings.TrimSpace(ref)
 		if ref == "HEAD" || strings.HasPrefix(ref, "HEAD -> ") {
 			return true

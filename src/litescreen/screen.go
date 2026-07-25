@@ -270,10 +270,10 @@ func (f *framebuf) resize(w, h int) {
 	f.width, f.height = w, h
 	f.front = make([][]liteCell, h)
 	f.back = make([][]liteCell, h)
-	for y := 0; y < h; y++ {
+	for y := range h {
 		f.front[y] = make([]liteCell, w)
 		f.back[y] = make([]liteCell, w)
-		for x := 0; x < w; x++ {
+		for x := range w {
 			f.front[y][x] = liteCell{mainc: -1}
 			f.back[y][x] = liteCell{mainc: ' '}
 		}
@@ -688,10 +688,7 @@ func initSequence(height, termW, termH, cursorRow int) (out []byte, yOrigin int,
 		if anchor <= 0 || anchor > termH {
 			anchor = termH
 		}
-		finalRow := anchor + rows - 1
-		if finalRow > termH {
-			finalRow = termH
-		}
+		finalRow := min(anchor+rows-1, termH)
 		yOrigin = finalRow - rows
 		fmt.Fprintf(&buf, "\x1b[%d;1H\x1b[J", yOrigin+1)
 	}
@@ -741,7 +738,7 @@ func finiSequence(fullscreen bool, yOrigin int) []byte {
 	if fullscreen {
 		return []byte("\x1b[m\x1b[?25h\x1b[?1049l")
 	}
-	return []byte(fmt.Sprintf("\x1b[m\x1b[%d;1H\x1b[J\x1b[?25h", yOrigin+1))
+	return fmt.Appendf(nil, "\x1b[m\x1b[%d;1H\x1b[J\x1b[?25h", yOrigin+1)
 }
 
 // Fini is idempotent via finiOnce. We don't nil channel fields so that
@@ -1215,7 +1212,7 @@ func parseUTF8(lead byte, ch <-chan byte) tcell.Event {
 	timer := time.NewTimer(escTimeout)
 	defer timer.Stop()
 
-	for i := 0; i < want; i++ {
+	for range want {
 		select {
 		case <-timer.C:
 			return nil

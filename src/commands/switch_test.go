@@ -134,7 +134,7 @@ func TestStreamBranches_LocalRemoteIncludesRemote(t *testing.T) {
 		branchStreamOpts{markCheckedOut: true})
 
 	var feature string
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		time.Sleep(10 * time.Millisecond)
 		for _, item := range src.Snapshot() {
 			if strings.HasPrefix(item, "local/remote: ") && strings.Contains(item, "feature") {
@@ -209,7 +209,7 @@ func TestStreamBranches_SameNameOnOtherRemote(t *testing.T) {
 		branchStreamOpts{markCheckedOut: true})
 
 	var items []string
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		time.Sleep(10 * time.Millisecond)
 		items = src.Snapshot()
 		if len(items) >= 1 {
@@ -251,7 +251,7 @@ func TestStreamBranches_CheckedOutElsewhereIsMarkedUnselectable(t *testing.T) {
 		branchStreamOpts{markCheckedOut: true})
 
 	var feature string
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		time.Sleep(10 * time.Millisecond)
 		for _, item := range src.Snapshot() {
 			if strings.Contains(item, "feature") {
@@ -287,7 +287,7 @@ func TestStreamBranches_CurrentBranchReadsHere(t *testing.T) {
 		branchStreamOpts{markCheckedOut: true, includeCurrent: true})
 
 	var entry string
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		time.Sleep(10 * time.Millisecond)
 		for _, item := range src.Snapshot() {
 			if strings.Contains(item, current) {
@@ -334,8 +334,7 @@ func TestStreamBranches_DetachedHEAD(t *testing.T) {
 	short := detachedShortSHA(r, "")
 	require.That(t, short != "", "detached HEAD should have a short sha")
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	var errBuf bytes.Buffer
 	src := streamBranches(ctx, r, &errBuf, "", "", nil,
 		branchStreamOpts{includeCurrent: true, markCheckedOut: true, detachedAt: short})

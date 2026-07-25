@@ -18,7 +18,7 @@ func parseQuirks() (map[string]bool, error) {
 		return nil, nil
 	}
 	active := make(map[string]bool)
-	for _, tok := range strings.Split(raw, ",") {
+	for tok := range strings.SplitSeq(raw, ",") {
 		tok = strings.TrimSpace(tok)
 		if tok == "" {
 			continue

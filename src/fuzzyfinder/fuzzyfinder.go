@@ -416,10 +416,7 @@ func (f *finder) _draw() {
 	// Item area sizing. Number-line shares the prompt row, so chrome above
 	// the items is just `offset` rows (prompt + optional header).
 	firstItemOffset := offset
-	itemAreaHeight := height - firstItemOffset - 1
-	if itemAreaHeight < 0 {
-		itemAreaHeight = 0
-	}
+	itemAreaHeight := max(height-firstItemOffset-1, 0)
 	pageSize := itemAreaHeight + 1
 	topIdx := f.state.y - f.state.cursorY
 
@@ -438,10 +435,7 @@ func (f *finder) _draw() {
 		if matchedCount > 0 {
 			totalPages = (matchedCount + pageSize - 1) / pageSize
 		}
-		maxPages = (totalItems + pageSize - 1) / pageSize
-		if maxPages < 1 {
-			maxPages = 1
-		}
+		maxPages = max((totalItems+pageSize-1)/pageSize, 1)
 	}
 	pw := len(fmt.Sprintf("%d", maxPages))
 
@@ -533,7 +527,7 @@ func (f *finder) _draw() {
 			wordRunes := []rune(lowerWord)
 			for i := 0; i <= len(lowerItemRunes)-len(wordRunes); i++ {
 				match := true
-				for k := 0; k < len(wordRunes); k++ {
+				for k := range wordRunes {
 					if lowerItemRunes[i+k] != wordRunes[k] {
 						match = false
 						break
@@ -543,7 +537,7 @@ func (f *finder) _draw() {
 					if highlightPositions == nil {
 						highlightPositions = make(map[int]bool)
 					}
-					for k := 0; k < len(wordRunes); k++ {
+					for k := range wordRunes {
 						highlightPositions[i+k] = true
 					}
 				}
@@ -597,10 +591,7 @@ func (f *finder) _draw() {
 		trackHeight := pageSize
 		total := len(f.state.matched)
 
-		thumbSize := max(1, trackHeight*pageSize/total)
-		if thumbSize > trackHeight {
-			thumbSize = trackHeight
-		}
+		thumbSize := min(max(1, trackHeight*pageSize/total), trackHeight)
 		visibleFar := topIdx + min(itemAreaHeight, total-1-topIdx)
 		maxOffset := trackHeight - thumbSize
 		thumbOff := 0
@@ -615,7 +606,7 @@ func (f *finder) _draw() {
 		trackStyle := tcell.StyleDefault.Foreground(tcell.ColorDarkGray).Background(tcell.ColorDefault)
 		thumbStyle := tcell.StyleDefault.Foreground(tcell.ColorYellow).Background(tcell.ColorDefault)
 		col := maxWidth - 1
-		for row := 0; row < trackHeight; row++ {
+		for row := range trackHeight {
 			// Track row 0 is the row farthest from the prompt; row trackHeight-1
 			// is closest. firstItemOffset+itemAreaHeight is the far end.
 			y := rowAt(firstItemOffset + (trackHeight - 1 - row))
@@ -691,10 +682,7 @@ func (f *finder) readKey(ctx context.Context) error {
 	if len(f.opt.Header) > 0 {
 		firstItemOffset = 2
 	}
-	pageSize := screenHeight - firstItemOffset
-	if pageSize < 1 {
-		pageSize = 1
-	}
+	pageSize := max(screenHeight-firstItemOffset, 1)
 
 	switch e := e.(type) {
 	case *tcell.EventKey:

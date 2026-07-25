@@ -68,10 +68,7 @@ func statusHeader(label string, width int) string {
 	if width <= 0 {
 		width = 80
 	}
-	pad := width - len(prefix)
-	if pad < 3 {
-		pad = 3
-	}
+	pad := max(width-len(prefix), 3)
 	return prefix + strings.Repeat("-", pad)
 }
 

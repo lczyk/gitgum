@@ -24,7 +24,7 @@ func (r Repo) DirtyTrackedLines() ([]string, error) {
 		return nil, nil
 	}
 	var dirty []string
-	for _, line := range strings.Split(strings.TrimRight(stdout, "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.TrimRight(stdout, "\n"), "\n") {
 		if strings.HasPrefix(line, "?? ") {
 			continue
 		}

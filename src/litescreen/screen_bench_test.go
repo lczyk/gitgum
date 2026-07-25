@@ -15,8 +15,8 @@ import (
 // the prior frame (otherwise Show short-circuits on cellEqual and the
 // "FullDiff" label is a lie).
 func fillScreen(s *litescreen.Screen, w, h, seed int) {
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
+	for y := range h {
+		for x := range w {
 			r := rune('A' + ((x + y + seed) % 26))
 			s.SetContent(x, y, r, nil, tcell.StyleDefault)
 		}

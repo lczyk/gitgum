@@ -60,7 +60,7 @@ func renderRowInto(buf []byte, slotsBuf *[]Glyph, row Row, numCols int, st Style
 	// (as in git's graph.c). Without packing, multi-col layouts get extra
 	// whitespace.
 	slots := (*slotsBuf)[:0]
-	for c := 0; c < numCols; c++ {
+	for c := range numCols {
 		g := row.Glyphs[c]
 		// The row-walker emits a clean fixed grid (2 slots per column). The
 		// trailing half-slot is normally a space, but the walker can place a
@@ -79,7 +79,7 @@ func renderRowInto(buf []byte, slotsBuf *[]Glyph, row Row, numCols int, st Style
 	// Determine right edge: stagger rows render up to the rightmost col with
 	// non-space content; node rows do the same (with at least col 0).
 	lastActive := -1
-	for c := 0; c < numCols; c++ {
+	for c := range numCols {
 		if row.Glyphs[c] != GlyphSpace {
 			lastActive = c
 		}

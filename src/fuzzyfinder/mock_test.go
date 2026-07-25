@@ -51,7 +51,7 @@ func (m *TerminalMock) GetResult() string {
 
 	cells, width, height := m.GetContents()
 
-	for h := 0; h < height; h++ {
+	for h := range height {
 		prevFg, prevBg := tcell.ColorDefault, tcell.ColorDefault
 
 		for w := 0; w < width; w++ {
