@@ -91,7 +91,7 @@ func (s *StatusCommand) renderSections(out io.Writer, sections []statusSection) 
 	for _, sec := range sections {
 		header := func() {
 			if withHeaders {
-				fmt.Fprintln(out, paint(ansiDim, statusHeader(sec.header)))
+				fmt.Fprintln(out, paint(ansiDim, statusHeader(sec.header, s.headerWidth())))
 			}
 		}
 		if err := sec.render(s, out, header); err != nil {
