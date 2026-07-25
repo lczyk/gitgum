@@ -19,13 +19,12 @@ func (r Repo) BranchConfigSet(branch, key, value string) error {
 }
 
 // BranchConfigGet reads branch.<branch>.<key> from config, returning ("", nil)
-// when the key is unset (git exits 1 for a missing key -- that's not an error
-// here, just absence). Reads honour repo-local .git/config.
+// when the key is unset. Reads honour repo-local .git/config.
 //
-// Exit 1 is the only code that means "no such key"; git reserves the others for
-// real faults (2 invalid section/key, 3 invalid config file, 128 not a repo).
-// Those propagate rather than reading as absence, so a broken config surfaces
-// instead of quietly making every branch look unconfigured.
+// Exit 1 is the only code meaning "no such key"; git reserves the rest for real
+// faults (2 invalid section/key, 3 invalid config file, 128 not a repo). Those
+// propagate rather than reading as absence, so a broken config surfaces instead
+// of quietly making every branch look unconfigured.
 func (r Repo) BranchConfigGet(branch, key string) (string, error) {
 	name := fmt.Sprintf("branch.%s.%s", branch, key)
 	stdout, stderr, err := r.run("config", "--get", name)

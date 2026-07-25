@@ -19,8 +19,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 		return err
 	}
 
-	// The picker can't open until these read-only queries return, so run them
-	// concurrently -- see runConcurrent.
+	// Pre-picker reads, overlapped -- see runConcurrent.
 	//
 	// The empty-repo guard runs first so its error wins: on a genuinely-empty
 	// repo (no commits yet) resolveCurrentBranchContext's rev-parse HEAD fails

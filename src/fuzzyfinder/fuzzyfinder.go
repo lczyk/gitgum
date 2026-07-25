@@ -1300,9 +1300,6 @@ func (f *finder) confirmSelection() ([]int, bool) {
 	// every entry here is selectable -- and it survives the match set being
 	// filtered down to nothing, so it's checked before anySelectableLocked.
 	if f.multi && len(f.state.selection) > 0 {
-		// Sort index and order together as one value. Sorting an idxs slice
-		// against a parallel poss slice would read poss at positions the sort
-		// has already permuted idxs out of, scrambling the order.
 		picks := make([]selectedItem, 0, len(f.state.selection))
 		for idx, pos := range f.state.selection {
 			picks = append(picks, selectedItem{idx: idx, order: pos})
@@ -1327,8 +1324,10 @@ func (f *finder) confirmSelection() ([]int, bool) {
 	return []int{cur}, true
 }
 
-// selectedItem pairs an items index with its 1-based multi-select order, so
-// the two travel together through a sort.
+// selectedItem pairs an items index with its 1-based multi-select order so the
+// two survive a sort together. Sorting an index slice against a parallel order
+// slice does not work: the sort permutes only the first, so the comparator ends
+// up reading orders belonging to other indices.
 type selectedItem struct {
 	idx   int
 	order int

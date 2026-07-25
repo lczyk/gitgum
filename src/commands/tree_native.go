@@ -95,12 +95,10 @@ func nodeIDs(raw string) []string {
 	return ids
 }
 
-// bridgeRangesPerCall bounds how many `HEAD..<sha>` ranges ride on a single
-// `git log` invocation. One range per in-window commit is unbounded, and a
-// wide window (`gg tree --all` on a long history) would push argv past the
-// exec limit -- `fork/exec: argument list too long`, i.e. no graph at all
-// rather than a slightly slower one. 256 ranges is ~11 KiB of argv, far under
-// any platform's cap, and the batches dedup against a shared set afterwards.
+// bridgeRangesPerCall bounds how many `HEAD..<sha>` ranges ride on one `git
+// log`. Unbatched it is one per in-window commit, which a wide window pushes
+// past the exec limit -- "argument list too long", i.e. no graph at all. git
+// dedups within a walk but not across them, so callers dedup the batches.
 const bridgeRangesPerCall = 256
 
 // headFloatLines returns extra git-log lines to splice into the main output so
@@ -139,9 +137,7 @@ func (t *TreeCommand) headFloatLines(colorFlag string, windowIDs []string) []str
 
 	// Bridge: commits on the ancestry path from HEAD (exclusive) up to each
 	// in-window node. --ancestry-path trims each HEAD..id range to the commits
-	// actually linking the two. Ranges are batched (see bridgeRangesPerCall)
-	// so argv stays bounded; git dedups within one walk, `seen` dedups across
-	// batches and against the window itself.
+	// actually linking the two.
 	for start := 0; start < len(windowIDs); start += bridgeRangesPerCall {
 		end := min(start+bridgeRangesPerCall, len(windowIDs))
 		args := []string{"log", "--ancestry-path", logFormat, colorFlag}

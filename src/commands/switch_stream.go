@@ -13,17 +13,15 @@ import (
 	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
-// streamDelay paces entries into the picker so the list visibly fills rather
-// than appearing all at once. Purely cosmetic.
-const streamDelay = 3 * time.Millisecond
-
-// streamDelayEntries bounds how many entries pay streamDelay. The effect is
-// only worth anything for the first screenful or so, but the cost is linear:
-// a repo with a couple of thousand remote branches would otherwise take
-// len(branches) * streamDelay -- seconds -- before the list was complete, and
-// a query typed in the meantime would match against a list still filling up.
-// Past this many entries the remainder is added as fast as it arrives.
-const streamDelayEntries = 200
+// Entries are paced into the picker so the list visibly fills rather than
+// appearing at once -- cosmetic, and only worth anything for the first
+// screenful. The cap keeps the cost from scaling with the repo: a couple of
+// thousand remote branches would otherwise spend seconds mid-fill, matching
+// anything typed against a list still filling up.
+const (
+	streamDelay        = 3 * time.Millisecond
+	streamDelayEntries = 200
+)
 
 // checkedOutMarker tags a branch already checked out in some worktree. The
 // switch flow always ends in `git checkout <name>` / reset, which git rejects

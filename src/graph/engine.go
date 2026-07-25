@@ -188,11 +188,9 @@ func (st *layoutState) sort() {
 		}
 	}
 
-	// Sorted once, not once per pop. walk never adds to ready, and every key
-	// the comparator reads (float membership, epoch, label, id) is fixed for
-	// the duration, so re-sorting a shrinking suffix each iteration produced
-	// the same order at O(n.k log k) instead of O(k log k). ID is unique and
-	// is the last tiebreak, so the order is total and stability is moot.
+	// Sorted once, not once per pop: walk never adds to ready and every key
+	// below is fixed for the duration, so re-sorting each iteration only
+	// reproduced this order. ID is unique and last, so the order is total.
 	sort.Slice(ready, func(i, j int) bool {
 		a, b := ready[i], ready[j]
 		if af, bf := floatSet[a.ID], floatSet[b.ID]; af != bf {
@@ -263,8 +261,7 @@ func (st *layoutState) sort() {
 	}
 
 	for len(ready) > 0 {
-		// Pop the newest ready node (date-ordered queue, sorted above). Nodes
-		// a walk already reached are skipped by walk's own placed check.
+		// Pop the newest ready node; walk no-ops on any a prior walk reached.
 		ns := ready[0]
 		ready = ready[1:]
 		walk(ns)

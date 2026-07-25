@@ -21,13 +21,12 @@ type StatusCommand struct {
 	// sections is resolved from the positional argument in Execute.
 	sections []statusSection
 	// width is the column count section rules are padded to. Zero means
-	// "measure os.Stdout"; --follow sets it to the litescreen's width so the
-	// rules match the surface they're actually painted on.
+	// "measure os.Stdout", which is only right when that is where the output
+	// lands: --follow renders into a buffer it then paints onto a litescreen
+	// of its own, usually shorter, size, so it sets this instead.
 	width int
 }
 
-// headerWidth is the column count for section rules: an explicit width when
-// one was set (follow mode), otherwise the live terminal width.
 func (s *StatusCommand) headerWidth() int {
 	if s.width > 0 {
 		return s.width
@@ -58,11 +57,8 @@ func (s *StatusCommand) Execute(args []string) error {
 	return s.runFollow()
 }
 
-// statusHeader renders a section rule padded out to width columns. The width
-// is passed in rather than read off os.Stdout here: under --follow the
-// sections render into a buffer that is then painted onto a litescreen of its
-// own size, and in tests they render into a buffer with no terminal at all.
-// A non-positive width falls back to 80.
+// statusHeader renders a section rule padded out to width columns; a
+// non-positive width falls back to 80.
 func statusHeader(label string, width int) string {
 	prefix := "- " + label + " "
 	if width <= 0 {
@@ -73,7 +69,7 @@ func statusHeader(label string, width int) string {
 }
 
 // stdoutWidth reports the terminal width of os.Stdout, or 0 when it isn't a
-// terminal (piped output, test buffer) and the caller should take the default.
+// terminal (piped output, test buffer).
 func stdoutWidth() int {
 	w, _, err := term.GetSize(int(os.Stdout.Fd()))
 	if err != nil || w <= 0 {
@@ -121,8 +117,6 @@ func (s *StatusCommand) runFollow() error {
 	// changes -- the numstat counts would only refresh when the *set* of
 	// changed files changed, not when an existing file's diff size did.
 	refreshCache := func() {
-		// Rules are padded to the screen we paint on, not to os.Stdout: the
-		// litescreen band is usually shorter than the terminal.
 		s.width, _ = scr.Size()
 		var buf bytes.Buffer
 		cachedErr = s.renderSections(&buf, s.sections)

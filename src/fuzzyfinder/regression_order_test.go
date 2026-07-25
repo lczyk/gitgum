@@ -10,22 +10,19 @@ import (
 	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
-// multiOrderReps is how many times TestFindMulti_SelectionOrder replays the
-// same run. The selection is held in a map, so Go randomises the order the
-// entries are collected in before sorting -- and the bug this pins (sorting an
-// indices slice against a parallel orders slice the sort never permutes) turns
-// that randomness into a wrong answer only for some starting orders. A single
-// run therefore passes against the broken code perhaps half the time. Repeating
-// makes the test decide, rather than the map.
 const multiOrderReps = 50
 
 // TestFindMulti_SelectionOrder pins Result.Indices to the order the user marked
 // items in, not to index order, and pins it to be the same on every run.
 //
-// Four selections, marked bottom-up (3, 2, 1, 0), so the expected order is the
-// exact reverse of index order: neither an index-sorted result nor a partially
-// scrambled one can pass by accident. Two selections would prove nothing -- a
-// two-element sort makes one comparison and both outcomes happen to be right.
+// Both the shape and the repetition are load-bearing. Four selections marked
+// bottom-up make the expected order the exact reverse of index order, so
+// neither an index-sorted nor a partly scrambled result can pass by accident;
+// two would prove nothing, since a two-element sort makes one comparison and
+// both outcomes are right. And because the selection lives in a map, the order
+// the entries are collected in is randomised, so the defect this pins produces
+// a wrong answer only for some starting orders -- one run passes against the
+// broken code about half the time. Repeating lets the test decide, not the map.
 func TestFindMulti_SelectionOrder(t *testing.T) {
 	t.Parallel()
 

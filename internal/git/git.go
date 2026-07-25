@@ -244,11 +244,10 @@ func (r Repo) GetCommitHash(ref string) (string, error) {
 // well-known sha1 value). Diffing it against HEAD yields every tracked file as
 // an addition -- the whole-tree diffstat gg clone prints.
 //
-// Unix-only: it hashes /dev/null as the empty input. The portable spelling
-// (`hash-object -t tree --stdin` with an empty stdin) needs a stdin-capable
-// runner, which the read chokepoint deliberately doesn't have. Callers treat a
-// failure as "no diffstat", so on a platform without /dev/null this degrades
-// to silence rather than breaking.
+// Unix-only: it hashes /dev/null for the empty input, the portable spelling
+// (--stdin) needing a stdin-capable runner the read chokepoint doesn't have.
+// Callers treat failure as "no diffstat", so elsewhere this goes quiet rather
+// than breaking.
 func (r Repo) EmptyTree() (string, error) {
 	stdout, stderr, err := r.run("hash-object", "-t", "tree", "/dev/null")
 	if err != nil {

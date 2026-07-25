@@ -13,7 +13,6 @@ import (
 
 // prRepoWithStaleBranch builds the state the reset path needs: a local
 // pr/origin/1 branch sitting one commit behind the PR head on the remote.
-// Returns the repo dir.
 func prRepoWithStaleBranch(t *testing.T) string {
 	t.Helper()
 	dir := temp_repo.NewRepo(t)
@@ -31,7 +30,8 @@ func prRepoWithStaleBranch(t *testing.T) string {
 	temp_repo.RunGit(t, dir, "push", "origin", "HEAD:refs/pull/1/head")
 	temp_repo.RunGit(t, dir, "reset", "--hard", base)
 
-	// A local pr/origin/1 at the old commit, with the metadata gg writes.
+	// No PR metadata on it: the reset path keys off the branch existing, and
+	// leaving it off also covers a branch made before that metadata existed.
 	temp_repo.RunGit(t, dir, "branch", "pr/origin/1", base)
 	return dir
 }

@@ -39,11 +39,8 @@ func (r Repo) DirtyTrackedLines() ([]string, error) {
 // stashHooksOff suppresses user pre-stash / post-checkout hooks for the
 // duration of a stash op. gg uses stash internally only (release auto-
 // stash, switch_stream bookkeeping); firing user hooks on plumbing they
-// didn't initiate is a footgun.
-//
-// Callers must not append to it -- it's shared package state, and append
-// would write into its backing array the moment spare capacity exists.
-// slices.Concat always copies.
+// didn't initiate is a footgun. Shared, so build argv with slices.Concat:
+// append would write into its backing array once it has spare capacity.
 var stashHooksOff = []string{"-c", "core.hooksPath=/dev/null"}
 
 // StashPush stashes tracked changes (staged + unstaged) under the given

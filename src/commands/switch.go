@@ -69,9 +69,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 		return err
 	}
 
-	// The picker can't open until these read-only queries return, so run them
-	// concurrently rather than serialising the working-tree scan behind the
-	// branch/remote lookups -- see runConcurrent.
+	// Pre-picker reads, overlapped -- see runConcurrent.
 	var (
 		currentBranch, trackingRemote, statusLine string
 		remotes                                   []string

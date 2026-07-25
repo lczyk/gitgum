@@ -19,9 +19,7 @@ func (b *BranchCommand) Execute(args []string) error {
 		return err
 	}
 
-	// The picker can't open until these read-only queries return, so run them
-	// concurrently rather than serialising the working-tree scan behind the
-	// branch/remote lookups -- see runConcurrent.
+	// Pre-picker reads, overlapped -- see runConcurrent.
 	var (
 		currentBranch, trackingRemote, statusLine string
 		remotes                                   []string
@@ -152,8 +150,8 @@ func startPointFor(selected string) (startPoint, error) {
 		}
 		return startPoint{ref: branch}, nil
 	case "remote":
-		// A remote name never contains '/', so the first cut splits it off; the
-		// branch may itself contain '/' (e.g. "feat/foo").
+		// Cut on the first '/' -- see localRemoteBranch for why that is the
+		// remote/branch boundary.
 		remote, branch, ok := strings.Cut(name, "/")
 		if !ok {
 			return startPoint{}, fmt.Errorf("invalid remote branch format: %s", name)
