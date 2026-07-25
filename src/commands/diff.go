@@ -60,9 +60,6 @@ func (d *DiffCommand) render(w io.Writer) error {
 		return nil
 	}
 	fmt.Fprintln(w, dim("--- "+level+" ---"))
-	if os.Getenv("GG_DIFF_NATIVE") == "1" {
-		return d.renderCollected(w, out)
-	}
 	fmt.Fprintln(w, out)
 	return nil
 }

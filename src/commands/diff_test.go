@@ -14,36 +14,17 @@ import (
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
 
-// runBoth executes `gg diff` once via the passthrough backend and once via the
-// native backend, returning both captured outputs. byte-identity between the
-// two is the contract -- assert in caller.
-func runBoth(t *testing.T, repo git.Repo) (passthrough, native string) {
+// runDiff executes `gg diff` against repo and returns the captured output.
+func runDiff(t *testing.T, repo git.Repo) string {
 	t.Helper()
 
 	var buf bytes.Buffer
 	cmd := &DiffCommand{cmdIO: cmdIO{Out: &buf, Repo: repo}}
-
-	t.Setenv("GG_DIFF_NATIVE", "0")
 	require.NoError(t, cmd.Execute(nil))
-	passthrough = buf.String()
-
-	buf.Reset()
-	t.Setenv("GG_DIFF_NATIVE", "1")
-	require.NoError(t, cmd.Execute(nil))
-	native = buf.String()
-	return
+	return buf.String()
 }
 
-// assertParity is the contract: native and passthrough produce byte-identical
-// output (ANSI included).
-func assertParity(t *testing.T, repo git.Repo) string {
-	t.Helper()
-	pt, nt := runBoth(t, repo)
-	assert.Equal(t, pt, nt)
-	return pt
-}
-
-func TestDiffCommand_Parity_ModifiedFile(t *testing.T) {
+func TestDiffCommand_ModifiedFile(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("FORCE_COLOR", "")
 	dir := temp_repo.NewRepo(t)
@@ -51,11 +32,11 @@ func TestDiffCommand_Parity_ModifiedFile(t *testing.T) {
 	temp_repo.WriteFile(t, dir, "a.txt", "hello world\n")
 	repo := git.Repo{Dir: dir}
 
-	out := assertParity(t, repo)
+	out := runDiff(t, repo)
 	assert.ContainsString(t, out, "a.txt")
 }
 
-func TestDiffCommand_Parity_UntrackedOnlyShowsUntracked(t *testing.T) {
+func TestDiffCommand_UntrackedOnlyShowsUntracked(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("FORCE_COLOR", "")
 	dir := temp_repo.NewRepo(t)
@@ -66,12 +47,12 @@ func TestDiffCommand_Parity_UntrackedOnlyShowsUntracked(t *testing.T) {
 	temp_repo.WriteFile(t, dir, "new.txt", "fresh\n")
 	repo := git.Repo{Dir: dir}
 
-	out := assertParity(t, repo)
+	out := runDiff(t, repo)
 	assert.ContainsString(t, out, "--- untracked ---")
 	assert.ContainsString(t, out, "new.txt")
 }
 
-func TestDiffCommand_Parity_DeletedFile(t *testing.T) {
+func TestDiffCommand_DeletedFile(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("FORCE_COLOR", "")
 	dir := temp_repo.NewRepo(t)
@@ -79,11 +60,11 @@ func TestDiffCommand_Parity_DeletedFile(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(dir, "doomed.txt")))
 	repo := git.Repo{Dir: dir}
 
-	out := assertParity(t, repo)
+	out := runDiff(t, repo)
 	assert.ContainsString(t, out, "doomed.txt")
 }
 
-func TestDiffCommand_Parity_ModeChange(t *testing.T) {
+func TestDiffCommand_ModeChange(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("FORCE_COLOR", "")
 	dir := temp_repo.NewRepo(t)
@@ -91,11 +72,11 @@ func TestDiffCommand_Parity_ModeChange(t *testing.T) {
 	require.NoError(t, os.Chmod(filepath.Join(dir, "script.sh"), 0o755))
 	repo := git.Repo{Dir: dir}
 
-	out := assertParity(t, repo)
+	out := runDiff(t, repo)
 	assert.ContainsString(t, out, "script.sh")
 }
 
-func TestDiffCommand_Parity_Rename(t *testing.T) {
+func TestDiffCommand_Rename(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("FORCE_COLOR", "")
 	dir := temp_repo.NewRepo(t)
@@ -106,10 +87,10 @@ func TestDiffCommand_Parity_Rename(t *testing.T) {
 	// just exercise parity -- compact-summary may render this as add+del or
 	// as a rename depending on git's similarity heuristic; either way both
 	// backends must agree.
-	_ = assertParity(t, repo)
+	_ = runDiff(t, repo)
 }
 
-func TestDiffCommand_Parity_BinaryModified(t *testing.T) {
+func TestDiffCommand_BinaryModified(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("FORCE_COLOR", "")
 	dir := temp_repo.NewRepo(t)
@@ -121,11 +102,11 @@ func TestDiffCommand_Parity_BinaryModified(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "blob.bin"), bin2, 0o644))
 	repo := git.Repo{Dir: dir}
 
-	out := assertParity(t, repo)
+	out := runDiff(t, repo)
 	assert.ContainsString(t, out, "blob.bin")
 }
 
-func TestDiffCommand_Parity_MultiFileMix(t *testing.T) {
+func TestDiffCommand_MultiFileMix(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("FORCE_COLOR", "")
 	dir := temp_repo.NewRepo(t)
@@ -135,14 +116,14 @@ func TestDiffCommand_Parity_MultiFileMix(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(dir, "drop.txt")))
 	repo := git.Repo{Dir: dir}
 
-	out := assertParity(t, repo)
+	out := runDiff(t, repo)
 	assert.ContainsString(t, out, "keep.txt")
 	assert.ContainsString(t, out, "drop.txt")
 }
 
 // when there are no unstaged changes but staged changes exist, fall back
 // to the --cached diff.
-func TestDiffCommand_Parity_StagedOnlyFallsBackToCached(t *testing.T) {
+func TestDiffCommand_StagedOnlyFallsBackToCached(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("FORCE_COLOR", "")
 	dir := temp_repo.NewRepo(t)
@@ -153,13 +134,13 @@ func TestDiffCommand_Parity_StagedOnlyFallsBackToCached(t *testing.T) {
 	temp_repo.RunGit(t, dir, "add", "a.txt")
 	repo := git.Repo{Dir: dir}
 
-	out := assertParity(t, repo)
+	out := runDiff(t, repo)
 	assert.ContainsString(t, out, "a.txt")
 	assert.That(t, out != "", "expected --cached fallback to produce non-empty output")
 }
 
 // when the tree is fully clean, fall back to HEAD~1..HEAD.
-func TestDiffCommand_Parity_CleanFallsBackToLastCommit(t *testing.T) {
+func TestDiffCommand_CleanFallsBackToLastCommit(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("FORCE_COLOR", "")
 	dir := temp_repo.NewRepo(t)
@@ -167,7 +148,7 @@ func TestDiffCommand_Parity_CleanFallsBackToLastCommit(t *testing.T) {
 	temp_repo.CreateCommit(t, dir, "second.txt", "second\n", "chore: add second")
 	repo := git.Repo{Dir: dir}
 
-	out := assertParity(t, repo)
+	out := runDiff(t, repo)
 	// HEAD~1..HEAD should show the second commit's file.
 	assert.ContainsString(t, out, "second.txt")
 	assert.That(t, !contains(out, "first.txt"), "first.txt was added in HEAD~1, should not appear in HEAD~1..HEAD")
@@ -175,18 +156,18 @@ func TestDiffCommand_Parity_CleanFallsBackToLastCommit(t *testing.T) {
 
 // edge case: single-commit repo with clean tree -- HEAD~1 doesn't exist, so
 // the cascade falls off the end and returns empty. parity must still hold.
-func TestDiffCommand_Parity_CleanSingleCommitRepoIsEmpty(t *testing.T) {
+func TestDiffCommand_CleanSingleCommitRepoIsEmpty(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("FORCE_COLOR", "")
 	dir := temp_repo.NewRepo(t) // creates one initial "chore: init" commit
 	repo := git.Repo{Dir: dir}
 
-	out := assertParity(t, repo)
+	out := runDiff(t, repo)
 	assert.Equal(t, out, "")
 }
 
 // unstaged changes win over staged changes in the cascade.
-func TestDiffCommand_Parity_UnstagedWinsOverStaged(t *testing.T) {
+func TestDiffCommand_UnstagedWinsOverStaged(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("FORCE_COLOR", "")
 	dir := temp_repo.NewRepo(t)
@@ -198,13 +179,13 @@ func TestDiffCommand_Parity_UnstagedWinsOverStaged(t *testing.T) {
 	temp_repo.WriteFile(t, dir, "b.txt", "v2 unstaged\n")
 	repo := git.Repo{Dir: dir}
 
-	out := assertParity(t, repo)
+	out := runDiff(t, repo)
 	// working-tree diff shows only b.txt (a.txt working = a.txt index).
 	assert.ContainsString(t, out, "b.txt")
 	assert.That(t, !contains(out, "a.txt"), "a.txt is staged-only, should not appear in unstaged diff")
 }
 
-func TestDiffCommand_Parity_WithColor(t *testing.T) {
+func TestDiffCommand_WithColor(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
 	t.Setenv("FORCE_COLOR", "1")
 	dir := temp_repo.NewRepo(t)
@@ -212,7 +193,7 @@ func TestDiffCommand_Parity_WithColor(t *testing.T) {
 	temp_repo.WriteFile(t, dir, "a.txt", "hello world\n")
 	repo := git.Repo{Dir: dir}
 
-	out := assertParity(t, repo)
+	out := runDiff(t, repo)
 	assert.That(t, len(out) > 0, "expected non-empty output with FORCE_COLOR")
 }
 
