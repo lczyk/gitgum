@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/lczyk/gitgum/src/fuzzyfinder/matching"
@@ -739,20 +738,24 @@ func (f *finder) readKey(ctx context.Context) error {
 			f.state.cursorX = runewidth.StringWidth(string(f.state.input))
 			f.state.x = len(f.state.input)
 		case tcell.KeyCtrlW:
-			in := f.state.input[:f.state.x]
-			inStr := string(in)
-			pos := strings.LastIndex(strings.TrimRightFunc(inStr, unicode.IsSpace), " ")
-			if pos == -1 {
-				f.state.input = []rune{}
-				f.state.cursorX = 0
-				f.state.x = 0
-				return nil
+			// Kill the word before the cursor: skip back over trailing
+			// whitespace, then over the word itself. Everything from the
+			// cursor on is spliced back on -- ctrl+w is a delete-backwards,
+			// not a truncate, so text to the right of the cursor survives.
+			x := f.state.x
+			start := x
+			for start > 0 && unicode.IsSpace(f.state.input[start-1]) {
+				start--
 			}
-			pos = utf8.RuneCountInString(inStr[:pos])
-			newIn := f.state.input[:pos+1]
-			f.state.input = newIn
-			f.state.cursorX = runewidth.StringWidth(string(newIn))
-			f.state.x = len(newIn)
+			for start > 0 && !unicode.IsSpace(f.state.input[start-1]) {
+				start--
+			}
+			if start == x {
+				return nil // nothing before the cursor to kill
+			}
+			f.state.input = append(f.state.input[:start], f.state.input[x:]...)
+			f.state.cursorX = runewidth.StringWidth(string(f.state.input[:start]))
+			f.state.x = start
 		case tcell.KeyCtrlU:
 			f.state.input = f.state.input[f.state.x:]
 			f.state.cursorX = 0
