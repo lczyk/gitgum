@@ -60,9 +60,9 @@ func Diagnose(r git.Repo) []Finding {
 }
 
 // checkRemoteNaming enforces gg's opinion that a remote on a known forge is
-// named after its user/org (nsklikas), not "origin". Urls on an unmodelled
-// forge (or unparseable ones) can't be judged, so they surface as warnings
-// rather than violations.
+// named after its user/org -- the USER in github.com/USER/REPO -- not "origin".
+// Urls on an unmodelled forge (or unparseable ones) can't be judged, so they
+// surface as warnings rather than violations.
 func checkRemoteNaming(r git.Repo) []Finding {
 	remotes, err := r.GetRemotes()
 	if err != nil {
