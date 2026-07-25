@@ -15,10 +15,14 @@ func (r Repo) TagAnnotated(name, message string) error {
 	return nil
 }
 
-// TagExists reports whether a ref of the given name resolves. False on any
-// error (treats unresolvable refs as absent).
+// TagExists reports whether a tag of the given name exists. False on any error
+// (treats unresolvable refs as absent).
+//
+// The ref is spelled refs/tags/<name> rather than bare <name>: rev-parse walks
+// git's whole ref precedence for an unqualified name, so a *branch* called
+// v1.2.3 would otherwise read as a tag and make `gg release` refuse to tag.
 func (r Repo) TagExists(name string) bool {
-	_, _, err := r.run("rev-parse", "--verify", name)
+	_, _, err := r.run("rev-parse", "--verify", "--quiet", "refs/tags/"+name)
 	return err == nil
 }
 
