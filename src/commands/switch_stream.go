@@ -13,7 +13,17 @@ import (
 	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
+// streamDelay paces entries into the picker so the list visibly fills rather
+// than appearing all at once. Purely cosmetic.
 const streamDelay = 3 * time.Millisecond
+
+// streamDelayEntries bounds how many entries pay streamDelay. The effect is
+// only worth anything for the first screenful or so, but the cost is linear:
+// a repo with a couple of thousand remote branches would otherwise take
+// len(branches) * streamDelay -- seconds -- before the list was complete, and
+// a query typed in the meantime would match against a list still filling up.
+// Past this many entries the remainder is added as fast as it arrives.
+const streamDelayEntries = 200
 
 // checkedOutMarker tags a branch already checked out in some worktree. The
 // switch flow always ends in `git checkout <name>` / reset, which git rejects
@@ -154,10 +164,14 @@ func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBr
 
 	queue := make(chan branchEntry, 1000)
 	go func() {
+		drained := 0
 		for {
 			select {
 			case entry := <-queue:
-				time.Sleep(streamDelay)
+				if drained < streamDelayEntries {
+					time.Sleep(streamDelay)
+					drained++
+				}
 				seenMu.Lock()
 				if _, ok := seen[entry.dedupKey]; ok {
 					seenMu.Unlock()
