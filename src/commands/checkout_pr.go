@@ -99,6 +99,19 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 			return nil
 		}
 
+		// The reset below is destructive, so the working tree has to be dealt
+		// with first -- same guard the fresh-branch path and `gg pull`'s PR
+		// flow use, rather than letting reset --hard eat uncommitted work.
+		cleanup, err := handleDirtyTree(&c.cmdIO, "checkout-pr")
+		if err != nil {
+			if errors.Is(err, errDirtyTreeAborted) {
+				fmt.Fprintln(c.out(), "Aborted.")
+				return nil
+			}
+			return err
+		}
+		defer cleanup()
+
 		fmt.Fprintf(c.out(), "Fetching PR #%d from %s...\n", prNumber, remote)
 		if err := c.repo().Fetch(remote, prRef); err != nil {
 			return fmt.Errorf("fetching PR: %w", err)
