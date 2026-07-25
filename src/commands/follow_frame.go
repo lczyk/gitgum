@@ -85,7 +85,13 @@ func (f *followFrame) Body(lines []string, scrollOffset *int, tailMode *bool, ca
 	// tail-resume: if the user scrolled past the prior bottom (e.g. new
 	// content arrived while they were at the old bottom), snap back into
 	// tail mode so the latest content stays visible.
-	if !*tailMode && *scrollOffset >= f.lastMaxOffset {
+	//
+	// Gated on there being something to scroll. With content that fits the
+	// screen lastMaxOffset is 0, so every offset trivially satisfies the test
+	// and tail silently re-arms -- which looks like nothing at the time, then
+	// yanks the view to the bottom the moment the content outgrows the screen,
+	// undoing the `g` the user pressed several frames earlier.
+	if !*tailMode && f.lastMaxOffset > 0 && *scrollOffset >= f.lastMaxOffset {
 		*tailMode = true
 	}
 	if *tailMode {
