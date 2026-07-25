@@ -188,6 +188,25 @@ func (st *layoutState) sort() {
 		}
 	}
 
+	// Sorted once, not once per pop. walk never adds to ready, and every key
+	// the comparator reads (float membership, epoch, label, id) is fixed for
+	// the duration, so re-sorting a shrinking suffix each iteration produced
+	// the same order at O(n.k log k) instead of O(k log k). ID is unique and
+	// is the last tiebreak, so the order is total and stability is moot.
+	sort.Slice(ready, func(i, j int) bool {
+		a, b := ready[i], ready[j]
+		if af, bf := floatSet[a.ID], floatSet[b.ID]; af != bf {
+			return af // float-side tips drain first -> sink to the bottom
+		}
+		if a.Epoch != b.Epoch {
+			return a.Epoch > b.Epoch
+		}
+		if a.Label != b.Label {
+			return a.Label < b.Label
+		}
+		return a.ID < b.ID
+	})
+
 	placed := make(map[string]bool, n)
 	row := n - 1 // assign rows newest-first
 
@@ -244,20 +263,8 @@ func (st *layoutState) sort() {
 	}
 
 	for len(ready) > 0 {
-		// Pick newest ready node (date-ordered queue).
-		sort.Slice(ready, func(i, j int) bool {
-			a, b := ready[i], ready[j]
-			if af, bf := floatSet[a.ID], floatSet[b.ID]; af != bf {
-				return af // float-side tips drain first -> sink to the bottom
-			}
-			if a.Epoch != b.Epoch {
-				return a.Epoch > b.Epoch
-			}
-			if a.Label != b.Label {
-				return a.Label < b.Label
-			}
-			return a.ID < b.ID
-		})
+		// Pop the newest ready node (date-ordered queue, sorted above). Nodes
+		// a walk already reached are skipped by walk's own placed check.
 		ns := ready[0]
 		ready = ready[1:]
 		walk(ns)
