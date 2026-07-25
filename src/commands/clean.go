@@ -95,21 +95,35 @@ func (c *CleanCommand) Execute(args []string) error {
 	return nil
 }
 
+// getAffectedFiles lists every path the cleanup would touch, first-seen order,
+// each path once. The unstaged and staged listings overlap whenever a file has
+// both kinds of change (porcelain `MM`), so they are deduped -- otherwise the
+// path is printed twice and the "(N)" header overcounts what is at risk.
 func getAffectedFiles(r git.Repo, changes, untracked, ignored bool) ([]string, error) {
 	var affectedFiles []string
+	seen := map[string]bool{}
+	add := func(paths []string) {
+		for _, p := range paths {
+			if seen[p] {
+				continue
+			}
+			seen[p] = true
+			affectedFiles = append(affectedFiles, p)
+		}
+	}
 
 	if changes {
 		stdout, _, err := r.Run("diff", "--name-only")
 		if err != nil {
 			return nil, fmt.Errorf("listing modified files: %w", err)
 		}
-		affectedFiles = append(affectedFiles, strutil.SplitLines(stdout)...)
+		add(strutil.SplitLines(stdout))
 
 		stdout, _, err = r.Run("diff", "--cached", "--name-only")
 		if err != nil {
 			return nil, fmt.Errorf("listing staged files: %w", err)
 		}
-		affectedFiles = append(affectedFiles, strutil.SplitLines(stdout)...)
+		add(strutil.SplitLines(stdout))
 	}
 
 	if untracked {
@@ -117,11 +131,13 @@ func getAffectedFiles(r git.Repo, changes, untracked, ignored bool) ([]string, e
 		if err != nil {
 			return nil, fmt.Errorf("listing untracked files: %w", err)
 		}
+		var paths []string
 		for _, line := range strutil.SplitLines(stdout) {
 			if trimmed, ok := strings.CutPrefix(line, gitCleanDryRunPrefix); ok {
-				affectedFiles = append(affectedFiles, trimmed)
+				paths = append(paths, trimmed)
 			}
 		}
+		add(paths)
 	}
 
 	return affectedFiles, nil
