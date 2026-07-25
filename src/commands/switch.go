@@ -122,8 +122,10 @@ func (s *SwitchCommand) Execute(args []string) error {
 	selected, err := s.sel().SelectStream(ctx, "Select a branch to switch to", src, switchUnselectable)
 	cancel()
 	if err != nil {
-		fmt.Fprintln(s.err(), "No branch selected. Aborting switch.")
+		// Only a cancel is "nothing selected"; a picker that actually failed
+		// gets its own error rather than a message implying the user backed out.
 		if errors.Is(err, ui.ErrCancelled) {
+			fmt.Fprintln(s.err(), "No branch selected. Aborting switch.")
 			return nil
 		}
 		return err
