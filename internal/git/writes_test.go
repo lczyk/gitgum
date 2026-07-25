@@ -142,3 +142,20 @@ func TestAdd_RespectsRepoDir(t *testing.T) {
 	out := temp_repo.RunGit(t, dir, "status", "--porcelain")
 	assert.ContainsString(t, out, "A  bar.txt")
 }
+
+// A branch named like a tag must not read as a tag. rev-parse resolves an
+// unqualified name through git's whole ref precedence, so an unscoped lookup
+// answered "yes" for refs/heads/v1.2.3 -- which made `gg release` refuse to
+// cut a tag that did not exist.
+func TestTagExists_BranchWithTagLikeNameIsNotATag(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "branch", "v1.2.3")
+
+	r := git.Repo{Dir: dir}
+	assert.That(t, !r.TagExists("v1.2.3"), "branch v1.2.3 is not a tag")
+
+	// ...and a real tag of the same name still resolves.
+	temp_repo.RunGit(t, dir, "tag", "v1.2.3")
+	assert.That(t, r.TagExists("v1.2.3"), "tag v1.2.3 should exist")
+}

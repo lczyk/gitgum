@@ -1,8 +1,10 @@
 package commands
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/lczyk/assert"
@@ -160,4 +162,27 @@ func TestCleanCommand_Execute(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A file with both staged and unstaged changes (porcelain `MM`) shows up in
+// `diff --name-only` and in `diff --cached --name-only`. The two listings used
+// to be concatenated blind, so the path was printed twice and the "(N)" header
+// overstated how much was at risk in the one prompt the user gets before an
+// irreversible clean.
+func TestCleanCommand_StagedAndUnstagedFileListedOnce(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+
+	temp_repo.WriteFile(t, dir, "README.md", "staged\n")
+	temp_repo.RunGit(t, dir, "add", "README.md")
+	temp_repo.WriteFile(t, dir, "README.md", "staged, then modified again\n")
+	require.ContainsString(t,
+		temp_repo.RunGit(t, dir, "status", "--porcelain"), "MM README.md")
+
+	var out bytes.Buffer
+	cmd := &CleanCommand{cmdIO: cmdIO{Out: &out, Repo: git.Repo{Dir: dir}}, Yes: true}
+	require.NoError(t, cmd.Execute(nil))
+
+	assert.ContainsString(t, out.String(), "Files to be discarded (1):")
+	assert.Equal(t, strings.Count(out.String(), "README.md"), 1)
 }
