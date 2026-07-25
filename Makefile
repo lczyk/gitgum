@@ -16,7 +16,13 @@ build: ./bin/gitgum ./bin/fuzzyfinder  ## Build all binaries (compressed with up
 		upx ./bin/gitgum || echo "upx failed, skipping compression"; \
 	fi
 
-./bin/fuzzyfinder: $(SRCS) Makefile go.mod go.sum
+# generate-version is a prerequisite of both binaries, not just gitgum: both
+# cmd/ mains import src/version, so building either one against a tree where
+# version.go has not been generated (fresh clone, post-`make clean`) fails to
+# resolve the package. It being phony is deliberate -- version.go embeds the
+# current commit sha, so it is regenerated every build rather than dated
+# against sources, which is also why SRCS excludes it.
+./bin/fuzzyfinder: $(SRCS) generate-version Makefile go.mod go.sum
 	mkdir -p ./bin
 	go build -o ./bin/fuzzyfinder ./cmd/fuzzyfinder
 	@if command -v upx >/dev/null 2>&1; then \
@@ -81,4 +87,4 @@ verify: lint test  ## Pre-commit gate: lint, test
 clean:  ## Remove build artifacts and generated files
 	rm -f ./bin/gitgum ./bin/fuzzyfinder
 	rm -f ./src/version/version.go
-	rm -f ./coverage.txt
+	rm -f ./cover.out ./cover.html
