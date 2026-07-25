@@ -9,7 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -1300,21 +1300,27 @@ func (f *finder) anySelectableLocked() bool {
 // the cursor is a "not this one" nudge, whereas a wholly-unselectable match set
 // is a picker with nothing to pick.
 func (f *finder) confirmSelection() ([]int, bool) {
-	f.stateMu.RLock()
-	defer f.stateMu.RUnlock()
+	// Write lock, not read: the confirmedItems snapshot below is a write to
+	// f, taken here so it lands atomically with the indices it describes.
+	f.stateMu.Lock()
+	defer f.stateMu.Unlock()
 
 	// Selection is built via Tab, which already rejects unselectable items, so
 	// every entry here is selectable -- and it survives the match set being
 	// filtered down to nothing, so it's checked before anySelectableLocked.
 	if f.multi && len(f.state.selection) > 0 {
-		poss, idxs := make([]int, 0, len(f.state.selection)), make([]int, 0, len(f.state.selection))
+		// Sort index and order together as one value. Sorting an idxs slice
+		// against a parallel poss slice would read poss at positions the sort
+		// has already permuted idxs out of, scrambling the order.
+		picks := make([]selectedItem, 0, len(f.state.selection))
 		for idx, pos := range f.state.selection {
-			idxs = append(idxs, idx)
-			poss = append(poss, pos)
+			picks = append(picks, selectedItem{idx: idx, order: pos})
 		}
-		sort.Slice(idxs, func(i, j int) bool {
-			return poss[i] < poss[j]
-		})
+		slices.SortFunc(picks, func(a, b selectedItem) int { return a.order - b.order })
+		idxs := make([]int, len(picks))
+		for i, p := range picks {
+			idxs[i] = p.idx
+		}
 		f.confirmedItems = f.itemsForLocked(idxs)
 		return idxs, true
 	}
@@ -1328,6 +1334,13 @@ func (f *finder) confirmSelection() ([]int, bool) {
 	}
 	f.confirmedItems = f.itemsForLocked([]int{cur})
 	return []int{cur}, true
+}
+
+// selectedItem pairs an items index with its 1-based multi-select order, so
+// the two travel together through a sort.
+type selectedItem struct {
+	idx   int
+	order int
 }
 
 // itemsForLocked translates indices into their item strings against the
