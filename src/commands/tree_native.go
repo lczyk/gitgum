@@ -40,7 +40,7 @@ func (t *TreeCommand) renderNative(w io.Writer, sinceArg string, maxCount int) e
 	// head-float with nothing to anchor on. Splice those lines back in so HEAD
 	// stays in the graph, connected, and can sink to the bottom.
 	if !t.NoHeadFloat {
-		if extra := t.headFloatLines(colorFlag, stdout, nodeIDs(stdout)); len(extra) > 0 {
+		if extra := t.headFloatLines(colorFlag, nodeIDs(stdout)); len(extra) > 0 {
 			stdout = strings.Join(extra, "\n") + "\n" + stdout
 		}
 	}
@@ -77,20 +77,10 @@ func (t *TreeCommand) renderNative(w io.Writer, sinceArg string, maxCount int) e
 // query and the head-float splice, so spliced lines parse identically.
 const logFormat = "--format=%H %P%x00%h%d %s%x00%ct"
 
-// rawHasNode reports whether id appears as a node (the leading %H field of some
-// line) in git-log output, ignoring matches in the %P parent fields.
-func rawHasNode(raw, id string) bool {
-	prefix := id + " "
-	for _, ln := range strings.Split(raw, "\n") {
-		if strings.HasPrefix(ln, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
 // nodeIDs extracts the %H node id (leading field) from each line of git-log
-// output, ignoring blanks.
+// output, ignoring blanks. Only the leading field counts: the same hash also
+// appears in the %P parent fields of a commit's children, and those are not
+// nodes in the window.
 func nodeIDs(raw string) []string {
 	lines := strings.Split(strings.TrimSpace(raw), "\n")
 	ids := make([]string, 0, len(lines))
@@ -105,23 +95,35 @@ func nodeIDs(raw string) []string {
 	return ids
 }
 
+// bridgeRangesPerCall bounds how many `HEAD..<sha>` ranges ride on a single
+// `git log` invocation. One range per in-window commit is unbounded, and a
+// wide window (`gg tree --all` on a long history) would push argv past the
+// exec limit -- `fork/exec: argument list too long`, i.e. no graph at all
+// rather than a slightly slower one. 256 ranges is ~11 KiB of argv, far under
+// any platform's cap, and the batches dedup against a shared set afterwards.
+const bridgeRangesPerCall = 256
+
 // headFloatLines returns extra git-log lines to splice into the main output so
 // the checked-out commit (HEAD) and the commits bridging it to its in-window
 // descendants stay visible -- --since can filter HEAD and that connecting chain
 // out. windowIDs are the %H node ids already present in raw. Returns nil when
 // HEAD is already shown (the common in-window case) or on lookup failure.
 // colorFlag mirrors the main query so spliced lines format identically.
-func (t *TreeCommand) headFloatLines(colorFlag, raw string, windowIDs []string) []string {
+func (t *TreeCommand) headFloatLines(colorFlag string, windowIDs []string) []string {
 	r := t.repo()
 	idOut, _, err := r.Run("rev-parse", "HEAD")
 	if err != nil {
 		return nil
 	}
 	headID := strings.TrimSpace(idOut)
-	// Match HEAD as a node id (%H, line-start), not anywhere: the hash also
-	// appears as a %P parent field on HEAD's children, so a plain substring
-	// check would wrongly treat an out-of-window HEAD as already present.
-	if headID == "" || rawHasNode(raw, headID) {
+	if headID == "" {
+		return nil
+	}
+	seen := make(map[string]bool, len(windowIDs))
+	for _, id := range windowIDs {
+		seen[id] = true
+	}
+	if seen[headID] {
 		return nil
 	}
 
@@ -131,27 +133,35 @@ func (t *TreeCommand) headFloatLines(colorFlag, raw string, windowIDs []string) 
 	if out, _, err := r.Run("log", "-1", logFormat, colorFlag, headID); err == nil {
 		if line := strings.TrimRight(out, "\n"); line != "" {
 			lines = append(lines, line)
+			seen[headID] = true
 		}
 	}
 
 	// Bridge: commits on the ancestry path from HEAD (exclusive) up to each
 	// in-window node. --ancestry-path trims each HEAD..id range to the commits
-	// actually linking the two; git dedups across ranges in a single walk.
-	// Splice only the ones --since dropped (not already in raw).
-	if len(windowIDs) > 0 {
+	// actually linking the two. Ranges are batched (see bridgeRangesPerCall)
+	// so argv stays bounded; git dedups within one walk, `seen` dedups across
+	// batches and against the window itself.
+	for start := 0; start < len(windowIDs); start += bridgeRangesPerCall {
+		end := min(start+bridgeRangesPerCall, len(windowIDs))
 		args := []string{"log", "--ancestry-path", logFormat, colorFlag}
-		for _, id := range windowIDs {
+		for _, id := range windowIDs[start:end] {
 			args = append(args, headID+".."+id)
 		}
-		if out, _, err := r.Run(args...); err == nil {
-			for _, ln := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
-				if ln == "" {
-					continue
-				}
-				if id, _, ok := strings.Cut(ln, " "); ok && !rawHasNode(raw, id) {
-					lines = append(lines, ln)
-				}
+		out, _, err := r.Run(args...)
+		if err != nil {
+			continue
+		}
+		for _, ln := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+			if ln == "" {
+				continue
 			}
+			id, _, ok := strings.Cut(ln, " ")
+			if !ok || seen[id] {
+				continue
+			}
+			seen[id] = true
+			lines = append(lines, ln)
 		}
 	}
 	return lines
