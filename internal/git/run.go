@@ -300,9 +300,3 @@ func compareVersion(a, b [3]int) int {
 	}
 	return 0
 }
-
-// resetVersionCheck is exposed for tests; not part of the public API.
-func resetVersionCheck() {
-	versionOnce = sync.Once{}
-	versionErr = nil
-}
