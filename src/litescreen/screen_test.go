@@ -118,11 +118,13 @@ func TestNewWithOptions_SyncForcesFullRepaintAndClearsRegion(t *testing.T) {
 	s.Show()
 	out.Reset()
 
-	// Show again with no SetContent in between → diff is empty, only the
-	// cursor-hide/wrap/restore framing should appear.
+	// Show again with no SetContent in between -- the diff is empty and the
+	// cursor hasn't moved, so nothing at all reaches the terminal. An idle
+	// picker redraws on a timer; emitting framing every time would toggle the
+	// cursor at that rate.
 	s.Show()
 	noChange := out.String()
-	assert.That(t, !strings.Contains(noChange, "X"), "Show with empty diff must not re-emit 'X'; got %q", noChange)
+	assert.Equal(t, noChange, "")
 	out.Reset()
 
 	// Sync must re-emit every cell (including the unchanged 'X') without
@@ -134,6 +136,40 @@ func TestNewWithOptions_SyncForcesFullRepaintAndClearsRegion(t *testing.T) {
 	assert.ContainsString(t, got, "X", "Sync should re-emit 'X' even though back==front; got %q", got)
 
 	s.Fini()
+}
+
+// TestNewWithOptions_FramesAreSynchronized locks the DEC 2026 wrapper on the
+// public path: a full repaint is tens of KB, and without an atomic present the
+// terminal shows the cursor-hidden intermediate state for as long as those
+// bytes take to arrive.
+func TestNewWithOptions_FramesAreSynchronized(t *testing.T) {
+	var out bytes.Buffer
+	s, err := litescreen.NewWithOptions(litescreen.Options{
+		Height: 3,
+		Out:    &out,
+		Size:   fixedSize(20, 10),
+	})
+	require.NoError(t, err)
+	require.NoError(t, s.Init())
+
+	for _, step := range []struct {
+		name string
+		emit func()
+	}{
+		{"show", func() { s.SetContent(0, 0, 'X', nil, tcell.StyleDefault); s.Show() }},
+		{"sync", s.Sync},
+	} {
+		out.Reset()
+		step.emit()
+		got := out.String()
+		require.That(t, got != "", "%s emitted nothing", step.name)
+		assert.That(t, strings.HasPrefix(got, "\x1b[?2026h"), "%s must open with BSU; got %q", step.name, got)
+		assert.That(t, strings.HasSuffix(got, "\x1b[?2026l"), "%s must close with ESU; got %q", step.name, got)
+	}
+
+	out.Reset()
+	s.Fini()
+	assert.That(t, strings.HasPrefix(out.String(), "\x1b[?2026l"), "fini must close any open update; got %q", out.String())
 }
 
 // recvEvent reads an event with a deadline so tests don't hang if the

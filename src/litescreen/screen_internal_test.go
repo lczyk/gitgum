@@ -269,12 +269,14 @@ func TestFramebuf_FirstFlushEmitsBlanks(t *testing.T) {
 }
 
 func TestFramebuf_NoChangeNoOutput(t *testing.T) {
-	// Second flush with no SetContent calls should emit only framing
-	// (cursor-hide + reset SGR + optional cursor-show), no cell repositioning.
+	// Second flush with no SetContent calls has nothing to say: no cell
+	// changed and the cursor is already where the frame wants it, so not even
+	// the framing goes out. Emitting the framing anyway would toggle the
+	// cursor off and on, which at redraw rates is a visible blink.
 	fb := newFramebuf(3, 2)
 	_ = fb.flush(0, 0, 0, false)
 	out := string(fb.flush(0, 0, 0, false))
-	assert.That(t, !strings.Contains(out, "\x1b[1;1H"), "should not reposition cursor when no cells changed")
+	assert.Equal(t, out, "")
 }
 
 func TestFramebuf_SetContentEmitsCell(t *testing.T) {
@@ -365,6 +367,60 @@ func TestFramebuf_Resize(t *testing.T) {
 	out := string(fb.flush(0, 0, 0, false))
 	// After resize, front is sentinel; back is blanks; flush emits 5 spaces.
 	assert.Equal(t, strings.Count(out, " "), 5)
+}
+
+// --- frame framing and the empty-frame short-circuit -----------------------
+
+func TestFramebuf_FrameIsWrappedInSynchronizedUpdate(t *testing.T) {
+	fb := newFramebuf(3, 1)
+	out := string(fb.flush(0, 0, 0, false))
+	assert.That(t, strings.HasPrefix(out, "\x1b[?2026h"), "frame must open with BSU; got %q", out)
+	assert.That(t, strings.HasSuffix(out, "\x1b[?2026l"), "frame must close with ESU; got %q", out)
+	// Exactly one of each: a nested or unbalanced BSU leaves the terminal
+	// holding the frame until its own timeout fires.
+	assert.Equal(t, strings.Count(out, "\x1b[?2026h"), 1)
+	assert.Equal(t, strings.Count(out, "\x1b[?2026l"), 1)
+}
+
+func TestFramebuf_CursorMoveAloneEmitsFrame(t *testing.T) {
+	// No cell changes, but the cursor moved: the frame still has to go out,
+	// otherwise the caret sits at the previous position.
+	fb := newFramebuf(5, 1)
+	_ = fb.flush(0, 0, 0, true)
+
+	out := string(fb.flush(0, 3, 0, true))
+	assert.ContainsString(t, out, "\x1b[1;4H", "expected reposition to col 4; got %q", out)
+	assert.ContainsString(t, out, "\x1b[?25h", "expected cursor-show; got %q", out)
+}
+
+func TestFramebuf_VisibleCursorUnchangedEmitsNothing(t *testing.T) {
+	fb := newFramebuf(5, 1)
+	_ = fb.flush(0, 3, 0, true)
+	assert.Equal(t, string(fb.flush(0, 3, 0, true)), "")
+}
+
+func TestFramebuf_CursorVisibilityToggleEmitsFrame(t *testing.T) {
+	// Hiding a visible cursor changes nothing about the cells, but the frame
+	// must still carry the ?25l that hides it.
+	fb := newFramebuf(5, 1)
+	_ = fb.flush(0, 3, 0, true)
+
+	out := string(fb.flush(0, 3, 0, false))
+	assert.ContainsString(t, out, "\x1b[?25l", "expected cursor-hide; got %q", out)
+	assert.That(t, !strings.Contains(out, "\x1b[?25h"), "must not re-show a hidden cursor; got %q", out)
+}
+
+func TestFramebuf_InvalidateReemitsEverything(t *testing.T) {
+	fb := newFramebuf(3, 1)
+	fb.set(0, 0, liteCell{mainc: 'X'})
+	_ = fb.flush(0, 1, 0, true)
+	// Steady state: nothing to emit.
+	assert.Equal(t, string(fb.flush(0, 1, 0, true)), "")
+
+	fb.invalidate()
+	out := string(fb.flush(0, 1, 0, true))
+	assert.ContainsString(t, out, "X", "invalidate must force the cell out again; got %q", out)
+	assert.ContainsString(t, out, "\x1b[?25h", "invalidate must force the cursor out again; got %q", out)
 }
 
 // --- height resolution -----------------------------------------------------
@@ -780,6 +836,11 @@ func TestFiniSequence(t *testing.T) {
 	assert.ContainsString(t, inline, "\x1b[?25h", "inline fini shows cursor; got %q", inline)
 	// Inline must NOT leave alt-screen — we never entered it.
 	assert.That(t, !strings.Contains(inline, "\x1b[?1049l"), "inline fini must not emit rmcup")
+
+	// Both lead with ESU: handing the terminal back inside a synchronized
+	// update would leave the display frozen until its BSU timeout fires.
+	assert.That(t, strings.HasPrefix(full, "\x1b[?2026l"), "fullscreen fini must open with ESU; got %q", full)
+	assert.That(t, strings.HasPrefix(inline, "\x1b[?2026l"), "inline fini must open with ESU; got %q", inline)
 }
 
 func TestResizeSequence_Fullscreen(t *testing.T) {
