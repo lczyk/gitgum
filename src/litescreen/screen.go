@@ -255,6 +255,17 @@ type liteCell struct {
 type framebuf struct {
 	width, height int
 	back, front   [][]liteCell
+
+	// Cursor state last emitted to the terminal -- the cursor's analogue of
+	// front. Without it flush can't distinguish "nothing changed at all" from
+	// "no cell changed but the cursor moved", so it would have to emit the
+	// hide/reposition/show framing on every call; at redraw rates that framing
+	// alone is a visible cursor blink. cursorSynced is false until the first
+	// flush and reset by resize/invalidate, so a frame that can't trust the
+	// terminal's cursor re-asserts it.
+	frontCX, frontCY   int
+	frontCursorVisible bool
+	cursorSynced       bool
 }
 
 func newFramebuf(w, h int) *framebuf {
@@ -278,6 +289,19 @@ func (f *framebuf) resize(w, h int) {
 			f.back[y][x] = liteCell{mainc: ' '}
 		}
 	}
+	f.cursorSynced = false
+}
+
+// invalidate marks every front cell -- and the cursor -- as unknown, so the
+// next flush re-emits the whole grid instead of a diff. Used by Sync to paint
+// over writes from another process that the diff can't know about.
+func (f *framebuf) invalidate() {
+	for y := 0; y < f.height; y++ {
+		for x := 0; x < f.width; x++ {
+			f.front[y][x] = liteCell{mainc: -1}
+		}
+	}
+	f.cursorSynced = false
 }
 
 // clear blanks the back buffer.
@@ -320,16 +344,47 @@ func (f *framebuf) flush(yOrigin, cx, cy int, cursorVisible bool) []byte {
 	return buf.Bytes()
 }
 
+// Per-frame framing.
+//
+// ?2026h/l is DEC synchronized output (BSU/ESU): the terminal buffers
+// everything between them and presents it in one go. Without it a frame is
+// displayed as it arrives, so the cursor is visibly absent for as long as the
+// payload takes to land -- on a full repaint that is tens of KB, and at redraw
+// rates it reads as a blinking cursor. Terminals that don't implement mode
+// 2026 ignore the sequence, same as any other unknown private mode.
+//
+// ?25l hides the cursor for terminals without 2026; ?7l disables auto-wrap
+// (DECAWM) while drawing. Without ?7l, emitting a cell in the bottom-right
+// corner advances the cursor to a new line -- at the bottom of the terminal
+// that triggers a scroll, which moves our region under us and corrupts
+// subsequent renders. Both are restored before endFrame.
+const (
+	beginFrame = "\x1b[?2026h\x1b[?25l\x1b[?7l"
+	endFrame   = "\x1b[?2026l"
+)
+
+// cursorInSync reports whether the terminal's cursor already is where this
+// frame wants it. Position is only compared when the cursor is visible: while
+// hidden it can sit anywhere, since the next visible frame repositions it.
+func (f *framebuf) cursorInSync(cx, cy int, visible bool) bool {
+	if !f.cursorSynced || f.frontCursorVisible != visible {
+		return false
+	}
+	return !visible || (f.frontCX == cx && f.frontCY == cy)
+}
+
 // flushTo writes the front-to-back transform into buf. Production callers
 // (Show, Sync) pass a pooled buffer; tests call the simpler flush wrapper
-// when they want a fresh []byte.
+// when they want a fresh []byte. Writes nothing at all when the frame is a
+// no-op, so an idle picker is silent on the wire.
+//
+// Callers must invalidate the front buffer whenever yOrigin moves: both the
+// cell diff and the cursor-sync check assume the region has not shifted
+// underneath it. Screen.handleResize does both in one step.
 func (f *framebuf) flushTo(buf *bytes.Buffer, yOrigin, cx, cy int, cursorVisible bool) {
-	// Hide cursor + disable auto-wrap (DECAWM) while drawing. Without ?7l,
-	// emitting a cell in the bottom-right corner advances the cursor to a
-	// new line — at the bottom of the terminal that triggers a scroll,
-	// which moves our region under us and corrupts subsequent renders.
-	// Restored at end of flush.
-	buf.WriteString("\x1b[?25l\x1b[?7l")
+	frameAt := buf.Len()
+	buf.WriteString(beginFrame)
+	bodyAt := buf.Len()
 
 	var prevStyle tcell.Style
 	var styleSet bool
@@ -405,6 +460,15 @@ func (f *framebuf) flushTo(buf *bytes.Buffer, yOrigin, cx, cy int, cursorVisible
 		}
 	}
 
+	if buf.Len() == bodyAt && f.cursorInSync(cx, cy, cursorVisible) {
+		// Nothing to say: no cell changed and the cursor already sits where
+		// this frame wants it. Emitting the framing regardless would toggle
+		// the cursor off and back on for no reason, which at redraw rates is
+		// exactly the blink we are trying to avoid.
+		buf.Truncate(frameAt)
+		return
+	}
+
 	buf.WriteString("\x1b[m\x1b[?7h") // restore auto-wrap
 	if cursorVisible {
 		buf.WriteString("\x1b[")
@@ -413,6 +477,11 @@ func (f *framebuf) flushTo(buf *bytes.Buffer, yOrigin, cx, cy int, cursorVisible
 		buf.Write(strconv.AppendInt(scratch[:0], int64(cx+1), 10))
 		buf.WriteString("H\x1b[?25h")
 	}
+	buf.WriteString(endFrame)
+
+	f.frontCX, f.frontCY = cx, cy
+	f.frontCursorVisible = cursorVisible
+	f.cursorSynced = true
 }
 
 // Options configure construction of a Screen with custom IO and/or size
@@ -734,11 +803,16 @@ func (s *Screen) cleanup() {
 // alt-screen; inline clears the region starting at yOrigin. The mode is an
 // explicit parameter -- yOrigin alone is ambiguous, since an inline region
 // anchored at the terminal's top row also has yOrigin == 0.
+//
+// Both variants lead with ESU so we can never hand the terminal back sitting
+// inside a synchronized update: a frame whose write was cut short would
+// otherwise leave the display frozen until the terminal's own BSU timeout
+// fires. Eight bytes at exit against a stuck terminal is a trade worth making.
 func finiSequence(fullscreen bool, yOrigin int) []byte {
 	if fullscreen {
-		return []byte("\x1b[m\x1b[?25h\x1b[?1049l")
+		return []byte(endFrame + "\x1b[m\x1b[?25h\x1b[?1049l")
 	}
-	return fmt.Appendf(nil, "\x1b[m\x1b[%d;1H\x1b[J\x1b[?25h", yOrigin+1)
+	return fmt.Appendf(nil, endFrame+"\x1b[m\x1b[%d;1H\x1b[J\x1b[?25h", yOrigin+1)
 }
 
 // Fini is idempotent via finiOnce. We don't nil channel fields so that
@@ -800,7 +874,11 @@ func (s *Screen) Show() {
 	defer bufPool.Put(buf)
 	buf.Reset()
 	s.fb.flushTo(buf, s.yOrigin, s.cursorX, s.cursorY, s.cursorVisible)
-	s.out.Write(buf.Bytes())
+	// A no-op frame emits nothing; skip the write rather than syscall with an
+	// empty slice. Idle pickers redraw on a timer, so this is the common case.
+	if buf.Len() > 0 {
+		s.out.Write(buf.Bytes())
+	}
 }
 
 // Sync forces a full repaint: every back-buffer cell is re-emitted regardless
@@ -813,13 +891,9 @@ func (s *Screen) Show() {
 func (s *Screen) Sync() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// Mark every front-buffer cell as a sentinel so flush's diff treats
-	// every back cell as changed and re-emits it.
-	for y := 0; y < s.fb.height; y++ {
-		for x := 0; x < s.fb.width; x++ {
-			s.fb.front[y][x] = liteCell{mainc: -1}
-		}
-	}
+	// Sentinel every front cell so flush's diff treats every back cell as
+	// changed and re-emits it.
+	s.fb.invalidate()
 	buf := bufPool.Get().(*bytes.Buffer)
 	defer bufPool.Put(buf)
 	buf.Reset()

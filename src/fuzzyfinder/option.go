@@ -25,11 +25,17 @@ type Opt struct {
 	// Honored only by the default litescreen renderer; a Screen injected
 	// via Opt.Screen interprets size itself.
 	Height int
-	// RedrawAggressive forces a full repaint on every draw instead of the
-	// O(diff) emit. Set this when a sibling process may write to the same
+	// RedrawAggressive periodically forces a full repaint instead of the
+	// O(diff) emit, so stray bytes in cells the picker believes unchanged get
+	// painted over. Set this when a sibling process may write to the same
 	// terminal as the picker (e.g. `find ~ | fuzzyfinder`, where find's
-	// stderr "permission denied" lines tear the picker). Cost is a few KB
-	// of ANSI per frame; safe to leave off otherwise.
+	// stderr "permission denied" lines tear the picker). Repaints run on
+	// their own slow cadence (repaintInterval), not on every frame: a few KB
+	// of ANSI at the redraw rate is enough output to make the cursor visibly
+	// blink. Tearing therefore survives up to one interval, and repaints keep
+	// running for as long as the picker is open -- a source that has stopped
+	// changing is no evidence the producer has stopped writing to the
+	// terminal. Safe to leave off otherwise.
 	RedrawAggressive bool
 	// Ansi treats item strings as carrying ANSI SGR escape sequences.
 	// Items are parsed once, drawn with their native style, and stripped

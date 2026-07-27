@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -127,6 +128,12 @@ type finder struct {
 	// sync on event processing without a fixed sleep. buffered 1 so
 	// the goroutine never blocks when no test is waiting.
 	filterDone chan struct{}
+
+	// repaintPending asks the next frame to be a full repaint rather than a
+	// diff. Set by the repaint ticker in aggressive mode, consumed (and
+	// cleared) by flush. Atomic because it is written from the resync
+	// goroutine and read from the draw timer's.
+	repaintPending atomic.Bool
 
 	// confirmedItems is the item-string snapshot captured atomically with the
 	// confirmed indices (under the same lock), so a resync landing between
@@ -632,15 +639,27 @@ func (f *finder) draw(d time.Duration) {
 	}
 }
 
-// flush emits the current frame. Picks Sync (full repaint) when the caller
-// asked for aggressive redraws — typically because a sibling process is
-// writing to the same terminal — otherwise the cheaper diff-based Show.
+// flush emits the current frame: a full repaint when one has been requested
+// since the last frame, otherwise the cheaper diff-based Show. Consuming the
+// request here (rather than keying off RedrawAggressive directly) keeps the
+// expensive path on the repaint ticker's cadence instead of every draw.
 func (f *finder) flush() {
-	if f.opt != nil && f.opt.RedrawAggressive {
+	if f.repaintPending.Swap(false) {
 		f.term.Sync()
 		return
 	}
 	f.term.Show()
+}
+
+// requestRepaint marks the next frame as a full repaint and wakes the draw
+// loop. Non-blocking: a full eventCh means a redraw is already queued, which
+// is all we need -- repaintPending is sticky until some frame consumes it.
+func (f *finder) requestRepaint() {
+	f.repaintPending.Store(true)
+	select {
+	case f.eventCh <- struct{}{}:
+	default:
+	}
 }
 
 // readKey reads a key input.
@@ -949,10 +968,22 @@ func (f *finder) filter() {
 	}
 }
 
+const (
+	// resyncInterval is how often the picker polls the Source for changes.
+	// Fast enough that a streaming producer looks live.
+	resyncInterval = 30 * time.Millisecond
+	// repaintInterval is how often Opt.RedrawAggressive forces a full repaint
+	// to paint over a sibling process's writes. Deliberately far slower than
+	// resyncInterval: a repaint is the whole grid re-emitted, and doing that
+	// at resync rate keeps the cursor hidden for a visible slice of every
+	// frame. This is the ceiling on how long tearing can stay on screen.
+	repaintInterval = 250 * time.Millisecond
+)
+
 // find runs the picker against a Source. The picker takes an initial snapshot,
-// then a background goroutine polls Version (if implemented) on a 30ms cadence
-// and re-snapshots when it changes. Sources without Version always re-snapshot
-// each tick.
+// then a background goroutine polls Version (if implemented) on the
+// resyncInterval cadence and re-snapshots when it changes. Sources without
+// Version always re-snapshot each tick.
 func (f *finder) find(ctx context.Context, src Source, opt Opt) ([]int, error) {
 	if src == nil {
 		return nil, errors.New("source must not be nil")
@@ -978,26 +1009,35 @@ func (f *finder) find(ctx context.Context, src Source, opt Opt) ([]int, error) {
 	}
 
 	go func() {
-		ticker := time.NewTicker(30 * time.Millisecond)
+		ticker := time.NewTicker(resyncInterval)
 		defer ticker.Stop()
+		// Aggressive mode runs the anti-tearing repaint on its own, much
+		// slower ticker. Folding it into the resync tick would put a full
+		// repaint on the wire every 30ms for as long as the picker is open --
+		// long after the producer has exited -- and that much output per
+		// frame is what makes the cursor blink.
+		var repaintC <-chan time.Time
+		if opt.RedrawAggressive {
+			repaint := time.NewTicker(repaintInterval)
+			defer repaint.Stop()
+			repaintC = repaint.C
+		}
+		// The repaint runs for as long as the picker is open, not just while
+		// items are arriving: the producer's stdout (our items) and stderr
+		// (the bytes that tear us) are independent streams, so a source that
+		// has gone quiet is no evidence the producer has stopped writing to
+		// the terminal. `find / -name '*.foo'` spends most of its life in
+		// exactly that state.
 		for {
 			select {
 			case <-ctx.Done():
 				return
+			case <-repaintC:
+				f.requestRepaint()
 			case <-ticker.C:
 				if versioned != nil {
 					v := versioned.Version()
 					if v == lastVersion {
-						// No source change. In aggressive mode also poke
-						// the redraw channel so the picker repaints over
-						// any tearing from a sibling writing to the
-						// terminal between source updates.
-						if opt.RedrawAggressive {
-							select {
-							case f.eventCh <- struct{}{}:
-							default:
-							}
-						}
 						continue
 					}
 					lastVersion = v
