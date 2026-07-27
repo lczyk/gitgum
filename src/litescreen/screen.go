@@ -197,6 +197,15 @@ type Screen struct {
 	cleanupOnce sync.Once
 	finiOnce    sync.Once
 
+	// done records that cleanup has run and the terminal has been handed back
+	// to the shell. Guarded by mu, which cleanup and every terminal write
+	// already take, so a write either completes before the handover or is
+	// dropped -- it can never interleave. Without it a draw still in flight
+	// when Fini lands (Ctrl-C mid-render, or a background redraw a consumer
+	// hasn't joined) writes cursor moves and SGR onto the restored terminal,
+	// corrupting whatever the shell prints next.
+	done bool
+
 	// readLoop lifecycle. Init starts the goroutine; quit closes when Fini
 	// wants it to stop; readDone closes when the goroutine actually exits.
 	// Fini waits on readDone before closing fds — without that, darwin leaves
@@ -796,6 +805,7 @@ func (s *Screen) cleanup() {
 			s.restore()
 			s.restore = nil
 		}
+		s.done = true
 	})
 }
 
@@ -870,6 +880,9 @@ func (s *Screen) ShowCursor(x, y int) {
 func (s *Screen) Show() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.done {
+		return
+	}
 	buf := bufPool.Get().(*bytes.Buffer)
 	defer bufPool.Put(buf)
 	buf.Reset()
@@ -891,6 +904,9 @@ func (s *Screen) Show() {
 func (s *Screen) Sync() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.done {
+		return
+	}
 	// Sentinel every front cell so flush's diff treats every back cell as
 	// changed and re-emits it.
 	s.fb.invalidate()
@@ -1030,6 +1046,11 @@ func (s *Screen) readLoop(out chan<- byte) {
 func (s *Screen) handleResize() (int, int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.done {
+		// A SIGWINCH delivered between cleanup and ChannelEvents noticing it
+		// should stop must not redraw the region we just handed back.
+		return s.fb.width, s.fb.height
+	}
 	w, termH := s.getSize()
 	out, yOrigin, rows := resizeSequence(s.height, w, termH, s.fb.width, s.yOrigin, s.fullscreen)
 	s.yOrigin = yOrigin

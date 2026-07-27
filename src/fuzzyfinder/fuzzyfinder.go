@@ -135,6 +135,15 @@ type finder struct {
 	// goroutine and read from the draw timer's.
 	repaintPending atomic.Bool
 
+	// termMu pins the screen's lifetime against the frames racing it, and
+	// termDone records that it has been torn down. Every frame takes termMu
+	// for its whole duration and teardown takes it to set termDone, so a
+	// frame either completes before the screen goes away or is dropped.
+	// Shutdown can't join the draw timer -- Stop doesn't wait for an AfterFunc
+	// already running -- so this is what actually makes the ordering safe.
+	termMu   sync.Mutex
+	termDone bool
+
 	// confirmedItems is the item-string snapshot captured atomically with the
 	// confirmed indices (under the same lock), so a resync landing between
 	// confirmation and result translation can't swap which items are reported.
@@ -206,12 +215,7 @@ func (f *finder) initFinder(items []string, opt Opt) error {
 		// Reset. A zero delay here would race the Stop below and could emit one
 		// spurious frame before the first real draw, so start it far in the
 		// future and cancel it immediately.
-		f.drawTimer = time.AfterFunc(time.Hour, func() {
-			f.stateMu.Lock()
-			f._draw()
-			f.stateMu.Unlock()
-			f.flush()
-		})
+		f.drawTimer = time.AfterFunc(time.Hour, f.drawNow)
 		f.drawTimer.Stop()
 	}
 	f.eventCh = make(chan struct{}, 30) // A large value
@@ -627,15 +631,53 @@ func (f *finder) _draw() {
 }
 
 func (f *finder) draw(d time.Duration) {
-	f.stateMu.RLock()
-	defer f.stateMu.RUnlock()
-
 	if isInTesting() {
 		// Don't use goroutine scheduling.
-		f._draw()
-		f.flush()
-	} else {
-		f.drawTimer.Reset(d)
+		f.drawNow()
+		return
+	}
+	f.stateMu.RLock()
+	defer f.stateMu.RUnlock()
+	f.drawTimer.Reset(d)
+}
+
+// drawNow renders and emits one frame. termMu is held for the whole frame, so
+// a teardown racing this either waits for the frame to finish or arrives
+// first and the frame is dropped -- it can never land halfway, writing to a
+// screen that has already been handed back.
+func (f *finder) drawNow() {
+	f.termMu.Lock()
+	defer f.termMu.Unlock()
+	if f.termDone {
+		return
+	}
+	f.stateMu.Lock()
+	f._draw()
+	f.stateMu.Unlock()
+	f.flush()
+}
+
+// stopDrawing disarms the draw timer so a frame a background goroutine has
+// already queued never fires. Stop doesn't wait for an AfterFunc that has
+// already begun; termDone covers that one.
+func (f *finder) stopDrawing() {
+	if f.drawTimer != nil {
+		f.drawTimer.Stop()
+	}
+}
+
+// finiTerm tears the screen down and blocks every later frame. Idempotent, and
+// safe to call when the picker doesn't own the screen -- the caller's screen is
+// left alone, but draws still stop.
+func (f *finder) finiTerm() {
+	f.termMu.Lock()
+	defer f.termMu.Unlock()
+	if f.termDone {
+		return
+	}
+	f.termDone = true
+	if f.ownTerm {
+		f.term.Fini()
 	}
 }
 
@@ -992,9 +1034,6 @@ func (f *finder) find(ctx context.Context, src Source, opt Opt) ([]int, error) {
 	opt = opt.withDefaults()
 	f.multi = opt.Multi
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
 	versioned, _ := src.(Versioned)
 	var lastVersion uint64
 	if versioned != nil {
@@ -1007,6 +1046,17 @@ func (f *finder) find(ctx context.Context, src Source, opt Opt) ([]int, error) {
 	if err := f.initFinder(initial, opt); err != nil {
 		return nil, fmt.Errorf("failed to initialize the fuzzy finder: %w", err)
 	}
+
+	// Teardown runs in the reverse of this registration order, and the order
+	// matters: cancel first so the background goroutines stop queueing work,
+	// then drop any frame already queued, and only then hand the terminal
+	// back. Getting this backwards -- which is what a defer inside runLoop
+	// did, since that returns before find unwinds -- let a queued redraw
+	// write onto a terminal already restored to cooked mode.
+	defer f.finiTerm()
+	defer f.stopDrawing()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	go func() {
 		ticker := time.NewTicker(resyncInterval)
@@ -1109,11 +1159,11 @@ func (f *finder) resetMatchedIdentity(n int) {
 	}
 }
 
+// runLoop drives the picker until the user confirms, aborts, or ctx ends.
+// Teardown belongs to find, not here: a defer in this function runs while
+// find's own goroutines are still live, which is the ordering bug it used to
+// have.
 func (f *finder) runLoop(ctx context.Context, opt *Opt) ([]int, error) {
-	if f.ownTerm {
-		defer f.term.Fini()
-	}
-
 	if opt.SelectOne {
 		// Read matched under the lock: the resync goroutine is already running
 		// and may write it concurrently if this loop is scheduled past a tick.
