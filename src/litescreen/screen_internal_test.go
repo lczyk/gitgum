@@ -543,6 +543,24 @@ func TestScreen_HandleResize_Narrow(t *testing.T) {
 	s.Fini()
 }
 
+// A SIGWINCH can land between cleanup restoring the terminal and ChannelEvents
+// noticing it should stop. Redrawing the region then would scribble over
+// whatever the shell has started printing, so a resize after teardown must be
+// inert and report the size the region had.
+func TestScreen_HandleResizeAfterFiniIsInert(t *testing.T) {
+	s, out, _ := newTestScreen(5, 100, 24, strings.NewReader(""))
+	require.NoError(t, s.Init())
+	s.Fini()
+
+	s.getSize = func() (int, int) { return 60, 24 }
+	out.Reset()
+
+	w, rows := s.handleResize()
+	assert.Equal(t, out.String(), "")
+	assert.Equal(t, w, 100)
+	assert.Equal(t, rows, 5)
+}
+
 // TestScreen_Fini_StopsReadLoop is the regression guard for the bug where
 // PICK1's readLoop goroutine sat stranded in syscall.Read on the closed
 // /dev/tty fd after Fini, then stole DSR responses (and other input) from

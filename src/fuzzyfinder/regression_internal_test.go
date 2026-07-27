@@ -237,3 +237,116 @@ func TestRepaintContinuesWhileSourceIsStill(t *testing.T) {
 	_, syncs := scr.counts()
 	assert.That(t, syncs >= 2, "repaints must continue on a still source; got %d in %v", syncs, window)
 }
+
+// The draw timer can't be joined at shutdown -- Stop doesn't wait for an
+// AfterFunc that has already begun -- so teardown has to be able to drop a
+// frame that is only just starting.
+func TestRegressionFiniTermDropsQueuedFrames(t *testing.T) {
+	t.Parallel()
+
+	scr := newRepaintScreen()
+	f := &finder{term: scr, ownTerm: true}
+
+	f.finiTerm()
+	f.drawNow() // a frame the timer had already queued
+
+	shows, syncs := scr.counts()
+	assert.Equal(t, shows, 0)
+	assert.Equal(t, syncs, 0)
+
+	f.finiTerm() // idempotent
+}
+
+// lifecycleScreen flags any draw that reaches the screen after Fini, and
+// delivers a single Enter once the picker has been up long enough for the
+// resync goroutine to have queued redraws behind it.
+type lifecycleScreen struct {
+	mu        sync.Mutex
+	finished  bool
+	lateDraws int
+	openFor   time.Duration
+	finiFor   time.Duration
+}
+
+func (s *lifecycleScreen) Init() error      { return nil }
+func (s *lifecycleScreen) Size() (int, int) { return 40, 10 }
+func (s *lifecycleScreen) Clear()           {}
+func (s *lifecycleScreen) SetContent(x, y int, mainc rune, combc []rune, style tcell.Style) {
+}
+func (s *lifecycleScreen) ShowCursor(x, y int) {}
+func (s *lifecycleScreen) Show()               { s.note() }
+func (s *lifecycleScreen) Sync()               { s.note() }
+
+func (s *lifecycleScreen) Fini() {
+	s.mu.Lock()
+	s.finished = true
+	s.mu.Unlock()
+	// Teardown is not instant: litescreen writes its restore sequence, waits
+	// for its read loop to exit, then closes fds. Holding here is what gives a
+	// racing redraw somewhere to land -- without it the window is too narrow
+	// to hit and the test passes against the bug it is meant to catch.
+	time.Sleep(s.finiFor)
+}
+
+func (s *lifecycleScreen) note() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.finished {
+		s.lateDraws++
+	}
+}
+
+func (s *lifecycleScreen) late() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lateDraws
+}
+
+func (s *lifecycleScreen) ChannelEvents(ch chan<- tcell.Event, quit <-chan struct{}) {
+	time.Sleep(s.openFor)
+	ch <- tcell.NewEventKey(tcell.KeyEnter, rune(tcell.KeyEnter), tcell.ModNone)
+}
+
+// No frame may reach the screen after it has been handed back. Regression: the
+// screen was torn down by a defer inside runLoop, which returns while find's
+// resync and event goroutines are still live and still queueing redraws --
+// find only cancelled them afterwards. A redraw drained from that queue in the
+// gap wrote cursor moves and SGR onto a terminal already restored to cooked
+// mode, corrupting whatever the shell printed next.
+func TestRegressionNoDrawAfterFini(t *testing.T) {
+	t.Parallel()
+
+	for range 5 {
+		scr := &lifecycleScreen{
+			openFor: 40 * time.Millisecond,
+			finiFor: 20 * time.Millisecond,
+		}
+		src := NewSliceSourceFrom([]string{"alpha"})
+
+		// Keep the source moving so the resync goroutine is still poking the
+		// redraw channel as the picker tears down.
+		stop := make(chan struct{})
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			for i := 0; ; i++ {
+				select {
+				case <-stop:
+					return
+				case <-time.After(time.Millisecond):
+					src.Add(fmt.Sprintf("item%d", i))
+				}
+			}
+		}()
+
+		f := &finder{}
+		_, err := f.find(context.Background(), src, Opt{Screen: scr})
+		close(stop)
+		<-done
+
+		// Let anything that outlived the run take its shot.
+		time.Sleep(20 * time.Millisecond)
+		require.NoError(t, err)
+		require.Equal(t, scr.late(), 0)
+	}
+}

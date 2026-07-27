@@ -172,6 +172,34 @@ func TestNewWithOptions_FramesAreSynchronized(t *testing.T) {
 	assert.That(t, strings.HasPrefix(out.String(), "\x1b[?2026l"), "fini must close any open update; got %q", out.String())
 }
 
+// Fini hands the terminal back to the shell. Anything still holding the Screen
+// -- a redraw a consumer hasn't joined, a signal-driven teardown racing a draw
+// -- must not be able to write after that, or its cursor moves and SGR land in
+// the middle of whatever the shell prints next.
+func TestNewWithOptions_NoWritesAfterFini(t *testing.T) {
+	var out bytes.Buffer
+	s, err := litescreen.NewWithOptions(litescreen.Options{
+		Height: 3,
+		Out:    &out,
+		Size:   fixedSize(20, 10),
+	})
+	require.NoError(t, err)
+	require.NoError(t, s.Init())
+	s.SetContent(0, 0, 'X', nil, tcell.StyleDefault)
+	s.Show()
+
+	s.Fini()
+	out.Reset()
+
+	// A frame that was already in flight when Fini landed.
+	s.Clear()
+	s.SetContent(0, 0, 'Y', nil, tcell.StyleDefault)
+	s.ShowCursor(1, 1)
+	s.Show()
+	s.Sync()
+	assert.Equal(t, out.String(), "")
+}
+
 // recvEvent reads an event with a deadline so tests don't hang if the
 // parser never produces one.
 func recvEvent(t *testing.T, ch <-chan tcell.Event) tcell.Event {
