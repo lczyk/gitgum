@@ -3,6 +3,7 @@ package commands
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -52,6 +53,12 @@ type clonePlan struct {
 
 func (c *CloneCommand) Execute(args []string) error {
 	ref, ok := git.ParseRepoRef(c.Args.URL)
+
+	if ok {
+		if done, err := c.checkExistingDest(ref); done {
+			return err
+		}
+	}
 
 	var plan clonePlan
 	switch {
@@ -104,6 +111,80 @@ func (c *CloneCommand) Execute(args []string) error {
 			paint(ansiBoldGreen, plan.dir), paint(ansiBoldCyan, plan.remote))
 	}
 	return nil
+}
+
+// checkExistingDest short-circuits the clone when the destination dir already
+// exists and is non-empty -- `git clone` would refuse anyway, so decide up
+// front, before any shorthand resolution hits the network. A repo whose remote
+// already points at the requested user/repo means there is nothing to do
+// (done, nil); any other occupant -- a plain dir, a nested path inside some
+// other repo, a clone of something else -- is done with an error. An absent or
+// empty dir is not done: git clone handles both.
+func (c *CloneCommand) checkExistingDest(want git.RepoRef) (done bool, err error) {
+	dir := c.Args.Dir
+	if dir == "" {
+		dir = want.Repo
+	}
+	if entries, rerr := os.ReadDir(dir); rerr != nil || len(entries) == 0 {
+		return false, nil
+	}
+
+	// .git presence distinguishes a repo root from a dir merely inside one --
+	// rev-parse would happily answer for a parent repo.
+	if _, serr := os.Stat(filepath.Join(dir, ".git")); serr != nil {
+		return true, fmt.Errorf("destination %q already exists and is not a git repository", dir)
+	}
+
+	existing := git.Repo{Dir: dir}
+	remotes, _ := existing.GetRemotes()
+	var others []string
+	for _, name := range remotes {
+		url, uerr := existing.RemoteURL(name)
+		if uerr != nil {
+			continue
+		}
+		rref, rok := git.ParseRepoRef(url)
+		if !rok {
+			continue
+		}
+		if remoteMatches(rref, want) {
+			fmt.Fprintf(c.out(), "%s is already cloned into %s (remote \"%s\").\n",
+				paint(ansiBoldCyan, want.User+"/"+want.Repo),
+				paint(ansiBoldGreen, dir), paint(ansiBoldCyan, name))
+			return true, nil
+		}
+		others = append(others, refLabel(rref))
+	}
+	if len(others) > 0 {
+		return true, fmt.Errorf("destination %q already exists but is a clone of %s, not %s",
+			dir, strings.Join(others, ", "), refLabel(want))
+	}
+	return true, fmt.Errorf("destination %q already exists and is a git repository, but none of its remotes point at %s",
+		dir, refLabel(want))
+}
+
+// refLabel renders a ref for messages: host-qualified when a host is known, so
+// a same-slug-different-host mismatch doesn't read as "X is not X".
+func refLabel(r git.RepoRef) string {
+	slug := r.User + "/" + r.Repo
+	if r.Host != "" {
+		return r.Host + "/" + slug
+	}
+	return slug
+}
+
+// remoteMatches reports whether an existing remote's ref points at the
+// requested repo. A bare shorthand matches its slug on any modelled forge --
+// exactly the set resolution would have probed -- while a host-pinned request
+// must match the host too.
+func remoteMatches(remote, want git.RepoRef) bool {
+	if remote.User != want.User || remote.Repo != want.Repo {
+		return false
+	}
+	if want.Shorthand() {
+		return remote.Forge != git.ForgeUnknown
+	}
+	return remote.Host == want.Host
 }
 
 // resolveShorthand turns a bare "user/repo" into a concrete forge by probing
