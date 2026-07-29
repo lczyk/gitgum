@@ -1,11 +1,15 @@
 package commands
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/lczyk/assert"
 	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/internal/git"
+	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
 
 // mustRef parses raw or fails the test; keeps the table cases terse.
@@ -112,6 +116,106 @@ func TestPlainClonePlan(t *testing.T) {
 	p = plainClonePlan("../local", "dest", 2, "")
 	assert.EqualArrays(t, p.args, []string{"clone", "--depth", "2", "--no-single-branch", "../local", "dest"})
 	assert.Equal(t, p.dir, "dest")
+}
+
+func TestCheckExistingDest(t *testing.T) {
+	t.Parallel()
+
+	// check drives clone's dest inspection for want ("user/repo" spelling or a
+	// pinned url) against dir, returning the outcome and captured stdout.
+	check := func(t *testing.T, want, dir string) (done bool, err error, out string) {
+		t.Helper()
+		var buf strings.Builder
+		c := &CloneCommand{cmdIO: cmdIO{Out: &buf, Err: &buf}}
+		c.Args.Dir = dir
+		done, err = c.checkExistingDest(mustRef(t, want))
+		return done, err, buf.String()
+	}
+
+	t.Run("absent dir falls through to git", func(t *testing.T) {
+		t.Parallel()
+		done, err, _ := check(t, "canonical/rockcraft", filepath.Join(t.TempDir(), "rockcraft"))
+		require.NoError(t, err, "check")
+		assert.That(t, !done, "done")
+	})
+
+	t.Run("empty dir falls through to git", func(t *testing.T) {
+		t.Parallel()
+		done, err, _ := check(t, "canonical/rockcraft", t.TempDir())
+		require.NoError(t, err, "check")
+		assert.That(t, !done, "done")
+	})
+
+	t.Run("non-repo dir errors", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "junk"), []byte("x"), 0o644), "write")
+		done, err, _ := check(t, "canonical/rockcraft", dir)
+		assert.That(t, done, "done")
+		assert.Error(t, err, assert.AnyError, "check")
+		assert.ContainsString(t, err.Error(), "not a git repository")
+	})
+
+	t.Run("matching remote reports already cloned", func(t *testing.T) {
+		t.Parallel()
+		dir := temp_repo.NewRepo(t)
+		temp_repo.RunGit(t, dir, "remote", "add", "canonical", "https://github.com/canonical/rockcraft")
+		done, err, out := check(t, "canonical/rockcraft", dir)
+		assert.That(t, done, "done")
+		require.NoError(t, err, "check")
+		assert.ContainsString(t, out, "already cloned")
+	})
+
+	t.Run("other slug errors and names it", func(t *testing.T) {
+		t.Parallel()
+		dir := temp_repo.NewRepo(t)
+		temp_repo.RunGit(t, dir, "remote", "add", "foo", "https://github.com/foo/rockcraft")
+		done, err, _ := check(t, "canonical/rockcraft", dir)
+		assert.That(t, done, "done")
+		assert.Error(t, err, assert.AnyError, "check")
+		assert.ContainsString(t, err.Error(), "clone of github.com/foo/rockcraft")
+	})
+
+	t.Run("host-pinned request needs the same host", func(t *testing.T) {
+		t.Parallel()
+		dir := temp_repo.NewRepo(t)
+		temp_repo.RunGit(t, dir, "remote", "add", "canonical", "https://github.com/canonical/rockcraft")
+		done, err, _ := check(t, "gitlab.com/canonical/rockcraft", dir)
+		assert.That(t, done, "done")
+		assert.Error(t, err, assert.AnyError, "check")
+	})
+
+	t.Run("repo without remotes errors", func(t *testing.T) {
+		t.Parallel()
+		dir := temp_repo.NewRepo(t)
+		done, err, _ := check(t, "canonical/rockcraft", dir)
+		assert.That(t, done, "done")
+		assert.Error(t, err, assert.AnyError, "check")
+		assert.ContainsString(t, err.Error(), "none of its remotes")
+	})
+}
+
+func TestRemoteMatches(t *testing.T) {
+	t.Parallel()
+	gh := mustRef(t, "https://github.com/canonical/rockcraft")
+	tests := []struct {
+		name   string
+		remote git.RepoRef
+		want   git.RepoRef
+		match  bool
+	}{
+		{"shorthand matches any forge", gh, mustRef(t, "canonical/rockcraft"), true},
+		{"shorthand rejects other slug", mustRef(t, "https://github.com/foo/rockcraft"), mustRef(t, "canonical/rockcraft"), false},
+		{"shorthand rejects unmodelled host", mustRef(t, "https://git.example.com/canonical/rockcraft"), mustRef(t, "canonical/rockcraft"), false},
+		{"pinned host matches same host", gh, mustRef(t, "github.com/canonical/rockcraft"), true},
+		{"pinned host rejects other host", gh, mustRef(t, "gitlab.com/canonical/rockcraft"), false},
+		{"ssh remote matches https request", mustRef(t, "git@github.com:canonical/rockcraft.git"), mustRef(t, "https://github.com/canonical/rockcraft"), true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, remoteMatches(tc.remote, tc.want), tc.match)
+		})
+	}
 }
 
 func TestResolveShorthand(t *testing.T) {
