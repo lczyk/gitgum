@@ -58,17 +58,31 @@ func TestParseRepoRef(t *testing.T) {
 	}
 	for _, c := range cases {
 		ref, ok := ParseRepoRef(c.raw)
-		if ok != c.ok || ref.Forge != c.forge || ref.Host != c.host || ref.User != c.user || ref.Repo != c.repo {
+		if ok != c.ok || ref.Forge != c.forge || ref.Host != c.host || ref.Owner() != c.user || ref.Repo() != c.repo {
 			t.Errorf("ParseRepoRef(%q) = (%v, host=%q, %q/%q, ok=%v), want (%v, host=%q, %q/%q, ok=%v)",
-				c.raw, ref.Forge, ref.Host, ref.User, ref.Repo, ok,
+				c.raw, ref.Forge, ref.Host, ref.Owner(), ref.Repo(), ok,
 				c.forge, c.host, c.user, c.repo, c.ok)
+		}
+	}
+}
+
+func TestRepoRefWithOwner(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"canonical/cbs-tools": "lczyk/cbs-tools",
+		// a fork lands directly under its new owner, not at the upstream's depth
+		"group/subgroup/project": "lczyk/project",
+	}
+	for path, want := range cases {
+		if got := (RepoRef{Path: path}).WithOwner("lczyk").Path; got != want {
+			t.Errorf("RepoRef{Path: %q}.WithOwner(\"lczyk\") = %q, want %q", path, got, want)
 		}
 	}
 }
 
 func TestRepoRefURLOn(t *testing.T) {
 	t.Parallel()
-	ref := RepoRef{User: "canonical", Repo: "cbs-tools"}
+	ref := RepoRef{Path: "canonical/cbs-tools"}
 	cases := map[Forge]string{
 		ForgeGitHub:   "https://github.com/canonical/cbs-tools",
 		ForgeGitLab:   "https://gitlab.com/canonical/cbs-tools",

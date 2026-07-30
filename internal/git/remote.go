@@ -25,7 +25,7 @@ func ParseGitHubURL(raw string) (user, repo string, ok bool) {
 	if !ok || ref.Forge != ForgeGitHub {
 		return "", "", false
 	}
-	return ref.User, ref.Repo, true
+	return ref.Owner(), ref.Repo(), true
 }
 
 // AddRemote configures a new remote named name pointing at url

@@ -130,13 +130,40 @@ func forgeNameHost(name, rest string) string {
 }
 
 // RepoRef is a parsed repo identity: which forge (if recognised), the raw host
-// as written, and the user/org + repo. Host is "" for a bare "user/repo"
+// as written, and the project path. Host is "" for a bare "user/repo"
 // shorthand, non-empty (but possibly unmodelled) for anything with a host.
+//
+// Path is the whole project path. That is "user/repo" on every forge gg models
+// except gitlab, which nests projects under subgroups ("group/team/project").
+// Owner and Repo are positions within Path rather than stored alongside it, so
+// they cannot drift from the path urls are built from.
 type RepoRef struct {
 	Forge Forge
 	Host  string // canonical/raw host; "" for bare shorthand
-	User  string
-	Repo  string
+	Path  string // full project path, e.g. "canonical/rockcraft"
+}
+
+// Owner is the first path segment: the user, org, or top-level group. This is
+// what gg names a remote after.
+func (r RepoRef) Owner() string {
+	owner, _, _ := strings.Cut(r.Path, "/")
+	return owner
+}
+
+// Repo is the last path segment: the project itself, which names the clone dir.
+func (r RepoRef) Repo() string {
+	if i := strings.LastIndex(r.Path, "/"); i >= 0 {
+		return r.Path[i+1:]
+	}
+	return r.Path
+}
+
+// WithOwner returns the ref rehomed under a different owner, keeping only the
+// project name. Subgroups are deliberately dropped: a fork lands in its new
+// owner's namespace directly, not at the depth the upstream sat at.
+func (r RepoRef) WithOwner(owner string) RepoRef {
+	r.Path = owner + "/" + r.Repo()
+	return r
 }
 
 // Shorthand reports whether the ref came from a bare "user/repo" (no host), so
@@ -153,7 +180,7 @@ func (r RepoRef) URLOn(f Forge) string {
 	if host == "" {
 		host = r.Host // unmodelled host: fall back to what was written
 	}
-	return "https://" + host + "/" + r.User + "/" + r.Repo
+	return "https://" + host + "/" + r.Path
 }
 
 // ParseRepoRef normalises the repo spellings gg accepts into a RepoRef. It is
@@ -214,7 +241,7 @@ func ParseRepoRef(raw string) (RepoRef, bool) {
 		return RepoRef{}, false
 	}
 
-	ref := RepoRef{User: parts[0], Repo: parts[1]}
+	ref := RepoRef{Path: parts[0] + "/" + parts[1]}
 	if hasHost {
 		ref.Forge = ForgeFromHost(host)
 		if ref.Forge != ForgeUnknown {

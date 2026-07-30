@@ -68,7 +68,7 @@ func (c *CloneCommand) Execute(args []string) error {
 			return err
 		}
 		fmt.Fprintf(c.err(), "resolved %s -> %s\n",
-			paint(ansiBoldCyan, ref.User+"/"+ref.Repo), resolved.URL())
+			paint(ansiBoldCyan, ref.Path), resolved.URL())
 		plan = buildClonePlan(resolved, c.Args.URL, c.Args.Dir, c.Depth)
 
 	case ok && ref.Forge != git.ForgeUnknown:
@@ -123,7 +123,7 @@ func (c *CloneCommand) Execute(args []string) error {
 func (c *CloneCommand) checkExistingDest(want git.RepoRef) (done bool, err error) {
 	dir := c.Args.Dir
 	if dir == "" {
-		dir = want.Repo
+		dir = want.Repo()
 	}
 	if entries, rerr := os.ReadDir(dir); rerr != nil || len(entries) == 0 {
 		return false, nil
@@ -149,7 +149,7 @@ func (c *CloneCommand) checkExistingDest(want git.RepoRef) (done bool, err error
 		}
 		if remoteMatches(rref, want) {
 			fmt.Fprintf(c.out(), "%s is already cloned into %s (remote \"%s\").\n",
-				paint(ansiBoldCyan, want.User+"/"+want.Repo),
+				paint(ansiBoldCyan, want.Path),
 				paint(ansiBoldGreen, dir), paint(ansiBoldCyan, name))
 			return true, nil
 		}
@@ -166,7 +166,7 @@ func (c *CloneCommand) checkExistingDest(want git.RepoRef) (done bool, err error
 // refLabel renders a ref for messages: host-qualified when a host is known, so
 // a same-slug-different-host mismatch doesn't read as "X is not X".
 func refLabel(r git.RepoRef) string {
-	slug := r.User + "/" + r.Repo
+	slug := r.Path
 	if r.Host != "" {
 		return r.Host + "/" + slug
 	}
@@ -178,7 +178,7 @@ func refLabel(r git.RepoRef) string {
 // exactly the set resolution would have probed -- while a host-pinned request
 // must match the host too.
 func remoteMatches(remote, want git.RepoRef) bool {
-	if remote.User != want.User || remote.Repo != want.Repo {
+	if remote.Path != want.Path {
 		return false
 	}
 	if want.Shorthand() {
@@ -231,12 +231,12 @@ func resolveShorthand(sel ui.Selector, probe func(string) bool, ref git.RepoRef)
 
 	switch len(hitURLs) {
 	case 0:
-		return ref, fmt.Errorf("%s/%s not found on github, gitlab or codeberg", ref.User, ref.Repo)
+		return ref, fmt.Errorf("%s not found on github, gitlab or codeberg", ref.Path)
 	case 1:
 		ref.Forge = byURL[hitURLs[0]]
 	default:
 		picked, err := sel.Select(
-			fmt.Sprintf("%s/%s exists on several forges; pick one", ref.User, ref.Repo), hitURLs)
+			fmt.Sprintf("%s exists on several forges; pick one", ref.Path), hitURLs)
 		if err != nil {
 			if errors.Is(err, ui.ErrCancelled) {
 				return ref, fmt.Errorf("aborted")
@@ -261,18 +261,18 @@ func buildClonePlan(ref git.RepoRef, raw, dir string, depth int) clonePlan {
 	}
 
 	if dir == "" {
-		dir = ref.Repo // doctor's dir-naming wants the bare repo name.
+		dir = ref.Repo() // doctor's dir-naming wants the bare repo name.
 	}
 	var note string
-	if base := filepath.Base(filepath.Clean(dir)); !doctor.MatchesRepoDir(base, ref.Repo) {
+	if base := filepath.Base(filepath.Clean(dir)); !doctor.MatchesRepoDir(base, ref.Repo()) {
 		note = fmt.Sprintf("%s dir %q does not match doctor's %q / %q-N pattern; `gg doctor` will flag it.",
-			paint(ansiBoldYellow, "warning:"), base, ref.Repo, ref.Repo)
+			paint(ansiBoldYellow, "warning:"), base, ref.Repo(), ref.Repo())
 	}
 
-	args := []string{"clone", "-o", ref.User}
+	args := []string{"clone", "-o", ref.Owner()}
 	args = appendDepth(args, depth)
 	args = append(args, url, dir)
-	return clonePlan{args: args, remote: ref.User, dir: dir, note: note}
+	return clonePlan{args: args, remote: ref.Owner(), dir: dir, note: note}
 }
 
 // plainClonePlan mirrors `git clone <url> [dir]` for inputs gg can't apply its

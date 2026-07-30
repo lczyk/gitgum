@@ -83,10 +83,10 @@ func checkRemoteNaming(r git.Repo) []Finding {
 				Message: fmt.Sprintf("remote %q has an unrecognised url %q; cannot verify its name", name, url)})
 			continue
 		}
-		if name != ref.User {
+		if name != ref.Owner() {
 			out = append(out, Finding{Check: "remote-naming", Severity: SevFixable,
-				Message: fmt.Sprintf("remote %q points at %s user %q but is not named after it", name, ref.Forge, ref.User),
-				Fix:     fmt.Sprintf("git remote rename %s %s", name, ref.User)})
+				Message: fmt.Sprintf("remote %q points at %s user %q but is not named after it", name, ref.Forge, ref.Owner()),
+				Fix:     fmt.Sprintf("git remote rename %s %s", name, ref.Owner())})
 		}
 	}
 	return out
@@ -205,7 +205,7 @@ func canonicalRepoName(r git.Repo) (name string, ok bool, findings []Finding) {
 			continue
 		}
 		if ref, ok := git.ParseRepoRef(url); ok && ref.Forge != git.ForgeUnknown {
-			seen[ref.Repo] = true
+			seen[ref.Repo()] = true
 		}
 	}
 	switch len(seen) {

@@ -54,13 +54,13 @@ func (c *AddRemoteCommand) Execute(args []string) error {
 		}
 		url = ref.URL()
 		fmt.Fprintf(c.err(), "resolved %s -> %s\n",
-			paint(ansiBoldCyan, ref.User+"/"+ref.Repo), url)
+			paint(ansiBoldCyan, ref.Path), url)
 	default:
 		return fmt.Errorf("%q is not a resolvable repo ref "+
 			"(expected user, user/repo, forge/user/repo, or a forge url; local paths are not supported)",
 			c.Args.Remote)
 	}
-	name := ref.User
+	name := ref.Owner()
 
 	// Duplicate handling: a same-named remote is an error unless it already
 	// points at this exact url (an idempotent re-add is a no-op).
@@ -123,7 +123,7 @@ func (c *AddRemoteCommand) refFromExistingRemotes(user string) (git.RepoRef, err
 		if !ok || parsed.Shorthand() {
 			continue // can't tell which forge it lives on
 		}
-		parsed.User = user
+		parsed = parsed.WithOwner(user)
 		if _, seen := byURL[parsed.URL()]; !seen {
 			byURL[parsed.URL()] = parsed
 			urls = append(urls, parsed.URL())
@@ -166,7 +166,7 @@ func (c *AddRemoteCommand) resolveURL(ref git.RepoRef) (string, error) {
 			return "", err
 		}
 		fmt.Fprintf(c.err(), "resolved %s -> %s\n",
-			paint(ansiBoldCyan, resolved.User+"/"+resolved.Repo), resolved.URL())
+			paint(ansiBoldCyan, resolved.Path), resolved.URL())
 		return resolved.URL(), nil
 	case !isBareSpelling(c.Args.Remote):
 		return c.Args.Remote, nil // real url: keep the exact scheme/transport
