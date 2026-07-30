@@ -89,8 +89,8 @@ func (c *CloneCommand) Execute(args []string) error {
 
 	// clone streams progress live and preserves the user's git config
 	// (credential helpers etc) so private repos authenticate.
-	if _, stderr, err := c.repo().RunWriteStream(plan.args...); err != nil {
-		return fmt.Errorf("git clone failed: %w\n%s", err, stderr)
+	if err := c.repo().RunWriteStream(plan.args...); err != nil {
+		return fmt.Errorf("git clone failed: %w", err)
 	}
 
 	// Show the whole tree's compact diffstat -- every file as an addition,

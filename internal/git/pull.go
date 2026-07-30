@@ -21,9 +21,8 @@ const (
 // Integrate applies upstream into the current branch using the chosen mode.
 // The caller is expected to have Fetch'd first: Integrate works against the
 // local remote-tracking ref (e.g. "origin/main") and does not touch the
-// network. Progress and hook output are streamed live; the tail of stderr is
-// folded into the error on failure. A shallow clone stays shallow -- nothing
-// here deepens history.
+// network. Progress and hook output are streamed live. A shallow clone stays
+// shallow -- nothing here deepens history.
 func (r Repo) Integrate(mode PullMode, upstream string) error {
 	var args []string
 	switch mode {
@@ -38,8 +37,8 @@ func (r Repo) Integrate(mode PullMode, upstream string) error {
 	default:
 		return fmt.Errorf("unknown pull mode %d", mode)
 	}
-	if _, stderr, err := r.runWriteStreaming(context.Background(), args...); err != nil {
-		return fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(stderr))
+	if err := r.runWriteStreaming(context.Background(), args...); err != nil {
+		return fmt.Errorf("git %s: %w", args[0], err)
 	}
 	return nil
 }

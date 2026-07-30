@@ -151,8 +151,8 @@ func (p *PushCommand) Execute(args []string) error {
 			return nil
 		}
 
-		if _, stderr, err := p.repo().RunWriteStream("push", "-u", selectedRemote, currentBranch); err != nil {
-			return fmt.Errorf("failed to push: %w: %s", err, strings.TrimSpace(stderr))
+		if err := p.repo().RunWriteStream("push", "-u", selectedRemote, currentBranch); err != nil {
+			return fmt.Errorf("failed to push: %w", err)
 		}
 		fmt.Fprintf(p.out(), "Created and set tracking reference for '%s' to '%s'.\n",
 			currentBranch, expectedRemoteBranchName)
@@ -193,8 +193,8 @@ func (p *PushCommand) Execute(args []string) error {
 		return nil
 	}
 
-	if _, stderr, err := p.repo().RunWriteStream("push", selectedRemote, currentBranch); err != nil {
-		return fmt.Errorf("failed to push: %w: %s", err, strings.TrimSpace(stderr))
+	if err := p.repo().RunWriteStream("push", selectedRemote, currentBranch); err != nil {
+		return fmt.Errorf("failed to push: %w", err)
 	}
 	fmt.Fprintf(p.out(), "Pushed to remote branch '%s'.\n", expectedRemoteBranchName)
 	return nil
@@ -244,8 +244,8 @@ func (p *PushCommand) handleStaleUpstream(currentBranch, upstream string) (handl
 	if !confirmed {
 		return true, nil
 	}
-	if _, stderr, err := p.repo().RunWriteStream("push", "-u", remote, currentBranch); err != nil {
-		return false, fmt.Errorf("failed to push: %w: %s", err, strings.TrimSpace(stderr))
+	if err := p.repo().RunWriteStream("push", "-u", remote, currentBranch); err != nil {
+		return false, fmt.Errorf("failed to push: %w", err)
 	}
 	fmt.Fprintf(p.out(), "Recreated remote branch '%s'.\n", upstream)
 	return true, nil

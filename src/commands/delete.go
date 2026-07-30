@@ -169,8 +169,8 @@ func (d *DeleteCommand) deleteLocal(branch string) error {
 	}
 
 	if needsToDeleteRemote {
-		if _, stderr, err := d.repo().RunWriteStream("push", "--delete", remoteName, remoteBranchName); err != nil {
-			return fmt.Errorf("deleting remote branch: %w: %s", err, strings.TrimSpace(stderr))
+		if err := d.repo().RunWriteStream("push", "--delete", remoteName, remoteBranchName); err != nil {
+			return fmt.Errorf("deleting remote branch: %w", err)
 		}
 		fmt.Fprintf(d.out(), "Deleted remote branch '%s/%s'.\n", remoteName, remoteBranchName)
 	}
@@ -193,8 +193,8 @@ func (d *DeleteCommand) deleteRemoteOnly(remote, branch string) error {
 		return nil
 	}
 
-	if _, stderr, err := d.repo().RunWriteStream("push", "--delete", remote, branch); err != nil {
-		return fmt.Errorf("deleting remote branch: %w: %s", err, strings.TrimSpace(stderr))
+	if err := d.repo().RunWriteStream("push", "--delete", remote, branch); err != nil {
+		return fmt.Errorf("deleting remote branch: %w", err)
 	}
 	fmt.Fprintf(d.out(), "Deleted remote branch '%s/%s'.\n", remote, branch)
 	return nil
