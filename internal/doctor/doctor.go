@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/lczyk/gitgum/internal/git"
+	"github.com/lczyk/gitgum/internal/pr"
 )
 
 // Severity classifies a doctor finding.
@@ -267,7 +268,7 @@ func checkPRBranchNaming(r git.Repo) []Finding {
 	var out []Finding
 	for i, b := range names {
 		if remoteOK {
-			newName := fmt.Sprintf("pr/%s/%d", remote, numbers[i])
+			newName := pr.BranchName(remote, numbers[i])
 			out = append(out, Finding{Check: "pr-branch-naming", Severity: SevFixable,
 				Message: fmt.Sprintf("branch %q uses the old pr-N naming; gg now names PR branches pr/<remote>/<number>", b),
 				Fix:     fmt.Sprintf("git branch -m %s %s", b, newName)})

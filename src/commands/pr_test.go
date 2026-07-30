@@ -5,56 +5,8 @@ import (
 
 	"github.com/lczyk/assert"
 	"github.com/lczyk/assert/require"
-	"github.com/lczyk/gitgum/internal/git"
-	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
+	"github.com/lczyk/gitgum/internal/pr"
 )
-
-func TestPRBranchNameAndRef(t *testing.T) {
-	t.Parallel()
-	assert.Equal(t, prBranchName("origin", 51), "pr/origin/51")
-	assert.Equal(t, prBranchName("upstream", 7), "pr/upstream/7")
-	assert.Equal(t, prMeta{number: 51, typ: "head"}.ref(), "refs/pull/51/head")
-	assert.Equal(t, prMeta{number: 9, typ: "merge"}.ref(), "refs/pull/9/merge")
-}
-
-func TestReadPRMeta_FromConfig(t *testing.T) {
-	t.Parallel()
-	dir := temp_repo.NewRepo(t)
-	r := git.Repo{Dir: dir}
-
-	want := prMeta{remote: "upstream", number: 72, typ: "merge"}
-	require.NoError(t, writePRMeta(r, "pr/upstream/72", want))
-
-	got, ok, err := readPRMeta(r, "pr/upstream/72")
-	require.NoError(t, err)
-	require.That(t, ok, "config-backed PR meta should be found")
-	assert.Equal(t, got, want)
-}
-
-func TestReadPRMeta_NameFallback(t *testing.T) {
-	t.Parallel()
-	dir := temp_repo.NewRepo(t)
-	r := git.Repo{Dir: dir}
-
-	// No config written -- identity derived from the pr/<remote>/<number> name,
-	// defaulting to the head ref.
-	got, ok, err := readPRMeta(r, "pr/origin/5")
-	require.NoError(t, err)
-	require.That(t, ok, "name should be parsed as a fallback")
-	assert.Equal(t, got, prMeta{remote: "origin", number: 5, typ: "head"})
-}
-
-func TestReadPRMeta_NotAPRBranch(t *testing.T) {
-	t.Parallel()
-	dir := temp_repo.NewRepo(t)
-	r := git.Repo{Dir: dir}
-
-	for _, b := range []string{"main", "feat/foo", "pr/origin/notanumber", "pr/origin"} {
-		_, ok, err := readPRMeta(r, b)
-		require.NoError(t, err)
-		assert.That(t, !ok, "%q should not be a PR branch", b)
-	}
-}
 
 func TestSwitchUnselectable(t *testing.T) {
 	t.Parallel()
@@ -68,71 +20,28 @@ func TestSwitchUnselectable(t *testing.T) {
 	assert.That(t, !switchUnselectable("local: other"), "plain branch selectable")
 }
 
-func TestParsePRRefs(t *testing.T) {
-	cases := map[string]struct {
-		input    string
-		expected []PRRef
-	}{
-		"empty output": {input: "", expected: []PRRef{}},
-		"single head ref": {
-			input:    "abc123def456\trefs/pull/42/head",
-			expected: []PRRef{{Number: 42, Type: "head"}},
-		},
-		"single merge ref": {
-			input:    "abc123def456\trefs/pull/10/merge",
-			expected: []PRRef{{Number: 10, Type: "merge"}},
-		},
-		"head wins over merge for same PR": {
-			input:    "aaa\trefs/pull/5/merge\nbbb\trefs/pull/5/head",
-			expected: []PRRef{{Number: 5, Type: "head"}},
-		},
-		"head already present ignores later merge": {
-			input:    "aaa\trefs/pull/5/head\nbbb\trefs/pull/5/merge",
-			expected: []PRRef{{Number: 5, Type: "head"}},
-		},
-		"multiple PRs sorted descending": {
-			input: "aaa\trefs/pull/1/head\nbbb\trefs/pull/99/merge\nccc\trefs/pull/50/head",
-			expected: []PRRef{
-				{Number: 99, Type: "merge"},
-				{Number: 50, Type: "head"},
-				{Number: 1, Type: "head"},
-			},
-		},
-		"non-PR refs ignored": {
-			input:    "aaa\trefs/heads/main\nbbb\trefs/tags/v1.0\nccc\trefs/pull/7/head",
-			expected: []PRRef{{Number: 7, Type: "head"}},
-		},
-	}
-
-	for name, tt := range cases {
-		t.Run(name, func(t *testing.T) {
-			assert.EqualArrays(t, parsePRRefs(tt.input), tt.expected)
-		})
-	}
-}
-
 func TestFormatPROptions(t *testing.T) {
 	cases := map[string]struct {
-		prRefs   []PRRef
+		prRefs   []pr.Ref
 		expected []string
 	}{
 		"single PR head": {
-			prRefs:   []PRRef{{Number: 123, Type: "head"}},
+			prRefs:   []pr.Ref{{Number: 123, Type: "head"}},
 			expected: []string{"PR #123 (head)"},
 		},
 		"single PR merge": {
-			prRefs:   []PRRef{{Number: 456, Type: "merge"}},
+			prRefs:   []pr.Ref{{Number: 456, Type: "merge"}},
 			expected: []string{"PR #456 (merge)"},
 		},
 		"multiple PRs": {
-			prRefs: []PRRef{
+			prRefs: []pr.Ref{
 				{Number: 123, Type: "head"},
 				{Number: 456, Type: "merge"},
 				{Number: 789, Type: "head"},
 			},
 			expected: []string{"PR #123 (head)", "PR #456 (merge)", "PR #789 (head)"},
 		},
-		"empty list": {prRefs: []PRRef{}, expected: []string{}},
+		"empty list": {prRefs: []pr.Ref{}, expected: []string{}},
 	}
 
 	for name, tt := range cases {

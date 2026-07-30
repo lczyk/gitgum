@@ -3,6 +3,8 @@ package commands
 import (
 	"errors"
 	"fmt"
+
+	"github.com/lczyk/gitgum/internal/pr"
 )
 
 // CheckoutPRCommand is the interactive dispatcher: pick a remote, pick a PR,
@@ -63,20 +65,20 @@ func (c *CheckoutPRCommand) Execute(args []string) error {
 	return c.checkoutPR(remote, prNumber, prType)
 }
 
-func (c *CheckoutPRCommand) getPRRefs(remote string) ([]PRRef, error) {
+func (c *CheckoutPRCommand) getPRRefs(remote string) ([]pr.Ref, error) {
 	fmt.Fprintln(c.out(), "Fetching pull request references from remote:", remote)
 	stdout, err := c.repo().LsRemote(remote)
 	if err != nil {
 		return nil, fmt.Errorf("listing remote refs: %w", err)
 	}
 
-	return parsePRRefs(stdout), nil
+	return pr.ParseRefs(stdout), nil
 }
 
 func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType string) error {
-	meta := prMeta{remote: remote, number: prNumber, typ: prType}
-	branchName := prBranchName(remote, prNumber)
-	prRef := meta.ref()
+	meta := pr.Meta{Remote: remote, Number: prNumber, Type: prType}
+	branchName := pr.BranchName(remote, prNumber)
+	prRef := meta.FetchRef()
 
 	if c.repo().BranchExists(branchName) {
 		confirmed, err := c.sel().Confirm(
@@ -92,7 +94,7 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 			}
 			// Backfill metadata in case the branch predates it, so a later
 			// `gg pull` can still update the PR.
-			if err := writePRMeta(c.repo(), branchName, meta); err != nil {
+			if err := pr.WriteMeta(c.repo(), branchName, meta); err != nil {
 				return fmt.Errorf("recording PR metadata: %w", err)
 			}
 			fmt.Fprintf(c.out(), "Switched to existing branch '%s'.\n", branchName)
@@ -123,7 +125,7 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 			return fmt.Errorf("resetting branch: %w", err)
 		}
 
-		if err := writePRMeta(c.repo(), branchName, meta); err != nil {
+		if err := pr.WriteMeta(c.repo(), branchName, meta); err != nil {
 			return fmt.Errorf("recording PR metadata: %w", err)
 		}
 
@@ -150,7 +152,7 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 		return fmt.Errorf("creating and checking out branch: %w", err)
 	}
 
-	if err := writePRMeta(c.repo(), branchName, meta); err != nil {
+	if err := pr.WriteMeta(c.repo(), branchName, meta); err != nil {
 		return fmt.Errorf("recording PR metadata: %w", err)
 	}
 

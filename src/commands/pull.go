@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/lczyk/gitgum/internal/git"
+	"github.com/lczyk/gitgum/internal/pr"
 	"github.com/lczyk/gitgum/internal/ui"
 )
 
@@ -49,7 +50,7 @@ func (p *PullCommand) Execute(args []string) error {
 func (p *PullCommand) pullBranch(currentBranch string) error {
 	// A checkout-pr branch has no normal upstream -- it mirrors a PR ref that
 	// git can't track. Re-fetch that ref instead of erroring on "no upstream".
-	if meta, ok, err := readPRMeta(p.repo(), currentBranch); err != nil {
+	if meta, ok, err := pr.ReadMeta(p.repo(), currentBranch); err != nil {
 		return err
 	} else if ok {
 		return p.pullPR(currentBranch, meta)
@@ -198,8 +199,8 @@ func (p *PullCommand) ensureUpstreamRef(remote, remoteBranch, upstream string) e
 //   - diverged (force-push, or local commits): the fetched head isn't a
 //     descendant, so a move means discarding local work -- confirm first
 //     (default no), matching `gg checkout-pr`'s reset-to-PR-state behaviour.
-func (p *PullCommand) pullPR(branch string, m prMeta) error {
-	if err := p.repo().Fetch(m.remote, m.ref()); err != nil {
+func (p *PullCommand) pullPR(branch string, m pr.Meta) error {
+	if err := p.repo().Fetch(m.Remote, m.FetchRef()); err != nil {
 		return err
 	}
 
@@ -212,7 +213,7 @@ func (p *PullCommand) pullPR(branch string, m prMeta) error {
 		return fmt.Errorf("getting fetched PR commit: %w", err)
 	}
 	if local == fetched {
-		fmt.Fprintf(p.out(), "Already up to date. Branch '%s' matches PR #%d (%s).\n", branch, m.number, m.typ)
+		fmt.Fprintf(p.out(), "Already up to date. Branch '%s' matches PR #%d (%s).\n", branch, m.Number, m.Type)
 		return nil
 	}
 
@@ -224,7 +225,7 @@ func (p *PullCommand) pullPR(branch string, m prMeta) error {
 	}
 	if localAhead {
 		confirmed, err := p.sel().Confirm(
-			fmt.Sprintf("Branch '%s' has diverged from PR #%d (force-push or local commits). Reset it to the PR head, discarding local commits?", branch, m.number),
+			fmt.Sprintf("Branch '%s' has diverged from PR #%d (force-push or local commits). Reset it to the PR head, discarding local commits?", branch, m.Number),
 			false,
 		)
 		if err != nil {
@@ -255,7 +256,7 @@ func (p *PullCommand) pullPR(branch string, m prMeta) error {
 	if summary, derr := compactSummary(p.repo(), local+".."+fetched); derr == nil && summary != "" {
 		fmt.Fprintln(p.out(), summary)
 	}
-	fmt.Fprintf(p.out(), "Updated '%s' to PR #%d (%s).\n", branch, m.number, m.typ)
+	fmt.Fprintf(p.out(), "Updated '%s' to PR #%d (%s).\n", branch, m.Number, m.Type)
 	return nil
 }
 

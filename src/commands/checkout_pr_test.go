@@ -7,6 +7,7 @@ import (
 	"github.com/lczyk/assert"
 	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/internal/git"
+	"github.com/lczyk/gitgum/internal/pr"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
 
@@ -37,12 +38,12 @@ func TestCheckoutPRCommand_Execute_ChecksOutPR(t *testing.T) {
 	assert.ContainsString(t, stub.selectCalls[0].Prompt, "pull request")
 
 	// PR identity is recorded on the branch so `gg pull` can update it.
-	meta, ok, err := readPRMeta(git.Repo{Dir: dir}, "pr/origin/1")
+	meta, ok, err := pr.ReadMeta(git.Repo{Dir: dir}, "pr/origin/1")
 	require.NoError(t, err)
 	require.That(t, ok, "PR metadata should be recorded")
-	assert.Equal(t, meta.remote, "origin")
-	assert.Equal(t, meta.number, 1)
-	assert.Equal(t, meta.typ, "head")
+	assert.Equal(t, meta.Remote, "origin")
+	assert.Equal(t, meta.Number, 1)
+	assert.Equal(t, meta.Type, "head")
 }
 
 // With more than one remote, the picker fires and its answer selects which
