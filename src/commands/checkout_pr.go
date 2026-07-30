@@ -72,13 +72,13 @@ func (c *CheckoutPRCommand) getPRRefs(remote string) ([]pr.Ref, error) {
 		return nil, fmt.Errorf("listing remote refs: %w", err)
 	}
 
-	return pr.ParseRefs(stdout), nil
+	return pr.ParseRefs(pr.ForgeOf(c.repo(), remote), stdout), nil
 }
 
 func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType string) error {
 	meta := pr.Meta{Remote: remote, Number: prNumber, Type: prType}
 	branchName := pr.BranchName(remote, prNumber)
-	prRef := meta.FetchRef()
+	prRef := meta.FetchRef(pr.ForgeOf(c.repo(), remote))
 
 	if c.repo().BranchExists(branchName) {
 		confirmed, err := c.sel().Confirm(

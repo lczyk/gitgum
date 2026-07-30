@@ -200,7 +200,7 @@ func (p *PullCommand) ensureUpstreamRef(remote, remoteBranch, upstream string) e
 //     descendant, so a move means discarding local work -- confirm first
 //     (default no), matching `gg checkout-pr`'s reset-to-PR-state behaviour.
 func (p *PullCommand) pullPR(branch string, m pr.Meta) error {
-	if err := p.repo().Fetch(m.Remote, m.FetchRef()); err != nil {
+	if err := p.repo().Fetch(m.Remote, m.FetchRef(pr.ForgeOf(p.repo(), m.Remote))); err != nil {
 		return err
 	}
 

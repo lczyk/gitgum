@@ -16,8 +16,45 @@ import (
 	"github.com/lczyk/gitgum/internal/strutil"
 )
 
-// refLine matches a PR head/merge ref in `git ls-remote` output.
-var refLine = regexp.MustCompile(`^[a-f0-9]+\s+refs/pull/(\d+)/(head|merge)$`)
+// Where a forge advertises its pull requests. Gitea (and so codeberg) copies
+// github's refs/pull/N/{head,merge}; gitlab calls them merge requests and
+// namespaces them separately.
+var refLines = map[git.Forge]*regexp.Regexp{
+	git.ForgeGitLab: regexp.MustCompile(`^[a-f0-9]+\s+refs/merge-requests/(\d+)/(head|merge)$`),
+}
+
+var defaultRefLine = regexp.MustCompile(`^[a-f0-9]+\s+refs/pull/(\d+)/(head|merge)$`)
+
+func refLineFor(f git.Forge) *regexp.Regexp {
+	if re, ok := refLines[f]; ok {
+		return re
+	}
+	return defaultRefLine
+}
+
+func refPrefix(f git.Forge) string {
+	if f == git.ForgeGitLab {
+		return "refs/merge-requests/"
+	}
+	return "refs/pull/"
+}
+
+// ForgeOf reports which forge a remote points at, which is what selects the
+// ref shape. It is derived on demand rather than recorded against the branch:
+// the remote's url is the authority, and a stored copy would disagree with it
+// the moment a remote is repointed. An unrecognised remote falls back to the
+// github shape, which is also what self-hosted gitea uses.
+func ForgeOf(r git.Repo, remote string) git.Forge {
+	url, err := r.RemoteURL(remote)
+	if err != nil {
+		return git.ForgeUnknown
+	}
+	ref, ok := git.ParseRepoRef(url)
+	if !ok {
+		return git.ForgeUnknown
+	}
+	return ref.Forge
+}
 
 // branchNameRegex matches the pr/<remote>/<number> branch name. The remote
 // segment is greedy-but-slash-free-per-segment; git remote names can't contain
@@ -39,10 +76,12 @@ type Ref struct {
 	Type   string // "head" or "merge"
 }
 
-// ParseRefs extracts PR refs from git ls-remote output. When both head and
-// merge exist for a PR, head wins.
-func ParseRefs(lsRemoteOutput string) []Ref {
+// ParseRefs extracts PR refs from git ls-remote output, reading whichever ref
+// namespace the forge advertises them in. When both head and merge exist for a
+// PR, head wins.
+func ParseRefs(f git.Forge, lsRemoteOutput string) []Ref {
 	byNumber := make(map[int]Ref)
+	refLine := refLineFor(f)
 
 	for _, line := range strutil.SplitLines(lsRemoteOutput) {
 		matches := refLine.FindStringSubmatch(line)
@@ -90,9 +129,10 @@ func ParseBranchName(branch string) (remote string, number int, ok bool) {
 	return m[1], number, true
 }
 
-// FetchRef returns the git ref this PR is fetched from, e.g. refs/pull/51/head.
-func (m Meta) FetchRef() string {
-	return fmt.Sprintf("refs/pull/%d/%s", m.Number, m.Type)
+// FetchRef returns the git ref this PR is fetched from on forge f, e.g.
+// refs/pull/51/head on github or refs/merge-requests/51/head on gitlab.
+func (m Meta) FetchRef(f git.Forge) string {
+	return fmt.Sprintf("%s%d/%s", refPrefix(f), m.Number, m.Type)
 }
 
 // WriteMeta records the PR identity on the branch in repo-local config.
