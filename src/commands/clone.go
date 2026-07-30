@@ -52,7 +52,8 @@ type clonePlan struct {
 }
 
 func (c *CloneCommand) Execute(args []string) error {
-	ref, ok := git.ParseRepoRef(c.Args.URL)
+	parsed, ok := git.ParseForgeURL(c.Args.URL)
+	ref := parsed.Ref
 
 	if ok {
 		if done, err := c.checkExistingDest(ref); done {
@@ -69,10 +70,10 @@ func (c *CloneCommand) Execute(args []string) error {
 		}
 		fmt.Fprintf(c.err(), "resolved %s -> %s\n",
 			paint(ansiBoldCyan, ref.Path), resolved.URL())
-		plan = buildClonePlan(resolved, c.Args.URL, c.Args.Dir, c.Depth)
+		plan = buildClonePlan(resolved, parsed.Route, c.Args.URL, c.Args.Dir, c.Depth)
 
 	case ok && ref.Forge != git.ForgeUnknown:
-		plan = buildClonePlan(ref, c.Args.URL, c.Args.Dir, c.Depth)
+		plan = buildClonePlan(ref, parsed.Route, c.Args.URL, c.Args.Dir, c.Depth)
 
 	default:
 		note := ""
@@ -253,10 +254,12 @@ func resolveShorthand(sel ui.Selector, probe func(string) bool, ref git.RepoRef)
 // the input was a "bare" spelling (no scheme, no git@ userinfo) the url is
 // reconstructed as canonical https so www./missing-scheme/shorthand all
 // normalise; a real url (https/ssh/git) is cloned verbatim so an ssh remote
-// isn't silently downgraded. The remote is named after the user either way.
-func buildClonePlan(ref git.RepoRef, raw, dir string, depth int) clonePlan {
+// isn't silently downgraded. A url carrying a route is reconstructed too --
+// what the user pasted addresses a page, not a repo. The remote is named after
+// the user either way.
+func buildClonePlan(ref git.RepoRef, route git.Route, raw, dir string, depth int) clonePlan {
 	url := raw
-	if isBareSpelling(raw) {
+	if isBareSpelling(raw) || route.Kind != git.RouteNone {
 		url = ref.URL()
 	}
 

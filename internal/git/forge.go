@@ -1,6 +1,9 @@
 package git
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // Forge is a git hosting provider gg knows how to reason about: it can name a
 // remote after the user/org, reconstruct a clone url, and (for clone) probe
@@ -183,8 +186,118 @@ func (r RepoRef) URLOn(f Forge) string {
 	return "https://" + host + "/" + r.Path
 }
 
-// ParseRepoRef normalises the repo spellings gg accepts into a RepoRef. It is
-// the generalisation of ParseGitHubURL across all forges plus shorthand:
+// RouteKind classifies what a forge url pointed at inside a repo.
+type RouteKind int
+
+const (
+	RouteNone   RouteKind = iota // the url named a repo and nothing more
+	RoutePR                      // a pull request / merge request
+	RouteTree                    // a branch or tag, possibly with a path below it
+	RouteCommit                  // a single commit
+	RouteOther                   // a route gg doesn't model (issues, releases, ...)
+)
+
+// Route is the part of a forge url that follows the project path.
+type Route struct {
+	Kind   RouteKind
+	Number int    // PR/MR number; only meaningful for RoutePR
+	Ref    string // branch/tag for RouteTree, sha for RouteCommit; unresolved as written
+	Raw    string // the route segments verbatim
+}
+
+// ForgeURL is a fully parsed forge url: which repo, and what within it.
+type ForgeURL struct {
+	Ref   RepoRef
+	Route Route
+}
+
+// splitProject divides a url path into the project path and whatever route
+// follows it. The division is structural rather than a list of route names,
+// because the shape of a project path is a fact about each forge:
+//
+//   - github and gitea (codeberg) host every project at exactly two segments,
+//     so a third segment is a route whether or not gg recognises the name.
+//   - gitlab nests projects under subgroups to arbitrary depth and marks the
+//     boundary itself with "/-/", which is the only reliable way to tell a
+//     subgroup from a route there.
+//   - an unmodelled host has no routing scheme gg may assume, so the whole
+//     path is the project.
+func splitProject(f Forge, path string) (project, route string) {
+	switch f {
+	case ForgeGitLab:
+		if before, after, ok := strings.Cut(path, "/-/"); ok {
+			return before, after
+		}
+		return path, ""
+	case ForgeUnknown:
+		return path, ""
+	default:
+		owner, rest, ok := strings.Cut(path, "/")
+		if !ok {
+			return path, ""
+		}
+		repo, route, ok := strings.Cut(rest, "/")
+		if !ok {
+			return path, ""
+		}
+		return owner + "/" + repo, route
+	}
+}
+
+// classifyRoute interprets route segments against a forge's url vocabulary.
+// The vocabularies are small and only cover what gg acts on; anything else is
+// RouteOther, which still resolves to "clone this repo" because the project
+// path was already separated structurally.
+func classifyRoute(f Forge, route string) Route {
+	if route == "" {
+		return Route{}
+	}
+	out := Route{Kind: RouteOther, Raw: route}
+	head, rest, _ := strings.Cut(route, "/")
+
+	switch {
+	case f == ForgeGitHub && head == "pull",
+		f == ForgeGitLab && head == "merge_requests",
+		f == ForgeCodeberg && head == "pulls":
+		if n, err := strconv.Atoi(firstSegment(rest)); err == nil && n > 0 {
+			out.Kind, out.Number = RoutePR, n
+		}
+	case head == "tree", head == "blob":
+		// the ref may itself contain slashes ("tree/feat/x"), and a file path
+		// may follow it, so the tail stays unresolved until it can be matched
+		// against the remote's actual refs.
+		out.Kind, out.Ref = RouteTree, rest
+	case head == "commit":
+		out.Kind, out.Ref = RouteCommit, firstSegment(rest)
+	case f == ForgeCodeberg && head == "src":
+		// gitea spells these src/branch/<ref> and src/commit/<sha>
+		kind, tail, _ := strings.Cut(rest, "/")
+		switch kind {
+		case "branch", "tag":
+			out.Kind, out.Ref = RouteTree, tail
+		case "commit":
+			out.Kind, out.Ref = RouteCommit, firstSegment(tail)
+		}
+	}
+	return out
+}
+
+func firstSegment(s string) string {
+	seg, _, _ := strings.Cut(s, "/")
+	return seg
+}
+
+// ParseRepoRef normalises the repo spellings gg accepts into a RepoRef,
+// discarding any route the url carried. Callers that need the route (clone)
+// use ParseForgeURL instead.
+func ParseRepoRef(raw string) (RepoRef, bool) {
+	fu, ok := ParseForgeURL(raw)
+	return fu.Ref, ok
+}
+
+// ParseForgeURL normalises the repo spellings gg accepts into a RepoRef plus
+// the route the url pointed at. It is the generalisation of ParseGitHubURL
+// across all forges plus shorthand:
 //
 //	full urls:       https://github.com/USER/REPO(.git), git@github.com:USER/REPO,
 //	                 ssh://git@github.com/USER/REPO(.git), git://github.com/USER/REPO
@@ -196,10 +309,10 @@ func (r RepoRef) URLOn(f Forge) string {
 // absolute/deep local path, empty input). A recognised host sets Forge; an
 // unmodelled host leaves Forge unknown but Host populated (caller can still
 // clone the url verbatim, just can't name the remote by convention).
-func ParseRepoRef(raw string) (RepoRef, bool) {
+func ParseForgeURL(raw string) (ForgeURL, bool) {
 	s := strings.TrimSpace(raw)
 	if s == "" {
-		return RepoRef{}, false
+		return ForgeURL{}, false
 	}
 	if i := strings.Index(s, "://"); i != -1 { // drop scheme
 		s = s[i+3:]
@@ -227,21 +340,12 @@ func ParseRepoRef(raw string) (RepoRef, bool) {
 			path = s
 		}
 	default:
-		return RepoRef{}, false // single token, no separators
+		return ForgeURL{}, false // single token, no separators
 	}
 
-	path = strings.TrimSuffix(strings.Trim(path, "/"), ".git")
-	parts := strings.SplitN(path, "/", 3)
-	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
-		return RepoRef{}, false
-	}
-	// A bare shorthand must be exactly user/repo -- a deeper path (a local
-	// dir like a/b/c) is not shorthand we can resolve.
-	if !hasHost && len(parts) > 2 && parts[2] != "" {
-		return RepoRef{}, false
-	}
-
-	ref := RepoRef{Path: parts[0] + "/" + parts[1]}
+	// The forge has to be known before the path can be split, because where a
+	// project path ends is a per-forge fact (see splitProject).
+	ref := RepoRef{}
 	if hasHost {
 		ref.Forge = ForgeFromHost(host)
 		if ref.Forge != ForgeUnknown {
@@ -250,5 +354,25 @@ func ParseRepoRef(raw string) (RepoRef, bool) {
 			ref.Host = strings.ToLower(host)
 		}
 	}
-	return ref, true
+
+	path = strings.TrimSuffix(strings.Trim(path, "/"), ".git")
+	project, route := splitProject(ref.Forge, path)
+	project = strings.TrimSuffix(project, ".git")
+
+	segs := strings.Split(project, "/")
+	if len(segs) < 2 {
+		return ForgeURL{}, false
+	}
+	for _, seg := range segs {
+		if seg == "" {
+			return ForgeURL{}, false
+		}
+	}
+	// A bare shorthand must be exactly user/repo -- a deeper path (a local
+	// dir like a/b/c) is not shorthand we can resolve.
+	if !hasHost && len(segs) > 2 {
+		return ForgeURL{}, false
+	}
+	ref.Path = project
+	return ForgeURL{Ref: ref, Route: classifyRoute(ref.Forge, route)}, true
 }

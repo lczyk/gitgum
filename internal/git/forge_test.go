@@ -66,6 +66,50 @@ func TestParseRepoRef(t *testing.T) {
 	}
 }
 
+func TestParseForgeURLRoute(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		raw    string
+		path   string
+		kind   RouteKind
+		number int
+		ref    string
+	}{
+		// github and gitea host a project at exactly two segments, so anything
+		// deeper is a route regardless of whether gg knows the name.
+		{"https://github.com/ml-explore/mlx", "ml-explore/mlx", RouteNone, 0, ""},
+		{"https://github.com/ml-explore/mlx/pull/3161", "ml-explore/mlx", RoutePR, 3161, ""},
+		{"https://github.com/ml-explore/mlx/pull/3161/files", "ml-explore/mlx", RoutePR, 3161, ""},
+		{"https://github.com/ml-explore/mlx/tree/main", "ml-explore/mlx", RouteTree, 0, "main"},
+		{"https://github.com/ml-explore/mlx/tree/feat/x", "ml-explore/mlx", RouteTree, 0, "feat/x"},
+		{"https://github.com/ml-explore/mlx/blob/main/a/b.py", "ml-explore/mlx", RouteTree, 0, "main/a/b.py"},
+		{"https://github.com/ml-explore/mlx/commit/abc1234", "ml-explore/mlx", RouteCommit, 0, "abc1234"},
+		{"https://github.com/ml-explore/mlx/issues/5", "ml-explore/mlx", RouteOther, 0, ""},
+		{"https://codeberg.org/lczyk/gitgum/pulls/7", "lczyk/gitgum", RoutePR, 7, ""},
+		{"https://codeberg.org/lczyk/gitgum/src/branch/main", "lczyk/gitgum", RouteTree, 0, "main"},
+		// gitlab nests projects under subgroups and marks the boundary itself,
+		// so without a "/-/" every segment belongs to the project.
+		{"https://gitlab.com/group/subgroup/project", "group/subgroup/project", RouteNone, 0, ""},
+		{"https://gitlab.com/group/subgroup/project/-/merge_requests/12", "group/subgroup/project", RoutePR, 12, ""},
+		{"https://gitlab.com/group/project/-/tree/feat/x", "group/project", RouteTree, 0, "feat/x"},
+		// an unmodelled host has no routing scheme gg may assume
+		{"https://git.example.com/a/b/c", "a/b/c", RouteNone, 0, ""},
+	}
+	for _, c := range cases {
+		got, ok := ParseForgeURL(c.raw)
+		if !ok {
+			t.Errorf("ParseForgeURL(%q) = not ok, want ok", c.raw)
+			continue
+		}
+		if got.Ref.Path != c.path || got.Route.Kind != c.kind ||
+			got.Route.Number != c.number || got.Route.Ref != c.ref {
+			t.Errorf("ParseForgeURL(%q) = path=%q kind=%v number=%d ref=%q, want path=%q kind=%v number=%d ref=%q",
+				c.raw, got.Ref.Path, got.Route.Kind, got.Route.Number, got.Route.Ref,
+				c.path, c.kind, c.number, c.ref)
+		}
+	}
+}
+
 func TestRepoRefWithOwner(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{

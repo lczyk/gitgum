@@ -60,8 +60,8 @@ func TestAddRemoteResolveURL(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ref, ok := git.ParseRepoRef(tc.raw)
-			require.That(t, ok, "ParseRepoRef(%q)", tc.raw)
+			parsed, ok := git.ParseForgeURL(tc.raw)
+			require.That(t, ok, "ParseForgeURL(%q)", tc.raw)
 
 			sel := &stubSelector{}
 			cmd := &AddRemoteCommand{
@@ -70,7 +70,7 @@ func TestAddRemoteResolveURL(t *testing.T) {
 			}
 			cmd.Args.Remote = tc.raw
 
-			got, err := cmd.resolveURL(ref)
+			got, err := cmd.resolveURL(parsed.Ref, parsed.Route)
 			require.NoError(t, err, "resolveURL")
 			assert.Equal(t, got, tc.wantURL)
 			assert.Equal(t, len(sel.selectCalls), tc.wantSelect)
@@ -86,7 +86,7 @@ func TestAddRemoteResolveURL_ShorthandNotFound(t *testing.T) {
 
 	cmd := &AddRemoteCommand{probe: func(string) bool { return false }}
 	cmd.Args.Remote = "nobody/nothing"
-	_, err := cmd.resolveURL(ref)
+	_, err := cmd.resolveURL(ref, git.Route{})
 	require.Error(t, err, "not found")
 }
 

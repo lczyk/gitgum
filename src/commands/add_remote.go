@@ -39,11 +39,12 @@ func (c *AddRemoteCommand) Execute(args []string) error {
 	}
 
 	var url string
-	ref, ok := git.ParseRepoRef(c.Args.Remote)
+	parsed, ok := git.ParseForgeURL(c.Args.Remote)
+	ref := parsed.Ref
 	switch {
 	case ok:
 		var err error
-		if url, err = c.resolveURL(ref); err != nil {
+		if url, err = c.resolveURL(ref, parsed.Route); err != nil {
 			return err
 		}
 	case !strings.ContainsAny(c.Args.Remote, "/:"):
@@ -153,8 +154,9 @@ func (c *AddRemoteCommand) refFromExistingRemotes(user string) (git.RepoRef, err
 // "user/repo" shorthand is resolved by probing the modelled forges (with a
 // picker on multiple hits); a known-forge or unmodelled-host ref uses its url
 // directly. Real urls (https/ssh/git) are preserved verbatim so an ssh remote
-// isn't silently rewritten to https; bare spellings are canonicalised.
-func (c *AddRemoteCommand) resolveURL(ref git.RepoRef) (string, error) {
+// isn't silently rewritten to https; bare spellings and urls carrying a route
+// (a pasted PR page, say) are canonicalised down to the repo.
+func (c *AddRemoteCommand) resolveURL(ref git.RepoRef, route git.Route) (string, error) {
 	switch {
 	case ref.Shorthand():
 		probe := c.probe
@@ -168,7 +170,7 @@ func (c *AddRemoteCommand) resolveURL(ref git.RepoRef) (string, error) {
 		fmt.Fprintf(c.err(), "resolved %s -> %s\n",
 			paint(ansiBoldCyan, resolved.Path), resolved.URL())
 		return resolved.URL(), nil
-	case !isBareSpelling(c.Args.Remote):
+	case !isBareSpelling(c.Args.Remote) && route.Kind == git.RouteNone:
 		return c.Args.Remote, nil // real url: keep the exact scheme/transport
 	default:
 		return ref.URL(), nil // bare spelling on a known/unmodelled host: canonicalise

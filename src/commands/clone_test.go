@@ -12,12 +12,17 @@ import (
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
 
-// mustRef parses raw or fails the test; keeps the table cases terse.
+// mustParse parses raw or fails the test; keeps the table cases terse.
+func mustParse(t *testing.T, raw string) git.ForgeURL {
+	t.Helper()
+	parsed, ok := git.ParseForgeURL(raw)
+	require.That(t, ok, "ParseForgeURL(%q)", raw)
+	return parsed
+}
+
 func mustRef(t *testing.T, raw string) git.RepoRef {
 	t.Helper()
-	ref, ok := git.ParseRepoRef(raw)
-	require.That(t, ok, "ParseRepoRef(%q)", raw)
-	return ref
+	return mustParse(t, raw).Ref
 }
 
 func TestBuildClonePlan(t *testing.T) {
@@ -81,6 +86,29 @@ func TestBuildClonePlan(t *testing.T) {
 			wantDir:    "cbs-tools-2",
 		},
 		{
+			// a pasted page url addresses a page, not a repo, so it is
+			// reconstructed rather than handed to git verbatim.
+			name:       "pr url clones the repo it belongs to",
+			raw:        "https://github.com/ml-explore/mlx/pull/3161",
+			wantArgs:   []string{"clone", "-o", "ml-explore", "https://github.com/ml-explore/mlx", "mlx"},
+			wantRemote: "ml-explore",
+			wantDir:    "mlx",
+		},
+		{
+			name:       "gitlab subgroup keeps its full path and project dir",
+			raw:        "https://gitlab.com/group/subgroup/project",
+			wantArgs:   []string{"clone", "-o", "group", "https://gitlab.com/group/subgroup/project", "project"},
+			wantRemote: "group",
+			wantDir:    "project",
+		},
+		{
+			name:       "gitlab mr url strips at the /-/ sentinel",
+			raw:        "https://gitlab.com/group/subgroup/project/-/merge_requests/12",
+			wantArgs:   []string{"clone", "-o", "group", "https://gitlab.com/group/subgroup/project", "project"},
+			wantRemote: "group",
+			wantDir:    "project",
+		},
+		{
 			name:       "non-conforming explicit dir warns",
 			raw:        "github.com/canonical/cbs-tools",
 			dir:        "wrongname",
@@ -93,8 +121,8 @@ func TestBuildClonePlan(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ref := mustRef(t, tc.raw)
-			p := buildClonePlan(ref, tc.raw, tc.dir, tc.depth)
+			parsed := mustParse(t, tc.raw)
+			p := buildClonePlan(parsed.Ref, parsed.Route, tc.raw, tc.dir, tc.depth)
 			assert.EqualArrays(t, p.args, tc.wantArgs)
 			assert.Equal(t, p.remote, tc.wantRemote)
 			assert.Equal(t, p.dir, tc.wantDir)
