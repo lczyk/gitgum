@@ -71,3 +71,48 @@ func TestCheckoutPRCommand_Execute_MultipleRemotesPrompts(t *testing.T) {
 	assert.ContainsString(t, stub.selectCalls[0].Prompt, "remote")
 	assert.ContainsString(t, stub.selectCalls[1].Prompt, "pull request")
 }
+
+// Naming the PR resolves both prompts away, even with several remotes
+// configured -- the token carries the remote as well as the number.
+func TestCheckoutPRCommand_Execute_NamedPRSkipsPrompts(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+
+	bareDir := t.TempDir()
+	temp_repo.RunGit(t, bareDir, "init", "--bare")
+	temp_repo.RunGit(t, dir, "remote", "add", "upstream", bareDir)
+	temp_repo.RunGit(t, dir, "remote", "add", "fork", t.TempDir())
+	temp_repo.RunGit(t, dir, "push", "upstream", "HEAD")
+
+	headSHA := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "HEAD"))
+	temp_repo.RunGit(t, bareDir, "update-ref", "refs/pull/1/head", headSHA)
+
+	stub := &stubSelector{}
+	cmd := &CheckoutPRCommand{cmdIO: cmdIO{UI: stub, Repo: git.Repo{Dir: dir}}}
+	cmd.Args.PR = "upstream/1"
+
+	require.NoError(t, cmd.Execute(nil))
+	assert.Equal(t, currentBranchIn(t, dir), "pr/upstream/1")
+	assert.Equal(t, len(stub.selectCalls), 0)
+}
+
+// A number the remote doesn't advertise is an error, not a silent picker.
+func TestCheckoutPRCommand_Execute_UnknownPRNumber(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+
+	bareDir := t.TempDir()
+	temp_repo.RunGit(t, bareDir, "init", "--bare")
+	temp_repo.RunGit(t, dir, "remote", "add", "origin", bareDir)
+	temp_repo.RunGit(t, dir, "push", "origin", "HEAD")
+
+	headSHA := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "HEAD"))
+	temp_repo.RunGit(t, bareDir, "update-ref", "refs/pull/1/head", headSHA)
+
+	cmd := &CheckoutPRCommand{cmdIO: cmdIO{UI: &stubSelector{}, Repo: git.Repo{Dir: dir}}}
+	cmd.Args.PR = "99"
+
+	err := cmd.Execute(nil)
+	assert.Error(t, err, assert.AnyError, "unknown PR number")
+	assert.ContainsString(t, err.Error(), "no pull request #99")
+}

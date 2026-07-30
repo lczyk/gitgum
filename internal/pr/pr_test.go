@@ -34,6 +34,37 @@ func TestParseBranchName(t *testing.T) {
 	}
 }
 
+func TestParseToken(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		token  string
+		remote string
+		number int
+		ok     bool
+	}{
+		{"42", "", 42, true},
+		{"canonical/42", "canonical", 42, true},
+		// the branch name gg prints pastes straight back
+		{"pr/canonical/42", "canonical", 42, true},
+		{"  canonical/42  ", "canonical", 42, true},
+		// "pr" is only a prefix when something remains to split; a remote
+		// really named "pr" still works
+		{"pr/42", "pr", 42, true},
+		{"", "", 0, false},
+		{"canonical", "", 0, false},
+		{"canonical/abc", "", 0, false},
+		{"canonical/0", "", 0, false},
+		{"canonical/-3", "", 0, false},
+	}
+	for _, c := range cases {
+		remote, number, ok := ParseToken(c.token)
+		if ok != c.ok || remote != c.remote || number != c.number {
+			t.Errorf("ParseToken(%q) = (%q, %d, %v), want (%q, %d, %v)",
+				c.token, remote, number, ok, c.remote, c.number, c.ok)
+		}
+	}
+}
+
 func TestReadMeta_FromConfig(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)

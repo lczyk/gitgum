@@ -3,19 +3,37 @@ package commands
 import (
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/lczyk/gitgum/internal/pr"
 )
 
-// CheckoutPRCommand is the interactive dispatcher: pick a remote, pick a PR,
-// check it out. The pure PR-ref listing/parsing it drives lives in pr.go.
+// CheckoutPRCommand checks a pull request out as a local branch. Naming one
+// ("canonical/42") goes straight to it; with no argument it is the interactive
+// dispatcher -- pick a remote, pick a PR. Either way the remote is listed
+// first, because a PR number only identifies a PR alongside the remote it
+// belongs to: 42 on a fork and 42 upstream are different pull requests.
 type CheckoutPRCommand struct {
 	cmdIO
+	Args struct {
+		PR string `positional-arg-name:"[REMOTE/]NUMBER"`
+	} `positional-args:"yes"`
 }
 
 func (c *CheckoutPRCommand) Execute(args []string) error {
 	if err := c.repo().CheckInRepo(); err != nil {
 		return err
+	}
+
+	var wantRemote string
+	var wantNumber int
+	if token := strings.TrimSpace(c.Args.PR); token != "" {
+		var ok bool
+		if wantRemote, wantNumber, ok = pr.ParseToken(token); !ok {
+			return fmt.Errorf("%q is not a pull request "+
+				"(expected NUMBER, REMOTE/NUMBER, or pr/REMOTE/NUMBER)", token)
+		}
 	}
 
 	remotes, err := c.repo().GetRemotes()
@@ -29,9 +47,15 @@ func (c *CheckoutPRCommand) Execute(args []string) error {
 	}
 
 	var remote string
-	if len(remotes) == 1 {
+	switch {
+	case wantRemote != "":
+		if !slices.Contains(remotes, wantRemote) {
+			return fmt.Errorf("no remote named %q (have: %s)", wantRemote, strings.Join(remotes, ", "))
+		}
+		remote = wantRemote
+	case len(remotes) == 1:
 		remote = remotes[0] // only one remote: no point asking.
-	} else {
+	default:
 		remote, err = c.sel().Select("Select a remote to fetch PR from", remotes)
 		if err != nil {
 			fmt.Fprintln(c.err(), "No remote selected. Aborting checkout-pr.")
@@ -47,6 +71,17 @@ func (c *CheckoutPRCommand) Execute(args []string) error {
 	if len(prRefs) == 0 {
 		fmt.Fprintln(c.err(), "No pull requests found on remote. Aborting checkout-pr.")
 		return fmt.Errorf("no pull requests found")
+	}
+
+	// A named PR still goes through the listing: it is what says whether the PR
+	// exists and which of head/merge the remote advertises for it.
+	if wantNumber != 0 {
+		for _, ref := range prRefs {
+			if ref.Number == wantNumber {
+				return c.checkoutPR(remote, ref.Number, ref.Type)
+			}
+		}
+		return fmt.Errorf("remote %q has no pull request #%d", remote, wantNumber)
 	}
 
 	prOptions := formatPROptions(prRefs)

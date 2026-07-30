@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/strutil"
@@ -127,6 +128,30 @@ func ParseBranchName(branch string) (remote string, number int, ok bool) {
 	}
 	number, _ = strconv.Atoi(m[2]) // regex guarantees \d+
 	return m[1], number, true
+}
+
+// ParseToken reads the spellings gg accepts for naming a PR on the command
+// line: "42", "canonical/42", or "pr/canonical/42" -- the last being the branch
+// name gg itself prints, so what you can see always pastes back. remote is ""
+// when the token named only a number, leaving the caller to resolve it.
+//
+// The leading "pr/" is only stripped when what remains still has a separator,
+// so a remote genuinely named "pr" survives: "pr/42" is PR 42 on remote "pr",
+// while "pr/canonical/42" is PR 42 on remote "canonical".
+func ParseToken(s string) (remote string, number int, ok bool) {
+	s = strings.TrimSpace(s)
+	if rest, cut := strings.CutPrefix(s, "pr/"); cut && strings.Contains(rest, "/") {
+		s = rest
+	}
+	remote, numStr := "", s
+	if i := strings.LastIndex(s, "/"); i >= 0 {
+		remote, numStr = s[:i], s[i+1:]
+	}
+	n, err := strconv.Atoi(numStr)
+	if err != nil || n <= 0 {
+		return "", 0, false
+	}
+	return remote, n, true
 }
 
 // FetchRef returns the git ref this PR is fetched from on forge f, e.g.
