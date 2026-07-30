@@ -31,6 +31,7 @@ func TestBuildClonePlan(t *testing.T) {
 	tests := []struct {
 		name       string
 		raw        string // the spelling the user typed
+		branch     string // branch the pre-flight resolved, if any
 		dir        string
 		depth      int
 		wantArgs   []string
@@ -122,7 +123,7 @@ func TestBuildClonePlan(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			parsed := mustParse(t, tc.raw)
-			p := buildClonePlan(parsed.Ref, parsed.Route, tc.raw, tc.dir, tc.depth)
+			p := buildClonePlan(parsed.Ref, parsed.Route, tc.branch, tc.raw, tc.dir, tc.depth)
 			assert.EqualArrays(t, p.args, tc.wantArgs)
 			assert.Equal(t, p.remote, tc.wantRemote)
 			assert.Equal(t, p.dir, tc.wantDir)
@@ -146,6 +147,122 @@ func TestPlainClonePlan(t *testing.T) {
 	assert.Equal(t, p.dir, "dest")
 }
 
+func TestLongestBranchMatch(t *testing.T) {
+	t.Parallel()
+	heads := []string{"main", "feat", "feat/x", "release/1.2"}
+	cases := map[string]string{
+		"main":              "main",
+		"feat":              "feat",
+		"feat/x":            "feat/x",      // exact beats the shorter "feat"
+		"feat/x/a/b.go":     "feat/x",      // a path under the branch
+		"feat/other/a.go":   "feat",        // only the shorter branch exists
+		"release/1.2/a.txt": "release/1.2", // dots and digits are unremarkable
+	}
+	for tail, want := range cases {
+		got, ok := longestBranchMatch(heads, tail)
+		if !ok || got != want {
+			t.Errorf("longestBranchMatch(%q) = (%q, %v), want (%q, true)", tail, got, ok, want)
+		}
+	}
+	if _, ok := longestBranchMatch(heads, "nope/x"); ok {
+		t.Errorf("longestBranchMatch(%q) matched, want no match", "nope/x")
+	}
+}
+
+func TestClonePreflight(t *testing.T) {
+	t.Parallel()
+
+	const refs = "aaa\trefs/heads/main\n" +
+		"bbb\trefs/heads/feat/x\n" +
+		"ccc\trefs/pull/42/head\n" +
+		"ddd\trefs/pull/9/merge\n"
+
+	// preflight resolves route against a canned ref listing, so no network.
+	preflight := func(t *testing.T, rawURL string) (routePlan, error) {
+		t.Helper()
+		parsed := mustParse(t, rawURL)
+		c := &CloneCommand{lsRemote: func(string) (string, error) { return refs, nil }}
+		return c.preflight(parsed.Ref, parsed.Route)
+	}
+
+	t.Run("existing PR resolves with its advertised type", func(t *testing.T) {
+		t.Parallel()
+		got, err := preflight(t, "https://github.com/o/r/pull/42")
+		require.NoError(t, err, "preflight")
+		assert.Equal(t, got.pr.Number, 42)
+		assert.Equal(t, got.pr.Type, "head")
+	})
+
+	t.Run("merge-only PR keeps that type", func(t *testing.T) {
+		t.Parallel()
+		got, err := preflight(t, "https://github.com/o/r/pull/9")
+		require.NoError(t, err, "preflight")
+		assert.Equal(t, got.pr.Type, "merge")
+	})
+
+	t.Run("missing PR fails before any transfer", func(t *testing.T) {
+		t.Parallel()
+		_, err := preflight(t, "https://github.com/o/r/pull/999")
+		assert.Error(t, err, assert.AnyError, "preflight")
+		assert.ContainsString(t, err.Error(), "no pull request #999")
+	})
+
+	t.Run("slashed branch resolves against real refs", func(t *testing.T) {
+		t.Parallel()
+		got, err := preflight(t, "https://github.com/o/r/tree/feat/x")
+		require.NoError(t, err, "preflight")
+		assert.Equal(t, got.branch, "feat/x")
+	})
+
+	t.Run("blob url drops the file path", func(t *testing.T) {
+		t.Parallel()
+		got, err := preflight(t, "https://github.com/o/r/blob/feat/x/a/b.go")
+		require.NoError(t, err, "preflight")
+		assert.Equal(t, got.branch, "feat/x")
+	})
+
+	t.Run("unknown branch fails before any transfer", func(t *testing.T) {
+		t.Parallel()
+		_, err := preflight(t, "https://github.com/o/r/tree/nope")
+		assert.Error(t, err, assert.AnyError, "preflight")
+		assert.ContainsString(t, err.Error(), "no branch matching")
+	})
+
+	t.Run("commit needs no listing", func(t *testing.T) {
+		t.Parallel()
+		parsed := mustParse(t, "https://github.com/o/r/commit/abc1234")
+		c := &CloneCommand{lsRemote: func(string) (string, error) {
+			t.Error("commit route should not list refs")
+			return "", nil
+		}}
+		got, err := c.preflight(parsed.Ref, parsed.Route)
+		require.NoError(t, err, "preflight")
+		assert.Equal(t, got.commit, "abc1234")
+	})
+
+	t.Run("a route gg does not model is not acted on", func(t *testing.T) {
+		t.Parallel()
+		got, err := preflight(t, "https://github.com/o/r/issues/5")
+		require.NoError(t, err, "preflight")
+		assert.Equal(t, got, routePlan{})
+	})
+}
+
+// --depth and a commit url cannot both be honoured, and which way it fails is
+// unknowable until after the transfer -- so it is refused before one starts.
+func TestCloneRefusesDepthWithCommitURL(t *testing.T) {
+	t.Parallel()
+	c := &CloneCommand{Depth: 1, lsRemote: func(string) (string, error) {
+		t.Error("should refuse before listing refs")
+		return "", nil
+	}}
+	c.Args.URL = "https://github.com/o/r/commit/abc1234"
+
+	err := c.Execute(nil)
+	assert.Error(t, err, assert.AnyError, "execute")
+	assert.ContainsString(t, err.Error(), "--depth cannot be combined with a commit url")
+}
+
 func TestCheckExistingDest(t *testing.T) {
 	t.Parallel()
 
@@ -156,7 +273,7 @@ func TestCheckExistingDest(t *testing.T) {
 		var buf strings.Builder
 		c := &CloneCommand{cmdIO: cmdIO{Out: &buf, Err: &buf}}
 		c.Args.Dir = dir
-		done, err = c.checkExistingDest(mustRef(t, want))
+		done, err = c.checkExistingDest(mustRef(t, want), git.Route{})
 		return done, err, buf.String()
 	}
 

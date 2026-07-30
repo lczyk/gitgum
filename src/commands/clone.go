@@ -11,6 +11,7 @@ import (
 
 	"github.com/lczyk/gitgum/internal/doctor"
 	"github.com/lczyk/gitgum/internal/git"
+	"github.com/lczyk/gitgum/internal/pr"
 	"github.com/lczyk/gitgum/internal/ui"
 )
 
@@ -40,6 +41,23 @@ type CloneCommand struct {
 
 	// probe overrides the repo-existence check; nil uses the real network probe.
 	probe func(url string) bool
+	// lsRemote overrides the pre-flight ref listing; nil uses the real one.
+	lsRemote func(remote string) (string, error)
+}
+
+func (c *CloneCommand) refs() func(string) (string, error) {
+	if c.lsRemote != nil {
+		return c.lsRemote
+	}
+	return c.repo().LsRemote
+}
+
+// routePlan is what the pre-flight made of a url's route: at most one of these
+// is set, and each drives a different part of the clone.
+type routePlan struct {
+	branch string // RouteTree: resolved branch, cloned directly via --branch
+	pr     pr.Ref // RoutePR: checked out after the clone
+	commit string // RouteCommit: detached at after the clone
 }
 
 // clonePlan is the doctor-aware translation of a clone request into the
@@ -53,15 +71,22 @@ type clonePlan struct {
 
 func (c *CloneCommand) Execute(args []string) error {
 	parsed, ok := git.ParseForgeURL(c.Args.URL)
-	ref := parsed.Ref
+	ref, route := parsed.Ref, parsed.Route
 
 	if ok {
-		if done, err := c.checkExistingDest(ref); done {
+		// A commit outside a shallow window cannot be checked out, and whether
+		// it is inside one is unknowable until after the clone -- so refuse the
+		// pair rather than transfer a repo that cannot satisfy the request.
+		if route.Kind == git.RouteCommit && c.Depth > 0 {
+			return fmt.Errorf("--depth cannot be combined with a commit url: %s may fall outside the shallow history", route.Ref)
+		}
+		if done, err := c.checkExistingDest(ref, route); done {
 			return err
 		}
 	}
 
 	var plan clonePlan
+	var rp routePlan
 	switch {
 	case ok && ref.Shorthand():
 		resolved, err := c.resolveShorthand(ref)
@@ -70,10 +95,17 @@ func (c *CloneCommand) Execute(args []string) error {
 		}
 		fmt.Fprintf(c.err(), "resolved %s -> %s\n",
 			paint(ansiBoldCyan, ref.Path), resolved.URL())
-		plan = buildClonePlan(resolved, parsed.Route, c.Args.URL, c.Args.Dir, c.Depth)
+		ref = resolved
+		fallthrough
 
 	case ok && ref.Forge != git.ForgeUnknown:
-		plan = buildClonePlan(ref, parsed.Route, c.Args.URL, c.Args.Dir, c.Depth)
+		var err error
+		// Everything the route needs is settled before a single object moves,
+		// so a request that cannot be satisfied costs nothing.
+		if rp, err = c.preflight(ref, route); err != nil {
+			return err
+		}
+		plan = buildClonePlan(ref, route, rp.branch, c.Args.URL, c.Args.Dir, c.Depth)
 
 	default:
 		note := ""
@@ -111,7 +143,116 @@ func (c *CloneCommand) Execute(args []string) error {
 		fmt.Fprintf(c.out(), "\nCloned into %s (remote \"%s\").\n",
 			paint(ansiBoldGreen, plan.dir), paint(ansiBoldCyan, plan.remote))
 	}
+
+	return c.applyRoute(plan, rp)
+}
+
+// applyRoute finishes what the url asked for once the repo is on disk. A
+// branch route is already done -- the clone landed on it. Failure here leaves
+// the repo exactly as a plain clone would have: the pre-flight has already
+// ruled out the likely causes, so anything reaching this point is unexpected
+// and shouldn't leave a half-made PR branch behind.
+func (c *CloneCommand) applyRoute(plan clonePlan, rp routePlan) error {
+	cloned := git.Repo{Dir: plan.dir}
+	switch {
+	case rp.pr.Number != 0:
+		landed, _ := cloned.GetCurrentBranch() // the branch a plain clone leaves you on
+		sub := &CheckoutPRCommand{cmdIO: cmdIO{Out: c.Out, Err: c.Err, UI: c.UI, Repo: cloned}}
+		if err := sub.checkoutPR(plan.remote, rp.pr.Number, rp.pr.Type); err != nil {
+			undoPRCheckout(cloned, landed, pr.BranchName(plan.remote, rp.pr.Number))
+			return fmt.Errorf("cloned into %s, but checking out pull request #%d failed: %w",
+				plan.dir, rp.pr.Number, err)
+		}
+	case rp.commit != "":
+		if err := cloned.Checkout(rp.commit); err != nil {
+			return fmt.Errorf("cloned into %s, but checking out commit %s failed: %w",
+				plan.dir, rp.commit, err)
+		}
+		fmt.Fprintf(c.out(), "Detached at %s. To keep work from here, cut a branch with %s.\n",
+			paint(ansiBoldCyan, rp.commit), paint(ansiBoldCyan, "gg branch"))
+	}
 	return nil
+}
+
+// undoPRCheckout returns a freshly cloned repo to the state a plain clone would
+// have left, after the PR checkout failed part-way. Best-effort: the caller is
+// already reporting a failure, and a repo that resists tidying is not a second
+// error worth stacking on the first.
+func undoPRCheckout(r git.Repo, landed, branch string) {
+	if landed != "" {
+		_ = r.Checkout(landed)
+	}
+	if branch != "" && r.BranchExists(branch) {
+		_, _, _ = r.RunWrite("branch", "-D", branch)
+	}
+}
+
+// preflight resolves what the route points at before anything is transferred,
+// using one ref listing. A PR must actually exist; a branch ref is matched
+// against the remote's real refs, which is the only way to tell where a
+// slash-containing branch name ends and a file path under it begins.
+func (c *CloneCommand) preflight(ref git.RepoRef, route git.Route) (routePlan, error) {
+	switch route.Kind {
+	case git.RouteCommit:
+		// shas are not advertised, so there is nothing to check against
+		return routePlan{commit: route.Ref}, nil
+	case git.RoutePR, git.RouteTree:
+	default:
+		return routePlan{}, nil
+	}
+
+	out, err := c.refs()(ref.URL())
+	if err != nil {
+		return routePlan{}, fmt.Errorf("listing refs on %s: %w", ref.URL(), err)
+	}
+
+	if route.Kind == git.RoutePR {
+		for _, candidate := range pr.ParseRefs(ref.Forge, out) {
+			if candidate.Number == route.Number {
+				return routePlan{pr: candidate}, nil
+			}
+		}
+		return routePlan{}, fmt.Errorf("%s has no pull request #%d", ref.Path, route.Number)
+	}
+
+	branch, ok := longestBranchMatch(remoteHeads(out), route.Ref)
+	if !ok {
+		return routePlan{}, fmt.Errorf("%s has no branch matching %q", ref.Path, route.Ref)
+	}
+	return routePlan{branch: branch}, nil
+}
+
+// remoteHeads pulls the branch names out of `git ls-remote` output.
+func remoteHeads(lsRemoteOutput string) []string {
+	var heads []string
+	for _, line := range strings.Split(lsRemoteOutput, "\n") {
+		_, ref, ok := strings.Cut(strings.TrimSpace(line), "\t")
+		if !ok {
+			continue
+		}
+		if name, ok := strings.CutPrefix(ref, "refs/heads/"); ok && name != "" {
+			heads = append(heads, name)
+		}
+	}
+	return heads
+}
+
+// longestBranchMatch picks the branch a "/tree/<tail>" url meant. The tail is
+// the branch plus, possibly, a path inside it -- and since branch names contain
+// slashes too ("feat/x"), only the remote's actual refs can say where one ends.
+// The longest match wins, which makes an exact branch name beat a shorter
+// branch that merely prefixes it.
+func longestBranchMatch(heads []string, tail string) (string, bool) {
+	best := ""
+	for _, head := range heads {
+		if tail != head && !strings.HasPrefix(tail, head+"/") {
+			continue
+		}
+		if len(head) > len(best) {
+			best = head
+		}
+	}
+	return best, best != ""
 }
 
 // checkExistingDest short-circuits the clone when the destination dir already
@@ -121,7 +262,12 @@ func (c *CloneCommand) Execute(args []string) error {
 // (done, nil); any other occupant -- a plain dir, a nested path inside some
 // other repo, a clone of something else -- is done with an error. An absent or
 // empty dir is not done: git clone handles both.
-func (c *CloneCommand) checkExistingDest(want git.RepoRef) (done bool, err error) {
+//
+// A PR url against a repo that is already here is the one case worth acting
+// on rather than reporting: the number is the part the user actually typed.
+// Checking it out moves an existing repo off whatever branch it was on, so it
+// asks first.
+func (c *CloneCommand) checkExistingDest(want git.RepoRef, route git.Route) (done bool, err error) {
 	dir := c.Args.Dir
 	if dir == "" {
 		dir = want.Repo()
@@ -152,7 +298,10 @@ func (c *CloneCommand) checkExistingDest(want git.RepoRef) (done bool, err error
 			fmt.Fprintf(c.out(), "%s is already cloned into %s (remote \"%s\").\n",
 				paint(ansiBoldCyan, want.Path),
 				paint(ansiBoldGreen, dir), paint(ansiBoldCyan, name))
-			return true, nil
+			if route.Kind != git.RoutePR {
+				return true, nil
+			}
+			return true, c.checkoutPRInExisting(dir, name, route.Number)
 		}
 		others = append(others, refLabel(rref))
 	}
@@ -162,6 +311,30 @@ func (c *CloneCommand) checkExistingDest(want git.RepoRef) (done bool, err error
 	}
 	return true, fmt.Errorf("destination %q already exists and is a git repository, but none of its remotes point at %s",
 		dir, refLabel(want))
+}
+
+// checkoutPRInExisting offers to check a PR out in the repo that is already at
+// the destination. Declining is not a failure -- the repo is there, which was
+// the other half of what the url asked for.
+func (c *CloneCommand) checkoutPRInExisting(dir, remote string, number int) error {
+	confirmed, err := c.sel().Confirm(
+		fmt.Sprintf("Check pull request #%d out there?", number), false)
+	if err != nil {
+		if errors.Is(err, ui.ErrCancelled) {
+			return nil
+		}
+		return err
+	}
+	if !confirmed {
+		fmt.Fprintf(c.out(), "Left alone. Run %s in there when you want it.\n",
+			paint(ansiBoldCyan, fmt.Sprintf("gg checkout-pr %s/%d", remote, number)))
+		return nil
+	}
+
+	existing := git.Repo{Dir: dir}
+	sub := &CheckoutPRCommand{cmdIO: cmdIO{Out: c.Out, Err: c.Err, UI: c.UI, Repo: existing}}
+	sub.Args.PR = fmt.Sprintf("%s/%d", remote, number)
+	return sub.Execute(nil)
 }
 
 // refLabel renders a ref for messages: host-qualified when a host is known, so
@@ -257,7 +430,7 @@ func resolveShorthand(sel ui.Selector, probe func(string) bool, ref git.RepoRef)
 // isn't silently downgraded. A url carrying a route is reconstructed too --
 // what the user pasted addresses a page, not a repo. The remote is named after
 // the user either way.
-func buildClonePlan(ref git.RepoRef, route git.Route, raw, dir string, depth int) clonePlan {
+func buildClonePlan(ref git.RepoRef, route git.Route, branch, raw, dir string, depth int) clonePlan {
 	url := raw
 	if isBareSpelling(raw) || route.Kind != git.RouteNone {
 		url = ref.URL()
@@ -273,6 +446,11 @@ func buildClonePlan(ref git.RepoRef, route git.Route, raw, dir string, depth int
 	}
 
 	args := []string{"clone", "-o", ref.Owner()}
+	if branch != "" {
+		// land on the branch directly rather than checking out the default
+		// first and moving afterwards
+		args = append(args, "--branch", branch)
+	}
 	args = appendDepth(args, depth)
 	args = append(args, url, dir)
 	return clonePlan{args: args, remote: ref.Owner(), dir: dir, note: note}
