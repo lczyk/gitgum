@@ -144,7 +144,7 @@ func (r Repo) GetRemotes() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return strutil.SplitLines(stdout), nil
+	return strutil.SplitTrimmedLines(stdout), nil
 }
 
 // GetRemoteBranches returns branches for a specific remote.

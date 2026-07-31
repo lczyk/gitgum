@@ -7,7 +7,7 @@ import (
 	"github.com/lczyk/gitgum/internal/strutil"
 )
 
-func TestSplitLines(t *testing.T) {
+func TestSplitTrimmedLines(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
@@ -21,7 +21,7 @@ func TestSplitLines(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := strutil.SplitLines(tc.input)
+			got := strutil.SplitTrimmedLines(tc.input)
 			assert.EqualArrays(t, got, tc.want)
 		})
 	}

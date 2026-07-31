@@ -84,7 +84,7 @@ func ParseRefs(f git.Forge, lsRemoteOutput string) []Ref {
 	byNumber := make(map[int]Ref)
 	refLine := refLineFor(f)
 
-	for _, line := range strutil.SplitLines(lsRemoteOutput) {
+	for _, line := range strutil.SplitTrimmedLines(lsRemoteOutput) {
 		matches := refLine.FindStringSubmatch(line)
 		if len(matches) != 3 {
 			continue
