@@ -24,9 +24,8 @@ func fixtureLen(n int) string {
 		"user/alice/issue-00123-tweak", "hotfix/crash-loop-fix",
 		"main", "develop", "refactor/small-thing",
 	}
-	// Step the escape per chunk, not per byte written: keying off b.Len()
-	// happened to land on the same escape every time, so the whole fixture
-	// carried two styles and nothing that measures style changes saw any.
+	// Index by chunk, not by b.Len(): byte-length stepping aliases onto one
+	// escape, leaving a fixture with no style changes to measure.
 	for i := 0; b.Len() < n; i++ {
 		b.WriteString(escapes[i%len(escapes)])
 		b.WriteString(chunks[i%len(chunks)])
