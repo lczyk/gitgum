@@ -169,6 +169,46 @@ func TestCleanCommand_Execute(t *testing.T) {
 // to be concatenated blind, so the path was printed twice and the "(N)" header
 // overstated how much was at risk in the one prompt the user gets before an
 // irreversible clean.
+// An untracked directory used to appear as one entry, so the count said 1
+// where three files were about to be destroyed.
+func TestCleanCommand_UntrackedDirectoryCountsItsFiles(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "build", "deep"), 0o755), "mkdir")
+	for _, f := range []string{"build/a.o", "build/deep/b.o", "build/deep/c.o"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644), "write "+f)
+	}
+
+	var out bytes.Buffer
+	cmd := &CleanCommand{cmdIO: cmdIO{Out: &out, Repo: git.Repo{Dir: dir}}, Yes: true}
+	require.NoError(t, cmd.Execute(nil))
+
+	assert.ContainsString(t, out.String(), "Files to be discarded (3):")
+	assert.ContainsString(t, out.String(), "build/deep/b.o")
+}
+
+// Ignored files are always scanned, so the listing can say they survive
+// instead of leaving it to be discovered afterwards.
+func TestCleanCommand_ReportsIgnoredFilesLeftAlone(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+
+	temp_repo.WriteFile(t, dir, ".gitignore", "junk_*\n")
+	temp_repo.RunGit(t, dir, "add", ".gitignore")
+	temp_repo.RunGit(t, dir, "commit", "-m", "chore: ignore junk")
+	temp_repo.WriteFile(t, dir, "junk_1", "x")
+	temp_repo.WriteFile(t, dir, "loose", "x")
+
+	var out bytes.Buffer
+	cmd := &CleanCommand{cmdIO: cmdIO{Out: &out, Repo: git.Repo{Dir: dir}}, Yes: true}
+	require.NoError(t, cmd.Execute(nil))
+
+	assert.ContainsString(t, out.String(), "1 ignored file(s) left alone")
+	_, err := os.Stat(filepath.Join(dir, "junk_1"))
+	assert.NoError(t, err, "ignored file should survive")
+}
+
 func TestCleanCommand_StagedAndUnstagedFileListedOnce(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)

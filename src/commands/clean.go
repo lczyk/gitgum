@@ -2,15 +2,15 @@ package commands
 
 import (
 	"fmt"
-	"strings"
+	"io"
 
-	"github.com/lczyk/gitgum/internal/git"
-	"github.com/lczyk/gitgum/internal/strutil"
+	"github.com/lczyk/gitgum/internal/dirty"
 )
 
-const gitCleanDryRunPrefix = "Would remove "
-
-// CleanCommand handles discarding working tree changes and untracked files
+// CleanCommand handles discarding working tree changes and untracked files.
+// What counts as dirty, and what discarding it destroys, lives in
+// internal/dirty -- the stash prompt offers the same operation, and a rule
+// implemented twice is a rule that drifts.
 type CleanCommand struct {
 	cmdIO
 	Changes   *bool `long:"changes" description:"Discard staged and unstaged changes (default: true)"`
@@ -46,25 +46,18 @@ func (c *CleanCommand) Execute(args []string) error {
 		return nil
 	}
 
-	affectedFiles, err := getAffectedFiles(r, changes, untracked, ignored)
+	opts := dirty.Options{Tracked: changes, Untracked: untracked, Ignored: ignored}
+	plan, err := dirty.Scan(r)
 	if err != nil {
 		return err
 	}
 
-	if len(affectedFiles) == 0 {
+	if plan.Count(opts) == 0 {
 		fmt.Fprintln(c.out(), "Nothing to clean (working tree is clean)")
 		return nil
 	}
 
-	fmt.Fprintf(c.out(), "Files to be discarded (%d):\n", len(affectedFiles))
-	maxDisplay := 20
-	for i, file := range affectedFiles {
-		if i >= maxDisplay {
-			fmt.Fprintf(c.out(), "  ... and %d more files\n", len(affectedFiles)-maxDisplay)
-			break
-		}
-		fmt.Fprintf(c.out(), "  %s\n", file)
-	}
+	printPlan(c.out(), plan, opts)
 
 	if !c.Yes {
 		confirmed, err := c.sel().Confirm("Proceed with cleanup? This cannot be undone", false)
@@ -77,81 +70,44 @@ func (c *CleanCommand) Execute(args []string) error {
 		}
 	}
 
-	if changes {
-		fmt.Fprintln(c.out(), "Discarding changes...")
-		if _, stderr, err := r.RunWrite("reset", "--hard"); err != nil {
-			return fmt.Errorf("failed to reset changes: %w: %s", err, strings.TrimSpace(stderr))
-		}
-	}
-
-	if untracked {
-		fmt.Fprintln(c.out(), "Removing untracked files...")
-		if _, stderr, err := r.RunWrite(gitCleanArgs(false, ignored)...); err != nil {
-			return fmt.Errorf("failed to clean untracked files: %w: %s", err, strings.TrimSpace(stderr))
-		}
+	if err := plan.Discard(r, opts); err != nil {
+		return err
 	}
 
 	fmt.Fprintln(c.out(), "Clean complete")
 	return nil
 }
 
-// getAffectedFiles lists every path the cleanup would touch, first-seen order,
-// each path once. The unstaged and staged listings overlap whenever a file has
-// both kinds of change (porcelain `MM`), so they are deduped -- otherwise the
-// path is printed twice and the "(N)" header overcounts what is at risk.
-func getAffectedFiles(r git.Repo, changes, untracked, ignored bool) ([]string, error) {
-	var affectedFiles []string
-	seen := map[string]bool{}
-	add := func(paths []string) {
-		for _, p := range paths {
-			if seen[p] {
-				continue
+// maxDisplayPerGroup bounds each listed group. The count in the header is
+// always the true one -- it is the number that decides whether you say yes.
+const maxDisplayPerGroup = 20
+
+// printPlan lists what is about to be destroyed, one section per group. The
+// groups are kept apart because losing a tracked edit, an untracked file and
+// an ignored build artefact are different sizes of mistake, and a flat list
+// makes them look the same.
+func printPlan(out io.Writer, plan dirty.Plan, opts dirty.Options) {
+	fmt.Fprintf(out, "Files to be discarded (%d):\n", plan.Count(opts))
+	section := func(label string, paths []string, selected bool) {
+		if !selected || len(paths) == 0 {
+			return
+		}
+		fmt.Fprintf(out, "  %s (%d):\n", label, len(paths))
+		for i, file := range paths {
+			if i >= maxDisplayPerGroup {
+				fmt.Fprintf(out, "    ... and %d more\n", len(paths)-maxDisplayPerGroup)
+				break
 			}
-			seen[p] = true
-			affectedFiles = append(affectedFiles, p)
+			fmt.Fprintf(out, "    %s\n", file)
 		}
 	}
+	section("changes", plan.Tracked, opts.Tracked)
+	section("untracked", plan.Untracked, opts.Untracked)
+	section("ignored", plan.Ignored, opts.Ignored)
 
-	if changes {
-		stdout, _, err := r.Run("diff", "--name-only")
-		if err != nil {
-			return nil, fmt.Errorf("listing modified files: %w", err)
-		}
-		add(strutil.SplitLines(stdout))
-
-		stdout, _, err = r.Run("diff", "--cached", "--name-only")
-		if err != nil {
-			return nil, fmt.Errorf("listing staged files: %w", err)
-		}
-		add(strutil.SplitLines(stdout))
+	// Ignored files are always scanned, so their survival can be stated rather
+	// than left to be discovered.
+	if !opts.Ignored && len(plan.Ignored) > 0 {
+		fmt.Fprintf(out, "  (%d ignored file(s) left alone; --ignored includes them)\n", len(plan.Ignored))
 	}
-
-	if untracked {
-		stdout, _, err := r.Run(gitCleanArgs(true, ignored)...)
-		if err != nil {
-			return nil, fmt.Errorf("listing untracked files: %w", err)
-		}
-		var paths []string
-		for _, line := range strutil.SplitLines(stdout) {
-			if trimmed, ok := strings.CutPrefix(line, gitCleanDryRunPrefix); ok {
-				paths = append(paths, trimmed)
-			}
-		}
-		add(paths)
-	}
-
-	return affectedFiles, nil
-}
-
-// gitCleanArgs builds git clean args. dry-run appends -n; ignored adds -x.
-func gitCleanArgs(dryRun, ignored bool) []string {
-	flags := "-fd"
-	if dryRun {
-		flags += "n"
-	}
-	args := []string{"clean", flags}
-	if ignored {
-		args = append(args, "-x")
-	}
-	return args
 }
