@@ -54,20 +54,35 @@ func TestRegressionConfirmSnapshotBeatsResync(t *testing.T) {
 	assert.EqualArrays(t, []string{"bravo"}, res.Items)
 }
 
+// errInitFail is what initFailScreen refuses Init with.
+var errInitFail = errors.New("init boom")
+
+// initFailScreen stands in for a terminal the picker cannot take over. The
+// injected screen is what keeps the failure independent of the environment:
+// with a nil term the picker builds the real /dev/tty backend, which succeeds
+// whenever the suite runs from a terminal and parks the run on a live picker.
+type initFailScreen struct{}
+
+func (initFailScreen) Init() error                                                      { return errInitFail }
+func (initFailScreen) Fini()                                                            {}
+func (initFailScreen) Size() (int, int)                                                 { return 40, 10 }
+func (initFailScreen) Clear()                                                           {}
+func (initFailScreen) SetContent(x, y int, mainc rune, combc []rune, style tcell.Style) {}
+func (initFailScreen) ShowCursor(x, y int)                                              {}
+func (initFailScreen) Show()                                                            {}
+func (initFailScreen) Sync()                                                            {}
+func (initFailScreen) ChannelEvents(ch chan<- tcell.Event, quit <-chan struct{})        {}
+
 // When initialisation fails, find() must not leak the resync goroutine.
 // Regression: the goroutine was spawned before initFinder and blocked on a
 // channel that only closed on success, so an init error left it parked forever.
-// (initFinder fails deterministically here because the headless test env has no
-// tty for the real screen backend.)
 func TestRegressionNoGoroutineLeakOnInitFailure(t *testing.T) {
 	src := NewSliceSourceFrom([]string{"a", "b"}) // Versioned: would spawn resync
 	before := runtime.NumGoroutine()
 
-	f := &finder{} // nil term -> initFinder builds a real screen and fails
-	_, err := f.find(context.Background(), src, Opt{})
-	if err == nil {
-		t.Fatal("expected init failure with no tty, got nil")
-	}
+	f := &finder{}
+	_, err := f.find(context.Background(), src, Opt{Screen: initFailScreen{}})
+	assert.Error(t, err, errInitFail)
 
 	// No goroutine may outlive the failed init.
 	assert.Eventually(t, func() bool {
