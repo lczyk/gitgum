@@ -131,9 +131,15 @@ func leafItem(code, path string, ns *numstat) filetree.Item {
 	return item
 }
 
+// treeOpts is how gg draws a working-tree listing: chains folded, box drawing
+// dimmed, height bounded. Shared so the three commands that show one cannot
+// drift apart in how it looks.
+func treeOpts(maxLines int) filetree.Opts {
+	return filetree.Opts{Dim: dim, FoldChains: true, MaxLines: maxLines}
+}
+
 // statusItems decorates a scan. A rename becomes two entries, source and
-// destination, because a reset removes one and restores the other -- so both
-// are things the working tree currently holds.
+// destination.
 func statusItems(entries []git.Entry, stats map[string]numstat) []filetree.Item {
 	var out []filetree.Item
 	add := func(code, path string) {

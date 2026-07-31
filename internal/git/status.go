@@ -42,16 +42,6 @@ func (e Entry) Untracked() bool { return e.X == '?' }
 // Ignored reports whether .gitignore covers this path.
 func (e Entry) Ignored() bool { return e.X == '!' }
 
-// Staged reports whether the index differs from HEAD for this path.
-func (e Entry) Staged() bool { return known(e.X) }
-
-// Unstaged reports whether the working tree differs from the index.
-func (e Entry) Unstaged() bool { return known(e.Y) }
-
-// known distinguishes a real status character from the ones that mean "no
-// change on this side" (space) or "not a tracked file at all" (? and !).
-func known(c byte) bool { return c != ' ' && c != '?' && c != '!' }
-
 // StatusArgs builds the invocation for one scan. It is the only place flags
 // are chosen, so two callers asking for different scans cannot end up
 // disagreeing about what a scan means.

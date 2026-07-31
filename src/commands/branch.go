@@ -47,7 +47,7 @@ func (b *BranchCommand) Execute(args []string) error {
 	}
 	fmt.Fprintln(b.out(), statusLine)
 
-	cleanup, err := handleDirtyLines(&b.cmdIO, "branch", dirty)
+	cleanup, err := handleDirtyEntries(&b.cmdIO, "branch", dirty)
 	if err != nil {
 		return err
 	}

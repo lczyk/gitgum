@@ -80,24 +80,17 @@ func (c *CleanCommand) Execute(args []string) error {
 	return nil
 }
 
-// maxDiscardLines bounds the listing. Three groups capped at 20 apiece was the
-// old worst case, so nothing that used to be visible stops being -- and with
-// intermediate directories folded away, the same budget now covers more files
-// than it did.
+// maxDiscardLines keeps a repo with hundreds of dirty files from scrolling the
+// confirmation off screen. The count in the summary line stays exact either
+// way -- it is the number that decides whether you say yes.
 const maxDiscardLines = 60
 
 // printPlan lists what is about to be destroyed as one tree, each file marked
-// with the code it arrived with. The groups still differ in how surprising
-// their loss is -- a tracked edit, a file you created and a build artefact are
-// different sizes of mistake -- so the summary line names them; per-file, the
-// code says which is which.
+// with the code it arrived with. The summary line names the groups; per-file,
+// the code says which is which.
 func printPlan(out io.Writer, plan dirty.Plan, opts dirty.Options) {
 	fmt.Fprintf(out, "Files to be discarded (%d)%s\n", plan.Count(opts), planSummary(plan, opts))
-	filetree.Tree(out, planItems(plan, opts), filetree.Opts{
-		Dim:        dim,
-		FoldChains: true,
-		MaxLines:   maxDiscardLines,
-	})
+	filetree.Tree(out, planItems(plan, opts), treeOpts(maxDiscardLines))
 
 	// Ignored files are always scanned, so their survival can be stated rather
 	// than left to be discovered.

@@ -121,22 +121,19 @@ func TestParseStatus_MalformedIsAnError(t *testing.T) {
 
 func TestEntryPredicates(t *testing.T) {
 	cases := map[string]struct {
-		e                                    Entry
-		untracked, ignored, staged, unstaged bool
+		e                  Entry
+		untracked, ignored bool
 	}{
-		"unstaged edit": {e: Entry{X: ' ', Y: 'M'}, unstaged: true},
-		"staged edit":   {e: Entry{X: 'M', Y: ' '}, staged: true},
-		"both":          {e: Entry{X: 'M', Y: 'M'}, staged: true, unstaged: true},
+		"unstaged edit": {e: Entry{X: ' ', Y: 'M'}},
+		"staged edit":   {e: Entry{X: 'M', Y: ' '}},
+		"staged rename": {e: Entry{X: 'R', Y: ' '}},
 		"untracked":     {e: Entry{X: '?', Y: '?'}, untracked: true},
 		"ignored":       {e: Entry{X: '!', Y: '!'}, ignored: true},
-		"staged rename": {e: Entry{X: 'R', Y: ' '}, staged: true},
 	}
 	for name, tt := range cases {
 		t.Run(name, func(t *testing.T) {
 			assert.Equal(t, tt.e.Untracked(), tt.untracked)
 			assert.Equal(t, tt.e.Ignored(), tt.ignored)
-			assert.Equal(t, tt.e.Staged(), tt.staged)
-			assert.Equal(t, tt.e.Unstaged(), tt.unstaged)
 		})
 	}
 }
@@ -186,7 +183,8 @@ func TestRepoStatus_AgainstGit(t *testing.T) {
 			assert.That(t, e.Ignored(), "expected ignored")
 		}
 		if e.Path == "tracked.txt" {
-			assert.That(t, e.Unstaged() && !e.Staged(), "expected unstaged only")
+			assert.Equal(t, e.X, byte(' '))
+			assert.Equal(t, e.Y, byte('M'))
 		}
 	}
 }

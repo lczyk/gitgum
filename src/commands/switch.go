@@ -96,7 +96,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 	}
 	fmt.Fprintln(s.out(), statusLine)
 
-	cleanup, err := handleDirtyLines(&s.cmdIO, "switch", dirty)
+	cleanup, err := handleDirtyEntries(&s.cmdIO, "switch", dirty)
 	if err != nil {
 		return err
 	}

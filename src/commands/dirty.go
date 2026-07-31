@@ -39,23 +39,22 @@ func handleDirtyTree(c *cmdIO, label string) (cleanup func(), err error) {
 	if err != nil {
 		return func() {}, err
 	}
-	return handleDirtyLines(c, label, tracked)
+	return handleDirtyEntries(c, label, tracked)
 }
 
-// handleDirtyLines is handleDirtyTree with the working-tree scan already done --
-// tracked is DirtyTracked's output. Callers that fetch the status concurrently
-// with their other pre-picker reads (branch, switch) use this so the scan isn't
-// serialised behind them; everyone else goes through handleDirtyTree.
-func handleDirtyLines(c *cmdIO, label string, tracked []git.Entry) (cleanup func(), err error) {
+// handleDirtyEntries is handleDirtyTree with the working-tree scan already
+// done -- tracked is DirtyTracked's output. Callers that fetch the status
+// concurrently with their other pre-picker reads (branch, switch) use this so
+// the scan isn't serialised behind them; everyone else goes through
+// handleDirtyTree.
+func handleDirtyEntries(c *cmdIO, label string, tracked []git.Entry) (cleanup func(), err error) {
 	noop := func() {}
 	if len(tracked) == 0 {
 		return noop, nil
 	}
 
-	// The plan describes the discard option honestly. If it cannot be read,
-	// the option is simply not offered rather than offered with a number that
-	// might be wrong -- and the listing falls back to the lines that triggered
-	// the prompt, which is all there is to show.
+	// If the plan can't be read, the discard option is simply not offered
+	// rather than shown with a count that might be wrong.
 	plan, planErr := dirty.Scan(c.repo())
 	discardOpts := dirty.Options{Tracked: true, Untracked: true}
 
@@ -66,11 +65,7 @@ func handleDirtyLines(c *cmdIO, label string, tracked []git.Entry) (cleanup func
 		// triggered the prompt is all there is to show.
 		items := statusItems(tracked, nil)
 		fmt.Fprintf(c.out(), "Uncommitted changes (%d):\n", len(items))
-		filetree.Tree(c.out(), items, filetree.Opts{
-			Dim:        dim,
-			FoldChains: true,
-			MaxLines:   maxDirtyPromptLines,
-		})
+		filetree.Tree(c.out(), items, treeOpts(maxDirtyPromptLines))
 	}
 
 	options := []string{dirtyAbort, dirtyStashOption(label)}
@@ -107,24 +102,18 @@ func handleDirtyLines(c *cmdIO, label string, tracked []git.Entry) (cleanup func
 	}, nil
 }
 
-// maxDirtyPromptLines bounds the listing. The tracked half used to be printed
-// whole, so a rebase over three hundred files pushed the question off screen;
-// the count in the header stays exact either way.
+// maxDirtyPromptLines keeps a rebase touching hundreds of files from pushing
+// the question itself off screen. The count in the header stays exact either
+// way -- it is the number that decides whether you pick the discard row.
 const maxDirtyPromptLines = 40
 
 // printDirty lists the working tree ahead of the prompt: tracked changes and
 // untracked files in one tree, each marked with the code it arrived with.
-//
 // Untracked files are here because discarding removes them, not because they
-// blocked anything -- which is a distinction the discard row states, since
-// that is the line you are reading when you decide.
+// blocked anything -- a distinction the discard row states.
 func printDirty(out io.Writer, plan dirty.Plan, opts dirty.Options) {
 	fmt.Fprintf(out, "Uncommitted changes (%d)%s\n", plan.Count(opts), planSummary(plan, opts))
-	filetree.Tree(out, planItems(plan, opts), filetree.Opts{
-		Dim:        dim,
-		FoldChains: true,
-		MaxLines:   maxDirtyPromptLines,
-	})
+	filetree.Tree(out, planItems(plan, opts), treeOpts(maxDirtyPromptLines))
 }
 
 // dirtyStashOption is the stash row, shared so tests name the row rather than
