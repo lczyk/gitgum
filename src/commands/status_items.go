@@ -119,9 +119,11 @@ func colorCode(code string) string {
 // renderer since folding and quoting are both its to decide.
 func leafItem(code, path string, ns *numstat) filetree.Item {
 	item := filetree.Item{
-		Path:   path,
-		IsDir:  strings.HasSuffix(path, "/"),
-		Prefix: dim("[") + colorCode(code) + dim("]") + " ",
+		Path:  path,
+		IsDir: strings.HasSuffix(path, "/"),
+	}
+	if code != "" {
+		item.Prefix = dim("[") + colorCode(code) + dim("]") + " "
 	}
 	if ns != nil {
 		item.Suffix = " " + formatNumstat(*ns)

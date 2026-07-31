@@ -74,6 +74,21 @@ func TestGroup(t *testing.T) {
 	}
 }
 
+// Codes decorate, so they never gain or lose a path -- but a rename's halves
+// are told apart, since which half you are looking at is the interesting part.
+func TestGroupCodes(t *testing.T) {
+	t.Parallel()
+	got := group([]git.Entry{
+		entry('M', 'M', "both"),
+		{X: 'R', Y: ' ', Path: "new", RenamedFrom: "old"},
+		entry('?', '?', "loose"),
+		entry('!', '!', "junk"),
+	})
+	assert.EqualMaps(t, got.Codes, map[string]string{
+		"both": "MM", "new": "R>", "old": "R<", "loose": "??", "junk": "!!",
+	})
+}
+
 func TestPlanCount(t *testing.T) {
 	t.Parallel()
 	p := Plan{Tracked: []string{"a"}, Untracked: []string{"b", "c"}, Ignored: []string{"d", "e", "f"}}

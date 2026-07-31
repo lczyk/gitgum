@@ -36,6 +36,13 @@ type Plan struct {
 	Tracked   []string // staged or unstaged changes to tracked files
 	Untracked []string // files git does not know about, excluding ignored
 	Ignored   []string // files .gitignore covers, always listed, discarded only on request
+
+	// Codes is the porcelain code each path arrived with, for callers that
+	// show one. A rename's halves get R< and R> rather than the shared code,
+	// since which half you are looking at is the interesting part. Decoration
+	// only: nothing here decides what a discard destroys, and a path with no
+	// entry simply renders without a code.
+	Codes map[string]string
 }
 
 // Options selects which groups a discard destroys. Ignored implies Untracked:
@@ -91,27 +98,32 @@ func Scan(r Repo) (Plan, error) {
 // package does not recognise is one it would otherwise drop, and a plan that
 // lists less than the discard destroys is the failure it exists to prevent.
 func group(entries []git.Entry) Plan {
-	var p Plan
+	p := Plan{Codes: map[string]string{}}
 	seen := map[string]bool{}
-	add := func(dst *[]string, path string) {
+	add := func(dst *[]string, path, code string) {
 		if path == "" || seen[path] {
 			return
 		}
 		seen[path] = true
+		p.Codes[path] = code
 		*dst = append(*dst, path)
 	}
 	for _, e := range entries {
+		code := string(e.X) + string(e.Y)
 		switch {
 		case e.Untracked():
-			add(&p.Untracked, e.Path)
+			add(&p.Untracked, e.Path, code)
 		case e.Ignored():
-			add(&p.Ignored, e.Path)
+			add(&p.Ignored, e.Path, code)
+		case e.RenamedFrom != "":
+			// Both halves: a hard reset removes the destination and restores
+			// the source.
+			add(&p.Tracked, e.Path, "R>")
+			add(&p.Tracked, e.RenamedFrom, "R<")
 		default:
-			// Both halves of a rename: a hard reset removes the destination
-			// and restores the source. A file that is staged and unstaged both
-			// is one file at risk, which the dedup handles.
-			add(&p.Tracked, e.Path)
-			add(&p.Tracked, e.RenamedFrom)
+			// A file that is staged and unstaged both is one file at risk,
+			// which the dedup handles.
+			add(&p.Tracked, e.Path, code)
 		}
 	}
 	return p

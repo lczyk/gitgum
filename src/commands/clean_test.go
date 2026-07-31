@@ -9,6 +9,7 @@ import (
 
 	"github.com/lczyk/assert"
 	"github.com/lczyk/assert/require"
+	"github.com/lczyk/gitgum/internal/dirty"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
@@ -185,7 +186,60 @@ func TestCleanCommand_UntrackedDirectoryCountsItsFiles(t *testing.T) {
 	require.NoError(t, cmd.Execute(nil))
 
 	assert.ContainsString(t, out.String(), "Files to be discarded (3):")
-	assert.ContainsString(t, out.String(), "build/deep/b.o")
+	// The directory is named once and its files hang off it, so the count and
+	// the listing agree about how many things are at risk.
+	assert.ContainsString(t, out.String(), "build/")
+	assert.ContainsString(t, out.String(), "[??] b.o")
+	assert.ContainsString(t, out.String(), "[??] c.o")
+}
+
+func TestPrintPlan(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "")
+
+	plan := dirty.Plan{
+		Tracked:   []string{"spread.yaml"},
+		Untracked: []string{"a/b/c/one.pyc", "a/b/c/two.pyc"},
+		Ignored:   []string{"build/out.o"},
+		Codes: map[string]string{
+			"spread.yaml":   " M",
+			"a/b/c/one.pyc": "??",
+			"a/b/c/two.pyc": "??",
+			"build/out.o":   "!!",
+		},
+	}
+
+	t.Run("mixed groups are named in the summary", func(t *testing.T) {
+		var out strings.Builder
+		printPlan(&out, plan, dirty.Options{Tracked: true, Untracked: true})
+		assert.EqualLineByLine(t, out.String(),
+			"Files to be discarded (3): 1 change, 2 untracked\n"+
+				"a/b/c/\n"+
+				"├─ [??] one.pyc\n"+
+				"└─ [??] two.pyc\n"+
+				"[ M] spread.yaml\n"+
+				"  (1 ignored file(s) left alone; --ignored includes them)\n")
+	})
+
+	// "(2): 2 untracked" would repeat the count back at you.
+	t.Run("one group says nothing the count did not", func(t *testing.T) {
+		var out strings.Builder
+		printPlan(&out, dirty.Plan{Untracked: plan.Untracked, Codes: plan.Codes}, dirty.Options{Untracked: true})
+		assert.ContainsString(t, out.String(), "Files to be discarded (2):\n")
+	})
+
+	// Unselected groups are absent from the tree, not merely uncounted.
+	t.Run("ignored stays out until asked for", func(t *testing.T) {
+		var out strings.Builder
+		printPlan(&out, plan, dirty.Options{Tracked: true, Untracked: true, Ignored: true})
+		// Lone file in a directory of its own: the chain folds to one line.
+		assert.ContainsString(t, out.String(), "[!!] build/out.o")
+		assert.ContainsString(t, out.String(), "1 change, 2 untracked, 1 ignored")
+
+		var without strings.Builder
+		printPlan(&without, plan, dirty.Options{Tracked: true})
+		assert.Equal(t, strings.Contains(without.String(), "out.o"), false)
+	})
 }
 
 // Ignored files are always scanned, so the listing can say they survive

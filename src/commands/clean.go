@@ -3,8 +3,10 @@ package commands
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/lczyk/gitgum/internal/dirty"
+	"github.com/lczyk/gitgum/src/filetree"
 )
 
 // CleanCommand handles discarding working tree changes and untracked files.
@@ -78,36 +80,65 @@ func (c *CleanCommand) Execute(args []string) error {
 	return nil
 }
 
-// maxDisplayPerGroup bounds each listed group. The count in the header is
-// always the true one -- it is the number that decides whether you say yes.
-const maxDisplayPerGroup = 20
+// maxDiscardLines bounds the listing. Three groups capped at 20 apiece was the
+// old worst case, so nothing that used to be visible stops being -- and with
+// intermediate directories folded away, the same budget now covers more files
+// than it did.
+const maxDiscardLines = 60
 
-// printPlan lists what is about to be destroyed, one section per group. The
-// groups are kept apart because losing a tracked edit, an untracked file and
-// an ignored build artefact are different sizes of mistake, and a flat list
-// makes them look the same.
+// printPlan lists what is about to be destroyed as one tree, each file marked
+// with the code it arrived with. The groups still differ in how surprising
+// their loss is -- a tracked edit, a file you created and a build artefact are
+// different sizes of mistake -- so the summary line names them; per-file, the
+// code says which is which.
 func printPlan(out io.Writer, plan dirty.Plan, opts dirty.Options) {
-	fmt.Fprintf(out, "Files to be discarded (%d):\n", plan.Count(opts))
-	section := func(label string, paths []string, selected bool) {
-		if !selected || len(paths) == 0 {
+	fmt.Fprintf(out, "Files to be discarded (%d)%s\n", plan.Count(opts), planSummary(plan, opts))
+
+	var items []filetree.Item
+	group := func(paths []string, selected bool) {
+		if !selected {
 			return
 		}
-		fmt.Fprintf(out, "  %s (%d):\n", label, len(paths))
-		for i, file := range paths {
-			if i >= maxDisplayPerGroup {
-				fmt.Fprintf(out, "    ... and %d more\n", len(paths)-maxDisplayPerGroup)
-				break
-			}
-			fmt.Fprintf(out, "    %s\n", file)
+		for _, path := range paths {
+			items = append(items, leafItem(plan.Codes[path], path, nil))
 		}
 	}
-	section("changes", plan.Tracked, opts.Tracked)
-	section("untracked", plan.Untracked, opts.Untracked)
-	section("ignored", plan.Ignored, opts.Ignored)
+	group(plan.Tracked, opts.Tracked)
+	group(plan.Untracked, opts.Untracked)
+	group(plan.Ignored, opts.Ignored)
+	filetree.Tree(out, items, filetree.Opts{
+		Dim:        dim,
+		FoldChains: true,
+		MaxLines:   maxDiscardLines,
+	})
 
 	// Ignored files are always scanned, so their survival can be stated rather
 	// than left to be discovered.
 	if !opts.Ignored && len(plan.Ignored) > 0 {
 		fmt.Fprintf(out, "  (%d ignored file(s) left alone; --ignored includes them)\n", len(plan.Ignored))
 	}
+}
+
+// planSummary breaks the count down by group, and says nothing when there is
+// only one group to break it into -- "(3): 3 untracked" tells you nothing the
+// count didn't.
+func planSummary(plan dirty.Plan, opts dirty.Options) string {
+	var parts []string
+	if n := len(plan.Tracked); opts.Tracked && n > 0 {
+		noun := "changes"
+		if n == 1 {
+			noun = "change"
+		}
+		parts = append(parts, fmt.Sprintf("%d %s", n, noun))
+	}
+	if n := len(plan.Untracked); opts.Untracked && n > 0 {
+		parts = append(parts, fmt.Sprintf("%d untracked", n))
+	}
+	if n := len(plan.Ignored); opts.Ignored && n > 0 {
+		parts = append(parts, fmt.Sprintf("%d ignored", n))
+	}
+	if len(parts) < 2 {
+		return ":"
+	}
+	return ": " + strings.Join(parts, ", ")
 }
