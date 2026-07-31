@@ -6,6 +6,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/lczyk/assert"
 	"github.com/lczyk/assert/require"
+	"github.com/lczyk/gitgum/src/litescreen/ansi"
 )
 
 func TestParseAnsiItems_StripsAndStyles(t *testing.T) {
@@ -19,18 +20,16 @@ func TestParseAnsiItems_StripsAndStyles(t *testing.T) {
 	assert.EqualArrays(t, stripped, []string{"red", "plain", "bold"})
 	assert.Equal(t, len(styled), 3)
 
-	// First item: 3 runes, all red.
-	assert.Equal(t, len(styled[0]), 3)
-	fg, _, _ := styled[0][0].Style.Decompose()
+	// First item: 3 runes, all red, so one span carries the whole item.
+	assert.Equal(t, len(styled[0]), 1)
+	fg, _, _ := ansi.StyleAt(styled[0], 2, tcell.StyleDefault).Decompose()
 	assert.Equal(t, fg, tcell.PaletteColor(1))
 
 	// Second item: plain runes, default style.
-	assert.Equal(t, len(styled[1]), 5)
-	assert.Equal(t, styled[1][0].Style, tcell.StyleDefault)
+	assert.Equal(t, ansi.StyleAt(styled[1], 4, tcell.StyleDefault), tcell.StyleDefault)
 
 	// Third item: bold attr.
-	assert.Equal(t, len(styled[2]), 4)
-	_, _, attr := styled[2][0].Style.Decompose()
+	_, _, attr := ansi.StyleAt(styled[2], 3, tcell.StyleDefault).Decompose()
 	assert.That(t, attr&tcell.AttrBold != 0, "expected bold")
 }
 
@@ -51,7 +50,33 @@ func TestInitFinder_AnsiPopulatesStyledItems(t *testing.T) {
 
 	assert.EqualArrays(t, f.state.items, []string{"hello", "world"})
 	assert.Equal(t, len(f.state.itemsStyled), 2)
-	assert.Equal(t, len(f.state.itemsStyled[0]), 5) // "hello"
+	// "hello" is red through its last rune.
+	fg, _, _ := ansi.StyleAt(f.state.itemsStyled[0], 4, tcell.StyleDefault).Decompose()
+	assert.Equal(t, fg, tcell.PaletteColor(1))
+}
+
+// The drawing path reads colours out of the style spans, so an item that isn't
+// under the cursor (which overrides styling) renders in the colour its ANSI
+// asked for. Items start at column 2.
+func TestDraw_AnsiItemKeepsItsColour(t *testing.T) {
+	f, m := NewWithMockedTerminal()
+	defer m.Fini()
+	items := []string{"plain", "\x1b[31mred\x1b[0m"}
+	require.NoError(t, f.initFinder(items, Opt{Ansi: true}))
+	f._draw()
+
+	_, h := m.Size()
+	found := false
+	for y := range h {
+		text, style, _ := m.Get(2, y)
+		if text != "r" {
+			continue
+		}
+		found = true
+		fg, _, _ := style.Decompose()
+		assert.Equal(t, fg, tcell.PaletteColor(1))
+	}
+	assert.That(t, found, "expected a drawn row starting with the red item")
 }
 
 // initFinder without Opt.Ansi leaves itemsStyled nil and aliases input.

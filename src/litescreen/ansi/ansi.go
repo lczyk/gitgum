@@ -13,6 +13,7 @@ package ansi
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -35,6 +36,51 @@ func Parse(s string, base tcell.Style) []StyledRune {
 	}
 	walk(s, base, emit)
 	return out
+}
+
+// StyleSpan is a run of consecutive runes sharing one style. It covers rune
+// indices from Start up to the next span's Start, or to the end of the input
+// for the last span.
+type StyleSpan struct {
+	Start int
+	Style tcell.Style
+}
+
+// ParseStyles is Parse for callers that already hold the text and want only
+// its styling: one entry per style change rather than one per rune. tcell.Style
+// is 72 bytes, so a StyledRune spends 80 to carry 4 bytes of payload; on a
+// coloured list of any size that difference is most of what the caller ends up
+// holding. Indices line up with Strip's output, which walks the same way.
+func ParseStyles(s string, base tcell.Style) []StyleSpan {
+	if s == "" {
+		return nil
+	}
+	// A span needs a style change to open it and a change needs an escape to
+	// introduce it, so the escape count bounds the answer. Counting them up
+	// front is a cheap byte scan against the regrowth it saves on heavily
+	// coloured input.
+	out := make([]StyleSpan, 0, strings.Count(s, "\x1b")+1)
+	i := 0
+	walk(s, base, func(_ rune, st tcell.Style) {
+		if len(out) == 0 || out[len(out)-1].Style != st {
+			out = append(out, StyleSpan{Start: i, Style: st})
+		}
+		i++
+	})
+	if len(out) == 0 {
+		return nil // no runes: nothing to hand back, and nothing worth keeping
+	}
+	return out
+}
+
+// StyleAt returns the style covering rune index i. base covers anything ahead
+// of the first span, which is also what an empty spans slice means.
+func StyleAt(spans []StyleSpan, i int, base tcell.Style) tcell.Style {
+	if len(spans) == 0 || i < spans[0].Start {
+		return base
+	}
+	k := sort.Search(len(spans), func(k int) bool { return spans[k].Start > i })
+	return spans[k-1].Style
 }
 
 // WriteToScreen feeds runes from s into set, starting at (x0, y) and

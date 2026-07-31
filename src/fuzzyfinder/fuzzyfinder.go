@@ -48,10 +48,10 @@ type Result struct {
 }
 
 type state struct {
-	items       []string            // All item names (stripped of ansi when Opt.Ansi).
-	itemsLower  []string            // Lowercased view of items for matching's hot path.
-	itemsStyled [][]ansi.StyledRune // Per-item parsed runes; non-nil only when Opt.Ansi.
-	matched     []int               // Matched items against the input.
+	items       []string           // All item names (stripped of ansi when Opt.Ansi).
+	itemsLower  []string           // Lowercased view of items for matching's hot path.
+	itemsStyled [][]ansi.StyleSpan // Per-item style runs; non-nil only when Opt.Ansi.
+	matched     []int              // Matched items against the input.
 
 	// x is the current index of the prompt line.
 	x int
@@ -555,10 +555,11 @@ func (f *finder) _draw() {
 			}
 		}
 
-		var styled []ansi.StyledRune
+		var styled []ansi.StyleSpan
 		if f.state.itemsStyled != nil && m < len(f.state.itemsStyled) {
 			styled = f.state.itemsStyled[m]
 		}
+		plain := tcell.StyleDefault.Foreground(tcell.ColorDefault).Background(tcell.ColorDefault)
 
 		// Display-only items are drawn dimmed (a faint version of whatever
 		// colour the runes already carry). The cursor row keeps its own
@@ -567,10 +568,7 @@ func (f *finder) _draw() {
 
 		w := 2
 		for j, r := range itemRunes {
-			style := tcell.StyleDefault.Foreground(tcell.ColorDefault).Background(tcell.ColorDefault)
-			if styled != nil && j < len(styled) {
-				style = styled[j].Style
-			}
+			style := ansi.StyleAt(styled, j, plain)
 			hasHighlighted := highlightPositions[j]
 			if hasHighlighted {
 				style = tcell.StyleDefault.Foreground(tcell.ColorGreen).Background(tcell.ColorDefault)
@@ -1110,13 +1108,13 @@ func makeMatched(n int) []int {
 
 // lowerHaystack updates dst so dst[i] == strings.ToLower(items[i]) for all i.
 // parseAnsiItems converts raw ANSI-coloured input items into stripped
-// match-friendly strings + parallel styled-rune slices for drawing. Both
+// match-friendly strings + parallel style-run slices for drawing. Both
 // outputs are parallel-indexed with the input.
-func parseAnsiItems(items []string) ([]string, [][]ansi.StyledRune) {
+func parseAnsiItems(items []string) ([]string, [][]ansi.StyleSpan) {
 	stripped := make([]string, len(items))
-	styled := make([][]ansi.StyledRune, len(items))
+	styled := make([][]ansi.StyleSpan, len(items))
 	for i, raw := range items {
-		styled[i] = ansi.Parse(raw, tcell.StyleDefault)
+		styled[i] = ansi.ParseStyles(raw, tcell.StyleDefault)
 		stripped[i] = ansi.Strip(raw)
 	}
 	return stripped, styled

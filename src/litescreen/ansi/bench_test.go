@@ -24,11 +24,12 @@ func fixtureLen(n int) string {
 		"user/alice/issue-00123-tweak", "hotfix/crash-loop-fix",
 		"main", "develop", "refactor/small-thing",
 	}
-	for b.Len() < n {
-		esc := escapes[b.Len()%len(escapes)]
-		chunk := chunks[b.Len()%len(chunks)]
-		b.WriteString(esc)
-		b.WriteString(chunk)
+	// Step the escape per chunk, not per byte written: keying off b.Len()
+	// happened to land on the same escape every time, so the whole fixture
+	// carried two styles and nothing that measures style changes saw any.
+	for i := 0; b.Len() < n; i++ {
+		b.WriteString(escapes[i%len(escapes)])
+		b.WriteString(chunks[i%len(chunks)])
 	}
 	return b.String()[:min(n, b.Len())]
 }
@@ -42,6 +43,20 @@ func BenchmarkParse(b *testing.B) {
 			b.ResetTimer()
 			for b.Loop() {
 				_ = ansi.Parse(fixture, tcell.StyleDefault)
+			}
+		})
+	}
+}
+
+func BenchmarkParseStyles(b *testing.B) {
+	sizes := []int{128, 1024, 8192, 65536}
+	for _, n := range sizes {
+		fixture := fixtureLen(n)
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				_ = ansi.ParseStyles(fixture, tcell.StyleDefault)
 			}
 		})
 	}
