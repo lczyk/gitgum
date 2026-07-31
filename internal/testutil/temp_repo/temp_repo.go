@@ -98,6 +98,16 @@ func RunGit(t testing.TB, dir string, args ...string) string {
 	return string(out)
 }
 
+// RunGitAllowFail is RunGit for commands expected to exit non-zero -- a merge
+// that conflicts on purpose, say. Returns the combined output and the error.
+func RunGitAllowFail(t testing.TB, dir string, args ...string) (string, error) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
 // WriteFile writes content to dir/filename, failing the test on error.
 func WriteFile(t testing.TB, dir, filename, content string) {
 	t.Helper()

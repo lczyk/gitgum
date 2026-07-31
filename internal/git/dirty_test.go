@@ -138,3 +138,65 @@ func TestStashPopIndex_NoStash(t *testing.T) {
 	err := git.Repo{Dir: dir}.StashPopIndex()
 	assert.Error(t, err, assert.AnyError, "pop with empty stash list should error")
 }
+
+func TestInProgress_CleanRepo(t *testing.T) {
+	t.Parallel()
+	r := git.Repo{Dir: temp_repo.NewRepo(t)}
+	operation, yes := r.InProgress()
+	assert.That(t, !yes, "an ordinary checkout is not mid-operation")
+	assert.Equal(t, operation, "")
+}
+
+// Dirty but not mid-operation: having edits is exactly the state discarding is
+// for, so it must not be mistaken for one.
+func TestInProgress_DirtyButNotMidOperation(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.WriteFile(t, dir, "README.md", "changed\n")
+	_, yes := git.Repo{Dir: dir}.InProgress()
+	assert.That(t, !yes, "uncommitted changes alone are not an operation")
+}
+
+func TestInProgress_ConflictedMerge(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+
+	temp_repo.RunGit(t, dir, "checkout", "-b", "other")
+	temp_repo.WriteFile(t, dir, "README.md", "from other\n")
+	temp_repo.RunGit(t, dir, "add", "README.md")
+	temp_repo.RunGit(t, dir, "commit", "-m", "chore: other side")
+
+	temp_repo.RunGit(t, dir, "checkout", "main")
+	temp_repo.WriteFile(t, dir, "README.md", "from main\n")
+	temp_repo.RunGit(t, dir, "add", "README.md")
+	temp_repo.RunGit(t, dir, "commit", "-m", "chore: main side")
+
+	out, err := temp_repo.RunGitAllowFail(t, dir, "merge", "other")
+	require.That(t, err != nil, "the merge should have conflicted: %s", out)
+
+	operation, yes := git.Repo{Dir: dir}.InProgress()
+	require.That(t, yes, "a stopped merge should be detected")
+	assert.ContainsString(t, operation, "merge")
+}
+
+func TestInProgress_StoppedRebase(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+
+	temp_repo.RunGit(t, dir, "checkout", "-b", "other")
+	temp_repo.WriteFile(t, dir, "README.md", "from other\n")
+	temp_repo.RunGit(t, dir, "add", "README.md")
+	temp_repo.RunGit(t, dir, "commit", "-m", "chore: other side")
+
+	temp_repo.RunGit(t, dir, "checkout", "main")
+	temp_repo.WriteFile(t, dir, "README.md", "from main\n")
+	temp_repo.RunGit(t, dir, "add", "README.md")
+	temp_repo.RunGit(t, dir, "commit", "-m", "chore: main side")
+
+	out, err := temp_repo.RunGitAllowFail(t, dir, "rebase", "other")
+	require.That(t, err != nil, "the rebase should have conflicted: %s", out)
+
+	operation, yes := git.Repo{Dir: dir}.InProgress()
+	require.That(t, yes, "a stopped rebase should be detected")
+	assert.ContainsString(t, operation, "rebase")
+}
