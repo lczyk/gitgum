@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/lczyk/gitgum/internal/pr"
+	"github.com/lczyk/gitgum/internal/ui"
 )
 
 // CheckoutPRCommand checks a pull request out as a local branch. Naming one
@@ -42,8 +43,7 @@ func (c *CheckoutPRCommand) Execute(args []string) error {
 	}
 
 	if len(remotes) == 0 {
-		fmt.Fprintln(c.err(), "No remotes found. Aborting checkout-pr.")
-		return fmt.Errorf("no remotes")
+		return fmt.Errorf("no remotes configured; a pull request is fetched from one")
 	}
 
 	var remote string
@@ -58,7 +58,13 @@ func (c *CheckoutPRCommand) Execute(args []string) error {
 	default:
 		remote, err = c.sel().Select("Select a remote to fetch PR from", remotes)
 		if err != nil {
-			fmt.Fprintln(c.err(), "No remote selected. Aborting checkout-pr.")
+			// Only a cancel is "nothing selected"; a picker that actually
+			// failed gets its own error rather than a message implying the
+			// user backed out.
+			if errors.Is(err, ui.ErrCancelled) {
+				fmt.Fprintln(c.err(), "No remote selected. Aborting checkout-pr.")
+				return nil
+			}
 			return err
 		}
 	}
@@ -69,8 +75,7 @@ func (c *CheckoutPRCommand) Execute(args []string) error {
 	}
 
 	if len(prRefs) == 0 {
-		fmt.Fprintln(c.err(), "No pull requests found on remote. Aborting checkout-pr.")
-		return fmt.Errorf("no pull requests found")
+		return fmt.Errorf("remote %q advertises no pull requests", remote)
 	}
 
 	// A named PR still goes through the listing: it is what says whether the PR
@@ -88,7 +93,10 @@ func (c *CheckoutPRCommand) Execute(args []string) error {
 
 	selected, err := c.sel().Select("Select a pull request to checkout", prOptions)
 	if err != nil {
-		fmt.Fprintln(c.err(), "No PR selected. Aborting checkout-pr.")
+		if errors.Is(err, ui.ErrCancelled) {
+			fmt.Fprintln(c.err(), "No PR selected. Aborting checkout-pr.")
+			return nil
+		}
 		return err
 	}
 

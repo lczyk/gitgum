@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/pr"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
+	"github.com/lczyk/gitgum/internal/ui"
 )
 
 // End-to-end Execute test: a sole remote is used without prompting, stub
@@ -94,6 +96,54 @@ func TestCheckoutPRCommand_Execute_NamedPRSkipsPrompts(t *testing.T) {
 	require.NoError(t, cmd.Execute(nil))
 	assert.Equal(t, currentBranchIn(t, dir), "pr/upstream/1")
 	assert.Equal(t, len(stub.selectCalls), 0)
+}
+
+// Backing out of a picker is a choice, not a failure: one line, exit 0, the
+// same as branch, switch and delete.
+func TestCheckoutPRCommand_Execute_CancelIsNotAnError(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+
+	bareDir := t.TempDir()
+	temp_repo.RunGit(t, bareDir, "init", "--bare")
+	temp_repo.RunGit(t, dir, "remote", "add", "origin", bareDir)
+	temp_repo.RunGit(t, dir, "push", "origin", "HEAD")
+
+	headSHA := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "HEAD"))
+	temp_repo.RunGit(t, bareDir, "update-ref", "refs/pull/1/head", headSHA)
+
+	var errBuf strings.Builder
+	stub := &stubSelector{selectErrs: []error{ui.ErrCancelled}}
+	cmd := &CheckoutPRCommand{cmdIO: cmdIO{UI: stub, Err: &errBuf, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute(nil), "cancelling should not be an error")
+	assert.ContainsString(t, errBuf.String(), "No PR selected")
+	// still on the branch we started on
+	assert.Equal(t, currentBranchIn(t, dir), "main")
+}
+
+// A picker that genuinely broke must not be reported as "you didn't select".
+func TestCheckoutPRCommand_Execute_PickerFailureIsAnError(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+
+	bareDir := t.TempDir()
+	temp_repo.RunGit(t, bareDir, "init", "--bare")
+	temp_repo.RunGit(t, dir, "remote", "add", "origin", bareDir)
+	temp_repo.RunGit(t, dir, "push", "origin", "HEAD")
+
+	headSHA := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "HEAD"))
+	temp_repo.RunGit(t, bareDir, "update-ref", "refs/pull/1/head", headSHA)
+
+	var errBuf strings.Builder
+	stub := &stubSelector{selectErrs: []error{errors.New("tty exploded")}}
+	cmd := &CheckoutPRCommand{cmdIO: cmdIO{UI: stub, Err: &errBuf, Repo: git.Repo{Dir: dir}}}
+
+	err := cmd.Execute(nil)
+	assert.Error(t, err, assert.AnyError, "picker failure")
+	assert.ContainsString(t, err.Error(), "tty exploded")
+	assert.That(t, !strings.Contains(errBuf.String(), "No PR selected"),
+		"a broken picker should not claim the user declined")
 }
 
 // A number the remote doesn't advertise is an error, not a silent picker.
