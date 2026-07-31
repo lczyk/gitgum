@@ -284,7 +284,7 @@ func (p *PushCommand) reconcileDiverged(currentBranch, upstream string) error {
 		if !confirmed {
 			return nil
 		}
-		cleanup, err := handleDirtyTree(&p.cmdIO, "pull")
+		cleanup, err := handleDirtyTree(&p.cmdIO, "push")
 		if err != nil {
 			if errors.Is(err, errDirtyTreeAborted) {
 				return nil
@@ -324,7 +324,7 @@ func (p *PushCommand) reconcileDiverged(currentBranch, upstream string) error {
 		return nil
 	}
 
-	cleanup, err := handleDirtyTree(&p.cmdIO, "pull")
+	cleanup, err := handleDirtyTree(&p.cmdIO, "push")
 	if err != nil {
 		if errors.Is(err, errDirtyTreeAborted) {
 			return nil
