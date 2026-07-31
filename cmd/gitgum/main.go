@@ -13,6 +13,17 @@ import (
 	ver "github.com/lczyk/version/go"
 )
 
+// Exit codes, mirroring cmd/fuzzyfinder. 130 is what a shell reports for a
+// Ctrl-C, so a cancelled prompt reads the same way as an interrupted process --
+// and stays distinguishable from both success and a real failure, which is what
+// lets a script tell "the user backed out" from "the tool broke".
+const (
+	exitOK        = 0
+	exitFailure   = 1
+	exitUsage     = 2
+	exitCancelled = 130
+)
+
 // Options defines the global command structure
 type Options struct {
 	Clone      commands.CloneCommand      `command:"clone" description:"Clone a repository, applying gg doctor's naming rules"`
@@ -78,11 +89,7 @@ func main() {
 		cmds := []string{"switch", "branch", "status", "tree", "push", "pull", "clean", "empty", "help"}
 		selected, err := ui.Select("Select command", cmds)
 		if err != nil {
-			if errors.Is(err, ui.ErrCancelled) {
-				os.Exit(0)
-			}
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+			os.Exit(report(err))
 		}
 		os.Args = append(os.Args, selected)
 	}
@@ -98,17 +105,36 @@ func main() {
 	os.Args = hoistFollow(os.Args)
 
 	var opts Options
-	parser := flags.NewParser(&opts, flags.Default)
+	// Deliberately not flags.Default: that bundles PrintErrors, which would
+	// make go-flags a second printer alongside the commands themselves. One
+	// owner for error text and exit codes means neither can disagree with the
+	// other, and a message cannot be printed twice.
+	parser := flags.NewParser(&opts, flags.HelpFlag|flags.PassDoubleDash)
 	parser.Name = "gitgum"
 	parser.Usage = "[OPTIONS] COMMAND"
 
-	_, err := parser.Parse()
-	if err != nil {
-		// go-flags already prints the error
-		var flagsErr *flags.Error
-		if errors.As(err, &flagsErr) && flagsErr.Type == flags.ErrHelp {
-			os.Exit(0)
-		}
-		os.Exit(1)
+	if _, err := parser.Parse(); err != nil {
+		os.Exit(report(err))
 	}
+}
+
+// report prints an error the way its kind deserves and returns the exit code
+// to leave with. Help is not a failure and goes to stdout; a cancelled prompt
+// is not a failure either and says nothing, since the picker vanishing is the
+// feedback.
+func report(err error) int {
+	var flagsErr *flags.Error
+	if errors.As(err, &flagsErr) {
+		if flagsErr.Type == flags.ErrHelp {
+			fmt.Fprintln(os.Stdout, err)
+			return exitOK
+		}
+		fmt.Fprintln(os.Stderr, err)
+		return exitUsage
+	}
+	if errors.Is(err, ui.ErrCancelled) {
+		return exitCancelled
+	}
+	fmt.Fprintln(os.Stderr, err)
+	return exitFailure
 }
