@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/gitgum/internal/git"
 )
 
 func TestColorEnabled_NoColor(t *testing.T) {
@@ -55,9 +56,6 @@ func TestPaint_Enabled(t *testing.T) {
 func TestRenderTree_NoColor(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("FORCE_COLOR", "")
-	entries := []changeEntry{{code: " M", path: "go.mod"}}
-	var buf strings.Builder
-	renderTree(buildTree(entries), &buf)
-	out := buf.String()
+	out := drawStatus([]git.Entry{entry(' ', 'M', "go.mod")}, nil)
 	assert.Equal(t, strings.Contains(out, "\x1b"), false)
 }

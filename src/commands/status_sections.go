@@ -6,6 +6,9 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/lczyk/gitgum/internal/git"
+	"github.com/lczyk/gitgum/src/filetree"
 )
 
 // A statusSection is one selectable chunk of `gg status` output. Sections are
@@ -164,29 +167,19 @@ func (s *StatusCommand) renderWorktrees(out io.Writer, header func()) error {
 // renderChanges prints the working-tree changes, as a tree or (with --flat) a
 // porcelain list. A clean tree emits nothing at all, header included.
 func (s *StatusCommand) renderChanges(out io.Writer, header func()) error {
-	lines, err := s.statusLines()
+	_, entries, err := s.scan()
 	if err != nil {
 		return err
 	}
-	changeLines := lines[1:]
-	hasChanges := false
-	for _, l := range changeLines {
-		if l != "" {
-			hasChanges = true
-			break
-		}
-	}
-	if !hasChanges {
+	if len(entries) == 0 {
 		return nil
 	}
 	header()
 	if s.Flat {
-		fmt.Fprintln(out, strings.Join(changeLines, "\n"))
+		filetree.Flat(out, flatItems(entries), filetree.Opts{})
 		return nil
 	}
-	entries := parseChangeLines(changeLines)
-	annotateNumstats(s.repo(), entries)
-	renderTree(buildTree(entries), out)
+	filetree.Tree(out, statusItems(entries, numstats(s.repo())), filetree.Opts{Dim: dim})
 	return nil
 }
 
@@ -194,12 +187,12 @@ func (s *StatusCommand) renderChanges(out io.Writer, header func()) error {
 // rendered switch-style, e.g. "## (origin/)main [ahead 7]". A detached HEAD
 // gets the refs that contain it instead of git's bare "## HEAD (no branch)".
 func (s *StatusCommand) renderHead(out io.Writer, header func()) error {
-	lines, err := s.statusLines()
+	branch, _, err := s.scan()
 	if err != nil {
 		return err
 	}
 	header()
-	if lines[0] == detachedHeadLine {
+	if branch == detachedHeadLine {
 		if rows, ok := s.detachedHeadRows(); ok {
 			for _, row := range rows {
 				fmt.Fprintln(out, row)
@@ -207,12 +200,12 @@ func (s *StatusCommand) renderHead(out io.Writer, header func()) error {
 			return nil
 		}
 	}
-	fmt.Fprintln(out, formatHeadLine(lines[0], colorEnabled()))
+	fmt.Fprintln(out, formatHeadLine(branch, colorEnabled()))
 	return nil
 }
 
-// detachedHeadLine is what `git status --short --branch` emits when HEAD is
-// detached, regardless of what it's detached at.
+// detachedHeadLine is what a `--branch` status emits when HEAD is detached,
+// regardless of what it's detached at.
 const detachedHeadLine = "## HEAD (no branch)"
 
 // headLineRe splits "## main...origin/main [ahead 1]" into local branch,
@@ -276,10 +269,13 @@ func headMarker(color bool) string {
 	return "* "
 }
 
-func (s *StatusCommand) statusLines() ([]string, error) {
-	stdout, _, err := s.repo().Run("status", "--short", "--branch")
+// scan reads the working tree for one section. Untracked directories stay
+// folded the way git folds them: this is a report, and descending into a
+// directory nothing tracks costs a full walk to say the same thing.
+func (s *StatusCommand) scan() (branch string, entries []git.Entry, err error) {
+	branch, entries, err = s.repo().Status(git.ScanOpts{Branch: true})
 	if err != nil {
-		return nil, fmt.Errorf("getting status: %w", err)
+		return "", nil, fmt.Errorf("getting status: %w", err)
 	}
-	return strings.Split(stdout, "\n"), nil
+	return branch, entries, nil
 }

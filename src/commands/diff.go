@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/lczyk/gitgum/src/filetree"
 	"github.com/lczyk/gitgum/src/litescreen"
 )
 
@@ -73,11 +74,11 @@ func (d *DiffCommand) renderUntracked(w io.Writer) error {
 		return nil
 	}
 	fmt.Fprintln(w, dim("--- untracked ---"))
-	renderTree(buildTree(entries), w)
+	filetree.Tree(w, entries, filetree.Opts{Dim: dim})
 	return nil
 }
 
-func (d *DiffCommand) collectUntrackedEntries() ([]changeEntry, error) {
+func (d *DiffCommand) collectUntrackedEntries() ([]filetree.Item, error) {
 	out, _, err := d.repo().Run("ls-files", "--others", "--exclude-standard", "-z")
 	if err != nil {
 		return nil, fmt.Errorf("git ls-files: %w", err)
@@ -86,14 +87,14 @@ func (d *DiffCommand) collectUntrackedEntries() ([]changeEntry, error) {
 		return nil, nil
 	}
 	paths := strings.Split(strings.TrimRight(out, "\x00"), "\x00")
-	var entries []changeEntry
+	var entries []filetree.Item
 	for _, p := range paths {
 		if p == "" {
 			continue
 		}
 		full := filepath.Join(d.repo().Dir, p)
 		ns := countUntrackedLines(full, untrackedCountTimeout)
-		entries = append(entries, changeEntry{code: "??", path: p, numstat: &ns})
+		entries = append(entries, leafItem("??", p, &ns))
 	}
 	return entries, nil
 }
@@ -179,7 +180,7 @@ func (d *DiffCommand) collectDiff(level string) (string, error) {
 			return "", nil
 		}
 		var buf bytes.Buffer
-		renderTree(buildTree(entries), &buf)
+		filetree.Tree(&buf, entries, filetree.Opts{Dim: dim})
 		return strings.TrimRight(buf.String(), "\n"), nil
 	default:
 		return "", fmt.Errorf("unknown diff level: %s", level)
