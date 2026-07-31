@@ -24,6 +24,3 @@ func (r Repo) CommitEmpty(message string) error {
 	}
 	return nil
 }
-
-func Commit(message string) error      { return CWD().Commit(message) }
-func CommitEmpty(message string) error { return CWD().CommitEmpty(message) }

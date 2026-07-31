@@ -37,11 +37,3 @@ func (r Repo) BranchConfigGet(branch, key string) (string, error) {
 	}
 	return stdout, nil
 }
-
-func BranchConfigSet(branch, key, value string) error {
-	return CWD().BranchConfigSet(branch, key, value)
-}
-
-func BranchConfigGet(branch, key string) (string, error) {
-	return CWD().BranchConfigGet(branch, key)
-}

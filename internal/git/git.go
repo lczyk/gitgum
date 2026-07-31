@@ -18,9 +18,6 @@ type Repo struct {
 	Dir string
 }
 
-// CWD returns a Repo bound to the process's current working directory.
-func CWD() Repo { return Repo{} }
-
 // FileStatus represents the status of a file in git.
 type FileStatus int
 
@@ -69,16 +66,12 @@ func (r Repo) Run(args ...string) (string, string, error) {
 	return r.run(args...)
 }
 
-func Run(args ...string) (string, string, error) { return CWD().Run(args...) }
-
 // RunWrite is the exported write entry point. Output is captured (not
 // streamed); callers TrimSpace as needed. Use for write invocations that don't
 // need live progress (e.g. branch -d, reset --hard).
 func (r Repo) RunWrite(args ...string) (string, string, error) {
 	return r.runWrite(context.Background(), args...)
 }
-
-func RunWrite(args ...string) (string, string, error) { return CWD().RunWrite(args...) }
 
 // RunWriteStream is the streaming counterpart to RunWrite, for write
 // invocations whose progress / hook output the user wants live (push,
@@ -87,10 +80,6 @@ func RunWrite(args ...string) (string, string, error) { return CWD().RunWrite(ar
 // rather than restate what was printed.
 func (r Repo) RunWriteStream(args ...string) error {
 	return r.runWriteStreaming(context.Background(), args...)
-}
-
-func RunWriteStream(args ...string) error {
-	return CWD().RunWriteStream(args...)
 }
 
 // GetFileStatus returns the status of a file in git.
@@ -429,30 +418,3 @@ func (r Repo) GetDefaultBranch() (string, error) {
 // Free-function shims that operate on the current working directory. These
 // preserve the existing CLI command call sites — production binaries inherit
 // the user's CWD and these forward to Repo{}.
-
-func GetFileStatus(file string) (FileStatus, error) { return CWD().GetFileStatus(file) }
-func CheckInRepo() error                            { return CWD().CheckInRepo() }
-func GetLocalBranches() ([]string, error)           { return CWD().GetLocalBranches() }
-func GetRemotes() ([]string, error)                 { return CWD().GetRemotes() }
-func GetRemoteBranches(remote string) ([]string, error) {
-	return CWD().GetRemoteBranches(remote)
-}
-func GetBranchUpstream(branch string) (string, string, error) {
-	return CWD().GetBranchUpstream(branch)
-}
-func GetBranchTrackingRemote(branch string) (string, error) {
-	return CWD().GetBranchTrackingRemote(branch)
-}
-func CheckedOutBranches() (map[string]string, error) { return CWD().CheckedOutBranches() }
-func GetCommitHash(ref string) (string, error)       { return CWD().GetCommitHash(ref) }
-func BranchExists(branch string) bool                { return CWD().BranchExists(branch) }
-func RefExists(ref string) bool                      { return CWD().RefExists(ref) }
-func GetCurrentBranch() (string, error)              { return CWD().GetCurrentBranch() }
-func GetCurrentBranchUpstream() (string, error)      { return CWD().GetCurrentBranchUpstream() }
-func RemoteBranchExists(remote, branch string) bool {
-	return CWD().RemoteBranchExists(remote, branch)
-}
-func IsBranchAheadOfRemote(local, remote string) (bool, error) {
-	return CWD().IsBranchAheadOfRemote(local, remote)
-}
-func GetDefaultBranch() (string, error) { return CWD().GetDefaultBranch() }

@@ -15,5 +15,3 @@ func (r Repo) Add(paths ...string) error {
 	}
 	return nil
 }
-
-func Add(paths ...string) error { return CWD().Add(paths...) }

@@ -9,53 +9,12 @@ import (
 	"github.com/lczyk/assert/require"
 )
 
-// ChdirTempDir changes to a fresh temp dir for the duration of the test.
-//
-// CAUTION: process cwd is shared, so a test that calls this cannot run in
-// parallel with another test that also calls it (or runs git commands relying
-// on cwd). Prefer passing dir explicitly where possible.
-func ChdirTempDir(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	origDir, err := os.Getwd()
-	require.NoError(t, err, "getwd")
-	require.NoError(t, os.Chdir(dir), "chdir")
-	t.Cleanup(func() {
-		require.NoError(t, os.Chdir(origDir), "restore working dir")
-	})
-	return dir
-}
-
-// InitTempRepo creates a temp git repo, changes into it, makes an initial
-// commit, and returns the repo path.
-//
-// Uses ChdirTempDir under the hood, so tests using InitTempRepo cannot run in
-// parallel. Use NewRepo for parallel-safe tests that pass dir explicitly.
-func InitTempRepo(t *testing.T) string {
-	t.Helper()
-	dir := ChdirTempDir(t)
-	initRepoAt(t, dir)
-	return dir
-}
-
 // NewRepo creates a temp git repo without chdir-ing into it and returns its
 // path. Safe to call from t.Parallel() tests.
 func NewRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	initRepoAt(t, dir)
-	return dir
-}
-
-// InitEmptyTempRepo creates a temp git repo without any commits (no branches),
-// changes into it, and returns the path. Like InitTempRepo but stops before the
-// initial commit — useful for testing "no branches" error paths.
-//
-// Same cwd-sharing caveat as InitTempRepo; cannot run in parallel.
-func InitEmptyTempRepo(t *testing.T) string {
-	t.Helper()
-	dir := ChdirTempDir(t)
-	initEmptyAt(t, dir)
 	return dir
 }
 

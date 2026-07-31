@@ -18,8 +18,6 @@ func (r Repo) Fetch(remote, refspec string) error {
 	return nil
 }
 
-func Fetch(remote, refspec string) error { return CWD().Fetch(remote, refspec) }
-
 // FetchObject fetches one object by hash, bounded to that object alone. In a
 // shallow clone this is how a commit outside the boundary is obtained without
 // pulling the history between here and there -- git records a new shallow

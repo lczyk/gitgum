@@ -14,8 +14,6 @@ func (r Repo) RemoteURL(name string) (string, error) {
 	return stdout, nil
 }
 
-func RemoteURL(name string) (string, error) { return CWD().RemoteURL(name) }
-
 // ParseGitHubURL extracts the user/org and repo name from a github remote URL.
 // It is a github-only view of ParseRepoRef, kept for callers that only care
 // about github; new code that needs to distinguish forges should use
@@ -38,8 +36,6 @@ func (r Repo) AddRemote(name, url string) error {
 	return nil
 }
 
-func AddRemote(name, url string) error { return CWD().AddRemote(name, url) }
-
 // RemoveRemote deletes the named remote (`git remote remove name`). Used to
 // roll back a freshly-added remote when a follow-up fetch fails.
 func (r Repo) RemoveRemote(name string) error {
@@ -48,8 +44,6 @@ func (r Repo) RemoveRemote(name string) error {
 	}
 	return nil
 }
-
-func RemoveRemote(name string) error { return CWD().RemoveRemote(name) }
 
 // RemoteReachable reports whether `git ls-remote <url>` succeeds, i.e. the repo
 // exists and is readable (public, or private with the caller's creds). A
@@ -60,5 +54,3 @@ func (r Repo) RemoteReachable(url string) bool {
 	_, _, err := r.runReadNet(context.Background(), "ls-remote", url)
 	return err == nil
 }
-
-func RemoteReachable(url string) bool { return CWD().RemoteReachable(url) }

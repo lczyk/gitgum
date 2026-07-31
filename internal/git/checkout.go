@@ -16,16 +16,10 @@ func (r Repo) Checkout(branch string) error {
 	return nil
 }
 
-func Checkout(branch string) error { return CWD().Checkout(branch) }
-
 // CheckoutNewBranch creates a new branch off startPoint and switches to it
 // (`git checkout -b <branch> <startPoint>`).
 func (r Repo) CheckoutNewBranch(branch, startPoint string) error {
 	return r.checkoutNewBranch(branch, startPoint, false)
-}
-
-func CheckoutNewBranch(branch, startPoint string) error {
-	return CWD().CheckoutNewBranch(branch, startPoint)
 }
 
 // CheckoutNewBranchNoTrack is CheckoutNewBranch with `--no-track`. Needed when
@@ -34,10 +28,6 @@ func CheckoutNewBranch(branch, startPoint string) error {
 // someone else's branch instead of creating one.
 func (r Repo) CheckoutNewBranchNoTrack(branch, startPoint string) error {
 	return r.checkoutNewBranch(branch, startPoint, true)
-}
-
-func CheckoutNewBranchNoTrack(branch, startPoint string) error {
-	return CWD().CheckoutNewBranchNoTrack(branch, startPoint)
 }
 
 func (r Repo) checkoutNewBranch(branch, startPoint string, noTrack bool) error {
@@ -64,5 +54,3 @@ func (r Repo) ResetHard(ref string) error {
 	}
 	return nil
 }
-
-func ResetHard(ref string) error { return CWD().ResetHard(ref) }

@@ -22,8 +22,6 @@ func (r Repo) Worktrees() ([]Worktree, error) {
 	return ParseWorktreePorcelain(stdout), nil
 }
 
-func Worktrees() ([]Worktree, error) { return CWD().Worktrees() }
-
 // ParseWorktreePorcelain parses `git worktree list --porcelain` output:
 //
 //	worktree /path/to/main

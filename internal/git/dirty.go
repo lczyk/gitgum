@@ -79,8 +79,6 @@ func (r Repo) InProgress() (operation string, yes bool) {
 	return "", false
 }
 
-func InProgress() (string, bool) { return CWD().InProgress() }
-
 // stashHooksOff suppresses user pre-stash / post-checkout hooks for the
 // duration of a stash op. gg uses stash internally only (release auto-
 // stash, switch_stream bookkeeping); firing user hooks on plumbing they
@@ -111,7 +109,3 @@ func (r Repo) StashPopIndex() error {
 	}
 	return nil
 }
-
-func DirtyTrackedLines() ([]string, error) { return CWD().DirtyTrackedLines() }
-func StashPush(message string) error       { return CWD().StashPush(message) }
-func StashPopIndex() error                 { return CWD().StashPopIndex() }

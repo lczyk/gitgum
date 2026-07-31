@@ -25,6 +25,3 @@ func (r Repo) TagExists(name string) bool {
 	_, _, err := r.run("rev-parse", "--verify", "--quiet", "refs/tags/"+name)
 	return err == nil
 }
-
-func TagAnnotated(name, message string) error { return CWD().TagAnnotated(name, message) }
-func TagExists(name string) bool              { return CWD().TagExists(name) }

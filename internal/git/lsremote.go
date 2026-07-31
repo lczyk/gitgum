@@ -16,5 +16,3 @@ func (r Repo) LsRemote(remote string) (string, error) {
 	}
 	return stdout, nil
 }
-
-func LsRemote(remote string) (string, error) { return CWD().LsRemote(remote) }

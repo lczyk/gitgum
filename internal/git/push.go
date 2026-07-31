@@ -15,5 +15,3 @@ func (r Repo) Push() error {
 	}
 	return nil
 }
-
-func Push() error { return CWD().Push() }

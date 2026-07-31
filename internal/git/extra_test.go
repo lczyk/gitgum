@@ -50,14 +50,3 @@ func TestGetRemoteBranches_UnknownRemote(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, len(branches), 0)
 }
-
-// Free-function GetFileStatus operates on process cwd, so this test cannot
-// run in parallel (ChdirTempDir + InitTempRepo serialise on cwd).
-func TestGetFileStatus_FreeFn(t *testing.T) {
-	dir := temp_repo.InitTempRepo(t)
-	temp_repo.WriteFile(t, dir, "untracked.txt", "x")
-
-	status, err := git.GetFileStatus("untracked.txt")
-	require.NoError(t, err)
-	assert.Equal(t, status, git.FileUntracked)
-}
