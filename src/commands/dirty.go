@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/lczyk/gitgum/internal/dirty"
@@ -19,8 +20,8 @@ const (
 
 // handleDirtyTree inspects the working tree. Untracked files do not trigger the
 // prompt -- they do not block the operations that ask -- but discarding does
-// remove them, which is why the discard option states its own count rather than
-// relying on the list printed above.
+// remove them, so they are listed alongside the tracked changes and counted in
+// the discard row.
 //
 // Returns a cleanup function that callers should always defer. cleanup is a
 // no-op unless something was stashed; otherwise it pops the stash with --index
@@ -51,11 +52,18 @@ func handleDirtyLines(c *cmdIO, label string, dirtyLines []string) (cleanup func
 
 	fmt.Fprintf(c.out(), "Uncommitted changes:\n%s\n", strings.Join(dirtyLines, "\n"))
 
-	// The plan is only needed to describe the discard option honestly. If it
-	// cannot be read, the option is simply not offered rather than offered
-	// with a number that might be wrong.
+	// The plan describes the discard option honestly. If it cannot be read,
+	// the option is simply not offered rather than offered with a number that
+	// might be wrong.
 	plan, planErr := dirty.Scan(c.repo())
 	discardOpts := dirty.Options{Tracked: true, Untracked: true}
+
+	// Untracked files do not block the operation, so they are not why this
+	// prompt appeared -- but discarding removes them, and a count without the
+	// names is what made gg clean dangerous. List them when there are any.
+	if planErr == nil {
+		printUntracked(c.out(), plan.Untracked)
+	}
 
 	options := []string{dirtyAbort, dirtyStashOption(label)}
 	if planErr == nil {
@@ -89,6 +97,27 @@ func handleDirtyLines(c *cmdIO, label string, dirtyLines []string) (cleanup func
 			fmt.Fprintf(c.err(), "your changes are still in the stash (%q); resolve and run `git stash pop --index` manually\n", stashMsg)
 		}
 	}, nil
+}
+
+// maxUntrackedShown bounds the untracked list. The count stays exact -- it is
+// the number that decides whether you pick the discard row.
+const maxUntrackedShown = 10
+
+// printUntracked lists the files discarding would remove on top of the tracked
+// changes already shown. Silent when there are none, so the common case reads
+// exactly as it did before.
+func printUntracked(out io.Writer, paths []string) {
+	if len(paths) == 0 {
+		return
+	}
+	fmt.Fprintf(out, "Untracked files (%d, discarding removes these too):\n", len(paths))
+	for i, p := range paths {
+		if i >= maxUntrackedShown {
+			fmt.Fprintf(out, "  ... and %d more\n", len(paths)-maxUntrackedShown)
+			break
+		}
+		fmt.Fprintf(out, "  %s\n", p)
+	}
 }
 
 // dirtyStashOption is the stash row, shared so tests name the row rather than

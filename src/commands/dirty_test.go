@@ -259,3 +259,45 @@ func TestHandleDirtyTree_CancelAborts(t *testing.T) {
 	_, err := handleDirtyTree(newDirtyTestIO(stub, dir), "switch")
 	assert.ErrorIs(t, err, ui.ErrCancelled, "cancelling is a cancel")
 }
+
+// The listing has to cover what the discard row destroys, not just what made
+// the prompt appear -- untracked files are the second half of that set.
+func TestHandleDirtyTree_ListsUntrackedFilesToo(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.WriteFile(t, dir, "README.md", "edited\n")
+	temp_repo.WriteFile(t, dir, "scratch.txt", "new\n")
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "build"), 0o755), "mkdir")
+	temp_repo.WriteFile(t, dir, "build/out.o", "x")
+
+	var out strings.Builder
+	stub := &stubSelector{selectAnswers: []string{dirtyAbort}}
+	c := newDirtyTestIO(stub, dir)
+	c.Out = &out
+
+	_, err := handleDirtyTree(c, "switch")
+	assert.ErrorIs(t, err, ui.ErrCancelled, "abort stops the command")
+
+	// the tracked change, as before
+	assert.ContainsString(t, out.String(), "README.md")
+	// and the untracked files it would also destroy, named not just counted
+	assert.ContainsString(t, out.String(), "Untracked files (2")
+	assert.ContainsString(t, out.String(), "scratch.txt")
+	assert.ContainsString(t, out.String(), "build/out.o")
+}
+
+// A repo with nothing untracked reads exactly as it did before.
+func TestHandleDirtyTree_NoUntrackedSectionWhenNone(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.WriteFile(t, dir, "README.md", "edited\n")
+
+	var out strings.Builder
+	stub := &stubSelector{selectAnswers: []string{dirtyAbort}}
+	c := newDirtyTestIO(stub, dir)
+	c.Out = &out
+
+	_, _ = handleDirtyTree(c, "switch")
+	assert.That(t, !strings.Contains(out.String(), "Untracked files"),
+		"no untracked section when there is nothing untracked")
+}
