@@ -20,6 +20,9 @@ type stubSelector struct {
 	// selectAnswers. Lets tests drive the cancellation paths (ui.ErrCancelled)
 	// that a scripted answer can't reach.
 	selectErrs []error
+	// confirmErrs does the same for Confirm, so a cancelled yes/no prompt can
+	// be driven as well as a cancelled picker.
+	confirmErrs []error
 
 	selectCalls      []selectCall
 	multiSelectCalls []selectCall
@@ -100,6 +103,11 @@ func (s *stubSelector) Prompt(question string) (string, error) {
 
 func (s *stubSelector) Confirm(prompt string, defaultYes bool) (bool, error) {
 	s.confirmCalls = append(s.confirmCalls, confirmCall{Prompt: prompt, DefaultYes: defaultYes})
+	if len(s.confirmErrs) > 0 {
+		err := s.confirmErrs[0]
+		s.confirmErrs = s.confirmErrs[1:]
+		return false, err
+	}
 	if len(s.confirmAnswers) == 0 {
 		return false, fmt.Errorf("stubSelector: unexpected Confirm call %q", prompt)
 	}

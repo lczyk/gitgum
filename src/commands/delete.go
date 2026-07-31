@@ -141,17 +141,18 @@ func (d *DeleteCommand) deleteLocal(branch string) error {
 		needsToDeleteRemote = confirmed
 	}
 
-	// try safe delete first, fall back to force delete with confirmation
-	_, _, err := d.repo().RunWrite("branch", "-d", branch)
-	if err != nil {
-		var confirmMsg string
+	// Whether the branch is merged is a fact, readable without touching
+	// anything, so the force question joins the others up front instead of
+	// arriving after an attempt that had to fail to be informative. Every
+	// question is now asked before anything is deleted.
+	force := !d.repo().BranchMerged(branch)
+	if force {
+		what := "the local branch"
 		if needsToDeleteRemote {
-			confirmMsg = fmt.Sprintf("Branch '%s' is not fully merged. Do you want to force delete the local branch and the remote branch?", branch)
-		} else {
-			confirmMsg = fmt.Sprintf("Branch '%s' is not fully merged. Do you want to force delete the local branch?", branch)
+			what = "the local branch and the remote branch"
 		}
-
-		confirmed, err := d.sel().Confirm(confirmMsg, false)
+		confirmed, err := d.sel().Confirm(
+			fmt.Sprintf("Branch '%s' is not fully merged. Do you want to force delete %s?", branch, what), false)
 		if err != nil {
 			return err
 		}
@@ -159,10 +160,16 @@ func (d *DeleteCommand) deleteLocal(branch string) error {
 			fmt.Fprintln(d.out(), "Aborting delete.")
 			return nil
 		}
+	}
 
-		if _, stderr, err := d.repo().RunWrite("branch", "-D", branch); err != nil {
-			return fmt.Errorf("force deleting branch '%s': %w: %s", branch, err, strings.TrimSpace(stderr))
-		}
+	flag := "-d"
+	if force {
+		flag = "-D"
+	}
+	if _, stderr, err := d.repo().RunWrite("branch", flag, branch); err != nil {
+		return fmt.Errorf("deleting branch '%s': %w: %s", branch, err, strings.TrimSpace(stderr))
+	}
+	if force {
 		fmt.Fprintf(d.out(), "Force deleted local branch '%s'.\n", branch)
 	} else {
 		fmt.Fprintf(d.out(), "Deleted local branch '%s'.\n", branch)

@@ -45,26 +45,30 @@ func (e *EmptyCommand) Execute(args []string) error {
 	}
 	defer cleanup()
 
+	// Asked before the commit exists, not after. Cancelling here then has
+	// nothing to undo -- where the old order created the commit first and left
+	// a cancel reporting failure over work that had already succeeded.
+	push := false
+	if hasUpstream {
+		if push, err = e.sel().Confirm("Push the commit to the remote once it exists?", true); err != nil {
+			return err
+		}
+	}
+
 	if err := r.CommitEmpty("chore: empty commit"); err != nil {
 		return fmt.Errorf("creating empty commit: %w", err)
 	}
-
 	fmt.Fprintf(e.out(), "Created empty commit on branch '%s'.\n", currentBranch)
 
-	if hasUpstream {
-		confirmed, err := e.sel().Confirm("Do you want to push this commit to the remote?", true)
-		if err != nil {
-			return err
-		}
-		if confirmed {
-			if err := r.Push(); err != nil {
-				return fmt.Errorf("pushing: %w", err)
-			}
-			fmt.Fprintln(e.out(), "Pushed to remote.")
-		} else {
+	if !push {
+		if hasUpstream {
 			fmt.Fprintln(e.out(), "Not pushing.")
 		}
+		return nil
 	}
-
+	if err := r.Push(); err != nil {
+		return fmt.Errorf("pushing: %w", err)
+	}
+	fmt.Fprintln(e.out(), "Pushed to remote.")
 	return nil
 }

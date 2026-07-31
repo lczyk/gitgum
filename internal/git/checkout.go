@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 // Checkout switches the working tree to the given branch (quiet mode).
@@ -43,6 +44,23 @@ func (r Repo) checkoutNewBranch(branch, startPoint string, noTrack bool) error {
 		return fmt.Errorf("git checkout -b %s: %w: %s", branch, err, stderr)
 	}
 	return nil
+}
+
+// BranchMerged reports whether branch is fully merged into HEAD -- the same
+// question `git branch -d` answers by refusing. Asking it up front means the
+// force-delete prompt can be raised alongside the other questions, rather than
+// after an attempt that has to fail before it becomes informative.
+func (r Repo) BranchMerged(branch string) bool {
+	stdout, _, err := r.run("branch", "--merged", "HEAD", "--format=%(refname:short)")
+	if err != nil {
+		return false // unknown counts as unmerged: the cost is one extra prompt
+	}
+	for line := range strings.SplitSeq(stdout, "\n") {
+		if strings.TrimSpace(line) == branch {
+			return true
+		}
+	}
+	return false
 }
 
 // ResetHard performs `git reset --hard <ref>`. Destructive: discards

@@ -50,3 +50,21 @@ func TestGetRemoteBranches_UnknownRemote(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, len(branches), 0)
 }
+
+func TestBranchMerged(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	r := git.Repo{Dir: dir}
+
+	// a branch at HEAD is trivially merged
+	temp_repo.RunGit(t, dir, "branch", "at-head")
+	assert.That(t, r.BranchMerged("at-head"), "a branch at HEAD is merged")
+
+	// one carrying its own commit is not
+	temp_repo.RunGit(t, dir, "checkout", "-q", "-b", "diverged")
+	temp_repo.CreateCommit(t, dir, "only-here.txt", "x", "chore: only here")
+	temp_repo.RunGit(t, dir, "checkout", "-q", "main")
+	assert.That(t, !r.BranchMerged("diverged"), "a branch with unmerged commits is not merged")
+
+	assert.That(t, !r.BranchMerged("no-such-branch"), "an unknown branch is not merged")
+}
