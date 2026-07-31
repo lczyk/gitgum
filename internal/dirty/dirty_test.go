@@ -5,52 +5,68 @@ import (
 
 	"github.com/lczyk/assert"
 	"github.com/lczyk/assert/require"
+	"github.com/lczyk/gitgum/internal/git"
 )
+
+func entry(x, y byte, path string) git.Entry { return git.Entry{X: x, Y: y, Path: path} }
 
 // group is where every truthfulness question lives, and it takes no git, so
 // the cases that matter are plain data.
 func TestGroup(t *testing.T) {
 	t.Parallel()
 	cases := map[string]struct {
-		unstaged, staged, untracked, ignored []string
-		want                                 Plan
+		entries []git.Entry
+		want    Plan
 	}{
 		"nothing": {want: Plan{}},
 		"a file changed both ways counts once": {
-			unstaged: []string{"both"},
-			staged:   []string{"both"},
-			want:     Plan{Tracked: []string{"both"}},
+			entries: []git.Entry{entry('M', 'M', "both")},
+			want:    Plan{Tracked: []string{"both"}},
 		},
 		"both halves of a rename are at risk": {
-			staged: []string{"old", "new"},
-			want:   Plan{Tracked: []string{"old", "new"}},
+			entries: []git.Entry{{X: 'R', Y: ' ', Path: "new", RenamedFrom: "old"}},
+			want:    Plan{Tracked: []string{"new", "old"}},
 		},
 		"untracked directory arrives already expanded": {
-			untracked: []string{"dir/deep/a", "dir/deep/b", "loose"},
-			want:      Plan{Untracked: []string{"dir/deep/a", "dir/deep/b", "loose"}},
+			entries: []git.Entry{
+				entry('?', '?', "dir/deep/a"), entry('?', '?', "dir/deep/b"), entry('?', '?', "loose"),
+			},
+			want: Plan{Untracked: []string{"dir/deep/a", "dir/deep/b", "loose"}},
 		},
 		"ignored files are their own group": {
-			untracked: []string{"loose"},
-			ignored:   []string{"node_modules/x", ".env"},
-			want:      Plan{Untracked: []string{"loose"}, Ignored: []string{"node_modules/x", ".env"}},
+			entries: []git.Entry{
+				entry('?', '?', "loose"), entry('!', '!', "node_modules/x"), entry('!', '!', ".env"),
+			},
+			want: Plan{Untracked: []string{"loose"}, Ignored: []string{"node_modules/x", ".env"}},
 		},
 		"a path reported twice across groups lands in the first": {
-			untracked: []string{"shared"},
-			ignored:   []string{"shared", "only-ignored"},
-			want:      Plan{Untracked: []string{"shared"}, Ignored: []string{"only-ignored"}},
+			entries: []git.Entry{
+				entry('?', '?', "shared"), entry('!', '!', "shared"), entry('!', '!', "only-ignored"),
+			},
+			want: Plan{Untracked: []string{"shared"}, Ignored: []string{"only-ignored"}},
 		},
-		"empty entries are dropped": {
-			unstaged: []string{"", "real", ""},
-			want:     Plan{Tracked: []string{"real"}},
+		"empty paths are dropped": {
+			entries: []git.Entry{entry('M', ' ', ""), entry('M', ' ', "real")},
+			want:    Plan{Tracked: []string{"real"}},
 		},
 		"paths with spaces survive intact": {
-			untracked: []string{"with space", "with  two"},
-			want:      Plan{Untracked: []string{"with space", "with  two"}},
+			entries: []git.Entry{entry('?', '?', "with space"), entry('?', '?', "with  two")},
+			want:    Plan{Untracked: []string{"with space", "with  two"}},
+		},
+		"an unmerged path is tracked": {
+			entries: []git.Entry{entry('U', 'U', "conflict")},
+			want:    Plan{Tracked: []string{"conflict"}},
+		},
+		// Over-reporting is the safe direction: a record this package cannot
+		// place must still show up somewhere.
+		"an unrecognised record still lands in tracked": {
+			entries: []git.Entry{entry('Z', 'Z', "strange")},
+			want:    Plan{Tracked: []string{"strange"}},
 		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got := group(tc.unstaged, tc.staged, tc.untracked, tc.ignored)
+			got := group(tc.entries)
 			assert.EqualArrays(t, got.Tracked, tc.want.Tracked)
 			assert.EqualArrays(t, got.Untracked, tc.want.Untracked)
 			assert.EqualArrays(t, got.Ignored, tc.want.Ignored)
@@ -69,28 +85,22 @@ func TestPlanCount(t *testing.T) {
 	assert.That(t, Plan{}.Empty(), "zero plan should be empty")
 }
 
-// fakeRepo records the argv it was asked to run and replays canned output,
-// so the collector's own failure handling can be driven without a repo.
+// fakeRepo replays a canned scan and records the argv it was asked to write,
+// so the plan's own failure handling can be driven without a repo.
 type fakeRepo struct {
-	out        map[string]string
+	entries    []git.Entry
+	scanned    []git.ScanOpts
 	err        error
 	inProgress string
 	writes     [][]string
 }
 
-func key(args []string) string {
-	k := ""
-	for _, a := range args {
-		k += a + " "
-	}
-	return k
-}
-
-func (f *fakeRepo) Run(args ...string) (string, string, error) {
+func (f *fakeRepo) Status(opt git.ScanOpts) (string, []git.Entry, error) {
+	f.scanned = append(f.scanned, opt)
 	if f.err != nil {
-		return "", "boom", f.err
+		return "", nil, f.err
 	}
-	return f.out[key(args)], "", nil
+	return "", f.entries, nil
 }
 
 func (f *fakeRepo) RunWrite(args ...string) (string, string, error) {
@@ -157,5 +167,17 @@ func TestScanReportsCollectorFailure(t *testing.T) {
 	t.Parallel()
 	_, err := Scan(&fakeRepo{err: assert.AnyError})
 	assert.Error(t, err, assert.AnyError, "scan should surface a failed listing")
-	assert.ContainsString(t, err.Error(), "listing modified files")
+	assert.ContainsString(t, err.Error(), "listing the working tree")
+}
+
+// A directory standing in for its contents, or an ignored file left unlisted,
+// would each report less than a discard destroys.
+func TestScanAsksForEveryFile(t *testing.T) {
+	t.Parallel()
+	f := &fakeRepo{}
+	_, err := Scan(f)
+	require.NoError(t, err)
+	require.Equal(t, len(f.scanned), 1)
+	assert.Equal(t, f.scanned[0].Untracked, git.UntrackedAll)
+	assert.That(t, f.scanned[0].Ignored, "ignored files must be listed")
 }

@@ -12,12 +12,18 @@ package dirty
 import (
 	"fmt"
 	"strings"
+
+	"github.com/lczyk/gitgum/internal/git"
 )
 
 // Repo is the slice of git this package needs. It is an interface only so the
 // grouping can be exercised against canned output; git.Repo satisfies it.
+//
+// The scan arrives already parsed rather than as raw text, because the raw
+// text has a trap in it: a record for an unstaged change opens with a space,
+// and a trimming reader turns the first one into a staged change.
 type Repo interface {
-	Run(args ...string) (string, string, error)
+	Status(opt git.ScanOpts) (branch string, entries []git.Entry, err error)
 	RunWrite(args ...string) (string, string, error)
 	InProgress() (operation string, yes bool)
 }
@@ -62,56 +68,53 @@ func (p Plan) Count(o Options) int {
 
 // Scan reads the working tree and groups what a discard would destroy.
 //
-// The commands are chosen to report what will actually happen rather than what
-// reads nicely. `ls-files --others` names every untracked file individually,
-// where `clean -n` collapses a directory to one line and hides its contents;
-// `--no-renames` reports both halves of a staged rename, where the default
-// names only the destination even though a hard reset restores the source too.
+// The scan is chosen to report what will actually happen rather than what
+// reads nicely. UntrackedAll names every untracked file individually, where
+// the cheaper mode collapses a directory to one entry and hides its contents;
+// ignored files are always listed, since whether to destroy them is the
+// caller's choice and it cannot make it without seeing them.
 func Scan(r Repo) (Plan, error) {
-	unstaged, err := lines(r, "diff", "--name-only", "-z")
+	_, entries, err := r.Status(git.ScanOpts{Untracked: git.UntrackedAll, Ignored: true})
 	if err != nil {
-		return Plan{}, fmt.Errorf("listing modified files: %w", err)
+		return Plan{}, fmt.Errorf("listing the working tree: %w", err)
 	}
-	staged, err := lines(r, "diff", "--cached", "--name-only", "--no-renames", "-z")
-	if err != nil {
-		return Plan{}, fmt.Errorf("listing staged files: %w", err)
-	}
-	untracked, err := lines(r, "ls-files", "--others", "--exclude-standard", "-z")
-	if err != nil {
-		return Plan{}, fmt.Errorf("listing untracked files: %w", err)
-	}
-	ignored, err := lines(r, "ls-files", "--others", "--ignored", "--exclude-standard", "-z")
-	if err != nil {
-		return Plan{}, fmt.Errorf("listing ignored files: %w", err)
-	}
-	return group(unstaged, staged, untracked, ignored), nil
+	return group(entries), nil
 }
 
-// group turns raw listings into a plan. It is deliberately free of git so the
-// cases that matter -- a file both staged and unstaged, a rename's two halves,
-// an untracked path that is also reported as ignored -- can be exercised as
-// plain data.
-func group(unstaged, staged, untracked, ignored []string) Plan {
+// group turns a scan into a plan. It is deliberately free of git so the cases
+// that matter -- a file both staged and unstaged, a rename's two halves, an
+// untracked path that is also reported as ignored -- can be exercised as plain
+// data.
+//
+// Anything that is neither untracked nor ignored counts as tracked, rather
+// than being matched against a list of known status characters. A record this
+// package does not recognise is one it would otherwise drop, and a plan that
+// lists less than the discard destroys is the failure it exists to prevent.
+func group(entries []git.Entry) Plan {
+	var p Plan
 	seen := map[string]bool{}
-	dedup := func(in []string) []string {
-		var out []string
-		for _, p := range in {
-			if p == "" || seen[p] {
-				continue
-			}
-			seen[p] = true
-			out = append(out, p)
+	add := func(dst *[]string, path string) {
+		if path == "" || seen[path] {
+			return
 		}
-		return out
+		seen[path] = true
+		*dst = append(*dst, path)
 	}
-	// Tracked first and as one group: a file with both staged and unstaged
-	// changes is one file at risk, not two.
-	tracked := dedup(append(append([]string{}, unstaged...), staged...))
-	return Plan{
-		Tracked:   tracked,
-		Untracked: dedup(untracked),
-		Ignored:   dedup(ignored),
+	for _, e := range entries {
+		switch {
+		case e.Untracked():
+			add(&p.Untracked, e.Path)
+		case e.Ignored():
+			add(&p.Ignored, e.Path)
+		default:
+			// Both halves of a rename: a hard reset removes the destination
+			// and restores the source. A file that is staged and unstaged both
+			// is one file at risk, which the dedup handles.
+			add(&p.Tracked, e.Path)
+			add(&p.Tracked, e.RenamedFrom)
+		}
 	}
+	return p
 }
 
 // Discard destroys the groups the options select.
@@ -148,22 +151,4 @@ func cleanArgs(ignored bool) []string {
 		args = append(args, "-x")
 	}
 	return args
-}
-
-// lines runs a NUL-delimited listing and splits it. NUL rather than newline
-// because git C-quotes paths in line-based output -- a filename containing a
-// space comes back wrapped in quotes, which a naive reader would then try to
-// delete literally.
-func lines(r Repo, args ...string) ([]string, error) {
-	stdout, stderr, err := r.Run(args...)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr))
-	}
-	var out []string
-	for _, p := range strings.Split(stdout, "\x00") {
-		if p != "" {
-			out = append(out, p)
-		}
-	}
-	return out, nil
 }
