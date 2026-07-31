@@ -329,3 +329,25 @@ func TestPushCommand_AlreadyUpToDate_SetsUpstream(t *testing.T) {
 	upstream := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "--abbrev-ref", branch+"@{u}"))
 	assert.Equal(t, upstream, "origin/"+branch)
 }
+
+// A genuine non-fast-forward reaches the push error path: the remote branch
+// exists and has moved on, local has not, and tracking is not configured -- so
+// gg offers to push to the existing branch and git refuses it. No broken remote
+// or artificial hook, just a situation people land in.
+func TestPushCommand_RejectedPushSurfacesTheFailure(t *testing.T) {
+	t.Parallel()
+	dir, _, _ := pushRepoWithRemoteAhead(t, "upstream.txt", "from elsewhere")
+
+	// drop tracking so push takes the "remote branch exists" path, and commit
+	// locally so the push is a genuine non-fast-forward rather than a no-op
+	temp_repo.RunGit(t, dir, "branch", "--unset-upstream")
+	temp_repo.CreateCommit(t, dir, "local.txt", "mine", "chore: local work")
+
+	// pick the remote, then confirm the push git will refuse
+	stub := &stubSelector{selectAnswers: []string{"origin"}, confirmAnswers: []bool{true}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	err := cmd.Execute(nil)
+	assert.Error(t, err, assert.AnyError, "git should refuse a non-fast-forward")
+	assert.ContainsString(t, err.Error(), "push")
+}

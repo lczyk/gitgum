@@ -52,3 +52,21 @@ func TestDeleteCommand_DeletesPickedBranch(t *testing.T) {
 	assert.ContainsString(t, buf.String(), "Deleted local branch 'feature'.")
 	assert.Equal(t, len(stub.confirmCalls), 0)
 }
+
+// Deleting a remote branch the remote does not have is a real refusal from
+// git, and the wrapped error has to surface rather than reading as success.
+func TestDeleteCommand_RemoteDeleteFailureSurfaces(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	bareDir := t.TempDir()
+	temp_repo.RunGit(t, bareDir, "init", "--bare")
+	temp_repo.RunGit(t, dir, "remote", "add", "origin", bareDir)
+
+	stub := &stubSelector{confirmAnswers: []bool{true}}
+	cmd := &DeleteCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	// the remote has no branches at all, so deleting one must fail
+	err := cmd.deleteRemoteOnly("origin", "never-existed")
+	assert.Error(t, err, assert.AnyError, "git should refuse to delete a missing remote branch")
+	assert.ContainsString(t, err.Error(), "deleting remote branch")
+}
