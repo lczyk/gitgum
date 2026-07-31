@@ -93,7 +93,23 @@ const maxDiscardLines = 60
 // code says which is which.
 func printPlan(out io.Writer, plan dirty.Plan, opts dirty.Options) {
 	fmt.Fprintf(out, "Files to be discarded (%d)%s\n", plan.Count(opts), planSummary(plan, opts))
+	filetree.Tree(out, planItems(plan, opts), filetree.Opts{
+		Dim:        dim,
+		FoldChains: true,
+		MaxLines:   maxDiscardLines,
+	})
 
+	// Ignored files are always scanned, so their survival can be stated rather
+	// than left to be discovered.
+	if !opts.Ignored && len(plan.Ignored) > 0 {
+		fmt.Fprintf(out, "  (%d ignored file(s) left alone; --ignored includes them)\n", len(plan.Ignored))
+	}
+}
+
+// planItems is the plan's selected groups as one list to draw, each path
+// carrying the code it arrived with. Unselected groups are absent rather than
+// merely uncounted: this listing is what the caller is about to act on.
+func planItems(plan dirty.Plan, opts dirty.Options) []filetree.Item {
 	var items []filetree.Item
 	group := func(paths []string, selected bool) {
 		if !selected {
@@ -106,17 +122,7 @@ func printPlan(out io.Writer, plan dirty.Plan, opts dirty.Options) {
 	group(plan.Tracked, opts.Tracked)
 	group(plan.Untracked, opts.Untracked)
 	group(plan.Ignored, opts.Ignored)
-	filetree.Tree(out, items, filetree.Opts{
-		Dim:        dim,
-		FoldChains: true,
-		MaxLines:   maxDiscardLines,
-	})
-
-	// Ignored files are always scanned, so their survival can be stated rather
-	// than left to be discovered.
-	if !opts.Ignored && len(plan.Ignored) > 0 {
-		fmt.Fprintf(out, "  (%d ignored file(s) left alone; --ignored includes them)\n", len(plan.Ignored))
-	}
+	return items
 }
 
 // planSummary breaks the count down by group, and says nothing when there is

@@ -281,13 +281,14 @@ func TestHandleDirtyTree_ListsUntrackedFilesToo(t *testing.T) {
 	// the tracked change, as before
 	assert.ContainsString(t, out.String(), "README.md")
 	// and the untracked files it would also destroy, named not just counted
-	assert.ContainsString(t, out.String(), "Untracked files (2")
+	assert.ContainsString(t, out.String(), "1 change, 2 untracked")
 	assert.ContainsString(t, out.String(), "scratch.txt")
 	assert.ContainsString(t, out.String(), "build/out.o")
 }
 
-// A repo with nothing untracked reads exactly as it did before.
-func TestHandleDirtyTree_NoUntrackedSectionWhenNone(t *testing.T) {
+// With only tracked changes there is nothing to break the count down into, so
+// the header says the number once.
+func TestHandleDirtyTree_NoBreakdownWhenOneGroup(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)
 	temp_repo.WriteFile(t, dir, "README.md", "edited\n")
@@ -298,6 +299,7 @@ func TestHandleDirtyTree_NoUntrackedSectionWhenNone(t *testing.T) {
 	c.Out = &out
 
 	_, _ = handleDirtyTree(c, "switch")
-	assert.That(t, !strings.Contains(out.String(), "Untracked files"),
-		"no untracked section when there is nothing untracked")
+	assert.ContainsString(t, out.String(), "Uncommitted changes (1):\n")
+	assert.That(t, !strings.Contains(out.String(), "untracked"),
+		"nothing untracked to mention")
 }

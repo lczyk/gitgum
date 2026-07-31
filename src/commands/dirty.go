@@ -7,6 +7,7 @@ import (
 
 	"github.com/lczyk/gitgum/internal/dirty"
 	"github.com/lczyk/gitgum/internal/ui"
+	"github.com/lczyk/gitgum/src/filetree"
 )
 
 // The three ways past a dirty tree. Abort leads so Enter still declines and
@@ -50,19 +51,17 @@ func handleDirtyLines(c *cmdIO, label string, dirtyLines []string) (cleanup func
 		return noop, nil
 	}
 
-	fmt.Fprintf(c.out(), "Uncommitted changes:\n%s\n", strings.Join(dirtyLines, "\n"))
-
 	// The plan describes the discard option honestly. If it cannot be read,
 	// the option is simply not offered rather than offered with a number that
-	// might be wrong.
+	// might be wrong -- and the listing falls back to the lines that triggered
+	// the prompt, which is all there is to show.
 	plan, planErr := dirty.Scan(c.repo())
 	discardOpts := dirty.Options{Tracked: true, Untracked: true}
 
-	// Untracked files do not block the operation, so they are not why this
-	// prompt appeared -- but discarding removes them, and a count without the
-	// names is what made gg clean dangerous. List them when there are any.
 	if planErr == nil {
-		printUntracked(c.out(), plan.Untracked)
+		printDirty(c.out(), plan, discardOpts)
+	} else {
+		fmt.Fprintf(c.out(), "Uncommitted changes:\n%s\n", strings.Join(dirtyLines, "\n"))
 	}
 
 	options := []string{dirtyAbort, dirtyStashOption(label)}
@@ -99,25 +98,24 @@ func handleDirtyLines(c *cmdIO, label string, dirtyLines []string) (cleanup func
 	}, nil
 }
 
-// maxUntrackedShown bounds the untracked list. The count stays exact -- it is
-// the number that decides whether you pick the discard row.
-const maxUntrackedShown = 10
+// maxDirtyPromptLines bounds the listing. The tracked half used to be printed
+// whole, so a rebase over three hundred files pushed the question off screen;
+// the count in the header stays exact either way.
+const maxDirtyPromptLines = 40
 
-// printUntracked lists the files discarding would remove on top of the tracked
-// changes already shown. Silent when there are none, so the common case reads
-// exactly as it did before.
-func printUntracked(out io.Writer, paths []string) {
-	if len(paths) == 0 {
-		return
-	}
-	fmt.Fprintf(out, "Untracked files (%d, discarding removes these too):\n", len(paths))
-	for i, p := range paths {
-		if i >= maxUntrackedShown {
-			fmt.Fprintf(out, "  ... and %d more\n", len(paths)-maxUntrackedShown)
-			break
-		}
-		fmt.Fprintf(out, "  %s\n", p)
-	}
+// printDirty lists the working tree ahead of the prompt: tracked changes and
+// untracked files in one tree, each marked with the code it arrived with.
+//
+// Untracked files are here because discarding removes them, not because they
+// blocked anything -- which is a distinction the discard row states, since
+// that is the line you are reading when you decide.
+func printDirty(out io.Writer, plan dirty.Plan, opts dirty.Options) {
+	fmt.Fprintf(out, "Uncommitted changes (%d)%s\n", plan.Count(opts), planSummary(plan, opts))
+	filetree.Tree(out, planItems(plan, opts), filetree.Opts{
+		Dim:        dim,
+		FoldChains: true,
+		MaxLines:   maxDirtyPromptLines,
+	})
 }
 
 // dirtyStashOption is the stash row, shared so tests name the row rather than
