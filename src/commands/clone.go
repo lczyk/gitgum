@@ -74,12 +74,6 @@ func (c *CloneCommand) Execute(args []string) error {
 	ref, route := parsed.Ref, parsed.Route
 
 	if ok {
-		// A commit outside a shallow window cannot be checked out, and whether
-		// it is inside one is unknowable until after the clone -- so refuse the
-		// pair rather than transfer a repo that cannot satisfy the request.
-		if route.Kind == git.RouteCommit && c.Depth > 0 {
-			return fmt.Errorf("--depth cannot be combined with a commit url: %s may fall outside the shallow history", route.Ref)
-		}
 		if done, err := c.checkExistingDest(ref, route); done {
 			return err
 		}
@@ -164,14 +158,65 @@ func (c *CloneCommand) applyRoute(plan clonePlan, rp routePlan) error {
 				plan.dir, rp.pr.Number, err)
 		}
 	case rp.commit != "":
-		if err := cloned.Checkout(rp.commit); err != nil {
-			return fmt.Errorf("cloned into %s, but checking out commit %s failed: %w",
-				plan.dir, rp.commit, err)
-		}
-		fmt.Fprintf(c.out(), "Detached at %s. To keep work from here, cut a branch with %s.\n",
-			paint(ansiBoldCyan, rp.commit), paint(ansiBoldCyan, "gg branch"))
+		return c.checkoutCommit(cloned, plan, rp.commit)
 	}
 	return nil
+}
+
+// checkoutCommit lands on the commit a url named. A shallow clone usually
+// won't have it, so it is fetched on its own -- one commit and its tree, not
+// the history between here and there, which keeps the clone as shallow as was
+// asked for. That leaves the commit with no local ancestry, which is offered
+// separately because reaching the commit and having history around it are
+// different wants, and whoever passed --depth has already said something about
+// the second.
+//
+// A server that refuses unadvertised-object requests leaves the repo exactly as
+// a plain clone would: default branch, nothing detached, and a warning saying
+// so rather than a failure, since the clone itself succeeded.
+func (c *CloneCommand) checkoutCommit(cloned git.Repo, plan clonePlan, sha string) error {
+	if !cloned.HasObject(sha) {
+		if err := cloned.FetchObject(plan.remote, sha); err != nil || !cloned.HasObject(sha) {
+			fmt.Fprintf(c.err(), "%s %s is outside this shallow clone and %s would not serve it on its own.\n"+
+				"      the clone is fine and sits on the default branch; re-run without --depth to reach that commit.\n",
+				paint(ansiBoldYellow, "warning:"), paint(ansiBoldCyan, sha), plan.remote)
+			return nil
+		}
+	}
+
+	if err := cloned.Checkout(sha); err != nil {
+		return fmt.Errorf("cloned into %s, but checking out commit %s failed: %w", plan.dir, sha, err)
+	}
+	fmt.Fprintf(c.out(), "Detached at %s. To keep work from here, cut a branch with %s.\n",
+		paint(ansiBoldCyan, sha), paint(ansiBoldCyan, "gg branch"))
+
+	c.offerDeepen(cloned, plan.remote, sha)
+	return nil
+}
+
+// offerDeepen asks whether to pull in the history around a commit that was
+// fetched on its own. The commit's own date is the only measure available:
+// how many commits deep it sits cannot be computed without first fetching the
+// very history the question is about. Declining is the expected answer often
+// enough that this never fails the command.
+func (c *CloneCommand) offerDeepen(cloned git.Repo, remote, sha string) {
+	if !cloned.IsShallow() {
+		return // full clone already has everything around it
+	}
+	since, err := cloned.CommitDate(sha)
+	if err != nil {
+		return
+	}
+	fmt.Fprintf(c.out(), "Its history is not here -- the commit was fetched on its own.\n")
+	confirmed, err := c.sel().Confirm(
+		fmt.Sprintf("Deepen the clone to %s so history around it is readable?", since), false)
+	if err != nil || !confirmed {
+		return
+	}
+	if err := cloned.Deepen(remote, since); err != nil {
+		fmt.Fprintf(c.err(), "%s deepening failed; the commit is still checked out: %v\n",
+			paint(ansiBoldYellow, "warning:"), err)
+	}
 }
 
 // undoPRCheckout returns a freshly cloned repo to the state a plain clone would

@@ -1,8 +1,10 @@
 package commands
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -248,19 +250,97 @@ func TestClonePreflight(t *testing.T) {
 	})
 }
 
-// --depth and a commit url cannot both be honoured, and which way it fails is
-// unknowable until after the transfer -- so it is refused before one starts.
-func TestCloneRefusesDepthWithCommitURL(t *testing.T) {
-	t.Parallel()
-	c := &CloneCommand{Depth: 1, lsRemote: func(string) (string, error) {
-		t.Error("should refuse before listing refs")
-		return "", nil
-	}}
-	c.Args.URL = "https://github.com/o/r/commit/abc1234"
+// A commit url is served by fetching that one commit into the shallow clone,
+// so --depth and a commit url now compose rather than conflicting.
+func TestCloneCommitURLIntoShallowClone(t *testing.T) {
+	// not parallel: clones into the process working directory
+	origin := temp_repo.NewRepo(t)
+	for i := range 6 {
+		temp_repo.CreateCommit(t, origin, fmt.Sprintf("f%d", i), "x", fmt.Sprintf("chore: c%d", i))
+	}
+	old := strings.TrimSpace(temp_repo.RunGit(t, origin, "rev-parse", "HEAD~5"))
 
-	err := c.Execute(nil)
-	assert.Error(t, err, assert.AnyError, "execute")
-	assert.ContainsString(t, err.Error(), "--depth cannot be combined with a commit url")
+	dest := filepath.Join(t.TempDir(), "shallow")
+	c := &CloneCommand{Depth: 1, cmdIO: cmdIO{UI: &stubSelector{confirmAnswers: []bool{false}}}}
+	plan := clonePlan{dir: dest, remote: "origin"}
+	require.NoError(t, c.repo().RunWriteStream(
+		"clone", "--depth", "1", "--no-single-branch", "-o", "origin", "file://"+origin, dest), "clone")
+
+	cloned := git.Repo{Dir: dest}
+	require.That(t, cloned.IsShallow(), "clone should be shallow")
+	require.That(t, !cloned.HasObject(old), "old commit should start outside the boundary")
+
+	require.NoError(t, c.checkoutCommit(cloned, plan, old), "checkoutCommit")
+
+	assert.That(t, cloned.HasObject(old), "the commit should have been fetched on its own")
+	head := strings.TrimSpace(temp_repo.RunGit(t, dest, "rev-parse", "HEAD"))
+	assert.Equal(t, head, old)
+	// declining the deepen leaves it shallow -- reaching the commit and having
+	// history around it are separate
+	assert.That(t, cloned.IsShallow(), "declining the offer should leave the clone shallow")
+}
+
+// Accepting the offer deepens to the commit's own date, which is the only
+// measure available -- how far back it sits cannot be known without fetching
+// the very history being asked about.
+func TestCloneCommitURLAcceptsDeepen(t *testing.T) {
+	origin := temp_repo.NewRepo(t)
+	for i := range 6 {
+		temp_repo.CreateCommit(t, origin, fmt.Sprintf("f%d", i), "x", fmt.Sprintf("chore: c%d", i))
+	}
+	old := strings.TrimSpace(temp_repo.RunGit(t, origin, "rev-parse", "HEAD~5"))
+
+	dest := filepath.Join(t.TempDir(), "shallow")
+	stub := &stubSelector{confirmAnswers: []bool{true}}
+	c := &CloneCommand{Depth: 1, cmdIO: cmdIO{UI: stub}}
+	plan := clonePlan{dir: dest, remote: "origin"}
+	require.NoError(t, c.repo().RunWriteStream(
+		"clone", "--depth", "1", "--no-single-branch", "-o", "origin", "file://"+origin, dest), "clone")
+
+	cloned := git.Repo{Dir: dest}
+	countBranch := func() int {
+		out := strings.TrimSpace(temp_repo.RunGit(t, dest, "rev-list", "--count", "origin/main"))
+		n, err := strconv.Atoi(out)
+		require.NoError(t, err, "count")
+		return n
+	}
+	before := countBranch()
+	require.Equal(t, before, 1) // --depth 1
+
+	require.NoError(t, c.checkoutCommit(cloned, plan, old), "checkoutCommit")
+
+	require.Equal(t, len(stub.confirmCalls), 1)
+	assert.ContainsString(t, stub.confirmCalls[0].Prompt, "Deepen")
+	// the commit is now connected to the tip, which is what makes log readable
+	assert.That(t, countBranch() > before,
+		"deepening should have brought in the history between the commit and the tip")
+}
+
+// A server that will not serve an unadvertised object leaves a usable shallow
+// clone on the default branch, with a warning rather than a failure.
+func TestCloneCommitURLServerRefuses(t *testing.T) {
+	origin := temp_repo.NewRepo(t)
+	for i := range 6 {
+		temp_repo.CreateCommit(t, origin, fmt.Sprintf("f%d", i), "x", fmt.Sprintf("chore: c%d", i))
+	}
+	old := strings.TrimSpace(temp_repo.RunGit(t, origin, "rev-parse", "HEAD~5"))
+
+	dest := filepath.Join(t.TempDir(), "shallow")
+	var errBuf strings.Builder
+	c := &CloneCommand{Depth: 1, cmdIO: cmdIO{Err: &errBuf}}
+	// point the remote at nothing, so the object fetch cannot succeed
+	plan := clonePlan{dir: dest, remote: "nosuchremote"}
+	require.NoError(t, c.repo().RunWriteStream(
+		"clone", "--depth", "1", "--no-single-branch", "-o", "origin", "file://"+origin, dest), "clone")
+
+	cloned := git.Repo{Dir: dest}
+	before := strings.TrimSpace(temp_repo.RunGit(t, dest, "rev-parse", "--abbrev-ref", "HEAD"))
+
+	require.NoError(t, c.checkoutCommit(cloned, plan, old), "a refused object is not a clone failure")
+
+	assert.ContainsString(t, errBuf.String(), "outside this shallow clone")
+	after := strings.TrimSpace(temp_repo.RunGit(t, dest, "rev-parse", "--abbrev-ref", "HEAD"))
+	assert.Equal(t, after, before) // still on the default branch, nothing detached
 }
 
 func TestCheckExistingDest(t *testing.T) {

@@ -255,6 +255,31 @@ func (r Repo) EmptyTree() (string, error) {
 	return stdout, nil
 }
 
+// HasObject reports whether an object is present locally. On a shallow clone
+// this is how you tell "outside the boundary" from "does not exist", since a
+// missing commit is not even a valid revision there -- rev-parse and merge-base
+// both refuse it rather than answering.
+func (r Repo) HasObject(sha string) bool {
+	_, _, err := r.run("cat-file", "-e", sha+"^{commit}")
+	return err == nil
+}
+
+// IsShallow reports whether the repo has a truncated history.
+func (r Repo) IsShallow() bool {
+	stdout, _, err := r.run("rev-parse", "--is-shallow-repository")
+	return err == nil && stdout == "true"
+}
+
+// CommitDate returns a commit's committer date in strict ISO 8601, the form
+// --shallow-since accepts.
+func (r Repo) CommitDate(rev string) (string, error) {
+	stdout, stderr, err := r.run("log", "-1", "--format=%cI", rev)
+	if err != nil {
+		return "", fmt.Errorf("git log %s: %w: %s", rev, err, stderr)
+	}
+	return stdout, nil
+}
+
 // BranchExists checks if a local branch exists.
 func (r Repo) BranchExists(branch string) bool {
 	stdout, _, err := r.run("branch", "--list", branch, "--format=%(refname:short)")
