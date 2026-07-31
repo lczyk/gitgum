@@ -348,25 +348,25 @@ func TestCheckExistingDest(t *testing.T) {
 
 	// check drives clone's dest inspection for want ("user/repo" spelling or a
 	// pinned url) against dir, returning the outcome and captured stdout.
-	check := func(t *testing.T, want, dir string) (done bool, err error, out string) {
+	check := func(t *testing.T, want, dir string) (done bool, out string, err error) {
 		t.Helper()
 		var buf strings.Builder
 		c := &CloneCommand{cmdIO: cmdIO{Out: &buf, Err: &buf}}
 		c.Args.Dir = dir
 		done, err = c.checkExistingDest(mustRef(t, want), git.Route{})
-		return done, err, buf.String()
+		return done, buf.String(), err
 	}
 
 	t.Run("absent dir falls through to git", func(t *testing.T) {
 		t.Parallel()
-		done, err, _ := check(t, "canonical/rockcraft", filepath.Join(t.TempDir(), "rockcraft"))
+		done, _, err := check(t, "canonical/rockcraft", filepath.Join(t.TempDir(), "rockcraft"))
 		require.NoError(t, err, "check")
 		assert.That(t, !done, "done")
 	})
 
 	t.Run("empty dir falls through to git", func(t *testing.T) {
 		t.Parallel()
-		done, err, _ := check(t, "canonical/rockcraft", t.TempDir())
+		done, _, err := check(t, "canonical/rockcraft", t.TempDir())
 		require.NoError(t, err, "check")
 		assert.That(t, !done, "done")
 	})
@@ -375,7 +375,7 @@ func TestCheckExistingDest(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "junk"), []byte("x"), 0o644), "write")
-		done, err, _ := check(t, "canonical/rockcraft", dir)
+		done, _, err := check(t, "canonical/rockcraft", dir)
 		assert.That(t, done, "done")
 		assert.Error(t, err, assert.AnyError, "check")
 		assert.ContainsString(t, err.Error(), "not a git repository")
@@ -385,7 +385,7 @@ func TestCheckExistingDest(t *testing.T) {
 		t.Parallel()
 		dir := temp_repo.NewRepo(t)
 		temp_repo.RunGit(t, dir, "remote", "add", "canonical", "https://github.com/canonical/rockcraft")
-		done, err, out := check(t, "canonical/rockcraft", dir)
+		done, out, err := check(t, "canonical/rockcraft", dir)
 		assert.That(t, done, "done")
 		require.NoError(t, err, "check")
 		assert.ContainsString(t, out, "already cloned")
@@ -395,7 +395,7 @@ func TestCheckExistingDest(t *testing.T) {
 		t.Parallel()
 		dir := temp_repo.NewRepo(t)
 		temp_repo.RunGit(t, dir, "remote", "add", "foo", "https://github.com/foo/rockcraft")
-		done, err, _ := check(t, "canonical/rockcraft", dir)
+		done, _, err := check(t, "canonical/rockcraft", dir)
 		assert.That(t, done, "done")
 		assert.Error(t, err, assert.AnyError, "check")
 		assert.ContainsString(t, err.Error(), "clone of github.com/foo/rockcraft")
@@ -405,7 +405,7 @@ func TestCheckExistingDest(t *testing.T) {
 		t.Parallel()
 		dir := temp_repo.NewRepo(t)
 		temp_repo.RunGit(t, dir, "remote", "add", "canonical", "https://github.com/canonical/rockcraft")
-		done, err, _ := check(t, "gitlab.com/canonical/rockcraft", dir)
+		done, _, err := check(t, "gitlab.com/canonical/rockcraft", dir)
 		assert.That(t, done, "done")
 		assert.Error(t, err, assert.AnyError, "check")
 	})
@@ -413,7 +413,7 @@ func TestCheckExistingDest(t *testing.T) {
 	t.Run("repo without remotes errors", func(t *testing.T) {
 		t.Parallel()
 		dir := temp_repo.NewRepo(t)
-		done, err, _ := check(t, "canonical/rockcraft", dir)
+		done, _, err := check(t, "canonical/rockcraft", dir)
 		assert.That(t, done, "done")
 		assert.Error(t, err, assert.AnyError, "check")
 		assert.ContainsString(t, err.Error(), "none of its remotes")

@@ -2,6 +2,12 @@
 
 SRCS := $(shell find ./cmd ./internal ./src -name '*.go' ! -name 'version.go')
 
+# Lint tools run via `go run` rather than being installed, matching how
+# generate-version is invoked below: CI gets them from the module cache with
+# no extra step. Pinned, so a new release cannot fail the build unannounced.
+STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.7.0
+DEADCODE    := golang.org/x/tools/cmd/deadcode@v0.48.0
+
 help:  ## Show this help
 	@echo "Available targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -54,8 +60,16 @@ test: generate-version  ## Run the test suite with race detector
 	fi
 
 .PHONY: lint
-lint:  ## go vet + gofmt check (no writes)
+lint:  ## go vet + staticcheck + deadcode + gofmt check (no writes)
 	go vet ./...
+	go run $(STATICCHECK) ./...
+	@# deadcode exits 0 whatever it finds, so its output is the signal.
+	@# -test counts test functions as entry points; without it every helper
+	@# only tests use reads as unreachable.
+	@out=$$(go run $(DEADCODE) -test ./...); \
+	if [ -n "$$out" ]; then \
+		echo "Unreachable code:"; echo "$$out"; exit 1; \
+	fi
 	@out=$$(gofmt -s -l ./cmd ./internal ./src); \
 	if [ -n "$$out" ]; then \
 		echo "Unformatted files:"; echo "$$out"; exit 1; \

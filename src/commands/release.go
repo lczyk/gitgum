@@ -21,6 +21,9 @@ import (
 type ReleaseCommand struct {
 	cmdIO
 	Args struct {
+		// go-flags spells an enum as a repeated choice tag; staticcheck reads
+		// the repetition as a mistake.
+		//lint:ignore SA5008 repeated choice tags are the go-flags enum syntax
 		Bump string `positional-arg-name:"BUMP" choice:"patch" choice:"minor" choice:"major" choice:"revision" required:"yes"`
 	} `positional-args:"yes"`
 }
