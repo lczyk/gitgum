@@ -52,7 +52,15 @@ func layoutWalker(nodes []Node, opt Opt) LayoutResult {
 	copy(order, st.nodes)
 	sort.Slice(order, func(i, j int) bool { return order[i].row > order[j].row }) // newest first
 
-	w := &walkState{opt: opt}
+	// Every node emits a row and fans add connector rows on top, so len(nodes)
+	// is a floor rather than a bound -- but starting there is what keeps emit
+	// off the regrowth treadmill, which dominated the walker's allocation.
+	w := &walkState{
+		opt:      opt,
+		rows:     make([][]Glyph, 0, len(nodes)),
+		gaps:     make([][]Glyph, 0, len(nodes)),
+		rowNodes: make([]*Node, 0, len(nodes)),
+	}
 	for _, ns := range order {
 		w.place(ns)
 	}
@@ -366,16 +374,31 @@ func (w *walkState) finish() LayoutResult {
 			}
 		}
 	}
+	// Every row is the same width and none of them outlive the result, so the
+	// glyphs come out of one backing array each. Slices are capped to their
+	// own row: a caller appending to Glyphs or Gap gets a copy rather than the
+	// next row's cells.
+	glyphBuf := make([]Glyph, n*w.width)
+	gapRows := 0
+	for _, s := range w.gaps {
+		if s != nil {
+			gapRows++
+		}
+	}
+	gapBuf := make([]Glyph, gapRows*w.width)
+
 	for i := range n {
 		src := i // newest-first, as built
 		if flip {
 			src = n - 1 - i
 		}
-		g := make([]Glyph, w.width)
+		g := glyphBuf[:w.width:w.width]
+		glyphBuf = glyphBuf[w.width:]
 		copyRow(g, w.rows[src])
 		var gap []Glyph
 		if s := w.gaps[src]; s != nil {
-			gap = make([]Glyph, w.width)
+			gap = gapBuf[:w.width:w.width]
+			gapBuf = gapBuf[w.width:]
 			copyRow(gap, s)
 		}
 		out[i] = Row{Node: w.rowNodes[src], Glyphs: g, Gap: gap}
