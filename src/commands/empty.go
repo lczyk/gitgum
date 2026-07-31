@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -42,10 +41,6 @@ func (e *EmptyCommand) Execute(args []string) error {
 
 	cleanup, err := handleDirtyTree(&e.cmdIO, "empty")
 	if err != nil {
-		if errors.Is(err, errDirtyTreeAborted) {
-			fmt.Fprintln(e.out(), "Aborted.")
-			return nil
-		}
 		return err
 	}
 	defer cleanup()

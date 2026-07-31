@@ -98,9 +98,9 @@ func TestCheckoutPRCommand_Execute_NamedPRSkipsPrompts(t *testing.T) {
 	assert.Equal(t, len(stub.selectCalls), 0)
 }
 
-// Backing out of a picker is a choice, not a failure: one line, exit 0, the
-// same as branch, switch and delete.
-func TestCheckoutPRCommand_Execute_CancelIsNotAnError(t *testing.T) {
+// Backing out of a picker stops the command: the contextual line still
+// prints, and the cancel propagates so main can exit 130.
+func TestCheckoutPRCommand_Execute_CancelStopsTheCommand(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)
 
@@ -116,7 +116,7 @@ func TestCheckoutPRCommand_Execute_CancelIsNotAnError(t *testing.T) {
 	stub := &stubSelector{selectErrs: []error{ui.ErrCancelled}}
 	cmd := &CheckoutPRCommand{cmdIO: cmdIO{UI: stub, Err: &errBuf, Repo: git.Repo{Dir: dir}}}
 
-	require.NoError(t, cmd.Execute(nil), "cancelling should not be an error")
+	assert.ErrorIs(t, cmd.Execute(nil), ui.ErrCancelled, "cancelling stops the command")
 	assert.ContainsString(t, errBuf.String(), "No PR selected")
 	// still on the branch we started on
 	assert.Equal(t, currentBranchIn(t, dir), "main")

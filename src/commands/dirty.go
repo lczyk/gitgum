@@ -1,18 +1,12 @@
 package commands
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/lczyk/gitgum/internal/dirty"
 	"github.com/lczyk/gitgum/internal/ui"
 )
-
-// errDirtyTreeAborted is returned by handleDirtyTree when the user declines to
-// deal with the dirty tree. Callers use errors.Is to distinguish a clean abort
-// from a real failure.
-var errDirtyTreeAborted = errors.New("aborted: working tree not clean")
 
 // The three ways past a dirty tree. Abort leads so Enter still declines and
 // the irreversible choice sits furthest from the cursor -- every destructive
@@ -70,14 +64,12 @@ func handleDirtyLines(c *cmdIO, label string, dirtyLines []string) (cleanup func
 
 	selected, err := c.sel().Select("Uncommitted changes -- what now?", options)
 	if err != nil {
-		if errors.Is(err, ui.ErrCancelled) {
-			return noop, errDirtyTreeAborted
-		}
 		return noop, err
 	}
 	switch {
 	case selected == options[0]:
-		return noop, errDirtyTreeAborted
+		// choosing abort and pressing escape are the same decision
+		return noop, ui.ErrCancelled
 	case len(options) > 2 && selected == options[2]:
 		if err := plan.Discard(c.repo(), discardOpts); err != nil {
 			return noop, err

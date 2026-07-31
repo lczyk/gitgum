@@ -1,12 +1,10 @@
 package commands
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/lczyk/gitgum/internal/git"
-	"github.com/lczyk/gitgum/internal/ui"
 )
 
 // AddRemoteCommand adds a git remote using gg's naming rules: the remote is
@@ -141,9 +139,6 @@ func (c *AddRemoteCommand) refFromExistingRemotes(user string) (git.RepoRef, err
 	picked, err := c.sel().Select(
 		fmt.Sprintf("which repo should %s own?", user), urls)
 	if err != nil {
-		if errors.Is(err, ui.ErrCancelled) {
-			return git.RepoRef{}, fmt.Errorf("aborted")
-		}
 		return git.RepoRef{}, err
 	}
 	return byURL[picked], nil

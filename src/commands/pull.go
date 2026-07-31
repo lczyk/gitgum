@@ -7,7 +7,6 @@ import (
 
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/pr"
-	"github.com/lczyk/gitgum/internal/ui"
 )
 
 type PullCommand struct {
@@ -116,18 +115,12 @@ func (p *PullCommand) pullBranch(currentBranch string) error {
 	if localAhead {        // diverged: let the user pick how to reconcile.
 		mode, err = p.selectMode(currentBranch, upstream)
 		if err != nil {
-			if errors.Is(err, ui.ErrCancelled) {
-				return nil
-			}
 			return err
 		}
 	}
 
 	cleanup, err := handleDirtyTree(&p.cmdIO, "pull")
 	if err != nil {
-		if errors.Is(err, errDirtyTreeAborted) {
-			return nil
-		}
 		return err
 	}
 	defer cleanup()
@@ -229,9 +222,6 @@ func (p *PullCommand) pullPR(branch string, m pr.Meta) error {
 			false,
 		)
 		if err != nil {
-			if errors.Is(err, ui.ErrCancelled) {
-				return nil
-			}
 			return err
 		}
 		if !confirmed {
@@ -242,9 +232,6 @@ func (p *PullCommand) pullPR(branch string, m pr.Meta) error {
 
 	cleanup, err := handleDirtyTree(&p.cmdIO, "pull")
 	if err != nil {
-		if errors.Is(err, errDirtyTreeAborted) {
-			return nil
-		}
 		return err
 	}
 	defer cleanup()

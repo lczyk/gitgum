@@ -2,7 +2,6 @@ package commands
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -90,10 +89,6 @@ func (r *ReleaseCommand) Execute(args []string) error {
 
 	cleanup, err := handleDirtyTree(&r.cmdIO, "release")
 	if err != nil {
-		if errors.Is(err, errDirtyTreeAborted) {
-			fmt.Fprintln(r.out(), "Aborted.")
-			return nil
-		}
 		return err
 	}
 	defer cleanup()

@@ -63,7 +63,7 @@ func (c *CheckoutPRCommand) Execute(args []string) error {
 			// user backed out.
 			if errors.Is(err, ui.ErrCancelled) {
 				fmt.Fprintln(c.err(), "No remote selected. Aborting checkout-pr.")
-				return nil
+				return err
 			}
 			return err
 		}
@@ -95,7 +95,7 @@ func (c *CheckoutPRCommand) Execute(args []string) error {
 	if err != nil {
 		if errors.Is(err, ui.ErrCancelled) {
 			fmt.Fprintln(c.err(), "No PR selected. Aborting checkout-pr.")
-			return nil
+			return err
 		}
 		return err
 	}
@@ -147,10 +147,6 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 		// The reset below is destructive, so deal with the working tree first.
 		cleanup, err := handleDirtyTree(&c.cmdIO, "checkout-pr")
 		if err != nil {
-			if errors.Is(err, errDirtyTreeAborted) {
-				fmt.Fprintln(c.out(), "Aborted.")
-				return nil
-			}
 			return err
 		}
 		defer cleanup()
@@ -178,10 +174,6 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 
 	cleanup, err := handleDirtyTree(&c.cmdIO, "checkout-pr")
 	if err != nil {
-		if errors.Is(err, errDirtyTreeAborted) {
-			fmt.Fprintln(c.out(), "Aborted.")
-			return nil
-		}
 		return err
 	}
 	defer cleanup()

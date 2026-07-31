@@ -83,9 +83,6 @@ func (p *PushCommand) Execute(args []string) error {
 		p.showPushDelta(remoteCommit, localCommit)
 		confirmed, err := p.sel().Confirm("Do you want to push to the remote tracking branch?", true)
 		if err != nil {
-			if errors.Is(err, ui.ErrCancelled) {
-				return nil
-			}
 			return fmt.Errorf("confirming push to upstream: %w", err)
 		}
 		if !confirmed {
@@ -128,9 +125,6 @@ func (p *PushCommand) Execute(args []string) error {
 		}
 		remote, err := p.sel().Select(fmt.Sprintf("Push '%s' to", currentBranch), remotes, query...)
 		if err != nil {
-			if errors.Is(err, ui.ErrCancelled) {
-				return nil
-			}
 			return fmt.Errorf("selecting remote: %w", err)
 		}
 		selectedRemote = remote
@@ -142,9 +136,6 @@ func (p *PushCommand) Execute(args []string) error {
 		confirmed, err := p.sel().Confirm(fmt.Sprintf("No remote branch '%s' found. Do you want to create it?",
 			expectedRemoteBranchName), false)
 		if err != nil {
-			if errors.Is(err, ui.ErrCancelled) {
-				return nil
-			}
 			return fmt.Errorf("confirming create remote branch: %w", err)
 		}
 		if !confirmed {
@@ -184,9 +175,6 @@ func (p *PushCommand) Execute(args []string) error {
 	confirmed, err := p.sel().Confirm(fmt.Sprintf("Remote branch '%s' already exists. Do you want to push to it?",
 		expectedRemoteBranchName), true)
 	if err != nil {
-		if errors.Is(err, ui.ErrCancelled) {
-			return nil
-		}
 		return fmt.Errorf("confirming push to remote: %w", err)
 	}
 	if !confirmed {
@@ -237,7 +225,7 @@ func (p *PushCommand) handleStaleUpstream(currentBranch, upstream string) (handl
 	confirmed, err := p.sel().Confirm(fmt.Sprintf("Recreate remote branch '%s'?", upstream), true)
 	if err != nil {
 		if errors.Is(err, ui.ErrCancelled) {
-			return true, nil
+			return false, err
 		}
 		return false, fmt.Errorf("confirming recreate upstream: %w", err)
 	}
@@ -276,9 +264,6 @@ func (p *PushCommand) reconcileDiverged(currentBranch, upstream string) error {
 		confirmed, err := p.sel().Confirm(
 			fmt.Sprintf("Pull --rebase to fast-forward '%s' onto '%s'?", currentBranch, upstream), true)
 		if err != nil {
-			if errors.Is(err, ui.ErrCancelled) {
-				return nil
-			}
 			return fmt.Errorf("confirming rebase: %w", err)
 		}
 		if !confirmed {
@@ -286,9 +271,6 @@ func (p *PushCommand) reconcileDiverged(currentBranch, upstream string) error {
 		}
 		cleanup, err := handleDirtyTree(&p.cmdIO, "push")
 		if err != nil {
-			if errors.Is(err, errDirtyTreeAborted) {
-				return nil
-			}
 			return err
 		}
 		defer cleanup()
@@ -315,9 +297,6 @@ func (p *PushCommand) reconcileDiverged(currentBranch, upstream string) error {
 	confirmed, err := p.sel().Confirm(
 		fmt.Sprintf("Remote '%s' has diverged from local '%s'. Pull --rebase before pushing?", upstream, currentBranch), true)
 	if err != nil {
-		if errors.Is(err, ui.ErrCancelled) {
-			return nil
-		}
 		return fmt.Errorf("confirming rebase: %w", err)
 	}
 	if !confirmed {
@@ -326,9 +305,6 @@ func (p *PushCommand) reconcileDiverged(currentBranch, upstream string) error {
 
 	cleanup, err := handleDirtyTree(&p.cmdIO, "push")
 	if err != nil {
-		if errors.Is(err, errDirtyTreeAborted) {
-			return nil
-		}
 		return err
 	}
 	defer cleanup()

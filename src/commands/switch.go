@@ -98,10 +98,6 @@ func (s *SwitchCommand) Execute(args []string) error {
 
 	cleanup, err := handleDirtyLines(&s.cmdIO, "switch", dirty)
 	if err != nil {
-		if errors.Is(err, errDirtyTreeAborted) {
-			fmt.Fprintln(s.out(), "Aborted.")
-			return nil
-		}
 		return err
 	}
 	defer cleanup()
@@ -124,15 +120,12 @@ func (s *SwitchCommand) Execute(args []string) error {
 		// gets its own error rather than a message implying the user backed out.
 		if errors.Is(err, ui.ErrCancelled) {
 			fmt.Fprintln(s.err(), "No branch selected. Aborting switch.")
-			return nil
+			return err
 		}
 		return err
 	}
 
 	if err := s.applySelection(selected); err != nil {
-		if errors.Is(err, ui.ErrCancelled) {
-			return nil
-		}
 		return err
 	}
 	return nil

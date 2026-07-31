@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -356,9 +355,6 @@ func (c *CloneCommand) checkoutPRInExisting(dir, remote string, number int) erro
 	confirmed, err := c.sel().Confirm(
 		fmt.Sprintf("Check pull request #%d out there?", number), false)
 	if err != nil {
-		if errors.Is(err, ui.ErrCancelled) {
-			return nil
-		}
 		return err
 	}
 	if !confirmed {
@@ -444,9 +440,6 @@ func resolveShorthand(sel ui.Selector, net network, ref git.RepoRef) (git.RepoRe
 		picked, err := sel.Select(
 			fmt.Sprintf("%s exists on several forges; pick one", ref.Path), hitURLs)
 		if err != nil {
-			if errors.Is(err, ui.ErrCancelled) {
-				return ref, fmt.Errorf("aborted")
-			}
 			return ref, err
 		}
 		ref.Forge = byURL[picked]

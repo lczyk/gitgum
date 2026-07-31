@@ -8,6 +8,7 @@ import (
 	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
+	"github.com/lczyk/gitgum/internal/ui"
 )
 
 // advanceRemote clones the bare remote into a throwaway worktree, commits a
@@ -248,7 +249,7 @@ func TestPullCommand_DirtyTreeDeclined(t *testing.T) {
 	cmd := &PullCommand{cmdIO: cmdIO{UI: stub, Repo: git.Repo{Dir: local}}}
 
 	err := cmd.Execute(nil)
-	require.NoError(t, err, "declining is a clean abort")
+	assert.ErrorIs(t, err, ui.ErrCancelled, "aborting stops the pull")
 
 	after := strings.TrimSpace(temp_repo.RunGit(t, local, "rev-parse", "HEAD"))
 	assert.Equal(t, after, before, "HEAD must not move when the stash is declined")

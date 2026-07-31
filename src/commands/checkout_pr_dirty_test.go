@@ -9,6 +9,7 @@ import (
 	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
+	"github.com/lczyk/gitgum/internal/ui"
 )
 
 // prRepoWithStaleBranch builds the state the reset path needs: a local
@@ -79,9 +80,8 @@ func TestCheckoutPRCommand_ResetExistingBranch_DeclineStashAborts(t *testing.T) 
 		confirmAnswers: []bool{true},
 	}
 	cmd := &CheckoutPRCommand{cmdIO: cmdIO{Out: &out, UI: stub, Repo: git.Repo{Dir: dir}}}
-	require.NoError(t, cmd.Execute(nil))
+	assert.ErrorIs(t, cmd.Execute(nil), ui.ErrCancelled, "aborting stops the command")
 
-	assert.ContainsString(t, out.String(), "Aborted.")
 	fileNotExists(t, dir, "pr.txt") // no reset happened
 	fileContent(t, dir, "README.md", "local edit worth keeping\n")
 }

@@ -164,9 +164,6 @@ func pickVersionEdits(sel ui.Selector, mentions []versionMention, current string
 	)
 	selected, err := sel.MultiSelect(prompt, options)
 	if err != nil {
-		if errors.Is(err, ui.ErrCancelled) {
-			return nil, nil
-		}
 		return nil, err
 	}
 	picks := make([]versionMention, 0, len(selected))

@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -197,7 +196,7 @@ func TestHandleDirtyTree_PreservesPartialHunkStaging(t *testing.T) {
 	assert.ContainsString(t, post, "MM file.txt")
 }
 
-func TestHandleDirtyTree_DirtyConfirmNo(t *testing.T) {
+func TestHandleDirtyTree_AbortRow(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)
 	readme := filepath.Join(dir, "README.md")
@@ -209,7 +208,7 @@ func TestHandleDirtyTree_DirtyConfirmNo(t *testing.T) {
 
 	cleanup, err := handleDirtyTree(c, "test")
 	assert.Error(t, err, assert.AnyError, "should error when user declines")
-	assert.That(t, errors.Is(err, errDirtyTreeAborted), "abort should match errDirtyTreeAborted")
+	assert.ErrorIs(t, err, ui.ErrCancelled, "abort is a cancel")
 	assert.That(t, cleanup != nil, "cleanup must always be non-nil")
 	cleanup()
 
@@ -258,5 +257,5 @@ func TestHandleDirtyTree_CancelAborts(t *testing.T) {
 
 	stub := &stubSelector{selectErrs: []error{ui.ErrCancelled}}
 	_, err := handleDirtyTree(newDirtyTestIO(stub, dir), "switch")
-	assert.ErrorIs(t, err, errDirtyTreeAborted, "cancelling should abort cleanly")
+	assert.ErrorIs(t, err, ui.ErrCancelled, "cancelling is a cancel")
 }

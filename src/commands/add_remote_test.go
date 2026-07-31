@@ -235,6 +235,5 @@ func TestAddRemoteRefFromExistingRemotes_PickerCancelled(t *testing.T) {
 	sel := &stubSelector{selectErrs: []error{ui.ErrCancelled}}
 	cmd := &AddRemoteCommand{cmdIO: cmdIO{UI: sel, Repo: git.Repo{Dir: dir}}}
 	_, err := cmd.refFromExistingRemotes("lczyk")
-	require.Error(t, err, "aborted")
-	assert.ContainsString(t, err.Error(), "aborted")
+	assert.ErrorIs(t, err, ui.ErrCancelled, "cancelling the picker cancels the command")
 }

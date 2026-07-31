@@ -72,7 +72,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 	if err != nil {
 		if errors.Is(err, ui.ErrCancelled) {
 			fmt.Fprintln(d.out(), "Aborting delete.")
-			return nil
+			return err
 		}
 		return err
 	}

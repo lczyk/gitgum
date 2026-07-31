@@ -48,10 +48,6 @@ func (b *BranchCommand) Execute(args []string) error {
 
 	cleanup, err := handleDirtyLines(&b.cmdIO, "branch", dirty)
 	if err != nil {
-		if errors.Is(err, errDirtyTreeAborted) {
-			fmt.Fprintln(b.out(), "Aborted.")
-			return nil
-		}
 		return err
 	}
 	defer cleanup()
@@ -72,7 +68,7 @@ func (b *BranchCommand) Execute(args []string) error {
 	if err != nil {
 		if errors.Is(err, ui.ErrCancelled) {
 			fmt.Fprintln(b.out(), "Aborting branch.")
-			return nil
+			return err
 		}
 		return err
 	}
@@ -96,7 +92,7 @@ func (b *BranchCommand) Execute(args []string) error {
 	if err != nil {
 		if errors.Is(err, ui.ErrCancelled) {
 			fmt.Fprintln(b.out(), "Aborting branch.")
-			return nil
+			return err
 		}
 		return err
 	}
