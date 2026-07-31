@@ -28,9 +28,8 @@ type AddRemoteCommand struct {
 		Remote string `positional-arg-name:"REMOTE" required:"yes"`
 	} `positional-args:"yes"`
 
-	// probe overrides the repo-existence check for bare shorthand; nil uses the
-	// real network probe.
-	probe func(url string) bool
+	// remotes overrides the network collaborator; nil uses the real one.
+	remotes network
 }
 
 func (c *AddRemoteCommand) Execute(args []string) error {
@@ -159,11 +158,7 @@ func (c *AddRemoteCommand) refFromExistingRemotes(user string) (git.RepoRef, err
 func (c *AddRemoteCommand) resolveURL(ref git.RepoRef, route git.Route) (string, error) {
 	switch {
 	case ref.Shorthand():
-		probe := c.probe
-		if probe == nil {
-			probe = func(u string) bool { return c.repo().RemoteReachable(u) }
-		}
-		resolved, err := resolveShorthand(c.sel(), probe, ref)
+		resolved, err := resolveShorthand(c.sel(), c.net(c.remotes), ref)
 		if err != nil {
 			return "", err
 		}

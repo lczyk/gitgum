@@ -183,7 +183,7 @@ func TestClonePreflight(t *testing.T) {
 	preflight := func(t *testing.T, rawURL string) (routePlan, error) {
 		t.Helper()
 		parsed := mustParse(t, rawURL)
-		c := &CloneCommand{lsRemote: func(string) (string, error) { return refs, nil }}
+		c := &CloneCommand{remotes: stubNetwork{lsRemote: func(string) (string, error) { return refs, nil }}}
 		return c.preflight(parsed.Ref, parsed.Route)
 	}
 
@@ -233,10 +233,10 @@ func TestClonePreflight(t *testing.T) {
 	t.Run("commit needs no listing", func(t *testing.T) {
 		t.Parallel()
 		parsed := mustParse(t, "https://github.com/o/r/commit/abc1234")
-		c := &CloneCommand{lsRemote: func(string) (string, error) {
+		c := &CloneCommand{remotes: stubNetwork{lsRemote: func(string) (string, error) {
 			t.Error("commit route should not list refs")
 			return "", nil
-		}}
+		}}}
 		got, err := c.preflight(parsed.Ref, parsed.Route)
 		require.NoError(t, err, "preflight")
 		assert.Equal(t, got.commit, "abc1234")
@@ -450,8 +450,8 @@ func TestResolveShorthand(t *testing.T) {
 	t.Run("single match resolves without a prompt", func(t *testing.T) {
 		sel := &stubSelector{}
 		c := &CloneCommand{
-			cmdIO: cmdIO{UI: sel},
-			probe: func(u string) bool { return u == "https://gitlab.com/canonical/cbs-tools" },
+			cmdIO:   cmdIO{UI: sel},
+			remotes: stubNetwork{reachable: func(u string) bool { return u == "https://gitlab.com/canonical/cbs-tools" }},
 		}
 		got, err := c.resolveShorthand(ref)
 		require.NoError(t, err, "resolve")
@@ -463,8 +463,8 @@ func TestResolveShorthand(t *testing.T) {
 	t.Run("multiple matches prompt a github-first picker", func(t *testing.T) {
 		sel := &stubSelector{selectAnswers: []string{"https://codeberg.org/canonical/cbs-tools"}}
 		c := &CloneCommand{
-			cmdIO: cmdIO{UI: sel},
-			probe: func(u string) bool { return true }, // exists everywhere
+			cmdIO:   cmdIO{UI: sel},
+			remotes: stubNetwork{reachable: func(u string) bool { return true }}, // exists everywhere
 		}
 		got, err := c.resolveShorthand(ref)
 		require.NoError(t, err, "resolve")
@@ -479,7 +479,7 @@ func TestResolveShorthand(t *testing.T) {
 	})
 
 	t.Run("no match errors", func(t *testing.T) {
-		c := &CloneCommand{probe: func(u string) bool { return false }}
+		c := &CloneCommand{remotes: stubNetwork{reachable: func(u string) bool { return false }}}
 		_, err := c.resolveShorthand(ref)
 		require.Error(t, err, "not found")
 	})

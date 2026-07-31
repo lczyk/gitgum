@@ -39,17 +39,8 @@ type CloneCommand struct {
 		Dir string `positional-arg-name:"DIR"`
 	} `positional-args:"yes"`
 
-	// probe overrides the repo-existence check; nil uses the real network probe.
-	probe func(url string) bool
-	// lsRemote overrides the pre-flight ref listing; nil uses the real one.
-	lsRemote func(remote string) (string, error)
-}
-
-func (c *CloneCommand) refs() func(string) (string, error) {
-	if c.lsRemote != nil {
-		return c.lsRemote
-	}
-	return c.repo().LsRemote
+	// remotes overrides the network collaborator; nil uses the real one.
+	remotes network
 }
 
 // routePlan is what the pre-flight made of a url's route: at most one of these
@@ -246,7 +237,7 @@ func (c *CloneCommand) preflight(ref git.RepoRef, route git.Route) (routePlan, e
 		return routePlan{}, nil
 	}
 
-	out, err := c.refs()(ref.URL())
+	out, err := c.net(c.remotes).LsRemote(ref.URL())
 	if err != nil {
 		return routePlan{}, fmt.Errorf("listing refs on %s: %w", ref.URL(), err)
 	}
@@ -412,17 +403,13 @@ func remoteMatches(remote, want git.RepoRef) bool {
 // supplies the real network probe (unless one was injected for tests) and
 // delegates to the package-level resolveShorthand.
 func (c *CloneCommand) resolveShorthand(ref git.RepoRef) (git.RepoRef, error) {
-	probe := c.probe
-	if probe == nil {
-		probe = func(u string) bool { return c.repo().RemoteReachable(u) }
-	}
-	return resolveShorthand(c.sel(), probe, ref)
+	return resolveShorthand(c.sel(), c.net(c.remotes), ref)
 }
 
 // resolveShorthand probes each modelled forge (concurrently) for a bare
 // "user/repo" ref and returns the ref pinned to the forge that has it. Shared
 // by clone and add-remote. probe must be non-nil.
-func resolveShorthand(sel ui.Selector, probe func(string) bool, ref git.RepoRef) (git.RepoRef, error) {
+func resolveShorthand(sel ui.Selector, net network, ref git.RepoRef) (git.RepoRef, error) {
 	// probe every forge concurrently -- independent network reads, so the wait
 	// is max(probe) not sum(probe). preference order (github first) is preserved
 	// by collecting hits from the ordered forge list afterwards.
@@ -433,7 +420,7 @@ func resolveShorthand(sel ui.Selector, probe func(string) bool, ref git.RepoRef)
 	for i, f := range forges {
 		go func() {
 			defer wg.Done()
-			exists[i] = probe(ref.URLOn(f))
+			exists[i] = net.RemoteReachable(ref.URLOn(f))
 		}()
 	}
 	wg.Wait()

@@ -65,8 +65,8 @@ func TestAddRemoteResolveURL(t *testing.T) {
 
 			sel := &stubSelector{}
 			cmd := &AddRemoteCommand{
-				cmdIO: cmdIO{UI: sel},
-				probe: func(u string) bool { return u == tc.probeHit },
+				cmdIO:   cmdIO{UI: sel},
+				remotes: stubNetwork{reachable: func(u string) bool { return u == tc.probeHit }},
 			}
 			cmd.Args.Remote = tc.raw
 
@@ -84,7 +84,7 @@ func TestAddRemoteResolveURL_ShorthandNotFound(t *testing.T) {
 	ref, ok := git.ParseRepoRef("nobody/nothing")
 	require.That(t, ok, "ParseRepoRef")
 
-	cmd := &AddRemoteCommand{probe: func(string) bool { return false }}
+	cmd := &AddRemoteCommand{remotes: stubNetwork{reachable: func(string) bool { return false }}}
 	cmd.Args.Remote = "nobody/nothing"
 	_, err := cmd.resolveURL(ref, git.Route{})
 	require.Error(t, err, "not found")
