@@ -9,8 +9,10 @@ import (
 
 	"github.com/lczyk/assert"
 	"github.com/lczyk/assert/require"
+	"github.com/lczyk/gitgum/internal/dirty"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
+	"github.com/lczyk/gitgum/internal/ui"
 )
 
 func newDirtyTestIO(stub *stubSelector, dir string) *cmdIO {
@@ -28,7 +30,7 @@ func TestHandleDirtyTree_Clean(t *testing.T) {
 	require.NoError(t, err)
 	assert.That(t, cleanup != nil, "cleanup must always be non-nil")
 	cleanup()
-	assert.Equal(t, len(stub.confirmCalls), 0)
+	assert.Equal(t, len(stub.selectCalls), 0)
 }
 
 func TestHandleDirtyTree_UntrackedOnly(t *testing.T) {
@@ -43,7 +45,7 @@ func TestHandleDirtyTree_UntrackedOnly(t *testing.T) {
 	cleanup, err := handleDirtyTree(c, "test")
 	require.NoError(t, err)
 	cleanup()
-	assert.Equal(t, len(stub.confirmCalls), 0)
+	assert.Equal(t, len(stub.selectCalls), 0)
 
 	// No stash should have been created.
 	stashList := temp_repo.RunGit(t, dir, "stash", "list")
@@ -57,13 +59,13 @@ func TestHandleDirtyTree_DirtyConfirmYes(t *testing.T) {
 	err := os.WriteFile(readme, []byte("modified\n"), 0o644)
 	require.NoError(t, err)
 
-	stub := &stubSelector{confirmAnswers: []bool{true}}
+	stub := &stubSelector{selectAnswers: []string{dirtyStashOption("release")}}
 	c := newDirtyTestIO(stub, dir)
 
 	cleanup, err := handleDirtyTree(c, "release")
 	require.NoError(t, err)
-	assert.Equal(t, len(stub.confirmCalls), 1)
-	assert.ContainsString(t, stub.confirmCalls[0].Prompt, "release")
+	assert.Equal(t, len(stub.selectCalls), 1)
+	assert.ContainsString(t, stub.selectCalls[0].Options[1], "release")
 
 	// Tree should now be clean (changes stashed).
 	out := temp_repo.RunGit(t, dir, "status", "--porcelain")
@@ -93,13 +95,13 @@ func TestHandleDirtyTree_TrackedAndUntrackedMixed(t *testing.T) {
 	err = os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("x"), 0o644)
 	require.NoError(t, err)
 
-	stub := &stubSelector{confirmAnswers: []bool{true}}
+	stub := &stubSelector{selectAnswers: []string{dirtyStashOption("test")}}
 	c := newDirtyTestIO(stub, dir)
 
 	cleanup, err := handleDirtyTree(c, "test")
 	require.NoError(t, err)
 	defer cleanup()
-	assert.Equal(t, len(stub.confirmCalls), 1)
+	assert.Equal(t, len(stub.selectCalls), 1)
 
 	// Untracked file must remain in working tree.
 	_, statErr := os.Stat(filepath.Join(dir, "untracked.txt"))
@@ -119,7 +121,7 @@ func TestHandleDirtyTree_RestoresIndexAfterPop(t *testing.T) {
 	err = os.WriteFile(unstagedPath, []byte("changed\n"), 0o644)
 	require.NoError(t, err)
 
-	stub := &stubSelector{confirmAnswers: []bool{true}}
+	stub := &stubSelector{selectAnswers: []string{dirtyStashOption("test")}}
 	c := newDirtyTestIO(stub, dir)
 
 	cleanup, err := handleDirtyTree(c, "test")
@@ -177,7 +179,7 @@ func TestHandleDirtyTree_PreservesPartialHunkStaging(t *testing.T) {
 	worktreeBefore, err := os.ReadFile(path)
 	require.NoError(t, err)
 
-	stub := &stubSelector{confirmAnswers: []bool{true}}
+	stub := &stubSelector{selectAnswers: []string{dirtyStashOption("test")}}
 	c := newDirtyTestIO(stub, dir)
 
 	cleanup, err := handleDirtyTree(c, "test")
@@ -202,7 +204,7 @@ func TestHandleDirtyTree_DirtyConfirmNo(t *testing.T) {
 	err := os.WriteFile(readme, []byte("modified\n"), 0o644)
 	require.NoError(t, err)
 
-	stub := &stubSelector{confirmAnswers: []bool{false}}
+	stub := &stubSelector{selectAnswers: []string{dirtyAbort}}
 	c := newDirtyTestIO(stub, dir)
 
 	cleanup, err := handleDirtyTree(c, "test")
@@ -213,4 +215,48 @@ func TestHandleDirtyTree_DirtyConfirmNo(t *testing.T) {
 
 	out := temp_repo.RunGit(t, dir, "status", "--porcelain")
 	assert.ContainsString(t, out, "README.md")
+}
+
+// The row this prompt gained: discarding clears both the tracked changes the
+// listing showed and the untracked files it did not.
+func TestHandleDirtyTree_DiscardRemovesTrackedAndUntracked(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.WriteFile(t, dir, "README.md", "edited\n")
+	temp_repo.WriteFile(t, dir, "loose.txt", "new\n")
+
+	var out strings.Builder
+	stub := &stubSelector{}
+	c := newDirtyTestIO(stub, dir)
+	c.Out = &out
+	// the discard row is last, and states its own counts
+	stub.selectAnswers = []string{discardLabel(
+		dirty.Plan{Tracked: []string{"README.md"}, Untracked: []string{"loose.txt"}},
+		dirty.Options{Tracked: true, Untracked: true})}
+
+	cleanup, err := handleDirtyTree(c, "switch")
+	require.NoError(t, err, "discard should not error")
+	defer cleanup()
+
+	require.Equal(t, len(stub.selectCalls), 1)
+	assert.Equal(t, len(stub.selectCalls[0].Options), 3)
+	assert.Equal(t, stub.selectCalls[0].Options[0], dirtyAbort)
+	assert.ContainsString(t, stub.selectCalls[0].Options[2], "1 change(s) and 1 untracked file(s)")
+	assert.ContainsString(t, stub.selectCalls[0].Options[2], "cannot be undone")
+
+	// both are gone, and nothing was stashed
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "status", "--porcelain")), "")
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "stash", "list")), "")
+	assert.ContainsString(t, out.String(), "Discarded 2 file(s)")
+}
+
+// Cancelling the picker is the same outcome as choosing the abort row.
+func TestHandleDirtyTree_CancelAborts(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.WriteFile(t, dir, "README.md", "edited\n")
+
+	stub := &stubSelector{selectErrs: []error{ui.ErrCancelled}}
+	_, err := handleDirtyTree(newDirtyTestIO(stub, dir), "switch")
+	assert.ErrorIs(t, err, errDirtyTreeAborted, "cancelling should abort cleanly")
 }

@@ -219,15 +219,15 @@ func TestPullCommand_DirtyTreeStashed(t *testing.T) {
 
 	var buf strings.Builder
 	stub := &stubSelector{
-		selectAnswers:  []string{git.PullFFOnly.String()},
-		confirmAnswers: []bool{true}, // yes, stash and continue
+		// only behind, so no mode picker: the dirty prompt is the sole select
+		selectAnswers: []string{dirtyStashOption("pull")},
 	}
 	cmd := &PullCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: local}}}
 
 	err := cmd.Execute(nil)
 	require.NoError(t, err)
 
-	assert.Equal(t, len(stub.confirmCalls), 1)
+	assert.Equal(t, len(stub.selectCalls), 1)
 	// upstream file arrived and the dirty edit was restored.
 	files := temp_repo.RunGit(t, local, "ls-files")
 	assert.ContainsString(t, files, "feature.txt")
@@ -243,8 +243,7 @@ func TestPullCommand_DirtyTreeDeclined(t *testing.T) {
 
 	before := strings.TrimSpace(temp_repo.RunGit(t, local, "rev-parse", "HEAD"))
 	stub := &stubSelector{
-		selectAnswers:  []string{git.PullFFOnly.String()},
-		confirmAnswers: []bool{false}, // decline the stash
+		selectAnswers: []string{dirtyAbort},
 	}
 	cmd := &PullCommand{cmdIO: cmdIO{UI: stub, Repo: git.Repo{Dir: local}}}
 

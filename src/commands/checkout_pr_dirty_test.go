@@ -46,17 +46,17 @@ func TestCheckoutPRCommand_ResetExistingBranch_StashesDirtyTree(t *testing.T) {
 	temp_repo.WriteFile(t, dir, "README.md", "local edit worth keeping\n")
 
 	var out bytes.Buffer
-	// Reset the branch: yes. Stash the dirty tree first: yes.
+	// Reset the branch: yes. Then pick the stash row on the dirty prompt.
 	stub := &stubSelector{
-		selectAnswers:  []string{"PR #1 (head)"},
-		confirmAnswers: []bool{true, true},
+		selectAnswers:  []string{"PR #1 (head)", dirtyStashOption("checkout-pr")},
+		confirmAnswers: []bool{true},
 	}
 	cmd := &CheckoutPRCommand{cmdIO: cmdIO{Out: &out, UI: stub, Repo: git.Repo{Dir: dir}}}
 	require.NoError(t, cmd.Execute(nil))
 
 	// The dirty-tree prompt fired, naming this subcommand.
-	require.Equal(t, len(stub.confirmCalls), 2)
-	assert.ContainsString(t, stub.confirmCalls[1].Prompt, "Stash changes, run checkout-pr")
+	require.Equal(t, len(stub.selectCalls), 2)
+	assert.ContainsString(t, stub.selectCalls[1].Options[1], "run checkout-pr")
 
 	// The reset landed...
 	assert.Equal(t, currentBranchIn(t, dir), "pr/origin/1")
@@ -73,10 +73,10 @@ func TestCheckoutPRCommand_ResetExistingBranch_DeclineStashAborts(t *testing.T) 
 	temp_repo.WriteFile(t, dir, "README.md", "local edit worth keeping\n")
 
 	var out bytes.Buffer
-	// Reset the branch: yes. Stash the dirty tree first: no -> abort.
+	// Reset the branch: yes. Then pick abort on the dirty prompt.
 	stub := &stubSelector{
-		selectAnswers:  []string{"PR #1 (head)"},
-		confirmAnswers: []bool{true, false},
+		selectAnswers:  []string{"PR #1 (head)", dirtyAbort},
+		confirmAnswers: []bool{true},
 	}
 	cmd := &CheckoutPRCommand{cmdIO: cmdIO{Out: &out, UI: stub, Repo: git.Repo{Dir: dir}}}
 	require.NoError(t, cmd.Execute(nil))
