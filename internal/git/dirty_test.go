@@ -53,29 +53,28 @@ func TestGetDefaultBranch_FromRemoteHEAD(t *testing.T) {
 	assert.Equal(t, got, "trunk")
 }
 
-func TestDirtyTrackedLines_Clean(t *testing.T) {
+func TestDirtyTracked_Clean(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)
-	lines, err := git.Repo{Dir: dir}.DirtyTrackedLines()
+	entries, err := git.Repo{Dir: dir}.DirtyTracked()
 	require.NoError(t, err)
-	assert.Equal(t, len(lines), 0)
+	assert.Equal(t, len(entries), 0)
 }
 
-func TestDirtyTrackedLines_FiltersUntracked(t *testing.T) {
+func TestDirtyTracked_FiltersUntracked(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)
 	err := os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("x"), 0o644)
 	require.NoError(t, err)
 
-	lines, err := git.Repo{Dir: dir}.DirtyTrackedLines()
+	entries, err := git.Repo{Dir: dir}.DirtyTracked()
 	require.NoError(t, err)
-	assert.Equal(t, len(lines), 0)
+	assert.Equal(t, len(entries), 0)
 }
 
-// Mixed tracked + untracked: only tracked lines come back, with their leading
-// porcelain XY codes intact (regression for the TrimSpace bug that ate leading
-// spaces from " M file" entries).
-func TestDirtyTrackedLines_PreservesLeadingSpace(t *testing.T) {
+// Mixed tracked + untracked: only tracked entries come back, and the unstaged
+// side is on Y with X blank -- the distinction a trimming reader used to eat.
+func TestDirtyTracked_KeepsBothStatusSides(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)
 
@@ -84,13 +83,15 @@ func TestDirtyTrackedLines_PreservesLeadingSpace(t *testing.T) {
 	err = os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("x"), 0o644)
 	require.NoError(t, err)
 
-	lines, err := git.Repo{Dir: dir}.DirtyTrackedLines()
+	entries, err := git.Repo{Dir: dir}.DirtyTracked()
 	require.NoError(t, err)
-	assert.Equal(t, len(lines), 1)
-	assert.Equal(t, lines[0], " M README.md")
+	require.Equal(t, len(entries), 1)
+	assert.Equal(t, entries[0].Path, "README.md")
+	assert.Equal(t, entries[0].X, byte(' '))
+	assert.Equal(t, entries[0].Y, byte('M'))
 }
 
-func TestDirtyTrackedLines_StagedAndUnstaged(t *testing.T) {
+func TestDirtyTracked_StagedAndUnstaged(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)
 
@@ -100,10 +101,14 @@ func TestDirtyTrackedLines_StagedAndUnstaged(t *testing.T) {
 	err = os.WriteFile(filepath.Join(dir, "README.md"), []byte("m\n"), 0o644)
 	require.NoError(t, err)
 
-	lines, err := git.Repo{Dir: dir}.DirtyTrackedLines()
+	entries, err := git.Repo{Dir: dir}.DirtyTracked()
 	require.NoError(t, err)
-	assert.That(t, slices.Contains(lines, "A  staged.txt"), "staged file present with A status")
-	assert.That(t, slices.Contains(lines, " M README.md"), "modified file present with unstaged status")
+	assert.That(t, slices.ContainsFunc(entries, func(e git.Entry) bool {
+		return e.Path == "staged.txt" && e.X == 'A' && e.Y == ' '
+	}), "staged file present with A status")
+	assert.That(t, slices.ContainsFunc(entries, func(e git.Entry) bool {
+		return e.Path == "README.md" && e.X == ' ' && e.Y == 'M'
+	}), "modified file present with unstaged status")
 }
 
 func TestStashPush_AndPopIndex_RoundTrip(t *testing.T) {
@@ -126,9 +131,11 @@ func TestStashPush_AndPopIndex_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 
 	// Modification restored, stash list empty.
-	lines, err := r.DirtyTrackedLines()
+	entries, err := r.DirtyTracked()
 	require.NoError(t, err)
-	assert.That(t, slices.Contains(lines, " M README.md"), "modification restored after pop")
+	assert.That(t, slices.ContainsFunc(entries, func(e git.Entry) bool {
+		return e.Path == "README.md" && e.Y == 'M'
+	}), "modification restored after pop")
 	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "stash", "list")), "")
 }
 

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/lczyk/gitgum/internal/dirty"
+	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/ui"
 	"github.com/lczyk/gitgum/src/filetree"
 )
@@ -34,20 +35,20 @@ const (
 // stash message ("gitgum <label> auto-stash") so users can identify auto-stashes
 // left behind.
 func handleDirtyTree(c *cmdIO, label string) (cleanup func(), err error) {
-	dirtyLines, err := c.repo().DirtyTrackedLines()
+	tracked, err := c.repo().DirtyTracked()
 	if err != nil {
 		return func() {}, err
 	}
-	return handleDirtyLines(c, label, dirtyLines)
+	return handleDirtyLines(c, label, tracked)
 }
 
 // handleDirtyLines is handleDirtyTree with the working-tree scan already done --
-// dirty is DirtyTrackedLines' output. Callers that fetch the status concurrently
+// tracked is DirtyTracked's output. Callers that fetch the status concurrently
 // with their other pre-picker reads (branch, switch) use this so the scan isn't
 // serialised behind them; everyone else goes through handleDirtyTree.
-func handleDirtyLines(c *cmdIO, label string, dirtyLines []string) (cleanup func(), err error) {
+func handleDirtyLines(c *cmdIO, label string, tracked []git.Entry) (cleanup func(), err error) {
 	noop := func() {}
-	if len(dirtyLines) == 0 {
+	if len(tracked) == 0 {
 		return noop, nil
 	}
 
@@ -61,7 +62,15 @@ func handleDirtyLines(c *cmdIO, label string, dirtyLines []string) (cleanup func
 	if planErr == nil {
 		printDirty(c.out(), plan, discardOpts)
 	} else {
-		fmt.Fprintf(c.out(), "Uncommitted changes:\n%s\n", strings.Join(dirtyLines, "\n"))
+		// No scan means no untracked half and no discard row, so what
+		// triggered the prompt is all there is to show.
+		items := statusItems(tracked, nil)
+		fmt.Fprintf(c.out(), "Uncommitted changes (%d):\n", len(items))
+		filetree.Tree(c.out(), items, filetree.Opts{
+			Dim:        dim,
+			FoldChains: true,
+			MaxLines:   maxDirtyPromptLines,
+		})
 	}
 
 	options := []string{dirtyAbort, dirtyStashOption(label)}

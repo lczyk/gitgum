@@ -73,7 +73,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 	var (
 		currentBranch, trackingRemote, statusLine string
 		remotes                                   []string
-		dirty                                     []string
+		dirty                                     []git.Entry
 	)
 	if err := runConcurrent(
 		func() (err error) {
@@ -88,7 +88,7 @@ func (s *SwitchCommand) Execute(args []string) error {
 			return nil
 		},
 		func() (err error) {
-			dirty, err = r.DirtyTrackedLines()
+			dirty, err = r.DirtyTracked()
 			return err
 		},
 	); err != nil {

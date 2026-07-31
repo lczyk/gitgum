@@ -6,34 +6,26 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 )
 
-// DirtyTrackedLines returns porcelain v1 status lines for tracked changes
-// (staged or unstaged). Untracked entries ("?? ...") are filtered out so
-// callers can decide whether the working tree is dirty in a way that
-// matters for operations like stash + release.
+// DirtyTracked lists tracked changes, staged or unstaged. Untracked files are
+// left out: callers use this to decide whether the working tree is dirty in a
+// way that blocks stashing, switching or releasing, and an untracked file
+// blocks none of those.
 //
-// Lines are returned verbatim including the two-char XY status code, so
-// callers can distinguish ` M` (unstaged), `M ` (staged), and `MM`
-// (partial-hunk staging).
-func (r Repo) DirtyTrackedLines() ([]string, error) {
-	stdout, stderr, err := r.runRead(context.Background(), "status", "--porcelain")
+// Entries keep both status characters, so a caller can tell " M" (unstaged)
+// from "M " (staged) from "MM" (partial-hunk staging).
+func (r Repo) DirtyTracked() ([]Entry, error) {
+	_, entries, err := r.Status(ScanOpts{})
 	if err != nil {
-		return nil, fmt.Errorf("git status: %w: %s", err, stderr)
+		return nil, err
 	}
-	if stdout == "" {
-		return nil, nil
-	}
-	var dirty []string
-	for line := range strings.SplitSeq(strings.TrimRight(stdout, "\n"), "\n") {
-		if strings.HasPrefix(line, "?? ") {
+	var dirty []Entry
+	for _, e := range entries {
+		if e.Untracked() || e.Ignored() {
 			continue
 		}
-		if line == "" {
-			continue
-		}
-		dirty = append(dirty, line)
+		dirty = append(dirty, e)
 	}
 	return dirty, nil
 }
