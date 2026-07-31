@@ -56,6 +56,25 @@ func TestStyleAt(t *testing.T) {
 	assert.Equal(t, ansi.StyleAt(nil, 0, base), base)
 }
 
+// ParseStyles never leaves a gap before the first span -- its first rune opens
+// one at index 0 -- but StyleAt is public and promises base ahead of the first
+// span, so hand-built spans are the only way to hold it to that.
+func TestStyleAt_BeforeFirstSpan(t *testing.T) {
+	base := tcell.StyleDefault.Bold(true)
+	spans := []ansi.StyleSpan{
+		{Start: 2, Style: tcell.StyleDefault.Foreground(tcell.PaletteColor(1))},
+		{Start: 5, Style: tcell.StyleDefault.Foreground(tcell.PaletteColor(2))},
+	}
+
+	assert.Equal(t, ansi.StyleAt(spans, 0, base), base)
+	assert.Equal(t, ansi.StyleAt(spans, 1, base), base)
+
+	red, _, _ := ansi.StyleAt(spans, 2, base).Decompose()
+	assert.Equal(t, red, tcell.PaletteColor(1))
+	green, _, _ := ansi.StyleAt(spans, 5, base).Decompose()
+	assert.Equal(t, green, tcell.PaletteColor(2))
+}
+
 // ParseStyles must answer for every rune index exactly what Parse records
 // there. The picker holds spans instead of styled runes on the strength of
 // that equivalence, so it is the property worth pinning.
