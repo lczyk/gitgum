@@ -222,6 +222,7 @@ Flags: `-m`/`--multi`, `-q`/`--query`, `-p`/`--prompt`, `--header`, `-1`/`--sele
 - [`cmd/gitgum`](cmd/gitgum) — gitgum binary entry point
 - [`cmd/fuzzyfinder`](cmd/fuzzyfinder) — `ff` binary entry point
 - [`src/commands`](src/commands) -- one subcommand per `flags.Commander`, split across one or more files (dispatch separate from core logic where it earns its keep)
+- [`src/filetree`](src/filetree) -- draws paths as an ascii tree; shared by `gg status`, `gg clean`, `gg diff` and the dirty-tree prompts
 - [`src/fuzzyfinder`](src/fuzzyfinder) — picker library (originally a fork of `ktr0731/go-fuzzyfinder`, now substring-only matching and a custom renderer)
 - [`src/litescreen`](src/litescreen) — standalone tcell-free ANSI renderer; powers inline (`--height`) mode
 - [`internal/git`](internal/git) — git operations (the `Repo` type for parallel-safe tests, plus CWD-based free functions)

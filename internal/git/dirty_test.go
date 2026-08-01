@@ -72,8 +72,8 @@ func TestDirtyTracked_FiltersUntracked(t *testing.T) {
 	assert.Equal(t, len(entries), 0)
 }
 
-// Mixed tracked + untracked: only tracked entries come back, and the unstaged
-// side is on Y with X blank -- the distinction a trimming reader used to eat.
+// Mixed tracked + untracked: only tracked entries come back, with the unstaged
+// half reported on Y and X left blank.
 func TestDirtyTracked_KeepsBothStatusSides(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)

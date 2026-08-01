@@ -19,9 +19,7 @@ import (
 // Repo is the slice of git this package needs. It is an interface only so the
 // grouping can be exercised against canned output; git.Repo satisfies it.
 //
-// The scan arrives already parsed rather than as raw text, because the raw
-// text has a trap in it: a record for an unstaged change opens with a space,
-// and a trimming reader turns the first one into a staged change.
+// The scan arrives already parsed rather than as raw text -- see git.Repo.Status.
 type Repo interface {
 	Status(opt git.ScanOpts) (branch string, entries []git.Entry, err error)
 	RunWrite(args ...string) (string, string, error)
@@ -116,13 +114,11 @@ func group(entries []git.Entry) Plan {
 		case e.Ignored():
 			add(&p.Ignored, e.Path, code)
 		case e.RenamedFrom != "":
-			// Both halves: a hard reset removes the destination and restores
-			// the source.
 			add(&p.Tracked, e.Path, "R>")
 			add(&p.Tracked, e.RenamedFrom, "R<")
 		default:
-			// A file that is staged and unstaged both is one file at risk,
-			// which the dedup handles.
+			// Staged and unstaged both is one file at risk, not two; the dedup
+			// is what makes that true.
 			add(&p.Tracked, e.Path, code)
 		}
 	}
