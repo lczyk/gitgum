@@ -13,9 +13,9 @@ import (
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
 
-// `git branch -r` lists every remote whichever one you ask about, so a
-// producer per remote used to mean a full listing per remote. The local half
-// is one ref read too: the tracking remote used to be a subprocess per branch.
+// Two ref listings serve the whole picker: one over refs/heads and one over
+// refs/remotes. It used to be one listing per remote plus a tracking-remote
+// lookup per local branch plus a worktree listing.
 func TestStreamBranches_ReadsRefsOnce(t *testing.T) {
 	local, remote := temp_repo.NewRepoWithRemote(t)
 	temp_repo.RunGit(t, local, "remote", "add", "second", remote)
@@ -50,8 +50,9 @@ func TestStreamBranches_ReadsRefsOnce(t *testing.T) {
 	assert.That(t, sawRemote, "picker should list the second remote's branches, got %v", src.Snapshot())
 	assert.Equal(t, errBuf.String(), "")
 
-	assert.Equal(t, countExact(calls(), "branch", "-r"), 1)
-	assert.Equal(t, countCalls(calls(), "for-each-ref"), 1)
+	assert.Equal(t, countCalls(calls(), "branch"), 0)
+	assert.Equal(t, countCalls(calls(), "worktree"), 0)
+	assert.Equal(t, countCalls(calls(), "for-each-ref"), 2)
 }
 
 // delete reads the local branches up front for its empty-repo guard; the

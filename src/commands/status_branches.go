@@ -1,184 +1,228 @@
 package commands
 
 import (
-	"regexp"
+	"fmt"
 	"strings"
+
+	"github.com/lczyk/gitgum/internal/git"
 )
 
-// branchLine captures the structure of a single `git branch -vv` line:
-//
-//	"* main               26c3916 [origin/main: ahead 1] subject"
-//	"  feature            abc1234 subject"
-//	"* (HEAD detached at abc1234) abc1234 subject"
-//
-// Groups: marker, name, hash, tracking (incl. brackets), subject.
-var branchLineRe = regexp.MustCompile(`^([*+ ]) +(\([^)]*\)|\S+)( +)([0-9a-f]{7,40})(?: +(\[[^\]]*\]))?( +.*)?$`)
+// branchRow is one BRANCHES entry, held as the fields the layout uses rather
+// than as the padded line `git branch -vv` would have printed. The padding is
+// the reason: it is sized to the longest branch name, so reading a field back
+// out of it means guessing where git put the column this time.
+type branchRow struct {
+	marker   byte // '*' checked out here, '+' checked out in another worktree
+	name     string
+	hash     string
+	upstream string // empty when the branch tracks nothing
+	notes    string // "ahead 2, behind 1", "gone"; no brackets, empty when in sync
+	subject  string
+	worktree string // the other worktree holding this branch, for the '+' rows
+	detached bool   // the "(HEAD detached at abc1234)" pseudo-entry
+}
 
-// renderBranchList parses the plain output of `git branch -vv` and re-renders
-// it as a multi-row layout to avoid terminal overflow:
+// branchRows turns a ref listing into the rows to render, in git's own order:
+// the detached-HEAD entry first when there is one, then branches by name.
+//
+// detachedAt is the short sha HEAD sits at, empty when HEAD is on a branch or
+// has no commit yet -- an unborn HEAD gets no row at all, matching git, which
+// has no ref to list.
+func branchRows(locals []git.LocalBranch, detachedAt, detachedSubject string) []branchRow {
+	var rows []branchRow
+	if detachedAt != "" {
+		rows = append(rows, branchRow{
+			marker:   '*',
+			name:     fmt.Sprintf("(HEAD detached at %s)", detachedAt),
+			hash:     detachedAt,
+			subject:  detachedSubject,
+			detached: true,
+		})
+	}
+	for _, b := range locals {
+		row := branchRow{
+			marker:   ' ',
+			name:     b.Name,
+			hash:     b.Hash,
+			upstream: b.Upstream,
+			notes:    strings.TrimSuffix(strings.TrimPrefix(b.Track, "["), "]"),
+			subject:  b.Subject,
+		}
+		switch {
+		case b.Head:
+			row.marker = '*'
+		case b.WorktreePath != "":
+			row.marker, row.worktree = '+', b.WorktreePath
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// tracking renders the bracket git puts after the hash: "[origin/main]" when
+// in sync, "[origin/main: ahead 2]" otherwise. Empty when nothing is tracked.
+func (r branchRow) tracking() string {
+	if r.upstream == "" {
+		return ""
+	}
+	if r.notes == "" {
+		return "[" + r.upstream + "]"
+	}
+	return "[" + r.upstream + ": " + r.notes + "]"
+}
+
+// sameNameUpstream reports whether the upstream is this branch on some remote,
+// which is the case the switch-style "(remote/)name" collapses.
+func (r branchRow) sameNameUpstream() (remote string, ok bool) {
+	remote, branch, found := strings.Cut(r.upstream, "/")
+	return remote, found && branch == r.name
+}
+
+// renderBranchList lays the rows out one branch per group of rows rather than
+// one per line, so a long name, a divergence note and a subject do not have to
+// share a terminal width:
 //
 //	row 1: marker name hash
 //	row 2: tracking info (indented, skipped when absent)
 //	row 3: commit subject (indented)
-func renderBranchList(raw string) string {
-	lines := strings.Split(strings.TrimRight(raw, "\n"), "\n")
-	if len(lines) > 0 && len(lines[0]) > 0 && lines[0][0] != '*' && lines[0][0] != '+' && lines[0][0] != ' ' {
-		lines[0] = "  " + lines[0]
-	}
+func renderBranchList(rows []branchRow) string {
 	color := colorEnabled()
-	multiRow := !quirkEnabled("normal-branches")
+	if quirkEnabled("normal-branches") {
+		return strings.Join(formatBranchLines(rows, color), "\n")
+	}
 	var out []string
-	for _, line := range lines {
-		if multiRow {
-			out = append(out, formatBranchRows(line, color)...)
-		} else {
-			out = append(out, formatBranchSingleLine(line, color))
-		}
+	for _, row := range rows {
+		out = append(out, formatBranchRows(row, color)...)
 	}
 	return strings.Join(out, "\n")
 }
 
-func formatBranchSingleLine(line string, color bool) string {
-	if !color {
-		return line
+// formatBranchLines reproduces git's own layout, name column padded to the
+// longest entry, for the normal-branches quirk.
+func formatBranchLines(rows []branchRow, color bool) []string {
+	width := 0
+	for _, row := range rows {
+		width = max(width, len(row.name))
 	}
-	m := branchLineRe.FindStringSubmatch(line)
-	if m == nil {
-		return line
-	}
-	marker, name, gap1, hash, tracking, trail := m[1], m[2], m[3], m[4], m[5], m[6]
-
-	var b strings.Builder
-	switch marker {
-	case "*":
-		b.WriteString(ansiBoldCyan + "*" + ansiReset)
-	case "+":
-		b.WriteString(ansiBoldYellow + "+" + ansiReset)
-	default:
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		var b strings.Builder
+		b.WriteString(markerCell(row.marker, color))
 		b.WriteByte(' ')
+		b.WriteString(paintBranchName(row, color))
+		b.WriteString(strings.Repeat(" ", width-len(row.name)+1))
+		if color {
+			b.WriteString(ansiYellow + row.hash + ansiReset)
+		} else {
+			b.WriteString(row.hash)
+		}
+		// git names the worktree holding a '+' branch between the hash and the
+		// tracking bracket; the quirk exists to look like git, so it does too.
+		if row.worktree != "" {
+			b.WriteString(" (" + row.worktree + ")")
+		}
+		if t := row.tracking(); t != "" {
+			b.WriteByte(' ')
+			if color {
+				b.WriteString(colorBranchTracking(row.upstream, row.notes))
+			} else {
+				b.WriteString(t)
+			}
+		}
+		if row.subject != "" {
+			b.WriteByte(' ')
+			if color {
+				b.WriteString(colorCommitSubject(row.subject, nil))
+			} else {
+				b.WriteString(row.subject)
+			}
+		}
+		out = append(out, b.String())
 	}
-	b.WriteByte(' ')
-	if strings.HasPrefix(name, "(") && strings.HasSuffix(name, ")") {
-		b.WriteString(ansiBoldCyan + name + ansiReset)
-	} else {
-		b.WriteString(ansiBoldGreen + name + ansiReset)
-	}
-	b.WriteString(gap1)
-	b.WriteString(ansiYellow + hash + ansiReset)
-	if tracking != "" {
-		b.WriteByte(' ')
-		b.WriteString(colorBranchTracking(tracking))
-	}
-	b.WriteString(colorCommitSubject(trail, nil))
-	return b.String()
+	return out
 }
 
-func formatBranchRows(line string, color bool) []string {
-	m := branchLineRe.FindStringSubmatch(line)
-	if m == nil {
-		return []string{line}
-	}
-	marker, name, hash, tracking, trail := m[1], m[2], m[4], m[5], m[6]
-	subject := strings.TrimSpace(trail)
-
+func formatBranchRows(row branchRow, color bool) []string {
 	// A same-name upstream collapses into the switch-style "(remote/)name",
 	// leaving the bracket row for ahead/behind/gone notes only.
-	nameDisplay := ""
-	notesOnly := false
-	if remote, notes, ok := sameNameUpstream(tracking, name); ok {
-		nameDisplay = remoteSlashBranch(remote, name, color)
-		tracking = ""
-		if notes != "" {
-			tracking = "[" + notes + "]"
-			notesOnly = true
-		}
-	}
+	remote, collapsed := row.sameNameUpstream()
 
-	var row1 strings.Builder
-	if color {
-		switch marker {
-		case "*":
-			row1.WriteString(ansiBoldCyan + "*" + ansiReset)
-		case "+":
-			row1.WriteString(ansiBoldYellow + "+" + ansiReset)
-		default:
-			row1.WriteByte(' ')
-		}
-		row1.WriteByte(' ')
-		switch {
-		case nameDisplay != "":
-			row1.WriteString(nameDisplay)
-		case strings.HasPrefix(name, "(") && strings.HasSuffix(name, ")"):
-			row1.WriteString(ansiBoldCyan + name + ansiReset)
-		default:
-			row1.WriteString(ansiBoldGreen + name + ansiReset)
-		}
-		row1.WriteByte(' ')
-		row1.WriteString(ansiYellow + hash + ansiReset)
+	var head strings.Builder
+	head.WriteString(markerCell(row.marker, color))
+	head.WriteByte(' ')
+	if collapsed {
+		head.WriteString(remoteSlashBranch(remote, row.name, color))
 	} else {
-		if nameDisplay == "" {
-			nameDisplay = name
-		}
-		row1.WriteString(marker + " " + nameDisplay + " " + hash)
+		head.WriteString(paintBranchName(row, color))
 	}
-
-	rows := []string{row1.String()}
-
-	if tracking != "" {
-		switch {
-		case !color:
-			rows = append(rows, "    "+tracking)
-		case notesOnly:
-			rows = append(rows, "    "+ansiBoldYellow+tracking+ansiReset)
-		default:
-			rows = append(rows, "    "+colorBranchTracking(tracking))
-		}
+	head.WriteByte(' ')
+	if color {
+		head.WriteString(ansiYellow + row.hash + ansiReset)
+	} else {
+		head.WriteString(row.hash)
 	}
+	rows := []string{head.String()}
 
-	if subject != "" {
+	switch {
+	case collapsed && row.notes != "":
+		note := "[" + row.notes + "]"
 		if color {
-			rows = append(rows, "    "+colorCommitSubject(subject, nil))
+			note = ansiBoldYellow + note + ansiReset
+		}
+		rows = append(rows, "    "+note)
+	case !collapsed && row.upstream != "":
+		if color {
+			rows = append(rows, "    "+colorBranchTracking(row.upstream, row.notes))
 		} else {
-			rows = append(rows, "    "+subject)
+			rows = append(rows, "    "+row.tracking())
 		}
 	}
 
+	if row.subject != "" {
+		if color {
+			rows = append(rows, "    "+colorCommitSubject(row.subject, nil))
+		} else {
+			rows = append(rows, "    "+row.subject)
+		}
+	}
 	return rows
 }
 
-// sameNameUpstream reports whether a tracking string ("[origin/main]" or
-// "[origin/main: ahead 1]") names an upstream whose branch part equals name.
-// Returns the remote and the notes after ": " (empty when in sync).
-func sameNameUpstream(tracking, name string) (remote, notes string, ok bool) {
-	if len(tracking) < 2 || tracking[0] != '[' || tracking[len(tracking)-1] != ']' {
-		return "", "", false
+// markerCell renders the leading marker: '*' for the branch checked out here,
+// '+' for one held by another worktree, a space otherwise.
+func markerCell(marker byte, color bool) string {
+	if !color {
+		return string(marker)
 	}
-	upstream := tracking[1 : len(tracking)-1]
-	if colon := strings.Index(upstream, ": "); colon >= 0 {
-		upstream, notes = upstream[:colon], upstream[colon+2:]
+	switch marker {
+	case '*':
+		return ansiBoldCyan + "*" + ansiReset
+	case '+':
+		return ansiBoldYellow + "+" + ansiReset
+	default:
+		return " "
 	}
-	remote, branch, found := strings.Cut(upstream, "/")
-	if !found || branch != name {
-		return "", "", false
-	}
-	return remote, notes, true
 }
 
-// colorBranchTracking colors a "[upstream]" or "[upstream: ahead N, behind M]"
-// or "[upstream: gone]" string. Brackets and separators are bold yellow,
-// upstream ref is bold red, ahead/behind/gone notes are bold yellow.
-func colorBranchTracking(s string) string {
-	if len(s) < 2 || s[0] != '[' || s[len(s)-1] != ']' {
-		return s
+func paintBranchName(row branchRow, color bool) string {
+	if !color {
+		return row.name
 	}
-	inner := s[1 : len(s)-1]
+	if row.detached {
+		return ansiBoldCyan + row.name + ansiReset
+	}
+	return ansiBoldGreen + row.name + ansiReset
+}
+
+// colorBranchTracking colors the upstream bracket: brackets and separators
+// bold yellow, the upstream ref bold red, the ahead/behind/gone notes bold
+// yellow.
+func colorBranchTracking(upstream, notes string) string {
 	var b strings.Builder
 	b.WriteString(ansiBoldYellow + "[" + ansiReset)
-	if colon := strings.Index(inner, ": "); colon >= 0 {
-		b.WriteString(ansiBoldRed + inner[:colon] + ansiReset)
-		b.WriteString(ansiBoldYellow + ": " + inner[colon+2:] + ansiReset)
-	} else {
-		b.WriteString(ansiBoldRed + inner + ansiReset)
+	b.WriteString(ansiBoldRed + upstream + ansiReset)
+	if notes != "" {
+		b.WriteString(ansiBoldYellow + ": " + notes + ansiReset)
 	}
 	b.WriteString(ansiBoldYellow + "]" + ansiReset)
 	return b.String()

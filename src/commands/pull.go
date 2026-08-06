@@ -98,19 +98,11 @@ func (p *PullCommand) pullBranch(currentBranch string) error {
 	//   - strictly ahead: nothing upstream to integrate at all.
 	//   - diverged (each side has unique commits): the mode changes the result,
 	//     so ask.
-	var localAhead, upstreamAhead bool
-	if err := runConcurrent(
-		func() (err error) {
-			localAhead, err = p.repo().IsBranchAheadOfRemote(currentBranch, upstream)
-			return err
-		},
-		func() (err error) {
-			upstreamAhead, err = p.repo().IsBranchAheadOfRemote(upstream, currentBranch)
-			return err
-		},
-	); err != nil {
+	ahead, behind, err := p.repo().AheadBehind(currentBranch, upstream)
+	if err != nil {
 		return fmt.Errorf("checking divergence: %w", err)
 	}
+	localAhead, upstreamAhead := ahead > 0, behind > 0
 	if localAhead && !upstreamAhead {
 		fmt.Fprintf(p.out(), "Nothing to pull. Local branch '%s' is ahead of '%s'.\n", currentBranch, upstream)
 		return nil

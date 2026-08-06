@@ -153,17 +153,6 @@ func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBr
 	seen := make(map[string]struct{})
 	var seenMu sync.Mutex
 
-	// Fetch checkout state once so producers can do map lookups instead of
-	// N subprocess calls. Skipped entirely when nobody's going to mark them.
-	checkedOut := map[string]string{}
-	if opts.markCheckedOut {
-		var err error
-		if checkedOut, err = r.CheckedOutBranches(); err != nil {
-			fmt.Fprintf(errOut, "error getting worktrees: %v\n", err)
-			checkedOut = map[string]string{}
-		}
-	}
-
 	queue := make(chan branchEntry, 1000)
 	go func() {
 		drained := 0
@@ -199,15 +188,18 @@ func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBr
 		src.Add(detachedEntry(opts.detachedAt))
 	}
 
-	streamLocalBranches(ctx, r, errOut, queue, currentBranch, checkedOut, opts)
+	checkedOut := streamLocalBranches(ctx, r, errOut, queue, currentBranch, opts)
 
 	// One listing covers every remote: git lists them all whichever one you
 	// ask about, so a producer per remote used to mean a full listing per
 	// remote, each throwing away all but its own share.
-	byRemote, err := r.RemoteBranches()
-	if err != nil {
-		fmt.Fprintf(errOut, "error getting remote branches: %v\n", err)
-		byRemote = nil
+	var byRemote map[string][]string
+	if len(remotes) > 0 {
+		var err error
+		if byRemote, err = r.RemoteBranches(); err != nil {
+			fmt.Fprintf(errOut, "error getting remote branches: %v\n", err)
+			byRemote = nil
+		}
 	}
 	for _, remote := range remotes {
 		go streamRemoteBranches(ctx, queue, remote, byRemote[remote], currentBranch, trackingRemote, checkedOut)
@@ -222,13 +214,24 @@ func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBr
 	return src
 }
 
-func streamLocalBranches(ctx context.Context, r git.Repo, errOut io.Writer, queue chan<- branchEntry, currentBranch string, checkedOut map[string]string, opts branchStreamOpts) {
+// streamLocalBranches returns the branch-to-worktree map its own listing
+// already answers, so the remote producers can mark a branch checked out
+// without a worktree listing of their own.
+func streamLocalBranches(ctx context.Context, r git.Repo, errOut io.Writer, queue chan<- branchEntry, currentBranch string, opts branchStreamOpts) map[string]string {
 	locals := opts.locals
 	if locals == nil {
 		var err error
 		if locals, err = r.LocalBranches(); err != nil {
 			fmt.Fprintf(errOut, "error getting local branches: %v\n", err)
-			return
+			return nil
+		}
+	}
+	checkedOut := make(map[string]string, len(locals))
+	if opts.markCheckedOut {
+		for _, local := range locals {
+			if local.WorktreePath != "" {
+				checkedOut[local.Name] = local.WorktreePath
+			}
 		}
 	}
 
@@ -268,9 +271,10 @@ func streamLocalBranches(ctx context.Context, r git.Repo, errOut io.Writer, queu
 		select {
 		case queue <- entry:
 		case <-ctx.Done():
-			return
+			return checkedOut
 		}
 	}
+	return checkedOut
 }
 
 func streamRemoteBranches(ctx context.Context, queue chan<- branchEntry, remote string, branches []string, currentBranch, trackingRemote string, checkedOut map[string]string) {

@@ -232,7 +232,9 @@ func TestRefExists(t *testing.T) {
 	assert.That(t, !git.Repo{Dir: dir}.RefExists("origin/nope"), "missing ref should not resolve")
 }
 
-func TestCheckedOutBranches(t *testing.T) {
+// git refuses to check a branch out twice, so which worktree holds one is what
+// the pickers need to mark it unselectable.
+func TestLocalBranches_WorktreePath(t *testing.T) {
 	t.Parallel()
 
 	t.Run("main worktree only", func(t *testing.T) {
@@ -240,12 +242,11 @@ func TestCheckedOutBranches(t *testing.T) {
 		dir := temp_repo.NewRepo(t)
 		current := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "--abbrev-ref", "HEAD"))
 
-		checked, err := git.Repo{Dir: dir}.CheckedOutBranches()
+		branches, err := git.Repo{Dir: dir}.LocalBranches()
 		require.NoError(t, err)
-		_, ok := checked[current]
-		assert.That(t, ok, "current branch should be in set")
-		_, ok = checked["not-a-branch"]
-		assert.That(t, !ok, "absent branch should not be in set")
+		held := heldBy(branches)
+		assert.That(t, held[current] != "", "current branch should name a worktree")
+		assert.That(t, held["not-a-branch"] == "", "absent branch should name none")
 	})
 
 	t.Run("with linked worktree", func(t *testing.T) {
@@ -253,15 +254,32 @@ func TestCheckedOutBranches(t *testing.T) {
 		dir := temp_repo.NewRepo(t)
 		current := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "--abbrev-ref", "HEAD"))
 		temp_repo.RunGit(t, dir, "branch", "feature")
-		wt := t.TempDir()
-		temp_repo.RunGit(t, dir, "worktree", "add", wt, "feature")
+		temp_repo.RunGit(t, dir, "worktree", "add", t.TempDir(), "feature")
 
-		checked, err := git.Repo{Dir: dir}.CheckedOutBranches()
+		branches, err := git.Repo{Dir: dir}.LocalBranches()
 		require.NoError(t, err)
-		_, ok := checked[current]
-		assert.That(t, ok, "main worktree branch in set")
-		assert.That(t, checked["feature"] != "", "linked worktree branch maps to its path")
+		held := heldBy(branches)
+		assert.That(t, held[current] != "", "main worktree branch named")
+		assert.That(t, held["feature"] != "", "linked worktree branch maps to its path")
 	})
+
+	t.Run("branch nothing has checked out", func(t *testing.T) {
+		t.Parallel()
+		dir := temp_repo.NewRepo(t)
+		temp_repo.RunGit(t, dir, "branch", "idle")
+
+		branches, err := git.Repo{Dir: dir}.LocalBranches()
+		require.NoError(t, err)
+		assert.That(t, heldBy(branches)["idle"] == "", "an unchecked-out branch names no worktree")
+	})
+}
+
+func heldBy(branches []git.LocalBranch) map[string]string {
+	out := make(map[string]string, len(branches))
+	for _, b := range branches {
+		out[b.Name] = b.WorktreePath
+	}
+	return out
 }
 
 func appendFile(path, s string) error {

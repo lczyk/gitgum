@@ -107,13 +107,31 @@ func (s *StatusCommand) renderSections(out io.Writer, sections []statusSection) 
 }
 
 func (s *StatusCommand) renderBranches(out io.Writer, header func()) error {
-	stdout, _, err := s.repo().Run("branch", "-vv", "--color=never")
+	locals, err := s.repo().LocalBranches()
 	if err != nil {
 		return fmt.Errorf("getting branches: %w", err)
 	}
+	// git lists a "(HEAD detached at abc1234)" entry above the branches when
+	// HEAD is off them, and none at all when it has no commit to be at -- which
+	// is what the failing read means here rather than an error to report.
+	var detachedAt, detachedSubject string
+	if !anyHead(locals) {
+		if out, _, err := s.repo().Run("log", "-1", "--format=%h%x09%s", "HEAD"); err == nil {
+			detachedAt, detachedSubject, _ = strings.Cut(strings.TrimSpace(out), "\t")
+		}
+	}
 	header()
-	fmt.Fprintln(out, renderBranchList(stdout))
+	fmt.Fprintln(out, renderBranchList(branchRows(locals, detachedAt, detachedSubject)))
 	return nil
+}
+
+func anyHead(locals []git.LocalBranch) bool {
+	for _, b := range locals {
+		if b.Head {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *StatusCommand) renderRemotes(out io.Writer, header func()) error {

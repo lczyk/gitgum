@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/lczyk/gitgum/internal/strutil"
@@ -111,7 +112,15 @@ type LocalBranch struct {
 	// untracked. Kept verbatim because `git status --branch` prints this same
 	// string, so reproducing that line means not reformatting it.
 	Track string
-	// Head marks the branch HEAD points at, empty on a detached or unborn HEAD.
+	// Hash is the abbreviated object name of the branch tip.
+	Hash string
+	// Subject is the first line of the tip commit's message.
+	Subject string
+	// WorktreePath is the worktree that has this branch checked out, empty when
+	// none does. Any worktree counts, the current one included -- git refuses
+	// to check a branch out twice, whichever of them holds it.
+	WorktreePath string
+	// Head marks the branch HEAD points at, false on a detached or unborn HEAD.
 	Head bool
 	// Gone marks an upstream that is configured but no longer on the remote.
 	Gone bool
@@ -126,24 +135,31 @@ func (b LocalBranch) Remote() string {
 	return remote
 }
 
-// LocalBranches lists every local branch with what it tracks, in one read.
-// Asking per branch is one subprocess each, and iterating the refs costs the
-// same however many fields the format names.
-//
-// for-each-ref rather than `git branch`: the latter prepends a marker column
-// and, on a detached HEAD, emits a "(HEAD detached at abc1234)" pseudo-entry
-// that is not a branch and cannot be checked out.
+// localBranchFormat names every field any caller of LocalBranches wants. It is
+// one format rather than several because iterating the refs costs the same
+// whichever fields are asked for, while asking twice costs a second walk.
 //
 // Fields are tab-separated because git rejects control characters in a ref
-// name, so a tab cannot appear in one -- while %(upstream:track) can hold
-// spaces ("[ahead 1, behind 2]") and so cannot be split on those.
+// name, so a tab cannot appear in one -- while %(upstream:track) holds spaces
+// ("[ahead 1, behind 2]") and so cannot be split on those. The subject goes
+// last, being the only field whose content git does not constrain.
+const localBranchFormat = "--format=" +
+	"%(HEAD)%09%(refname:short)%09%(objectname:short)%09" +
+	"%(upstream:short)%09%(upstream:track)%09%(worktreepath)%09%(contents:subject)"
+
+// LocalBranches lists every local branch and what is known about it, in one
+// read. Asking per branch is one subprocess each.
+//
+// for-each-ref rather than `git branch`: the latter pads its columns to the
+// longest branch name, emits a "(HEAD detached at abc1234)" pseudo-entry that
+// is not a branch, and honours branch.sort -- all of which a caller would then
+// have to parse back out of a layout meant for a reader.
 //
 // It reads through runRead rather than run because run trims: %(HEAD) is a
 // space on every branch but the current one, and trimming the first record's
 // would shift its fields along by one.
 func (r Repo) LocalBranches() ([]LocalBranch, error) {
-	stdout, _, err := r.runRead(context.Background(),
-		"for-each-ref", "--format=%(HEAD)%09%(refname:short)%09%(upstream:short)%09%(upstream:track)", "refs/heads")
+	stdout, _, err := r.runRead(context.Background(), "for-each-ref", localBranchFormat, "refs/heads")
 	if err != nil {
 		return nil, err
 	}
@@ -157,13 +173,19 @@ func (r Repo) LocalBranches() ([]LocalBranch, error) {
 		if name == "" {
 			continue
 		}
-		upstream, track, _ := strings.Cut(rest, "\t")
+		hash, rest, _ := strings.Cut(rest, "\t")
+		upstream, rest, _ := strings.Cut(rest, "\t")
+		track, rest, _ := strings.Cut(rest, "\t")
+		worktree, subject, _ := strings.Cut(rest, "\t")
 		out = append(out, LocalBranch{
-			Name:     name,
-			Upstream: upstream,
-			Track:    track,
-			Head:     head == "*",
-			Gone:     track == "[gone]",
+			Name:         name,
+			Upstream:     upstream,
+			Track:        track,
+			Hash:         hash,
+			Subject:      subject,
+			WorktreePath: worktree,
+			Head:         head == "*",
+			Gone:         track == "[gone]",
 		})
 	}
 	return out, nil
@@ -227,24 +249,38 @@ func (r Repo) GetRemotes() ([]string, error) {
 }
 
 // RemoteBranches lists every remote-tracking branch, bucketed by the remote
-// owning it. `git branch -r` lists them all whatever a caller asks for, so a
-// caller wanting several remotes asks once and splits.
+// owning it. One listing covers every remote, since git reads them all
+// whichever one a caller names.
 //
-// A remote name cannot contain '/', so the first segment names the remote and
-// the rest is the branch -- which may itself contain '/'.
+// %(refname) rather than %(refname:short): the short form renders
+// refs/remotes/origin/HEAD as bare "origin", which reads as a branch named
+// after the remote. A non-empty %(symref) is what actually marks that entry,
+// and it is a symref to the remote's default branch rather than a branch of
+// its own.
+//
+// A remote name cannot contain '/', so the first segment after the prefix
+// names the remote and the rest is the branch -- which may itself contain '/'.
+//
+// runRead rather than run for the same reason as LocalBranches: %(symref) is
+// empty on every ordinary branch, so trimming would eat the last record's
+// separator along with it.
 func (r Repo) RemoteBranches() (map[string][]string, error) {
-	stdout, _, err := r.run("branch", "-r")
+	stdout, _, err := r.runRead(context.Background(),
+		"for-each-ref", "--format=%(refname)%09%(symref)", "refs/remotes")
 	if err != nil {
 		return nil, err
 	}
 	out := map[string][]string{}
 	for line := range strings.SplitSeq(stdout, "\n") {
-		line = strings.TrimSpace(line)
-		// "origin/HEAD -> origin/main" is a symref, not a branch to check out.
-		if line == "" || strings.Contains(line, "HEAD ->") {
+		refname, symref, ok := strings.Cut(line, "\t")
+		if !ok || symref != "" {
 			continue
 		}
-		remote, branch, ok := strings.Cut(line, "/")
+		rest, ok := strings.CutPrefix(refname, "refs/remotes/")
+		if !ok {
+			continue
+		}
+		remote, branch, ok := strings.Cut(rest, "/")
 		if !ok || branch == "" {
 			continue
 		}
@@ -285,30 +321,6 @@ func (r Repo) GetBranchUpstream(branch string) (remote string, remoteBranch stri
 func (r Repo) GetBranchTrackingRemote(branch string) (string, error) {
 	remote, _, err := r.GetBranchUpstream(branch)
 	return remote, err
-}
-
-// CheckedOutBranches maps each branch currently checked out in any worktree
-// (including the main worktree) to that worktree's path. Callers use the map
-// for O(1) lookups rather than running a separate subprocess per branch.
-func (r Repo) CheckedOutBranches() (map[string]string, error) {
-	stdout, _, err := r.run("worktree", "list")
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[string]string)
-	for line := range strings.SplitSeq(stdout, "\n") {
-		// each worktree line is "<path> <sha> [branch]" for named branches;
-		// detached HEADs and bare worktrees use (...) instead of [branch].
-		start := strings.LastIndex(line, "[")
-		end := strings.LastIndex(line, "]")
-		if start != -1 && end > start {
-			fields := strings.Fields(line)
-			if len(fields) > 0 {
-				out[line[start+1:end]] = fields[0]
-			}
-		}
-	}
-	return out, nil
 }
 
 // RefExists reports whether ref resolves to a commit in this repo. Unlike
@@ -493,13 +505,41 @@ func (r Repo) RemoteBranchReachability(remote, branch string) (exists, reachable
 	return false, false
 }
 
-// IsBranchAheadOfRemote reports whether localBranch has commits not in remoteBranch.
+// IsBranchAheadOfRemote reports whether localBranch has commits not in
+// remoteBranch. rev-list --count rather than a log whose output is tested for
+// emptiness: the question is a number, and counting stops git formatting
+// commits nobody reads.
 func (r Repo) IsBranchAheadOfRemote(localBranch, remoteBranch string) (bool, error) {
-	stdout, _, err := r.run("log", "--oneline", remoteBranch+".."+localBranch)
+	stdout, _, err := r.run("rev-list", "--count", remoteBranch+".."+localBranch)
 	if err != nil {
 		return false, err
 	}
-	return strings.TrimSpace(stdout) != "", nil
+	n, err := strconv.Atoi(strings.TrimSpace(stdout))
+	if err != nil {
+		return false, fmt.Errorf("counting commits in %s..%s: %w", remoteBranch, localBranch, err)
+	}
+	return n > 0, nil
+}
+
+// AheadBehind counts how far each of two refs has gone that the other has not.
+// One symmetric-difference count answers both directions, which is what a
+// caller deciding "diverged, or merely behind" is asking.
+func (r Repo) AheadBehind(local, other string) (ahead, behind int, err error) {
+	stdout, _, err := r.run("rev-list", "--left-right", "--count", local+"..."+other)
+	if err != nil {
+		return 0, 0, err
+	}
+	left, right, ok := strings.Cut(strings.TrimSpace(stdout), "\t")
+	if !ok {
+		return 0, 0, fmt.Errorf("unexpected rev-list count output: %q", stdout)
+	}
+	if ahead, err = strconv.Atoi(left); err != nil {
+		return 0, 0, fmt.Errorf("counting commits ahead of %s: %w", other, err)
+	}
+	if behind, err = strconv.Atoi(right); err != nil {
+		return 0, 0, fmt.Errorf("counting commits behind %s: %w", other, err)
+	}
+	return ahead, behind, nil
 }
 
 // GetDefaultBranch returns the repo's default branch, e.g. "main" or
