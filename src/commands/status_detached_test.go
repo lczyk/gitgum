@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lczyk/assert"
+	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
@@ -101,7 +102,7 @@ func TestDetachedHeadRows_RemoteBranches(t *testing.T) {
 	temp_repo.RunGit(t, dir, "checkout", "HEAD~1")
 
 	s := &StatusCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
-	rows, ok := s.detachedHeadRows()
+	rows, ok := s.detachedHeadRows(localBranchesIn(t, dir))
 	assert.Equal(t, ok, true)
 	assert.Equal(t, len(rows), 3)
 	assert.Equal(t, strings.TrimSpace(stripAnsi(rows[1])), "(origin/)main~1")
@@ -118,7 +119,7 @@ func TestDetachedHeadRows_Integration(t *testing.T) {
 	temp_repo.RunGit(t, dir, "checkout", "HEAD~1")
 
 	s := &StatusCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
-	rows, ok := s.detachedHeadRows()
+	rows, ok := s.detachedHeadRows(localBranchesIn(t, dir))
 	assert.Equal(t, ok, true)
 	assert.Equal(t, len(rows), 3)
 	assert.Equal(t, strings.TrimSpace(stripAnsi(rows[1])), "main~1")
@@ -126,7 +127,7 @@ func TestDetachedHeadRows_Integration(t *testing.T) {
 
 	// detached at the branch tip: same shape, ~0
 	temp_repo.RunGit(t, dir, "checkout", "--detach", "main")
-	rows, ok = s.detachedHeadRows()
+	rows, ok = s.detachedHeadRows(localBranchesIn(t, dir))
 	assert.Equal(t, ok, true)
 	assert.Equal(t, len(rows), 3)
 	assert.Equal(t, strings.TrimSpace(stripAnsi(rows[1])), "main~0")
@@ -136,8 +137,17 @@ func TestDetachedHeadRows_Integration(t *testing.T) {
 	temp_repo.WriteFile(t, dir, "b.txt", "b\n")
 	temp_repo.RunGit(t, dir, "add", "b.txt")
 	temp_repo.RunGit(t, dir, "commit", "-m", "feat: orphan")
-	rows, ok = s.detachedHeadRows()
+	rows, ok = s.detachedHeadRows(localBranchesIn(t, dir))
 	assert.Equal(t, ok, true)
 	assert.Equal(t, len(rows), 1)
 	assert.Equal(t, strings.HasSuffix(stripAnsi(rows[0]), " (no branch)"), true)
+}
+
+// localBranchesIn is the listing detachedHeadRows takes from the HEAD read in
+// production; the tests take it themselves.
+func localBranchesIn(t *testing.T, dir string) []git.LocalBranch {
+	t.Helper()
+	branches, err := git.Repo{Dir: dir}.LocalBranches()
+	require.NoError(t, err, "listing local branches")
+	return branches
 }

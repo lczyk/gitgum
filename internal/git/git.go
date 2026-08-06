@@ -170,36 +170,37 @@ func (r Repo) LocalBranches() ([]LocalBranch, error) {
 }
 
 // HeadLine reproduces the "## ..." summary that `git status --branch` opens
-// with, from refs alone.
+// with, from refs alone. It hands back the listing it read as well, since a
+// caller that goes on to describe a detached HEAD wants the same branches.
 //
 // status reaches that line only after refreshing the index, which stats every
 // tracked file -- seconds on a large tree, spent for a line that describes no
 // file. %(upstream:track) is the same string status prints in the brackets, so
 // the two agree by construction rather than by translation.
-func (r Repo) HeadLine() (string, error) {
-	branches, err := r.LocalBranches()
+func (r Repo) HeadLine() (line string, branches []LocalBranch, err error) {
+	branches, err = r.LocalBranches()
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	for _, b := range branches {
 		if !b.Head {
 			continue
 		}
-		line := "## " + b.Name
+		line = "## " + b.Name
 		if b.Upstream != "" {
 			line += "..." + b.Upstream
 		}
 		if b.Track != "" {
 			line += " " + b.Track
 		}
-		return line, nil
+		return line, branches, nil
 	}
 	// Nothing carries the marker: HEAD is either detached, or on a branch that
 	// has no commit yet and so has no ref to be marked.
 	if unborn, _, err := r.run("symbolic-ref", "--short", "HEAD"); err == nil && unborn != "" {
-		return "## No commits yet on " + unborn, nil
+		return "## No commits yet on " + unborn, branches, nil
 	}
-	return "## HEAD (no branch)", nil
+	return "## HEAD (no branch)", branches, nil
 }
 
 // GetLocalBranches returns the names alone, for callers with nothing to ask
@@ -354,6 +355,30 @@ func (r Repo) HasObject(sha string) bool {
 func (r Repo) IsShallow() bool {
 	stdout, _, err := r.run("rev-parse", "--is-shallow-repository")
 	return err == nil && stdout == "true"
+}
+
+// Subjects maps each of the given commits to its subject line, in one read.
+// A sha with no object is left out rather than failing the batch, matching
+// what a caller decorating a list wants: the row it could not name renders
+// without a subject, and the rest still get theirs.
+func (r Repo) Subjects(shas []string) (map[string]string, error) {
+	if len(shas) == 0 {
+		return map[string]string{}, nil
+	}
+	args := append([]string{"log", "--ignore-missing", "--no-walk", "--format=%H%x09%s"}, shas...)
+	stdout, _, err := r.run(args...)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(shas))
+	for line := range strings.SplitSeq(stdout, "\n") {
+		sha, subject, ok := strings.Cut(line, "\t")
+		if !ok {
+			continue
+		}
+		out[sha] = subject
+	}
+	return out, nil
 }
 
 // CommitDate returns a commit's committer date in strict ISO 8601, the form

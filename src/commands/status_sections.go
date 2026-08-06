@@ -144,22 +144,44 @@ func (s *StatusCommand) renderWorktrees(out io.Writer, header func()) error {
 		return nil
 	}
 	header()
-	toplevel, _, err := s.repo().Run("rev-parse", "--show-toplevel")
-	if err != nil {
-		toplevel = ""
+
+	// The three reads that decorate the rows are independent of each other and
+	// of any one worktree: the tracking remotes come from one ref listing and
+	// the subjects from one log, rather than a subprocess per row.
+	var shas []string
+	for _, wt := range worktrees {
+		if wt.Head != "" {
+			shas = append(shas, wt.Head)
+		}
 	}
+	var (
+		toplevel string
+		locals   []git.LocalBranch
+		subjects map[string]string
+	)
+	_ = runConcurrent(
+		func() error {
+			toplevel, _, _ = s.repo().Run("rev-parse", "--show-toplevel")
+			return nil
+		},
+		func() error {
+			locals, _ = s.repo().LocalBranches()
+			return nil
+		},
+		func() error {
+			subjects, _ = s.repo().Subjects(shas)
+			return nil
+		},
+	)
+	tracking := make(map[string]string, len(locals))
+	for _, b := range locals {
+		tracking[b.Name] = b.Remote()
+	}
+
 	color := colorEnabled()
 	for _, wt := range worktrees {
-		trackingRemote := ""
-		if wt.Branch != "" {
-			trackingRemote, _ = s.repo().GetBranchTrackingRemote(wt.Branch)
-		}
-		subject := ""
-		if wt.Head != "" {
-			subject, _, _ = s.repo().Run("log", "-1", "--format=%s", wt.Head)
-		}
 		current := toplevel != "" && wt.Path == toplevel
-		for _, row := range formatWorktreeRows(wt, current, trackingRemote, subject, color) {
+		for _, row := range formatWorktreeRows(wt, current, tracking[wt.Branch], subjects[wt.Head], color) {
 			fmt.Fprintln(out, row)
 		}
 	}
@@ -189,13 +211,13 @@ func (s *StatusCommand) renderChanges(out io.Writer, header func()) error {
 // rendered switch-style, e.g. "## (origin/)main [ahead 7]". A detached HEAD
 // gets the refs that contain it instead of git's bare "## HEAD (no branch)".
 func (s *StatusCommand) renderHead(out io.Writer, header func()) error {
-	branch, err := s.reads.headLine()
+	branch, locals, err := s.reads.headLine()
 	if err != nil {
 		return err
 	}
 	header()
 	if branch == detachedHeadLine {
-		if rows, ok := s.detachedHeadRows(); ok {
+		if rows, ok := s.detachedHeadRows(locals); ok {
 			for _, row := range rows {
 				fmt.Fprintln(out, row)
 			}
@@ -283,6 +305,7 @@ type statusReads struct {
 
 	headDone chan struct{}
 	head     string
+	locals   []git.LocalBranch
 	headErr  error
 
 	statsDone chan struct{}
@@ -298,9 +321,11 @@ func (r *statusReads) scan() (entries []git.Entry, err error) {
 }
 
 // headLine is the "## ..." summary, read from refs rather than from the scan.
-func (r *statusReads) headLine() (string, error) {
+// The listing it came from rides along for the detached-HEAD rows, which
+// describe the same branches.
+func (r *statusReads) headLine() (string, []git.LocalBranch, error) {
 	<-r.headDone
-	return r.head, r.headErr
+	return r.head, r.locals, r.headErr
 }
 
 func (r *statusReads) numstats() map[string]numstat {
@@ -360,12 +385,12 @@ func (s *StatusCommand) startReads(sections []statusSection) *statusReads {
 	if wantHead {
 		go func() {
 			defer close(r.headDone)
-			head, err := repo.HeadLine()
+			head, locals, err := repo.HeadLine()
 			if err != nil {
 				r.headErr = fmt.Errorf("getting head: %w", err)
 				return
 			}
-			r.head = head
+			r.head, r.locals = head, locals
 		}()
 	} else {
 		close(r.headDone)

@@ -70,6 +70,43 @@ func TestStatusCommand_HeadAloneSkipsTheScan(t *testing.T) {
 	assert.Equal(t, countCalls(calls(), "for-each-ref"), 1)
 }
 
+// The WORKTREES rows are decorated with a tracking remote and a subject each,
+// which used to be a subprocess per row apiece.
+func TestStatusCommand_WorktreesDecorateInOneRead(t *testing.T) {
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "worktree", "add", t.TempDir(), "-b", "feat-a")
+	temp_repo.RunGit(t, dir, "worktree", "add", t.TempDir(), "-b", "feat-b")
+	calls := gitShim(t)
+
+	var buf strings.Builder
+	cmd := &StatusCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}}
+	require.NoError(t, cmd.Execute([]string{"worktree"}), "status worktree should succeed")
+
+	assert.ContainsString(t, buf.String(), "feat-a")
+	assert.ContainsString(t, buf.String(), "feat-b")
+	assert.Equal(t, countCalls(calls(), "for-each-ref"), 1)
+	assert.Equal(t, countCalls(calls(), "log"), 1)
+}
+
+// A detached HEAD reads the tracking remote of every containing branch. That
+// is one ref listing, not one per branch -- three listings for the ref
+// namespaces plus the one that answers tracking, whatever the branch count.
+func TestStatusCommand_DetachedReadsTrackingOnce(t *testing.T) {
+	dir := temp_repo.NewRepo(t)
+	for _, name := range []string{"one", "two", "three"} {
+		temp_repo.RunGit(t, dir, "branch", name)
+	}
+	temp_repo.RunGit(t, dir, "checkout", "--detach")
+	calls := gitShim(t)
+
+	var buf strings.Builder
+	cmd := &StatusCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}}
+	require.NoError(t, cmd.Execute([]string{"head"}), "status head should succeed")
+
+	assert.ContainsString(t, buf.String(), "HEAD")
+	assert.Equal(t, countCalls(calls(), "for-each-ref"), 4)
+}
+
 // CHANGES is the section that lists untracked files, so its scan looks for
 // them -- and no longer asks for the branch line it has no use for.
 func TestStatusCommand_ChangesScansUntrackedOnly(t *testing.T) {

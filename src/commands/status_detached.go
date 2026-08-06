@@ -40,38 +40,72 @@ type headRef struct {
 //
 // The second return value is false when git wouldn't answer, in which case the
 // caller keeps git's own "## HEAD (no branch)".
-func (s *StatusCommand) detachedHeadRows() ([]string, bool) {
+// locals is the branch listing the HEAD line was built from, reused here for
+// the tracking remotes rather than read again.
+func (s *StatusCommand) detachedHeadRows(locals []git.LocalBranch) ([]string, bool) {
 	r := s.repo()
-	head, _, err := r.Run("rev-parse", "HEAD")
-	if err != nil {
+	var head, short string
+	var headErr, shortErr error
+	_ = runConcurrent(
+		func() error {
+			head, _, headErr = r.Run("rev-parse", "HEAD")
+			return nil
+		},
+		func() error {
+			short, _, shortErr = r.Run("rev-parse", "--short", "HEAD")
+			return nil
+		},
+	)
+	if headErr != nil || shortErr != nil {
 		return nil, false
 	}
 	head = strings.TrimSpace(head)
-	short, _, err := r.Run("rev-parse", "--short", "HEAD")
-	if err != nil {
-		return nil, false
-	}
-	return formatDetachedRows(strings.TrimSpace(short), containingRefs(r, head), colorEnabled()), true
+	return formatDetachedRows(strings.TrimSpace(short), containingRefs(r, head, locals), colorEnabled()), true
 }
 
 // containingRefs finds every branch and tag that has head as an ancestor:
 // local branches, then remote branches with no local counterpart, then tags,
 // each group closest-first.
-func containingRefs(r git.Repo, head string) []headRef {
+// The reads come in two rounds rather than one call per ref as it is found:
+// the four listings are independent of each other, and once the refs are
+// known so is the distance measurement for each. Both rounds cost their
+// slowest member instead of their sum, which on a repo with many refs and an
+// old detached HEAD is the difference between a pause and a report.
+func containingRefs(r git.Repo, head string, locals []git.LocalBranch) []headRef {
+	var heads, remotes, tags []string
+	_ = runConcurrent(
+		// for-each-ref rather than `branch --contains`: the latter also lists
+		// the "(HEAD detached at abc1234)" pseudo-entry, which is not a branch.
+		func() error {
+			heads = gitLines(r, "for-each-ref", "--contains", head, "--format=%(refname:short)", "refs/heads")
+			return nil
+		},
+		func() error {
+			remotes = gitLines(r, "for-each-ref", "--contains", head, "--format=%(refname:short)", "refs/remotes")
+			return nil
+		},
+		func() error {
+			tags = gitLines(r, "for-each-ref", "--contains", head, "--format=%(refname:short)", "refs/tags")
+			return nil
+		},
+	)
+	tracking := make(map[string]string, len(locals))
+	for _, b := range locals {
+		tracking[b.Name] = b.Remote()
+	}
+
 	var refs []headRef
-	// for-each-ref rather than `branch --contains`: the latter also lists the
-	// "(HEAD detached at abc1234)" pseudo-entry, which is not a branch.
+	var fullNames []string
 	tracked := make(map[string]bool)
-	for _, name := range gitLines(r, "for-each-ref", "--contains", head, "--format=%(refname:short)", "refs/heads") {
-		ref := headRef{name: name, kind: kindLocal}
-		ref.remote, _ = r.GetBranchTrackingRemote(name)
-		ref.dist, ref.suffix = refDistance(r, "refs/heads/"+name, head)
+	for _, name := range heads {
+		ref := headRef{name: name, kind: kindLocal, remote: tracking[name]}
 		if ref.remote != "" {
 			tracked[ref.remote+"/"+name] = true
 		}
 		refs = append(refs, ref)
+		fullNames = append(fullNames, "refs/heads/"+name)
 	}
-	for _, short := range gitLines(r, "for-each-ref", "--contains", head, "--format=%(refname:short)", "refs/remotes") {
+	for _, short := range remotes {
 		// "origin/HEAD" is a symref to the remote's default branch, not a
 		// branch of its own; a ref already shown switch-style is a duplicate.
 		if strings.HasSuffix(short, "/HEAD") || tracked[short] {
@@ -81,15 +115,23 @@ func containingRefs(r git.Repo, head string) []headRef {
 		if !ok {
 			continue
 		}
-		ref := headRef{name: name, remote: remote, kind: kindRemote}
-		ref.dist, ref.suffix = refDistance(r, "refs/remotes/"+short, head)
-		refs = append(refs, ref)
+		refs = append(refs, headRef{name: name, remote: remote, kind: kindRemote})
+		fullNames = append(fullNames, "refs/remotes/"+short)
 	}
-	for _, name := range gitLines(r, "for-each-ref", "--contains", head, "--format=%(refname:short)", "refs/tags") {
-		ref := headRef{name: name, kind: kindTag}
-		ref.dist, ref.suffix = refDistance(r, "refs/tags/"+name, head)
-		refs = append(refs, ref)
+	for _, name := range tags {
+		refs = append(refs, headRef{name: name, kind: kindTag})
+		fullNames = append(fullNames, "refs/tags/"+name)
 	}
+
+	distances := make([]func() error, len(refs))
+	for i := range refs {
+		distances[i] = func() error {
+			refs[i].dist, refs[i].suffix = refDistance(r, fullNames[i], head)
+			return nil
+		}
+	}
+	_ = runConcurrent(distances...)
+
 	sort.SliceStable(refs, func(i, j int) bool {
 		if refs[i].kind != refs[j].kind {
 			return refs[i].kind < refs[j].kind
@@ -106,15 +148,29 @@ func containingRefs(r git.Repo, head string) []headRef {
 // in ref that head can't reach, which orders refs sensibly even across merges.
 // The "~N" suffix only comes back when ref~N really resolves to head, i.e. when
 // head sits on ref's first-parent chain -- otherwise the notation would lie.
+// The two counts are separate traversals of the same range, so they are taken
+// together; the ~N check needs the first-parent count and follows.
 func refDistance(r git.Repo, ref, head string) (dist int, suffix string) {
-	if out, _, err := r.Run("rev-list", "--count", head+".."+ref); err == nil {
-		dist, _ = strconv.Atoi(strings.TrimSpace(out))
-	}
-	out, _, err := r.Run("rev-list", "--count", "--first-parent", head+".."+ref)
-	if err != nil {
+	var all, firstParent string
+	var fpErr error
+	_ = runConcurrent(
+		func() error {
+			out, _, err := r.Run("rev-list", "--count", head+".."+ref)
+			if err == nil {
+				all = out
+			}
+			return nil
+		},
+		func() error {
+			firstParent, _, fpErr = r.Run("rev-list", "--count", "--first-parent", head+".."+ref)
+			return nil
+		},
+	)
+	dist, _ = strconv.Atoi(strings.TrimSpace(all))
+	if fpErr != nil {
 		return dist, ""
 	}
-	n, err := strconv.Atoi(strings.TrimSpace(out))
+	n, err := strconv.Atoi(strings.TrimSpace(firstParent))
 	if err != nil {
 		return dist, ""
 	}

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -294,12 +295,31 @@ func (d *DiffCommand) runFollow() error {
 		cachedErr = nil
 		cachedLines = nil
 		multi := activeCount() > 1
-		first := true
+
+		// The active modes are unrelated diffs, so a tick costs the slowest
+		// rather than their sum. Results stay keyed by mode, since the tabs
+		// render in diffModes order however they finish.
+		var active []string
 		for _, m := range diffModes {
-			if !isActive(m) {
-				continue
+			if isActive(m) {
+				active = append(active, m)
 			}
-			out, cErr := d.collectDiff(m)
+		}
+		collected := make([]string, len(active))
+		errs := make([]error, len(active))
+		var wg sync.WaitGroup
+		wg.Add(len(active))
+		for i, m := range active {
+			go func() {
+				defer wg.Done()
+				collected[i], errs[i] = d.collectDiff(m)
+			}()
+		}
+		wg.Wait()
+
+		first := true
+		for i, m := range active {
+			out, cErr := collected[i], errs[i]
 			if cErr != nil {
 				cachedErr = cErr
 				cachedLines = nil

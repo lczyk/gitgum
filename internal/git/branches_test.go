@@ -1,6 +1,7 @@
 package git_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/lczyk/assert"
@@ -105,6 +106,46 @@ func TestRemoteBranches_SlashInBranchName(t *testing.T) {
 		"origin should list feat/x, got %v", byRemote["origin"])
 }
 
+func TestSubjects(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.CreateCommit(t, dir, "a.txt", "a\n", "feat: the first thing")
+	temp_repo.CreateCommit(t, dir, "b.txt", "b\n", "fix: the second thing")
+	r := git.Repo{Dir: dir}
+
+	head, err := r.GetCommitHash("HEAD")
+	require.NoError(t, err, "resolving HEAD")
+	parent, err := r.GetCommitHash("HEAD~1")
+	require.NoError(t, err, "resolving HEAD~1")
+
+	subjects, err := r.Subjects([]string{head, parent})
+	require.NoError(t, err, "reading subjects")
+	assert.Equal(t, subjects[head], "fix: the second thing")
+	assert.Equal(t, subjects[parent], "feat: the first thing")
+}
+
+// A worktree registered against a sha that is no longer there must not cost
+// every other row its subject.
+func TestSubjects_MissingShaDoesNotFailTheBatch(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	r := git.Repo{Dir: dir}
+	head, err := r.GetCommitHash("HEAD")
+	require.NoError(t, err, "resolving HEAD")
+
+	subjects, err := r.Subjects([]string{head, strings.Repeat("0", len(head))})
+	require.NoError(t, err, "reading subjects")
+	assert.Equal(t, subjects[head], "chore: init")
+	assert.Equal(t, len(subjects), 1)
+}
+
+func TestSubjects_Empty(t *testing.T) {
+	t.Parallel()
+	subjects, err := git.Repo{Dir: temp_repo.NewRepo(t)}.Subjects(nil)
+	require.NoError(t, err, "empty batch should not error")
+	assert.Equal(t, len(subjects), 0)
+}
+
 // sameAsStatus is the whole contract of HeadLine: it must produce, from refs
 // alone, the exact line `git status --branch` opens with.
 func sameAsStatus(t *testing.T, dir string) {
@@ -112,7 +153,7 @@ func sameAsStatus(t *testing.T, dir string) {
 	r := git.Repo{Dir: dir}
 	want, _, err := r.Status(git.ScanOpts{Branch: true, Untracked: git.UntrackedNone})
 	require.NoError(t, err, "reading status branch line")
-	got, err := r.HeadLine()
+	got, _, err := r.HeadLine()
 	require.NoError(t, err, "reading head line")
 	assert.Equal(t, got, want)
 }
