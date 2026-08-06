@@ -43,7 +43,7 @@ func TestCheckRemoteNaming(t *testing.T) {
 	temp_repo.RunGit(t, dir, "remote", "add", "nsklikas", "https://github.com/nsklikas/gitgum")
 	temp_repo.RunGit(t, dir, "remote", "add", "custom", "git@example.com:team/gitgum.git")
 
-	findings := checkRemoteNaming(git.Repo{Dir: dir})
+	findings := checkRemoteNaming(newFacts(git.Repo{Dir: dir}))
 
 	// origin -> fixable (should be "lczyk"); custom -> warning; nsklikas -> clean.
 	var fixable, warning []Finding
@@ -67,7 +67,7 @@ func TestCheckRemoteNaming_Clean(t *testing.T) {
 	dir := temp_repo.NewRepo(t)
 	temp_repo.RunGit(t, dir, "remote", "add", "lczyk", "https://github.com/lczyk/gitgum")
 
-	findings := checkRemoteNaming(git.Repo{Dir: dir})
+	findings := checkRemoteNaming(newFacts(git.Repo{Dir: dir}))
 	assert.Equal(t, len(findings), 0)
 }
 
@@ -85,7 +85,7 @@ func TestCheckUpstreams_Divergent(t *testing.T) {
 	temp_repo.RunGit(t, dir, "config", "branch.feat.remote", "bob")
 	temp_repo.RunGit(t, dir, "config", "branch.feat.merge", "refs/heads/feat")
 
-	findings := checkUpstreams(git.Repo{Dir: dir})
+	findings := checkUpstreams(newFacts(git.Repo{Dir: dir}))
 	require.Equal(t, len(findings), 1, "divergent upstreams -> one warning")
 	assert.Equal(t, findings[0].Severity, SevWarning)
 	assert.ContainsString(t, findings[0].Message, "alice")
@@ -99,7 +99,7 @@ func TestCheckUpstreams_Consistent(t *testing.T) {
 	temp_repo.RunGit(t, dir, "config", "branch.main.remote", "alice")
 	temp_repo.RunGit(t, dir, "config", "branch.main.merge", "refs/heads/main")
 
-	findings := checkUpstreams(git.Repo{Dir: dir})
+	findings := checkUpstreams(newFacts(git.Repo{Dir: dir}))
 	assert.Equal(t, len(findings), 0)
 }
 
@@ -113,7 +113,7 @@ func TestCheckLayout_StraySibling(t *testing.T) {
 	temp_repo.RunGit(t, repo, "worktree", "add", filepath.Join(root, "gitgum-2"), "-b", "feat")
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "gitgum-3"), 0o755), "mkdir stray")
 
-	findings := checkLayout(git.Repo{Dir: repo})
+	findings := checkLayout(newFacts(git.Repo{Dir: repo}))
 
 	var adjacent []Finding
 	for _, f := range findings {
@@ -132,7 +132,7 @@ func TestCheckLayout_DirNaming(t *testing.T) {
 	initRepoAt(t, repo)
 	temp_repo.RunGit(t, repo, "remote", "add", "lczyk", "https://github.com/lczyk/gitgum")
 
-	findings := checkLayout(git.Repo{Dir: repo})
+	findings := checkLayout(newFacts(git.Repo{Dir: repo}))
 
 	var naming []Finding
 	for _, f := range findings {
@@ -152,7 +152,7 @@ func TestCheckLayout_CleanNoGithubRemote(t *testing.T) {
 	repo := filepath.Join(root, "whatever")
 	initRepoAt(t, repo)
 
-	findings := checkLayout(git.Repo{Dir: repo})
+	findings := checkLayout(newFacts(git.Repo{Dir: repo}))
 	assert.Equal(t, len(findings), 0)
 }
 
@@ -162,7 +162,7 @@ func TestCheckPRBranchNaming_SingleRemoteFixable(t *testing.T) {
 	temp_repo.RunGit(t, dir, "remote", "add", "origin", "https://github.com/lczyk/gitgum")
 	temp_repo.RunGit(t, dir, "branch", "pr-51")
 
-	findings := checkPRBranchNaming(git.Repo{Dir: dir})
+	findings := checkPRBranchNaming(newFacts(git.Repo{Dir: dir}))
 	require.Equal(t, len(findings), 1, "one old pr-N branch")
 	assert.Equal(t, findings[0].Check, "pr-branch-naming")
 	assert.Equal(t, findings[0].Severity, SevFixable)
@@ -176,7 +176,7 @@ func TestCheckPRBranchNaming_AmbiguousRemoteWarns(t *testing.T) {
 	temp_repo.RunGit(t, dir, "remote", "add", "b", "https://github.com/b/x")
 	temp_repo.RunGit(t, dir, "branch", "pr-7")
 
-	findings := checkPRBranchNaming(git.Repo{Dir: dir})
+	findings := checkPRBranchNaming(newFacts(git.Repo{Dir: dir}))
 	require.Equal(t, len(findings), 1, "one old pr-N branch")
 	assert.Equal(t, findings[0].Severity, SevWarning)
 	assert.Equal(t, findings[0].Fix, "")
@@ -189,7 +189,7 @@ func TestCheckPRBranchNaming_NewSchemeIgnored(t *testing.T) {
 	temp_repo.RunGit(t, dir, "branch", "pr/origin/9")
 	temp_repo.RunGit(t, dir, "branch", "prancing") // not a PR branch
 
-	assert.Equal(t, len(checkPRBranchNaming(git.Repo{Dir: dir})), 0)
+	assert.Equal(t, len(checkPRBranchNaming(newFacts(git.Repo{Dir: dir}))), 0)
 }
 
 func TestCheckPrunableWorktrees(t *testing.T) {
@@ -201,7 +201,7 @@ func TestCheckPrunableWorktrees(t *testing.T) {
 	temp_repo.RunGit(t, repo, "worktree", "add", wtPath, "-b", "feat")
 	require.NoError(t, os.RemoveAll(wtPath), "remove worktree dir out from under git")
 
-	findings := checkPrunableWorktrees(git.Repo{Dir: repo})
+	findings := checkPrunableWorktrees(newFacts(git.Repo{Dir: repo}))
 	require.Equal(t, len(findings), 1, "the removed worktree is prunable")
 	assert.Equal(t, findings[0].Check, "prunable-worktree")
 	assert.Equal(t, findings[0].Severity, SevFixable)
@@ -216,7 +216,7 @@ func TestCheckGoneUpstreams(t *testing.T) {
 	temp_repo.RunGit(t, dir, "config", "branch.main.remote", "origin")
 	temp_repo.RunGit(t, dir, "config", "branch.main.merge", "refs/heads/main")
 
-	findings := checkGoneUpstreams(git.Repo{Dir: dir})
+	findings := checkGoneUpstreams(newFacts(git.Repo{Dir: dir}))
 	require.Equal(t, len(findings), 1, "main's upstream is gone")
 	assert.Equal(t, findings[0].Check, "gone-upstream")
 	assert.Equal(t, findings[0].Severity, SevWarning)
@@ -229,7 +229,7 @@ func TestCheckDuplicateRemotes(t *testing.T) {
 	temp_repo.RunGit(t, dir, "remote", "add", "origin", "https://github.com/lczyk/gitgum")
 	temp_repo.RunGit(t, dir, "remote", "add", "dup", "https://github.com/lczyk/gitgum")
 
-	findings := checkDuplicateRemotes(git.Repo{Dir: dir})
+	findings := checkDuplicateRemotes(newFacts(git.Repo{Dir: dir}))
 	require.Equal(t, len(findings), 1, "origin and dup share a url")
 	assert.Equal(t, findings[0].Severity, SevWarning)
 	assert.ContainsString(t, findings[0].Message, "dup")

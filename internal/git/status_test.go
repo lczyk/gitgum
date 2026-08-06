@@ -27,6 +27,10 @@ func TestStatusArgs(t *testing.T) {
 			opt:  ScanOpts{Untracked: UntrackedAll, Ignored: true},
 			want: []string{"status", "--porcelain", "-z", "-uall", "--ignored"},
 		},
+		"dirty-tree scan": {
+			opt:  ScanOpts{Untracked: UntrackedNone},
+			want: []string{"status", "--porcelain", "-z", "-uno"},
+		},
 	}
 	for name, tt := range cases {
 		t.Run(name, func(t *testing.T) {

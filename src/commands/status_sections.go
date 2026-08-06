@@ -90,6 +90,8 @@ func knownSections() string {
 // renderSections writes each selected section in order. Headers are printed
 // only when more than one section was asked for -- a lone section is bare.
 func (s *StatusCommand) renderSections(out io.Writer, sections []statusSection) error {
+	s.reads = s.startReads(sections)
+	defer s.reads.wait()
 	withHeaders := len(sections) > 1
 	for _, sec := range sections {
 		header := func() {
@@ -167,7 +169,7 @@ func (s *StatusCommand) renderWorktrees(out io.Writer, header func()) error {
 // renderChanges prints the working-tree changes, as a tree or (with --flat) a
 // porcelain list. A clean tree emits nothing at all, header included.
 func (s *StatusCommand) renderChanges(out io.Writer, header func()) error {
-	_, entries, err := s.scan()
+	entries, err := s.reads.scan()
 	if err != nil {
 		return err
 	}
@@ -179,7 +181,7 @@ func (s *StatusCommand) renderChanges(out io.Writer, header func()) error {
 		filetree.Flat(out, flatItems(entries), filetree.Opts{})
 		return nil
 	}
-	filetree.Tree(out, statusItems(entries, numstats(s.repo())), filetree.Opts{Dim: dim})
+	filetree.Tree(out, statusItems(entries, s.reads.numstats()), filetree.Opts{Dim: dim})
 	return nil
 }
 
@@ -187,7 +189,7 @@ func (s *StatusCommand) renderChanges(out io.Writer, header func()) error {
 // rendered switch-style, e.g. "## (origin/)main [ahead 7]". A detached HEAD
 // gets the refs that contain it instead of git's bare "## HEAD (no branch)".
 func (s *StatusCommand) renderHead(out io.Writer, header func()) error {
-	branch, _, err := s.scan()
+	branch, err := s.reads.headLine()
 	if err != nil {
 		return err
 	}
@@ -269,13 +271,112 @@ func headMarker(color bool) string {
 	return "* "
 }
 
-// scan reads the working tree for one section. Untracked directories stay
-// folded the way git folds them: this is a report, and descending into a
-// directory nothing tracks costs a full walk to say the same thing.
-func (s *StatusCommand) scan() (branch string, entries []git.Entry, err error) {
-	branch, entries, err = s.repo().Status(git.ScanOpts{Branch: true})
-	if err != nil {
-		return "", nil, fmt.Errorf("getting status: %w", err)
+// statusReads is the git output one render pass shares. The scan and the
+// numstat are independent subprocesses, and on a big working tree each costs
+// seconds, so both start before the first section renders: a pass waits
+// max(scan, numstat) rather than their sum, and the two sections that want a
+// scan pay for one.
+type statusReads struct {
+	scanDone chan struct{}
+	entries  []git.Entry
+	scanErr  error
+
+	headDone chan struct{}
+	head     string
+	headErr  error
+
+	statsDone chan struct{}
+	stats     map[string]numstat
+}
+
+// scan is the working-tree read. Untracked directories stay folded the way git
+// folds them: this is a report, and descending into a directory nothing tracks
+// costs a full walk to say the same thing.
+func (r *statusReads) scan() (entries []git.Entry, err error) {
+	<-r.scanDone
+	return r.entries, r.scanErr
+}
+
+// headLine is the "## ..." summary, read from refs rather than from the scan.
+func (r *statusReads) headLine() (string, error) {
+	<-r.headDone
+	return r.head, r.headErr
+}
+
+func (r *statusReads) numstats() map[string]numstat {
+	<-r.statsDone
+	return r.stats
+}
+
+// wait blocks until every started read has finished, whether or not a section
+// wanted its answer. Nothing cancels a git subprocess once it is running, and
+// the process exits on the first section error, so a read left unclaimed would
+// be orphaned -- once per tick under --follow.
+func (r *statusReads) wait() {
+	<-r.scanDone
+	<-r.headDone
+	<-r.statsDone
+}
+
+// startReads launches what these sections need and nothing else -- a spec of
+// "branch" alone must not pay for a working-tree scan, and --flat prints no
+// diffstat so it must not pay for a numstat. What it cannot narrow is a clean
+// tree: whether there is anything to count is the scan's answer, so waiting for
+// it would put the numstat back behind the read it is meant to run beside.
+//
+// The two are separate reads because they want different things: CHANGES
+// describes files and HEAD describes a ref. A status scan answers both, but it
+// stats every tracked file to do it, which HEAD has no use for.
+func (s *StatusCommand) startReads(sections []statusSection) *statusReads {
+	r := &statusReads{
+		scanDone:  make(chan struct{}),
+		headDone:  make(chan struct{}),
+		statsDone: make(chan struct{}),
 	}
-	return branch, entries, nil
+	var wantScan, wantHead, wantStats bool
+	for _, sec := range sections {
+		switch sec.id {
+		case "changes":
+			wantScan = true
+			wantStats = wantStats || !s.Flat
+		case "head":
+			wantHead = true
+		}
+	}
+	repo := s.repo()
+	if wantScan {
+		go func() {
+			defer close(r.scanDone)
+			_, entries, err := repo.Status(git.ScanOpts{})
+			if err != nil {
+				r.scanErr = fmt.Errorf("getting status: %w", err)
+				return
+			}
+			r.entries = entries
+		}()
+	} else {
+		close(r.scanDone)
+	}
+	if wantHead {
+		go func() {
+			defer close(r.headDone)
+			head, err := repo.HeadLine()
+			if err != nil {
+				r.headErr = fmt.Errorf("getting head: %w", err)
+				return
+			}
+			r.head = head
+		}()
+	} else {
+		close(r.headDone)
+	}
+	if wantStats {
+		go func() {
+			defer close(r.statsDone)
+			r.stats = numstats(repo)
+		}()
+	} else {
+		close(r.statsDone)
+	}
+	return r
 }

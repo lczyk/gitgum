@@ -99,43 +99,121 @@ func (r Repo) CheckInRepo() error {
 	return nil
 }
 
-// GetLocalBranches returns a list of local git branches.
+// LocalBranch is one local branch and what it tracks.
+type LocalBranch struct {
+	Name string
+	// Upstream is the configured upstream written "<remote>/<branch>", empty
+	// when the branch tracks nothing. A branch tracking another local branch
+	// (branch.<name>.remote = ".") has no remote half, so it arrives bare.
+	Upstream string
+	// Track is git's own summary of the divergence from Upstream, brackets
+	// included: "[ahead 2, behind 1]", "[gone]", or empty when in sync or
+	// untracked. Kept verbatim because `git status --branch` prints this same
+	// string, so reproducing that line means not reformatting it.
+	Track string
+	// Head marks the branch HEAD points at, empty on a detached or unborn HEAD.
+	Head bool
+	// Gone marks an upstream that is configured but no longer on the remote.
+	Gone bool
+}
+
+// Remote is the remote half of the upstream, empty when there is none.
+func (b LocalBranch) Remote() string {
+	remote, _, ok := strings.Cut(b.Upstream, "/")
+	if !ok {
+		return ""
+	}
+	return remote
+}
+
+// LocalBranches lists every local branch with what it tracks, in one read.
+// Asking per branch is one subprocess each, and iterating the refs costs the
+// same however many fields the format names.
 //
 // for-each-ref rather than `git branch`: the latter prepends a marker column
 // and, on a detached HEAD, emits a "(HEAD detached at abc1234)" pseudo-entry
 // that is not a branch and cannot be checked out.
-func (r Repo) GetLocalBranches() ([]string, error) {
-	stdout, _, err := r.run("for-each-ref", "--format=%(refname:short)", "refs/heads")
+//
+// Fields are tab-separated because git rejects control characters in a ref
+// name, so a tab cannot appear in one -- while %(upstream:track) can hold
+// spaces ("[ahead 1, behind 2]") and so cannot be split on those.
+//
+// It reads through runRead rather than run because run trims: %(HEAD) is a
+// space on every branch but the current one, and trimming the first record's
+// would shift its fields along by one.
+func (r Repo) LocalBranches() ([]LocalBranch, error) {
+	stdout, _, err := r.runRead(context.Background(),
+		"for-each-ref", "--format=%(HEAD)%09%(refname:short)%09%(upstream:short)%09%(upstream:track)", "refs/heads")
 	if err != nil {
 		return nil, err
 	}
-	var branches []string
+	var out []LocalBranch
 	for line := range strings.SplitSeq(stdout, "\n") {
-		if branch := strings.TrimSpace(line); branch != "" {
-			branches = append(branches, branch)
+		head, rest, ok := strings.Cut(line, "\t")
+		if !ok {
+			continue // trailing newline
 		}
-	}
-	return branches, nil
-}
-
-// GoneUpstreams returns local branches whose configured upstream no longer
-// exists on the remote -- git marks these "[gone]" in %(upstream:track). A
-// branch with no upstream, or one that's merely ahead/behind, is not returned.
-func (r Repo) GoneUpstreams() ([]string, error) {
-	stdout, _, err := r.run("for-each-ref", "--format=%(refname:short) %(upstream:track)", "refs/heads")
-	if err != nil {
-		return nil, err
-	}
-	var out []string
-	for line := range strings.SplitSeq(stdout, "\n") {
-		line = strings.TrimSpace(line)
-		// A gone branch's line is "<name> [gone]"; branch names can't contain
-		// spaces, so trimming the suffix leaves the bare name.
-		if name, ok := strings.CutSuffix(line, " [gone]"); ok && name != "" {
-			out = append(out, name)
+		name, rest, _ := strings.Cut(rest, "\t")
+		if name == "" {
+			continue
 		}
+		upstream, track, _ := strings.Cut(rest, "\t")
+		out = append(out, LocalBranch{
+			Name:     name,
+			Upstream: upstream,
+			Track:    track,
+			Head:     head == "*",
+			Gone:     track == "[gone]",
+		})
 	}
 	return out, nil
+}
+
+// HeadLine reproduces the "## ..." summary that `git status --branch` opens
+// with, from refs alone.
+//
+// status reaches that line only after refreshing the index, which stats every
+// tracked file -- seconds on a large tree, spent for a line that describes no
+// file. %(upstream:track) is the same string status prints in the brackets, so
+// the two agree by construction rather than by translation.
+func (r Repo) HeadLine() (string, error) {
+	branches, err := r.LocalBranches()
+	if err != nil {
+		return "", err
+	}
+	for _, b := range branches {
+		if !b.Head {
+			continue
+		}
+		line := "## " + b.Name
+		if b.Upstream != "" {
+			line += "..." + b.Upstream
+		}
+		if b.Track != "" {
+			line += " " + b.Track
+		}
+		return line, nil
+	}
+	// Nothing carries the marker: HEAD is either detached, or on a branch that
+	// has no commit yet and so has no ref to be marked.
+	if unborn, _, err := r.run("symbolic-ref", "--short", "HEAD"); err == nil && unborn != "" {
+		return "## No commits yet on " + unborn, nil
+	}
+	return "## HEAD (no branch)", nil
+}
+
+// GetLocalBranches returns the names alone, for callers with nothing to ask
+// about what they track.
+func (r Repo) GetLocalBranches() ([]string, error) {
+	branches, err := r.LocalBranches()
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, b := range branches {
+		names = append(names, b.Name)
+	}
+	return names, nil
 }
 
 // GetRemotes returns a list of git remotes.
@@ -147,21 +225,40 @@ func (r Repo) GetRemotes() ([]string, error) {
 	return strutil.SplitTrimmedLines(stdout), nil
 }
 
-// GetRemoteBranches returns branches for a specific remote.
-func (r Repo) GetRemoteBranches(remote string) ([]string, error) {
+// RemoteBranches lists every remote-tracking branch, bucketed by the remote
+// owning it. `git branch -r` lists them all whatever a caller asks for, so a
+// caller wanting several remotes asks once and splits.
+//
+// A remote name cannot contain '/', so the first segment names the remote and
+// the rest is the branch -- which may itself contain '/'.
+func (r Repo) RemoteBranches() (map[string][]string, error) {
 	stdout, _, err := r.run("branch", "-r")
 	if err != nil {
 		return nil, err
 	}
-	var branches []string
-	prefix := remote + "/"
+	out := map[string][]string{}
 	for line := range strings.SplitSeq(stdout, "\n") {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, prefix) && !strings.Contains(line, "HEAD ->") {
-			branches = append(branches, strings.TrimPrefix(line, prefix))
+		// "origin/HEAD -> origin/main" is a symref, not a branch to check out.
+		if line == "" || strings.Contains(line, "HEAD ->") {
+			continue
 		}
+		remote, branch, ok := strings.Cut(line, "/")
+		if !ok || branch == "" {
+			continue
+		}
+		out[remote] = append(out[remote], branch)
 	}
-	return branches, nil
+	return out, nil
+}
+
+// GetRemoteBranches returns branches for a specific remote.
+func (r Repo) GetRemoteBranches(remote string) ([]string, error) {
+	byRemote, err := r.RemoteBranches()
+	if err != nil {
+		return nil, err
+	}
+	return byRemote[remote], nil
 }
 
 // GetBranchUpstream returns the remote and branch name of the upstream for a local branch.

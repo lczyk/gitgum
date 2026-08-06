@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/ui"
 )
 
@@ -31,11 +32,11 @@ func (d *DeleteCommand) Execute(args []string) error {
 	var (
 		currentBranch, trackingRemote string
 		remotes                       []string
+		locals                        []git.LocalBranch
 	)
 	if err := runConcurrent(
-		func() error {
-			locals, err := r.GetLocalBranches()
-			if err != nil {
+		func() (err error) {
+			if locals, err = r.LocalBranches(); err != nil {
 				return fmt.Errorf("getting local branches: %w", err)
 			}
 			if len(locals) == 0 {
@@ -65,7 +66,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 	// marker), same picker as switch. This lists remote branches too, so a
 	// remote-only branch is deletable -- the whole point of the unification.
 	src := streamBranches(ctx, r, d.err(), currentBranch, trackingRemote, remotes,
-		branchStreamOpts{includeCurrent: true, markCheckedOut: true})
+		branchStreamOpts{includeCurrent: true, markCheckedOut: true, locals: locals})
 
 	selected, err := d.sel().SelectStream(ctx, "Select a branch to delete", src, isUnselectable)
 	cancel()

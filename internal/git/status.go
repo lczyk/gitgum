@@ -17,6 +17,11 @@ const (
 	// UntrackedAll names every untracked file. What a caller about to delete
 	// them needs: a directory standing in for its contents hides the contents.
 	UntrackedAll
+	// UntrackedNone leaves untracked files out of the answer entirely. What a
+	// caller asking "is the tree dirty" wants: it discards that half anyway,
+	// and even the folded mode walks every directory nothing tracks to decide
+	// what to fold.
+	UntrackedNone
 )
 
 // ScanOpts is what a caller wants out of one status read.
@@ -59,6 +64,8 @@ func StatusArgs(opt ScanOpts) []string {
 	switch opt.Untracked {
 	case UntrackedAll:
 		args = append(args, "-uall")
+	case UntrackedNone:
+		args = append(args, "-uno")
 	default:
 		args = append(args, "-unormal")
 	}

@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/pr"
@@ -38,9 +39,65 @@ type Finding struct {
 	Fix      string   // suggested remediation command; only meaningful for SevFixable
 }
 
+// facts is the git state the checks read, taken once per run and shared.
+// Three answers -- the remotes and their urls, the local branches, the
+// worktrees -- are each wanted by several checks, and the errors travel with
+// them: the checks disagree about what a failed read means, one reporting it
+// where another stays quiet because a sibling already will.
+//
+// Every field is populated before any check runs, so a check reads plain data.
+type facts struct {
+	remotes    []string
+	remotesErr error
+	// urls is keyed by remote name and holds an entry for every name in
+	// remotes, so a check iterating remotes always finds one.
+	urls    map[string]string
+	urlErrs map[string]error
+
+	branches    []git.LocalBranch
+	branchesErr error
+
+	worktrees    []git.Worktree
+	worktreesErr error
+}
+
+// newFacts takes every read the checks need, overlapping the independent ones.
+// The urls come second because there is nothing to read a url for until the
+// remotes are named.
+func newFacts(r git.Repo) *facts {
+	f := &facts{urls: map[string]string{}, urlErrs: map[string]error{}}
+
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() { defer wg.Done(); f.remotes, f.remotesErr = r.GetRemotes() }()
+	go func() { defer wg.Done(); f.branches, f.branchesErr = r.LocalBranches() }()
+	go func() { defer wg.Done(); f.worktrees, f.worktreesErr = r.Worktrees() }()
+	wg.Wait()
+
+	urls := make([]string, len(f.remotes))
+	errs := make([]error, len(f.remotes))
+	wg.Add(len(f.remotes))
+	for i, name := range f.remotes {
+		go func() {
+			defer wg.Done()
+			urls[i], errs[i] = r.RemoteURL(name)
+		}()
+	}
+	wg.Wait()
+	for i, name := range f.remotes {
+		f.urls[name], f.urlErrs[name] = urls[i], errs[i]
+	}
+	return f
+}
+
+// remoteURL is the url read for one of the remotes in f.remotes.
+func (f *facts) remoteURL(name string) (string, error) {
+	return f.urls[name], f.urlErrs[name]
+}
+
 // doctorChecks is the ordered set of diagnostics doctor runs. Each returns its
 // findings; internal git errors surface as warnings rather than aborting the run.
-var doctorChecks = []func(git.Repo) []Finding{
+var doctorChecks = []func(*facts) []Finding{
 	checkRemoteNaming,
 	checkUpstreams,
 	checkLayout,
@@ -53,9 +110,10 @@ var doctorChecks = []func(git.Repo) []Finding{
 // Diagnose runs every doctor check against r and returns the combined findings
 // in discovery order (unsorted -- presentation decides ordering).
 func Diagnose(r git.Repo) []Finding {
+	f := newFacts(r)
 	var findings []Finding
 	for _, check := range doctorChecks {
-		findings = append(findings, check(r)...)
+		findings = append(findings, check(f)...)
 	}
 	return findings
 }
@@ -64,15 +122,14 @@ func Diagnose(r git.Repo) []Finding {
 // named after its user/org -- the USER in github.com/USER/REPO -- not "origin".
 // Urls on an unmodelled forge (or unparseable ones) can't be judged, so they
 // surface as warnings rather than violations.
-func checkRemoteNaming(r git.Repo) []Finding {
-	remotes, err := r.GetRemotes()
-	if err != nil {
+func checkRemoteNaming(f *facts) []Finding {
+	if f.remotesErr != nil {
 		return []Finding{{Check: "remote-naming", Severity: SevWarning,
-			Message: fmt.Sprintf("could not list remotes: %v", err)}}
+			Message: fmt.Sprintf("could not list remotes: %v", f.remotesErr)}}
 	}
 	var out []Finding
-	for _, name := range remotes {
-		url, err := r.RemoteURL(name)
+	for _, name := range f.remotes {
+		url, err := f.remoteURL(name)
 		if err != nil {
 			out = append(out, Finding{Check: "remote-naming", Severity: SevWarning,
 				Message: fmt.Sprintf("could not read url for remote %q: %v", name, err)})
@@ -95,19 +152,16 @@ func checkRemoteNaming(r git.Repo) []Finding {
 
 // checkUpstreams warns when local branches track more than one remote. Which
 // one is "right" is intent gg can't infer, so this is unfixable.
-func checkUpstreams(r git.Repo) []Finding {
-	branches, err := r.GetLocalBranches()
-	if err != nil {
+func checkUpstreams(f *facts) []Finding {
+	if f.branchesErr != nil {
 		return []Finding{{Check: "upstream-consistency", Severity: SevWarning,
-			Message: fmt.Sprintf("could not list branches: %v", err)}}
+			Message: fmt.Sprintf("could not list branches: %v", f.branchesErr)}}
 	}
 	remotes := map[string]bool{}
-	for _, b := range branches {
-		remote, _, err := r.GetBranchUpstream(b)
-		if err != nil || remote == "" {
-			continue
+	for _, b := range f.branches {
+		if remote := b.Remote(); remote != "" {
+			remotes[remote] = true
 		}
-		remotes[remote] = true
 	}
 	if len(remotes) <= 1 {
 		return nil
@@ -125,17 +179,17 @@ func checkUpstreams(r git.Repo) []Finding {
 //   - adjacent-worktree: sibling dirs matching the naming pattern that aren't
 //     worktrees of this repo (likely stray clones). Names only -- siblings are
 //     never opened.
-func checkLayout(r git.Repo) []Finding {
-	wts, err := r.Worktrees()
-	if err != nil {
+func checkLayout(f *facts) []Finding {
+	if f.worktreesErr != nil {
 		return []Finding{{Check: "worktree-parent", Severity: SevWarning,
-			Message: fmt.Sprintf("could not list worktrees: %v", err)}}
+			Message: fmt.Sprintf("could not list worktrees: %v", f.worktreesErr)}}
 	}
+	wts := f.worktrees
 	if len(wts) == 0 {
 		return nil
 	}
 
-	repoName, nameOK, out := canonicalRepoName(r)
+	repoName, nameOK, out := canonicalRepoName(f)
 
 	// The main worktree is listed first; its parent is the canonical home dir.
 	mainParent := filepath.Dir(wts[0].Path)
@@ -194,14 +248,13 @@ func checkLayout(r git.Repo) []Finding {
 // canonicalRepoName derives the repo name (the "REPO" in github.com/USER/REPO)
 // agreed on by all known-forge remotes. ok is false when no such remote exists
 // (nothing to check against) or when remotes disagree (returned as a warning).
-func canonicalRepoName(r git.Repo) (name string, ok bool, findings []Finding) {
-	remotes, err := r.GetRemotes()
-	if err != nil {
+func canonicalRepoName(f *facts) (name string, ok bool, findings []Finding) {
+	if f.remotesErr != nil {
 		return "", false, nil
 	}
 	seen := map[string]bool{}
-	for _, rem := range remotes {
-		url, err := r.RemoteURL(rem)
+	for _, rem := range f.remotes {
+		url, err := f.remoteURL(rem)
 		if err != nil {
 			continue
 		}
@@ -246,25 +299,24 @@ func MatchesRepoDir(base, repo string) bool {
 // sole remote, or a sole forge remote -- it's fixable with a rename; the new
 // name lets readPRMeta's name fallback drive gg pull. With several remotes the
 // remote can't be inferred, so it's a warning.
-func checkPRBranchNaming(r git.Repo) []Finding {
-	branches, err := r.GetLocalBranches()
-	if err != nil {
+func checkPRBranchNaming(f *facts) []Finding {
+	if f.branchesErr != nil {
 		return []Finding{{Check: "pr-branch-naming", Severity: SevWarning,
-			Message: fmt.Sprintf("could not list branches: %v", err)}}
+			Message: fmt.Sprintf("could not list branches: %v", f.branchesErr)}}
 	}
 	var numbers []int
 	var names []string
-	for _, b := range branches {
-		if n, ok := oldPRNumber(b); ok {
+	for _, b := range f.branches {
+		if n, ok := oldPRNumber(b.Name); ok {
 			numbers = append(numbers, n)
-			names = append(names, b)
+			names = append(names, b.Name)
 		}
 	}
 	if len(names) == 0 {
 		return nil
 	}
 
-	remote, remoteOK := singleForgeRemote(r)
+	remote, remoteOK := singleForgeRemote(f)
 	var out []Finding
 	for i, b := range names {
 		if remoteOK {
@@ -297,17 +349,16 @@ func oldPRNumber(b string) (int, bool) {
 // singleForgeRemote returns the remote to rename a PR branch against: the sole
 // remote if there's exactly one, else the sole forge remote if exactly one.
 // ok is false when the choice is ambiguous.
-func singleForgeRemote(r git.Repo) (string, bool) {
-	remotes, err := r.GetRemotes()
-	if err != nil {
+func singleForgeRemote(f *facts) (string, bool) {
+	if f.remotesErr != nil {
 		return "", false
 	}
-	if len(remotes) == 1 {
-		return remotes[0], true
+	if len(f.remotes) == 1 {
+		return f.remotes[0], true
 	}
 	var forge []string
-	for _, name := range remotes {
-		url, err := r.RemoteURL(name)
+	for _, name := range f.remotes {
+		url, err := f.remoteURL(name)
 		if err != nil {
 			continue
 		}
@@ -323,13 +374,12 @@ func singleForgeRemote(r git.Repo) (string, bool) {
 
 // checkPrunableWorktrees flags worktrees git has marked prunable (registered but
 // their dir is gone). One prune clears them all.
-func checkPrunableWorktrees(r git.Repo) []Finding {
-	wts, err := r.Worktrees()
-	if err != nil {
+func checkPrunableWorktrees(f *facts) []Finding {
+	if f.worktreesErr != nil {
 		return nil // checkLayout already surfaces a failed worktree listing
 	}
 	var stale []string
-	for _, wt := range wts {
+	for _, wt := range f.worktrees {
 		if wt.Prunable {
 			stale = append(stale, wt.Path)
 		}
@@ -346,29 +396,30 @@ func checkPrunableWorktrees(r git.Repo) []Finding {
 // checkGoneUpstreams warns about branches whose upstream was deleted on the
 // remote. Whether to unset tracking or delete the branch is intent gg can't
 // guess, so it's unfixable.
-func checkGoneUpstreams(r git.Repo) []Finding {
-	gone, err := r.GoneUpstreams()
-	if err != nil {
+func checkGoneUpstreams(f *facts) []Finding {
+	if f.branchesErr != nil {
 		return nil // checkUpstreams surfaces branch-listing failures
 	}
 	var out []Finding
-	for _, b := range gone {
+	for _, b := range f.branches {
+		if !b.Gone {
+			continue
+		}
 		out = append(out, Finding{Check: "gone-upstream", Severity: SevWarning,
-			Message: fmt.Sprintf("branch %q tracks an upstream that no longer exists on the remote; unset it (git branch --unset-upstream %s) or delete the branch", b, b)})
+			Message: fmt.Sprintf("branch %q tracks an upstream that no longer exists on the remote; unset it (git branch --unset-upstream %s) or delete the branch", b.Name, b.Name)})
 	}
 	return out
 }
 
 // checkDuplicateRemotes warns when two remotes point at the same url -- usually
 // a leftover from a rename that added rather than renamed.
-func checkDuplicateRemotes(r git.Repo) []Finding {
-	remotes, err := r.GetRemotes()
-	if err != nil {
+func checkDuplicateRemotes(f *facts) []Finding {
+	if f.remotesErr != nil {
 		return nil // remote-naming surfaces remote-listing failures
 	}
 	byURL := map[string][]string{}
-	for _, name := range remotes {
-		url, err := r.RemoteURL(name)
+	for _, name := range f.remotes {
+		url, err := f.remoteURL(name)
 		if err != nil {
 			continue
 		}

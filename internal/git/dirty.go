@@ -15,19 +15,16 @@ import (
 //
 // Entries keep both status characters, so a caller can tell " M" (unstaged)
 // from "M " (staged) from "MM" (partial-hunk staging).
+//
+// The scan asks git not to look for untracked files at all rather than
+// dropping them afterwards: on a big tree that walk is most of what a status
+// costs, and this is the read every dirty-tree prompt is gated on.
 func (r Repo) DirtyTracked() ([]Entry, error) {
-	_, entries, err := r.Status(ScanOpts{})
+	_, entries, err := r.Status(ScanOpts{Untracked: UntrackedNone})
 	if err != nil {
 		return nil, err
 	}
-	var dirty []Entry
-	for _, e := range entries {
-		if e.Untracked() || e.Ignored() {
-			continue
-		}
-		dirty = append(dirty, e)
-	}
-	return dirty, nil
+	return entries, nil
 }
 
 // inProgressMarkers maps a path under the git dir to the operation it means is

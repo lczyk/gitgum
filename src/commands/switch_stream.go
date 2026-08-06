@@ -134,6 +134,10 @@ type branchStreamOpts struct {
 	// branch. Set, it prepends an unselectable row naming the commit, so the
 	// picker isn't silent about where you actually are.
 	detachedAt string
+	// locals is the local-branch listing when the caller already has one --
+	// delete reads it up front for its empty-repo guard. nil means read it
+	// here, which is what a caller with no reason to look first does.
+	locals []git.LocalBranch
 }
 
 // streamBranches collects local and remote branches concurrently, deduplicating
@@ -195,9 +199,18 @@ func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBr
 		src.Add(detachedEntry(opts.detachedAt))
 	}
 
-	streamLocalBranches(ctx, r, errOut, queue, currentBranch, checkedOut, opts.includeCurrent)
+	streamLocalBranches(ctx, r, errOut, queue, currentBranch, checkedOut, opts)
+
+	// One listing covers every remote: git lists them all whichever one you
+	// ask about, so a producer per remote used to mean a full listing per
+	// remote, each throwing away all but its own share.
+	byRemote, err := r.RemoteBranches()
+	if err != nil {
+		fmt.Fprintf(errOut, "error getting remote branches: %v\n", err)
+		byRemote = nil
+	}
 	for _, remote := range remotes {
-		go streamRemoteBranches(ctx, r, errOut, queue, remote, currentBranch, trackingRemote, checkedOut)
+		go streamRemoteBranches(ctx, queue, remote, byRemote[remote], currentBranch, trackingRemote, checkedOut)
 	}
 
 	// Known limitation: branches deleted in another shell while the picker
@@ -209,21 +222,22 @@ func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBr
 	return src
 }
 
-func streamLocalBranches(ctx context.Context, r git.Repo, errOut io.Writer, queue chan<- branchEntry, currentBranch string, checkedOut map[string]string, includeCurrent bool) {
-	locals, err := r.GetLocalBranches()
-	if err != nil {
-		fmt.Fprintf(errOut, "error getting local branches: %v\n", err)
-		return
+func streamLocalBranches(ctx context.Context, r git.Repo, errOut io.Writer, queue chan<- branchEntry, currentBranch string, checkedOut map[string]string, opts branchStreamOpts) {
+	locals := opts.locals
+	if locals == nil {
+		var err error
+		if locals, err = r.LocalBranches(); err != nil {
+			fmt.Fprintf(errOut, "error getting local branches: %v\n", err)
+			return
+		}
 	}
 
-	for _, branch := range locals {
-		if branch == currentBranch && !includeCurrent {
+	for _, local := range locals {
+		branch := local.Name
+		if branch == currentBranch && !opts.includeCurrent {
 			continue
 		}
-		tr, err := r.GetBranchTrackingRemote(branch)
-		if err != nil {
-			tr = ""
-		}
+		tr := local.Remote()
 		var entry branchEntry
 		if tr != "" {
 			// Include the tracking remote in the display so the row is
@@ -259,13 +273,7 @@ func streamLocalBranches(ctx context.Context, r git.Repo, errOut io.Writer, queu
 	}
 }
 
-func streamRemoteBranches(ctx context.Context, r git.Repo, errOut io.Writer, queue chan<- branchEntry, remote, currentBranch, trackingRemote string, checkedOut map[string]string) {
-	branches, err := r.GetRemoteBranches(remote)
-	if err != nil {
-		fmt.Fprintf(errOut, "error getting remote branches for '%s': %v\n", remote, err)
-		return
-	}
-
+func streamRemoteBranches(ctx context.Context, queue chan<- branchEntry, remote string, branches []string, currentBranch, trackingRemote string, checkedOut map[string]string) {
 	for _, branch := range branches {
 		if remote == trackingRemote && branch == currentBranch {
 			continue

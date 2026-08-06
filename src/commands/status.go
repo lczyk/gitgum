@@ -20,6 +20,10 @@ type StatusCommand struct {
 
 	// sections is resolved from the positional argument in Execute.
 	sections []statusSection
+	// reads is the git output the sections of one render pass share.
+	// renderSections replaces it every pass, so --follow still re-reads the
+	// working tree on every tick.
+	reads *statusReads
 	// width is the column count section rules are padded to. Zero means
 	// "measure os.Stdout", which is only right when that is where the output
 	// lands: --follow renders into a buffer it then paints onto a litescreen
