@@ -27,8 +27,16 @@ var minGitVersion = [3]int{2, 35, 2}
 // readPrelude is appended to argv before the user-supplied args for read
 // invocations. -c flags lock parse-stable knobs even if a repo-local
 // .git/config tries to override them; -C <dir> is added per-call from r.Dir.
+//
+// --no-optional-locks keeps a read out of index.lock. A status would otherwise
+// take it to write the refreshed index back, which turns `gg status` run
+// beside a build into either a wait or a "Unable to create index.lock" -- a
+// failure the user did not cause and cannot act on. The cost is that the
+// refreshed stat cache is not persisted, so a read never speeds up the read
+// after it; a report is not worth blocking a build for.
 var readPrelude = []string{
 	"--no-pager",
+	"--no-optional-locks",
 	"-c", "color.ui=never",
 	"-c", "core.quotepath=false",
 	"-c", "status.relativePaths=false",

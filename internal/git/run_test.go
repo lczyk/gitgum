@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -156,4 +157,16 @@ func TestRunReadContextCancel(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("runRead did not return after ctx cancel")
 	}
+}
+
+// A read must not take index.lock: `gg status` run beside a build would
+// otherwise fail on a lock the user did not create and cannot act on. Writes
+// keep it -- they are there to change something.
+func TestPreludesAndOptionalLocks(t *testing.T) {
+	t.Parallel()
+	const flag = "--no-optional-locks"
+	assert.That(t, slices.Contains(buildArgs("", readPrelude, []string{"status"}, true), flag),
+		"read prelude should carry %s", flag)
+	assert.That(t, !slices.Contains(buildArgs("", writePrelude, []string{"commit"}, false), flag),
+		"write prelude should not carry %s", flag)
 }
