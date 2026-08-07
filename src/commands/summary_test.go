@@ -160,3 +160,47 @@ func TestRenderDiffSummary_NarrowWidth(t *testing.T) {
 	assert.That(t, len(narrow) < len(wide), "narrow %q should be shorter than wide %q", narrow, wide)
 	assert.That(t, len(narrow) <= 30, "narrow row should fit the width, got %d", len(narrow))
 }
+
+// A deep path is shortened from the front: the leading directories are what
+// the rows have in common, so they are what a reader least needs.
+func TestElidePath(t *testing.T) {
+	t.Parallel()
+	cases := map[string]struct {
+		path  string
+		width int
+		want  string
+	}{
+		"fits":            {"src/x.go", 20, "src/x.go"},
+		"exactly fits":    {"src/x.go", 8, "src/x.go"},
+		"cuts on a slash": {"optfil/kernel-include/linux/xt.h", 28, ".../linux/xt.h"},
+		"keeps the whole tail when it fits": {
+			"optfil/kernel-include/linux/netfilter/xt_CONNMARK.h", 50,
+			".../kernel-include/linux/netfilter/xt_CONNMARK.h",
+		},
+		"no slash to cut": {"averylongfilenamewithnodirs.txt", 12, "...odirs.txt"},
+		"width too small": {"src/x.go", 3, "src/x.go"},
+	}
+	for name, tt := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, elidePath(tt.path, tt.width), tt.want)
+		})
+	}
+}
+
+// The path column is capped so a repo with deep paths still has room for the
+// bars, which are the reason to draw a diffstat rather than list files.
+func TestRenderDiffSummary_DeepPathsKeepTheirBars(t *testing.T) {
+	t.Parallel()
+	deep := "projects/linux-6.10.5/include/uapi/linux/netfilter/xt_CONNMARK.h"
+	lines := plainSummary(t, []git.DiffFile{
+		{Path: deep, OldMode: git.ModeFile, NewMode: git.ModeFile, Status: 'M', Added: 40, Deleted: 5},
+		{Path: "short.txt", OldMode: git.ModeFile, NewMode: git.ModeFile, Status: 'M', Added: 1},
+	}, 80)
+
+	assert.ContainsString(t, lines[0], "...")
+	assert.ContainsString(t, lines[0], "+")
+	for _, line := range lines {
+		assert.That(t, len(line) <= 80, "row should fit the width, got %d: %q", len(line), line)
+	}
+}

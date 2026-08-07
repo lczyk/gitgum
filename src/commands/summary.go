@@ -11,9 +11,15 @@ import (
 // measure -- output being piped, or a test buffer.
 const defaultSummaryWidth = 80
 
-// maxSummaryBar keeps one enormous change from turning every other row into a
-// single character: past this the bars stop growing with the terminal.
-const maxSummaryBar = 60
+// maxSummaryName caps the path column, matching git's own default. Without a
+// cap a repo with deep paths spends the whole terminal on names and leaves no
+// room for the bars, which are the reason to draw this rather than list files.
+const maxSummaryName = 50
+
+// minSummaryTail is what the row needs after the name -- the separators, the
+// count column and a bar worth looking at. A terminal too narrow for both
+// gives the name back the space rather than the bar.
+const minSummaryTail = 15
 
 // diffSummary renders a diff file by file: the path, how many lines moved,
 // and a bar in proportion, then a totals line. It is the shared diffstat used
@@ -73,13 +79,15 @@ func renderDiffSummary(files []git.DiffFile, width int, color bool) string {
 		deleted += f.Deleted
 	}
 
+	nameWidth = min(nameWidth, max(min(maxSummaryName, width-minSummaryTail), 10))
+
 	// " name | count bar": the constant is the leading space, the " | "
 	// separator and the space before the bar.
-	barWidth := min(width-nameWidth-countWidth-5, maxSummaryBar)
+	barWidth := width - nameWidth - countWidth - 5
 
 	var b strings.Builder
 	for _, row := range rows {
-		fmt.Fprintf(&b, " %-*s | ", nameWidth, row.name)
+		fmt.Fprintf(&b, " %-*s | ", nameWidth, elidePath(row.name, nameWidth))
 		if row.binary {
 			b.WriteString("Bin\n")
 			continue
@@ -105,6 +113,24 @@ func summaryName(f git.DiffFile) string {
 		name += " " + note
 	}
 	return name
+}
+
+// elidePath shortens a path from the front to fit the column, marking the cut
+// with "...". What was dropped is the part a reader scanning a list of files
+// least needs -- the leading directories are what the rows have in common.
+//
+// The cut lands on a separator when one falls inside what is kept, so the
+// remainder starts at a directory rather than mid-name.
+func elidePath(p string, width int) string {
+	const ellipsis = "..."
+	if len(p) <= width || width <= len(ellipsis) {
+		return p
+	}
+	tail := p[len(p)-(width-len(ellipsis)):]
+	if i := strings.IndexByte(tail, '/'); i >= 0 {
+		tail = tail[i:]
+	}
+	return ellipsis + tail
 }
 
 // renamePath writes a rename the way git does, with the parts both paths share
@@ -193,7 +219,7 @@ func summaryBar(row summaryRow, maxTotal, barWidth int, color bool) string {
 	}
 	cells := row.total
 	if maxTotal > barWidth {
-		cells = max(row.total*barWidth/maxTotal, 1)
+		cells = max(scale(row.total, barWidth, maxTotal), 1)
 	}
 	plus, minus := split(row.added, row.deleted, cells)
 	if color {
@@ -211,12 +237,22 @@ func split(added, deleted, cells int) (plus, minus int) {
 	case added == 0:
 		return 0, cells
 	}
-	plus = max(added*cells/(added+deleted), 1)
+	plus = max(scale(added, cells, added+deleted), 1)
 	minus = max(cells-plus, 1)
 	if plus+minus > cells && plus > 1 {
 		plus = cells - minus
 	}
 	return plus, minus
+}
+
+// scale is n*of/total rounded to nearest rather than down. Truncating loses
+// most of a cell on every row, which over a whole diff reads as less change
+// than there was.
+func scale(n, of, total int) int {
+	if total == 0 {
+		return 0
+	}
+	return (n*of + total/2) / total
 }
 
 // summaryTotals is git's closing line, down to which halves it prints: a zero
