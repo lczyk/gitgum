@@ -121,3 +121,18 @@ func TestStatusCommand_ChangesScansUntrackedOnly(t *testing.T) {
 	assert.ContainsString(t, buf.String(), "untracked.txt")
 	assert.Equal(t, countExact(calls(), "status", "--porcelain", "-z", "-unormal"), 1)
 }
+
+// The algorithm lookup is per repo, not per read -- it exists because the read
+// env cannot see the setting, and paying for it on every read would undo the
+// point of batching the reads in the first place.
+func TestStatusCommand_ResolvesDiffAlgorithmOnce(t *testing.T) {
+	dir := temp_repo.NewRepo(t)
+	temp_repo.WriteFile(t, dir, "README.md", "# test repo\nedited\n")
+	calls := gitShim(t)
+
+	var buf strings.Builder
+	cmd := &StatusCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}}
+	require.NoError(t, cmd.Execute(nil), "status should succeed")
+
+	assert.Equal(t, countExact(calls(), "config", "--get-regexp", "^diff\\."), 1)
+}

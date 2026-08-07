@@ -170,3 +170,198 @@ func TestPreludesAndOptionalLocks(t *testing.T) {
 	assert.That(t, !slices.Contains(buildArgs("", writePrelude, []string{"commit"}, false), flag),
 		"write prelude should not carry %s", flag)
 }
+
+// The read prelude locks the knobs that decide output *shape*. The diff
+// algorithm is not one of them -- it decides the answer -- so it is not there.
+func TestReadPreludeDoesNotPinTheDiffAlgorithm(t *testing.T) {
+	t.Parallel()
+	for _, arg := range buildArgs("", readPrelude, []string{"diff"}, true) {
+		assert.That(t, !strings.HasPrefix(arg, "diff.algorithm="),
+			"the algorithm is forwarded per repo, not locked in the prelude; got %q", arg)
+	}
+}
+
+// A block replaced by a longer one, sharing a blank line and a closing brace
+// with what replaced it. histogram takes the old block out whole and counts
+// 20/9; myers, minimal and patience all stitch the shared lines into the new
+// block and count 19/8. So the numbers below say which algorithm ran.
+const (
+	beforeReplacedBlock = `#ifndef GUARD_ONE_H
+#define GUARD_ONE_H
+
+#include <types.h>
+
+struct thing_info {
+	char	name[16];
+	int	interval;
+
+	/* internal */
+	struct thing	*est;
+};
+
+#endif /* GUARD_ONE_H */
+`
+	afterReplacedBlock = `#ifndef GUARD_TWO_H
+#define GUARD_TWO_H
+
+#include <types.h>
+
+enum thing_flags {
+	THING_INVERT	= 1<<0,
+	THING_ABS	= 1<<1,
+	THING_REL	= 1<<2,
+};
+
+enum thing_mode {
+	THING_NONE,
+	THING_EQ,
+	THING_LT,
+};
+
+struct thing_match {
+	char	name1[16];
+	char	name2[16];
+	int	flags;
+	int	mode;
+};
+
+#endif /* GUARD_TWO_H */
+`
+)
+
+// replacedBlockRepo stages the fixture above and returns the repo dir.
+func replacedBlockRepo(t *testing.T) string {
+	t.Helper()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.CreateCommit(t, dir, "f.h", beforeReplacedBlock, "chore: base")
+	temp_repo.WriteFile(t, dir, "f.h", afterReplacedBlock)
+	return dir
+}
+
+func countedLines(t *testing.T, dir string) (added, deleted int) {
+	t.Helper()
+	forwardedConfigCache.Delete(dir)
+	files, err := Repo{Dir: dir}.DiffFiles()
+	require.NoError(t, err, "reading the diff")
+	require.Equal(t, len(files), 1, "one changed file")
+	return files[0].Added, files[0].Deleted
+}
+
+// A repo-local diff.algorithm reaches the read: gg reporting a different
+// number of insertions to the git sitting next to it is the surprise the
+// forwarding exists to avoid.
+func TestDiffFilesHonoursRepoDiffAlgorithm(t *testing.T) {
+	t.Parallel()
+	dir := replacedBlockRepo(t)
+
+	temp_repo.RunGit(t, dir, "config", "diff.algorithm", "histogram")
+	added, deleted := countedLines(t, dir)
+	assert.Equal(t, added, 20)
+	assert.Equal(t, deleted, 9)
+
+	for _, algo := range []string{"myers", "minimal", "patience"} {
+		temp_repo.RunGit(t, dir, "config", "diff.algorithm", algo)
+		added, deleted := countedLines(t, dir)
+		assert.Equal(t, added, 19, "diff.algorithm=%q should reach the read", algo)
+		assert.Equal(t, deleted, 8, "diff.algorithm=%q should reach the read", algo)
+	}
+}
+
+// The setting usually lives in the user's global config, which the read env
+// blanks -- so forwarding it is the whole point rather than an edge case.
+func TestDiffFilesHonoursGlobalDiffAlgorithm(t *testing.T) {
+	dir := replacedBlockRepo(t)
+	cfg := filepath.Join(t.TempDir(), "config")
+	require.NoError(t, os.WriteFile(cfg, []byte("[diff]\n\talgorithm = histogram\n"), 0o644), "write global config")
+	t.Setenv("GIT_CONFIG_GLOBAL", cfg)
+
+	added, deleted := countedLines(t, dir)
+	assert.Equal(t, added, 20)
+	assert.Equal(t, deleted, 9)
+}
+
+// Nothing configured anywhere means git's own default, which is what the
+// user's git would do too. The global config is blanked because the machine
+// running the tests may well have chosen one.
+func TestDiffFilesWithoutConfiguredAlgorithm(t *testing.T) {
+	dir := replacedBlockRepo(t)
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "empty"))
+
+	added, deleted := countedLines(t, dir)
+	assert.Equal(t, added, 19)
+	assert.Equal(t, deleted, 8)
+}
+
+// An algorithm git does not know is forwarded anyway and refused, which is
+// what the user's own git does with the same config. Substituting a working
+// default here would have gg disagree with the git that just failed.
+func TestDiffFilesForwardsUnknownAlgorithm(t *testing.T) {
+	t.Parallel()
+	dir := replacedBlockRepo(t)
+	temp_repo.RunGit(t, dir, "config", "diff.algorithm", "nonsense")
+	forwardedConfigCache.Delete(dir)
+
+	_, err := Repo{Dir: dir}.DiffFiles()
+	assert.Error(t, err, assert.AnyError, "git refuses an algorithm it does not know")
+}
+
+// diff.renames decides whether a file that moved is one row naming both ends
+// or two rows naming one end each -- the answer, not its shape, so gg forwards
+// it rather than choosing for the user.
+func TestDiffFilesHonoursDiffRenames(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.CreateCommit(t, dir, "old.txt", "one\ntwo\nthree\nfour\n", "chore: base")
+	temp_repo.RunGit(t, dir, "mv", "old.txt", "new.txt")
+
+	temp_repo.RunGit(t, dir, "config", "diff.renames", "true")
+	forwardedConfigCache.Delete(dir)
+	files, err := Repo{Dir: dir}.DiffFiles("--cached")
+	require.NoError(t, err, "reading the diff")
+	require.Equal(t, len(files), 1, "a detected rename is one row")
+	assert.Equal(t, files[0].RenamedFrom, "old.txt")
+	assert.Equal(t, files[0].Path, "new.txt")
+
+	temp_repo.RunGit(t, dir, "config", "diff.renames", "false")
+	forwardedConfigCache.Delete(dir)
+	files, err = Repo{Dir: dir}.DiffFiles("--cached")
+	require.NoError(t, err, "reading the diff")
+	require.Equal(t, len(files), 2, "without detection the move is a delete and an add")
+	for _, f := range files {
+		assert.Equal(t, f.RenamedFrom, "")
+	}
+}
+
+// The setting usually lives in the user's global config, which the read env
+// blanks -- so forwarding it is the whole point rather than an edge case.
+func TestDiffFilesHonoursGlobalDiffRenames(t *testing.T) {
+	dir := temp_repo.NewRepo(t)
+	temp_repo.CreateCommit(t, dir, "old.txt", "one\ntwo\nthree\nfour\n", "chore: base")
+	temp_repo.RunGit(t, dir, "mv", "old.txt", "new.txt")
+
+	cfg := filepath.Join(t.TempDir(), "config")
+	require.NoError(t, os.WriteFile(cfg, []byte("[diff]\n\trenames = false\n"), 0o644), "write global config")
+	t.Setenv("GIT_CONFIG_GLOBAL", cfg)
+	forwardedConfigCache.Delete(dir)
+
+	files, err := Repo{Dir: dir}.DiffFiles("--cached")
+	require.NoError(t, err, "reading the diff")
+	assert.Equal(t, len(files), 2)
+}
+
+// Only the named keys travel: the rest of the diff section is the user's
+// business with their own git, not something gg should reproduce.
+//
+// The global config is blanked because the machine running the tests may well
+// have set one of the named keys, which would look like a leak from this repo.
+func TestForwardedConfigCarriesOnlyTheNamedKeys(t *testing.T) {
+	dir := temp_repo.NewRepo(t)
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "empty"))
+	temp_repo.RunGit(t, dir, "config", "diff.algorithm", "patience")
+	temp_repo.RunGit(t, dir, "config", "diff.tool", "meld")
+	temp_repo.RunGit(t, dir, "config", "diff.context", "7")
+	forwardedConfigCache.Delete(dir)
+
+	args := Repo{Dir: dir}.forwardedConfigArgs(context.Background())
+	assert.EqualArrays(t, args, []string{"-c", "diff.algorithm=patience"})
+}
