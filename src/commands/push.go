@@ -193,7 +193,7 @@ func (p *PushCommand) Execute(args []string) error {
 // what they're sending before confirming. Best-effort: a render hiccup never
 // blocks the push.
 func (p *PushCommand) showPushDelta(remoteCommit, localCommit string) {
-	summary, err := compactSummary(p.repo(), remoteCommit+".."+localCommit)
+	summary, err := diffSummary(p.repo(), 0, remoteCommit+".."+localCommit)
 	if err == nil && summary != "" {
 		fmt.Fprintln(p.out(), summary)
 	}

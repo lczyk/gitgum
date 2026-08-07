@@ -117,7 +117,7 @@ func (c *CloneCommand) Execute(args []string) error {
 	if plan.dir != "" {
 		cloned := git.Repo{Dir: plan.dir}
 		if empty, err := cloned.EmptyTree(); err == nil {
-			if summary, derr := compactSummary(cloned, empty, "HEAD"); derr == nil && summary != "" {
+			if summary, derr := diffSummary(cloned, 0, empty, "HEAD"); derr == nil && summary != "" {
 				fmt.Fprintln(c.out(), summary)
 			}
 		}

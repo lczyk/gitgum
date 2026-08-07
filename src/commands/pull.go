@@ -131,7 +131,7 @@ func (p *PullCommand) pullBranch(currentBranch string) error {
 	// suppresses. Best-effort: a pull that succeeded is not failed by a
 	// diff-render hiccup.
 	if newCommit, err := p.repo().GetCommitHash(currentBranch); err == nil && newCommit != localCommit {
-		if summary, derr := compactSummary(p.repo(), localCommit+".."+newCommit); derr == nil && summary != "" {
+		if summary, derr := diffSummary(p.repo(), 0, localCommit+".."+newCommit); derr == nil && summary != "" {
 			fmt.Fprintln(p.out(), summary)
 		}
 	}
@@ -237,7 +237,7 @@ func (p *PullCommand) pullPR(branch string, m pr.Meta) error {
 		return fmt.Errorf("resetting to PR head: %w", err)
 	}
 
-	if summary, derr := compactSummary(p.repo(), local+".."+fetched); derr == nil && summary != "" {
+	if summary, derr := diffSummary(p.repo(), 0, local+".."+fetched); derr == nil && summary != "" {
 		fmt.Fprintln(p.out(), summary)
 	}
 	fmt.Fprintf(p.out(), "Updated '%s' to PR #%d (%s).\n", branch, m.Number, m.Type)

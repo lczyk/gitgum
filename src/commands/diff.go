@@ -32,6 +32,11 @@ type DiffCommand struct {
 	cmdIO
 	Follow *float64 `long:"follow" short:"f" optional:"yes" optional-value:"2" description:"follow mode: refresh every N seconds (default 2, min 1)"`
 	Mode   string   `long:"mode" short:"m" description:"lock to a diff level: work (unstaged), index (staged), untracked, head (last commit). default: auto-cascade over work/index/untracked/head"`
+
+	// width is the column count the diffstat bars are laid out for. Zero means
+	// "measure os.Stdout", which is only right when that is where the output
+	// lands: --follow paints onto a litescreen of its own size, so it sets this.
+	width int
 }
 
 func (d *DiffCommand) Execute(args []string) error {
@@ -155,19 +160,19 @@ func doCountUntrackedLines(path string) numstat {
 func (d *DiffCommand) collectDiff(level string) (string, error) {
 	switch level {
 	case "work":
-		out, err := compactSummary(d.repo())
+		out, err := diffSummary(d.repo(), d.width)
 		if err != nil {
 			return "", fmt.Errorf("git diff: %w", err)
 		}
 		return out, nil
 	case "index":
-		out, err := compactSummary(d.repo(), "--cached")
+		out, err := diffSummary(d.repo(), d.width, "--cached")
 		if err != nil {
 			return "", fmt.Errorf("git diff --cached: %w", err)
 		}
 		return out, nil
 	case "head":
-		out, err := compactSummary(d.repo(), "HEAD~1..HEAD")
+		out, err := diffSummary(d.repo(), d.width, "HEAD~1..HEAD")
 		if err != nil {
 			return "", nil
 		}
@@ -294,6 +299,7 @@ func (d *DiffCommand) runFollow() error {
 	refreshCache := func() {
 		cachedErr = nil
 		cachedLines = nil
+		d.width, _ = scr.Size()
 		multi := activeCount() > 1
 
 		// The active modes are unrelated diffs, so a tick costs the slowest
