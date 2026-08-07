@@ -139,7 +139,7 @@ By default the checked-out commit (and anything descending from it) sinks to the
 
 ### `gitgum diff`
 
-Show the working-tree diff as a coloured `--compact-summary` (a diffstat), not a full patch. With no `--mode` it auto-cascades work -> index -> untracked -> head and shows the first non-empty level, so `gg diff` surfaces whatever there is to look at. `--mode` / `-m` locks to one level: `work` (unstaged), `index` (staged), `untracked`, or `head` (last commit). Pass `--follow` / `-f` (optional `=N` interval) for an auto-refreshing alt-screen view where number keys and `tab` pick and pin which levels are shown.
+Show the working-tree diff as a coloured diffstat -- one row per file with a bar in proportion, sized to your terminal -- not a full patch. With no `--mode` it auto-cascades work -> index -> untracked -> head and shows the first non-empty level, so `gg diff` surfaces whatever there is to look at. `--mode` / `-m` locks to one level: `work` (unstaged), `index` (staged), `untracked`, or `head` (last commit). Pass `--follow` / `-f` (optional `=N` interval) for an auto-refreshing alt-screen view where number keys and `tab` pick and pin which levels are shown.
 
 ### `gitgum push`
 
