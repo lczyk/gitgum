@@ -22,15 +22,6 @@ func TestCheckInRepo(t *testing.T) {
 	require.NoError(t, r.CheckInRepo())
 }
 
-func TestGetLocalBranches(t *testing.T) {
-	t.Parallel()
-	dir := temp_repo.NewRepo(t)
-	temp_repo.RunGit(t, dir, "branch", "feature")
-	branches, err := git.Repo{Dir: dir}.GetLocalBranches()
-	require.NoError(t, err)
-	assert.That(t, slices.Contains(branches, "feature"), "feature branch present")
-}
-
 func TestGetRemotes(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)
@@ -290,4 +281,17 @@ func appendFile(path, s string) error {
 	defer f.Close()
 	_, err = f.WriteString(s)
 	return err
+}
+
+// rev-parse @{u} fatals on a detached HEAD too, and the config pair is silent
+// there for the same reason it is silent for an untracked branch: nothing is
+// configured. That is "no upstream", not a failure to look.
+func TestGetCurrentBranchUpstream_DetachedHEAD(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "checkout", "--detach")
+
+	upstream, err := git.Repo{Dir: dir}.GetCurrentBranchUpstream()
+	require.NoError(t, err, "a detached HEAD has no upstream, which is not an error")
+	assert.Equal(t, upstream, "")
 }

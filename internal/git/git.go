@@ -225,20 +225,6 @@ func (r Repo) HeadLine() (line string, branches []LocalBranch, err error) {
 	return "## HEAD (no branch)", branches, nil
 }
 
-// GetLocalBranches returns the names alone, for callers with nothing to ask
-// about what they track.
-func (r Repo) GetLocalBranches() ([]string, error) {
-	branches, err := r.LocalBranches()
-	if err != nil {
-		return nil, err
-	}
-	var names []string
-	for _, b := range branches {
-		names = append(names, b.Name)
-	}
-	return names, nil
-}
-
 // GetRemotes returns a list of git remotes.
 func (r Repo) GetRemotes() ([]string, error) {
 	stdout, _, err := r.run("remote")
@@ -287,15 +273,6 @@ func (r Repo) RemoteBranches() (map[string][]string, error) {
 		out[remote] = append(out[remote], branch)
 	}
 	return out, nil
-}
-
-// GetRemoteBranches returns branches for a specific remote.
-func (r Repo) GetRemoteBranches(remote string) ([]string, error) {
-	byRemote, err := r.RemoteBranches()
-	if err != nil {
-		return nil, err
-	}
-	return byRemote[remote], nil
 }
 
 // GetBranchUpstream returns the remote and branch name of the upstream for a local branch.
@@ -430,27 +407,14 @@ func (r Repo) GetCurrentBranch() (string, error) {
 //     the ref has never been fetched, or was pruned out from under the config.
 //
 // Whitelisting those strings is a losing game, so any failure falls through to
-// the config pair, which is where git actually records an upstream. Only if that
-// comes up empty too is this a real "no upstream" (or a real error).
+// the config pair, which is where git actually records an upstream, and whose
+// silence is the only reliable "there isn't one" -- a detached or unborn HEAD
+// included.
 func (r Repo) GetCurrentBranchUpstream() (string, error) {
-	stdout, stderr, err := r.run("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
-	if err == nil {
+	if stdout, _, err := r.run("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"); err == nil {
 		return stdout, nil
 	}
-	upstream, cfgErr := r.currentBranchUpstreamFromConfig()
-	if cfgErr != nil {
-		return "", cfgErr
-	}
-	if upstream != "" {
-		return upstream, nil
-	}
-	if strings.Contains(stderr, "no upstream configured for branch") {
-		return "", nil
-	}
-	if stderr != "" {
-		return "", fmt.Errorf("%w: %s", err, stderr)
-	}
-	return "", err
+	return r.currentBranchUpstreamFromConfig()
 }
 
 // currentBranchUpstreamFromConfig rebuilds "<remote>/<branch>" straight from

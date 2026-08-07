@@ -1,7 +1,6 @@
 package git_test
 
 import (
-	"slices"
 	"testing"
 
 	"github.com/lczyk/assert"
@@ -33,24 +32,6 @@ func TestIsBranchAheadOfRemote(t *testing.T) {
 	})
 }
 
-func TestGetRemoteBranches(t *testing.T) {
-	t.Parallel()
-	local, _ := temp_repo.NewRepoWithRemote(t)
-
-	branches, err := git.Repo{Dir: local}.GetRemoteBranches("origin")
-	require.NoError(t, err)
-	assert.That(t, slices.Contains(branches, "main"), "main present in origin remote branches")
-}
-
-func TestGetRemoteBranches_UnknownRemote(t *testing.T) {
-	t.Parallel()
-	dir := temp_repo.NewRepo(t)
-
-	branches, err := git.Repo{Dir: dir}.GetRemoteBranches("nope")
-	require.NoError(t, err)
-	assert.Equal(t, len(branches), 0)
-}
-
 func TestBranchMerged(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)
@@ -67,4 +48,54 @@ func TestBranchMerged(t *testing.T) {
 	assert.That(t, !r.BranchMerged("diverged"), "a branch with unmerged commits is not merged")
 
 	assert.That(t, !r.BranchMerged("no-such-branch"), "an unknown branch is not merged")
+}
+
+// RemoteURLs answers what `git remote -v` shows, without the columns: a
+// remote whose push url matches its fetch url is one entry, one whose push
+// url differs is two.
+func TestRemoteURLs(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "remote", "add", "origin", "https://example.com/repo.git")
+	temp_repo.RunGit(t, dir, "remote", "add", "upstream", "https://example.com/up.git")
+
+	got, err := git.Repo{Dir: dir}.RemoteURLs()
+	require.NoError(t, err, "listing remote urls")
+	assert.EqualArrays(t, got, []string{
+		"origin https://example.com/repo.git",
+		"upstream https://example.com/up.git",
+	})
+}
+
+func TestRemoteURLs_SeparatePushURL(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "remote", "add", "origin", "https://example.com/repo.git")
+	temp_repo.RunGit(t, dir, "remote", "set-url", "--push", "origin", "git@example.com:repo.git")
+
+	got, err := git.Repo{Dir: dir}.RemoteURLs()
+	require.NoError(t, err, "listing remote urls")
+	assert.EqualArrays(t, got, []string{
+		"origin git@example.com:repo.git",
+		"origin https://example.com/repo.git",
+	})
+}
+
+// A remote name may contain '.', which the config key then contains twice.
+func TestRemoteURLs_DottedName(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "remote", "add", "team.fork", "https://example.com/fork.git")
+
+	got, err := git.Repo{Dir: dir}.RemoteURLs()
+	require.NoError(t, err, "listing remote urls")
+	assert.EqualArrays(t, got, []string{"team.fork https://example.com/fork.git"})
+}
+
+// A repo with no remotes has nothing to list, which is not a failure to list.
+func TestRemoteURLs_NoRemotes(t *testing.T) {
+	t.Parallel()
+	got, err := git.Repo{Dir: temp_repo.NewRepo(t)}.RemoteURLs()
+	require.NoError(t, err, "no remotes is not an error")
+	assert.Equal(t, len(got), 0)
 }

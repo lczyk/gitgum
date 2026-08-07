@@ -3,7 +3,46 @@ package git
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 )
+
+// RemoteURLs lists every url configured for every remote, "<name> <url>" per
+// entry, sorted and deduplicated: a remote whose push url matches its fetch
+// url is one entry, one whose push url differs is two.
+//
+// It reads the config rather than `git remote -v`, whose columns are laid out
+// for a reader and whose "(fetch)" / "(push)" suffixes would have to be parsed
+// back off. A remote name may contain '.', so the key is trimmed at both ends
+// rather than split on the separator.
+func (r Repo) RemoteURLs() ([]string, error) {
+	stdout, _, err := r.run("config", "--get-regexp", `^remote\..*\.(url|pushurl)$`)
+	if err != nil {
+		// config exits non-zero when nothing matches, which is a repo with no
+		// remotes rather than a repo that could not be read.
+		return nil, nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for line := range strings.SplitSeq(stdout, "\n") {
+		key, url, ok := strings.Cut(strings.TrimSpace(line), " ")
+		if !ok || url == "" {
+			continue
+		}
+		name := strings.TrimPrefix(key, "remote.")
+		name = strings.TrimSuffix(strings.TrimSuffix(name, ".pushurl"), ".url")
+		if name == "" {
+			continue
+		}
+		entry := name + " " + url
+		if !seen[entry] {
+			seen[entry] = true
+			out = append(out, entry)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
 
 // RemoteURL returns the URL configured for a remote (the fetch URL).
 func (r Repo) RemoteURL(name string) (string, error) {

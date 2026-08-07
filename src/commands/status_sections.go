@@ -135,11 +135,10 @@ func anyHead(locals []git.LocalBranch) bool {
 }
 
 func (s *StatusCommand) renderRemotes(out io.Writer, header func()) error {
-	stdout, _, err := s.repo().Run("remote", "-v")
+	remotes, err := s.repo().RemoteURLs()
 	if err != nil {
 		return fmt.Errorf("getting remotes: %w", err)
 	}
-	remotes := parseRemotes(stdout)
 	if len(remotes) == 0 {
 		return nil
 	}

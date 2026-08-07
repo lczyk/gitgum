@@ -160,26 +160,3 @@ func (s *StatusCommand) runFollow() error {
 		}
 	}
 }
-
-func parseRemotes(remoteOutput string) []string {
-	lines := strings.Split(remoteOutput, "\n")
-	seen := make(map[string]bool)
-	var remotes []string
-
-	for _, line := range lines {
-		if line == "" {
-			continue
-		}
-
-		fields := strings.Fields(line)
-		if len(fields) >= 2 {
-			entry := fields[0] + " " + fields[1]
-			if !seen[entry] {
-				seen[entry] = true
-				remotes = append(remotes, entry)
-			}
-		}
-	}
-
-	return remotes
-}
