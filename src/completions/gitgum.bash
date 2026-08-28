@@ -90,7 +90,7 @@ _gitgum_completion() {
             return 0
             ;;
         gitgum_status)
-            opts="branch remote worktree changes head --flat -f --follow -h --help"
+            opts="all branch remote worktree changes head -a --all --flat -f --follow -h --help"
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;

@@ -33,6 +33,10 @@ var sectionOrder = []statusSection{
 // defaultSections is what bare `gg status` renders.
 var defaultSections = []string{"changes", "head"}
 
+// allSections names every section at once. It renders nothing itself: it
+// expands, in sectionOrder, wherever it appears in a spec.
+const allSections = "all"
+
 func lookupSection(name string) (statusSection, bool) {
 	for _, sec := range sectionOrder {
 		if name == sec.id || name == sec.id[:1] {
@@ -44,7 +48,8 @@ func lookupSection(name string) (statusSection, bool) {
 
 // parseSections turns a comma-separated spec ("b, changes ,b") into the
 // sections to render. Whitespace is stripped, duplicates collapse onto their
-// *last* occurrence -- so "a,b,a,c" and "b,a,c" render identically.
+// *last* occurrence -- so "a,b,a,c" and "b,a,c" render identically, and
+// "all,head" is every section with HEAD moved to the end.
 func parseSections(spec string) ([]statusSection, error) {
 	var names []string
 	for tok := range strings.SplitSeq(spec, ",") {
@@ -58,17 +63,24 @@ func parseSections(spec string) ([]statusSection, error) {
 		return nil, fmt.Errorf("no sections given (known: %s)", knownSections())
 	}
 
-	last := make(map[string]int, len(names))
-	resolved := make([]statusSection, len(names))
-	for i, name := range names {
-		sec, ok := lookupSection(strings.ToLower(name))
-		if !ok {
-			return nil, fmt.Errorf("unknown status section %q (known: %s)", name, knownSections())
+	var resolved []statusSection
+	for _, name := range names {
+		switch lower := strings.ToLower(name); lower {
+		case allSections, allSections[:1]:
+			resolved = append(resolved, sectionOrder...)
+		default:
+			sec, ok := lookupSection(lower)
+			if !ok {
+				return nil, fmt.Errorf("unknown status section %q (known: %s)", name, knownSections())
+			}
+			resolved = append(resolved, sec)
 		}
-		resolved[i] = sec
-		last[sec.id] = i
 	}
 
+	last := make(map[string]int, len(resolved))
+	for i, sec := range resolved {
+		last[sec.id] = i
+	}
 	out := make([]statusSection, 0, len(last))
 	for i, sec := range resolved {
 		if last[sec.id] == i {
@@ -79,9 +91,10 @@ func parseSections(spec string) ([]statusSection, error) {
 }
 
 func knownSections() string {
-	names := make([]string, len(sectionOrder))
-	for i, sec := range sectionOrder {
-		names[i] = fmt.Sprintf("%s (%s)", sec.id, sec.id[:1])
+	names := make([]string, 0, len(sectionOrder)+1)
+	names = append(names, fmt.Sprintf("%s (%s)", allSections, allSections[:1]))
+	for _, sec := range sectionOrder {
+		names = append(names, fmt.Sprintf("%s (%s)", sec.id, sec.id[:1]))
 	}
 	sort.Strings(names)
 	return strings.Join(names, ", ")

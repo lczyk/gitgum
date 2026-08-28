@@ -63,6 +63,7 @@ complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from release' -f -a 'minor
 complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from release' -f -a 'major' -d 'Major version bump'
 
 # status <sections>
+complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from status' -f -a all -d 'Every section'
 complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from status' -f -a branch -d 'Local branches'
 complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from status' -f -a remote -d 'Configured remotes'
 complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from status' -f -a worktree -d 'Linked worktrees'
@@ -70,5 +71,6 @@ complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from status' -f -a changes
 complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from status' -f -a head -d 'HEAD summary line'
 
 # status flags
+complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from status' -s a -l all -d 'Render every section'
 complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from status' -l flat -d 'Flat porcelain list instead of tree'
 complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from status' -s f -l follow -d 'Follow mode: refresh every N seconds (default 2)'

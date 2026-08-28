@@ -15,8 +15,12 @@ import (
 
 type StatusCommand struct {
 	cmdIO
+	All    bool     `long:"all" short:"a" description:"render every section, same as the 'all' section list"`
 	Flat   bool     `long:"flat" description:"show changes as flat porcelain list instead of tree"`
 	Follow *float64 `long:"follow" short:"f" optional:"yes" optional-value:"2" description:"follow mode: refresh every N seconds (default 2, min 1). never fetches."`
+	Args   struct {
+		Sections *string `positional-arg-name:"SECTIONS" description:"comma-separated list of sections to render: all (a), branch (b), changes (c), head (h), remote (r), worktree (w). default: changes,head"`
+	} `positional-args:"yes"`
 
 	// sections is resolved from the positional argument in Execute.
 	sections []statusSection
@@ -40,9 +44,18 @@ func (s *StatusCommand) headerWidth() int {
 
 // Execute renders the sections named by the sole positional argument, a
 // comma-separated list like "branch,worktree" or "b,w". Defaults to "changes,head".
+//
+// go-flags puts that argument in Args.Sections and hands Execute whatever is
+// left over, while the tests call Execute directly with a plain slice; joining
+// the two back together up front means one path counts them. Sections is a
+// pointer because `gg status ""` is an argument, and a rejected one -- a plain
+// string could not tell that from no argument at all.
 func (s *StatusCommand) Execute(args []string) error {
 	if err := s.repo().CheckInRepo(); err != nil {
 		return err
+	}
+	if s.Args.Sections != nil {
+		args = append([]string{*s.Args.Sections}, args...)
 	}
 	if len(args) > 1 {
 		return fmt.Errorf("status takes at most one section list, got %d arguments", len(args))
@@ -50,6 +63,12 @@ func (s *StatusCommand) Execute(args []string) error {
 	spec := strings.Join(defaultSections, ",")
 	if len(args) == 1 {
 		spec = args[0]
+	}
+	if s.All {
+		if len(args) == 1 {
+			return fmt.Errorf("--all and a section list (%q) are mutually exclusive", args[0])
+		}
+		spec = allSections
 	}
 	var err error
 	if s.sections, err = parseSections(spec); err != nil {

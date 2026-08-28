@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -85,6 +86,16 @@ func TestStatusCommand_SectionSelection(t *testing.T) {
 			args:    []string{"worktree,head"},
 			present: []string{"WORKTREES", "HEAD"},
 		},
+		// no remote is configured in a temp repo, and REMOTES suppresses
+		// itself when there is nothing to list.
+		"all section": {
+			args:    []string{"all"},
+			present: []string{"BRANCHES", "WORKTREES", "HEAD"},
+		},
+		"all short name": {
+			args:    []string{"a"},
+			present: []string{"BRANCHES", "WORKTREES", "HEAD"},
+		},
 	}
 
 	for name, tt := range cases {
@@ -139,6 +150,12 @@ func TestParseSections(t *testing.T) {
 		"order preserved":             {spec: "head,branch", expected: []string{"head", "branch"}},
 		"duplicates keep last":        {spec: "b,r,b,w", expected: []string{"remote", "branch", "worktree"}},
 		"long and short are the same": {spec: "branch,b", expected: []string{"branch"}},
+		"all expands in order":        {spec: "all", expected: []string{"branch", "remote", "worktree", "changes", "head"}},
+		"all short name":              {spec: "a", expected: []string{"branch", "remote", "worktree", "changes", "head"}},
+		"all is case insensitive":     {spec: "ALL", expected: []string{"branch", "remote", "worktree", "changes", "head"}},
+		"a section after all moves":   {spec: "all,branch", expected: []string{"remote", "worktree", "changes", "head", "branch"}},
+		"all after a section wins":    {spec: "branch,all", expected: []string{"branch", "remote", "worktree", "changes", "head"}},
+		"all twice is once":           {spec: "all,a", expected: []string{"branch", "remote", "worktree", "changes", "head"}},
 	}
 
 	for name, tt := range cases {
@@ -174,6 +191,84 @@ func TestStatusCommand_FollowRequiresTTY(t *testing.T) {
 	assert.ContainsString(t, err.Error(), "tty")
 }
 
+// The SECTIONS help text is what `gg status -h` answers "which sections are
+// there?" with, so it has to name the same ones parseSections accepts -- and
+// the tags that put it under `-h` in the first place have to still be there.
+func TestStatusCommand_SectionsHelpNamesEverySection(t *testing.T) {
+	t.Parallel()
+	args, ok := reflect.TypeOf(StatusCommand{}).FieldByName("Args")
+	require.That(t, ok, "StatusCommand should have an Args field")
+	assert.Equal(t, args.Tag.Get("positional-args"), "yes")
+	sections, ok := args.Type.FieldByName("Sections")
+	require.That(t, ok, "Args should have a Sections field")
+	assert.Equal(t, sections.Tag.Get("positional-arg-name"), "SECTIONS")
+	assert.ContainsString(t, sections.Tag.Get("description"), knownSections())
+}
+
+func TestStatusCommand_AllFlag(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+
+	var buf strings.Builder
+	cmd := &StatusCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}, All: true}
+	require.NoError(t, cmd.Execute(nil))
+
+	output := buf.String()
+	for _, want := range []string{"BRANCHES", "WORKTREES", "HEAD"} {
+		assert.ContainsString(t, output, want)
+	}
+}
+
+func TestStatusCommand_AllFlagRejectsASectionList(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+
+	cmd := &StatusCommand{cmdIO: cmdIO{Out: &strings.Builder{}, Repo: git.Repo{Dir: dir}}, All: true}
+	err := cmd.Execute([]string{"branch"})
+
+	assert.Error(t, err, assert.AnyError, "--all alongside a section list should error")
+	assert.ContainsString(t, err.Error(), "mutually exclusive")
+}
+
+// go-flags fills Args.Sections rather than passing the section list on to
+// Execute, so the two have to reach parseSections by the same route.
+func TestStatusCommand_PositionalArgField(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+
+	newCmd := func(out *strings.Builder, sections string) *StatusCommand {
+		cmd := &StatusCommand{cmdIO: cmdIO{Out: out, Repo: git.Repo{Dir: dir}}}
+		cmd.Args.Sections = &sections
+		return cmd
+	}
+
+	var buf strings.Builder
+	require.NoError(t, newCmd(&buf, "branch,remote").Execute(nil))
+	assert.ContainsString(t, buf.String(), "BRANCHES")
+
+	err := newCmd(&strings.Builder{}, "branch").Execute([]string{"head"})
+	assert.Error(t, err, assert.AnyError, "a second section list should error")
+	assert.ContainsString(t, err.Error(), "at most one section list")
+
+	// an empty positional is an argument, and a rejected one: `gg status ""`
+	// must not quietly fall back to the default sections.
+	err = newCmd(&strings.Builder{}, "").Execute(nil)
+	assert.Error(t, err, assert.AnyError, "an empty section list should error")
+	assert.ContainsString(t, err.Error(), "no sections given")
+
+	all := newCmd(&strings.Builder{}, "branch")
+	all.All = true
+	err = all.Execute(nil)
+	assert.Error(t, err, assert.AnyError, "--all with a positional section list should error")
+	assert.ContainsString(t, err.Error(), "mutually exclusive")
+
+	allEmpty := newCmd(&strings.Builder{}, "")
+	allEmpty.All = true
+	err = allEmpty.Execute(nil)
+	assert.Error(t, err, assert.AnyError, "--all with an empty positional should still error")
+	assert.ContainsString(t, err.Error(), "mutually exclusive")
+}
+
 // The sha the HEAD section prints has to survive the whole path -- the ref
 // listing, headHash, formatHeadLine -- not just formatHeadLine's own tests.
 func TestStatusCommand_HeadSectionPrintsTheSha(t *testing.T) {
@@ -189,4 +284,15 @@ func TestStatusCommand_HeadSectionPrintsTheSha(t *testing.T) {
 	cmd := &StatusCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}}
 	require.NoError(t, cmd.Execute([]string{"head"}))
 	assert.Equal(t, strings.TrimSpace(stripAnsi(buf.String())), "* main "+short)
+}
+
+func TestHeadHash(t *testing.T) {
+	t.Parallel()
+	locals := []git.LocalBranch{
+		{Name: "other", Hash: "aaaaaaa"},
+		{Name: "main", Hash: "1a2b3c4", Head: true},
+	}
+	assert.Equal(t, headHash(locals), "1a2b3c4")
+	assert.Equal(t, headHash(locals[:1]), "")
+	assert.Equal(t, headHash(nil), "")
 }
