@@ -101,9 +101,10 @@ Print one or more status sections, named by a comma-separated argument:
 - `remote` (`r`) -- configured remotes
 - `worktree` (`w`) -- linked worktrees
 - `changes` (`c`) -- a tree-formatted view of the working-tree changes (modified files get an inline `(+a,-d)` line-change count)
-- `head` (`h`) -- the current branch and its upstream, as `* (origin/)main [ahead 7]`
+- `head` (`h`) -- the current branch, its short sha and its upstream, as `* (origin/)main 1a2b3c4 [ahead 7]`
+- `all` (`a`) -- every section above, in that order
 
-Sections render in the order given, and a repeated section moves to its last position -- `b,r,b` renders as `r,b`. Surrounding whitespace is ignored, so `gg status "b, r"` works. A single section prints bare; two or more get headers. `gg status` with no argument is `gg status changes,head`.
+Sections render in the order given, and a repeated section moves to its last position -- `b,r,b` renders as `r,b`, and `all,b` is every section with `branch` at the end. Surrounding whitespace is ignored, so `gg status "b, r"` works. A single section prints bare; two or more get headers. `gg status` with no argument is `gg status changes,head`, and `gg status -a` / `--all` is `gg status all`.
 
 On a detached HEAD, `head` names the commit and every ref that contains it -- local branches first, then remote-only branches, then tags, closest first. The `~N` suffix is the commit's distance below that ref, and is omitted when the commit sits off the ref's first-parent chain:
 
