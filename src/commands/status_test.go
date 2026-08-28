@@ -173,3 +173,20 @@ func TestStatusCommand_FollowRequiresTTY(t *testing.T) {
 	assert.Error(t, err, assert.AnyError, "follow without tty should error")
 	assert.ContainsString(t, err.Error(), "tty")
 }
+
+// The sha the HEAD section prints has to survive the whole path -- the ref
+// listing, headHash, formatHeadLine -- not just formatHeadLine's own tests.
+func TestStatusCommand_HeadSectionPrintsTheSha(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+
+	short, _, err := (git.Repo{Dir: dir}).Run("rev-parse", "--short", "HEAD")
+	require.NoError(t, err)
+	short = strings.TrimSpace(short)
+	require.That(t, short != "", "temp repo should have a commit")
+
+	var buf strings.Builder
+	cmd := &StatusCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}}
+	require.NoError(t, cmd.Execute([]string{"head"}))
+	assert.Equal(t, strings.TrimSpace(stripAnsi(buf.String())), "* main "+short)
+}

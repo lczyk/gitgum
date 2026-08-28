@@ -241,8 +241,21 @@ func (s *StatusCommand) renderHead(out io.Writer, header func()) error {
 			return nil
 		}
 	}
-	fmt.Fprintln(out, formatHeadLine(branch, colorEnabled()))
+	fmt.Fprintln(out, formatHeadLine(branch, headHash(locals), colorEnabled()))
 	return nil
+}
+
+// headHash is the short sha of the checked-out branch, taken from the listing
+// the HEAD line was built from rather than read again. Empty when nothing
+// carries the marker -- a detached or unborn HEAD, neither of which has a
+// branch ref to read a hash off.
+func headHash(locals []git.LocalBranch) string {
+	for _, b := range locals {
+		if b.Head {
+			return b.Hash
+		}
+	}
+	return ""
 }
 
 // detachedHeadLine is what a `--branch` status emits when HEAD is detached,
@@ -255,10 +268,11 @@ var headLineRe = regexp.MustCompile(`^## (.+?)(?:\.\.\.(\S+))?( \[[^\]]*\])?$`)
 
 // formatHeadLine rewrites the `git status --branch` summary line so a
 // same-name upstream renders switch-style: "## main...origin/main [ahead 7]"
-// becomes "* (origin/)main [ahead 7]". The '*' marker matches the current-row
-// marker of the BRANCHES and WORKTREES sections. Detached HEAD, differing
-// upstream names and "No commits yet" lines keep their original shape (colored).
-func formatHeadLine(line string, color bool) string {
+// becomes "* (origin/)main 1a2b3c4 [ahead 7]". The '*' marker and the sha
+// following the name both match the rows of the BRANCHES and WORKTREES
+// sections. Detached HEAD, differing upstream names and "No commits yet" lines
+// keep their original shape (colored). An empty sha is left out entirely.
+func formatHeadLine(line, sha string, color bool) string {
 	m := headLineRe.FindStringSubmatch(line)
 	if m == nil {
 		return line
@@ -275,6 +289,13 @@ func formatHeadLine(line string, color bool) string {
 			bracket = " " + ansiBoldYellow + bracket + ansiReset
 		}
 	}
+	tail := bracket
+	if sha != "" {
+		if color {
+			sha = ansiYellow + sha + ansiReset
+		}
+		tail = " " + sha + tail
+	}
 
 	if upstream == "" {
 		branch := local
@@ -285,20 +306,20 @@ func formatHeadLine(line string, color bool) string {
 				branch = ansiBoldGreen + local + ansiReset
 			}
 		}
-		return marker + branch + bracket
+		return marker + branch + tail
 	}
 
 	if remote, branch, ok := strings.Cut(upstream, "/"); ok && branch == local {
-		return marker + remoteSlashBranch(remote, local, color) + bracket
+		return marker + remoteSlashBranch(remote, local, color) + tail
 	}
 
 	// upstream tracks a differently-named branch: keep the "a...b" shape
 	if color {
 		local = ansiBoldGreen + local + ansiReset
 		upstream = ansiBoldRed + upstream + ansiReset
-		return marker + local + ansiBoldYellow + "..." + ansiReset + upstream + bracket
+		return marker + local + ansiBoldYellow + "..." + ansiReset + upstream + tail
 	}
-	return marker + local + "..." + upstream + bracket
+	return marker + local + "..." + upstream + tail
 }
 
 // headMarker is the "* " that opens the HEAD line, matching the current-row
