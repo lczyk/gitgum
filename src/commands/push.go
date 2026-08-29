@@ -86,7 +86,7 @@ func (p *PushCommand) Execute(args []string) error {
 			return fmt.Errorf("confirming push to upstream: %w", err)
 		}
 		if !confirmed {
-			return nil
+			return p.offerOtherRemotes(currentBranch, remoteBranch)
 		}
 		if err := p.repo().Push(); err != nil {
 			return fmt.Errorf("failed to push: %w", err)
@@ -193,6 +193,36 @@ func (p *PushCommand) pushToRemote(selectedRemote, currentBranch string) error {
 	}
 	fmt.Fprintf(p.out(), "Pushed to remote branch '%s' and updated upstream to it.\n", expectedRemoteBranchName)
 	return nil
+}
+
+// offerOtherRemotes runs after the user declines pushing to the configured
+// upstream: with a single remote there is nowhere else to go, so it exits
+// quietly; with more it offers the remaining remotes and pushes there, moving
+// the upstream to the chosen remote.
+func (p *PushCommand) offerOtherRemotes(currentBranch, upstream string) error {
+	remotes, err := p.repo().GetRemotes()
+	if err != nil {
+		return fmt.Errorf("getting remotes: %w", err)
+	}
+	upstreamRemote, _, _ := strings.Cut(upstream, "/")
+	others := make([]string, 0, len(remotes))
+	for _, r := range remotes {
+		if r != upstreamRemote {
+			others = append(others, r)
+		}
+	}
+	if len(others) == 0 {
+		return nil
+	}
+
+	remote, err := p.sel().Select(fmt.Sprintf("Push '%s' to", currentBranch), others)
+	if err != nil {
+		if errors.Is(err, ui.ErrCancelled) {
+			return nil
+		}
+		return fmt.Errorf("selecting remote: %w", err)
+	}
+	return p.pushToRemote(remote, currentBranch)
 }
 
 // showPushDelta prints a compact-summary of the commits about to be pushed

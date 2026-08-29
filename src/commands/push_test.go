@@ -133,6 +133,71 @@ func TestPushCommand_UpstreamSet_ShowsDelta(t *testing.T) {
 	assert.ContainsString(t, out, "Pushed to remote tracking branch")
 }
 
+// user declines pushing to the upstream and there is only one remote: nothing
+// else to offer, so the command exits cleanly without a picker.
+func TestPushCommand_DeclineUpstream_SingleRemoteBreaks(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+
+	bareDir := t.TempDir()
+	temp_repo.RunGit(t, bareDir, "init", "--bare")
+	temp_repo.RunGit(t, dir, "remote", "add", "origin", bareDir)
+
+	branch := currentBranchIn(t, dir)
+	temp_repo.RunGit(t, dir, "push", "-u", "origin", branch)
+	temp_repo.CreateCommit(t, dir, "feature.yml", "x\n", "feat: local commit")
+
+	var buf strings.Builder
+	stub := &stubSelector{confirmAnswers: []bool{false}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	err := cmd.Execute(nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, len(stub.selectCalls), 0)
+	log := temp_repo.RunGit(t, bareDir, "log", "--format=%s", branch)
+	assert.That(t, !strings.Contains(log, "feat: local commit"), "decline must not push")
+}
+
+// user declines pushing to the upstream but a second remote exists: push offers
+// the other remotes, pushes there, and moves the upstream to the chosen remote.
+func TestPushCommand_DeclineUpstream_OffersOtherRemotes(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+
+	bareDir := t.TempDir()
+	temp_repo.RunGit(t, bareDir, "init", "--bare")
+	temp_repo.RunGit(t, dir, "remote", "add", "origin", bareDir)
+	mirrorDir := t.TempDir()
+	temp_repo.RunGit(t, mirrorDir, "init", "--bare")
+	temp_repo.RunGit(t, dir, "remote", "add", "mirror", mirrorDir)
+
+	branch := currentBranchIn(t, dir)
+	temp_repo.RunGit(t, dir, "push", "-u", "origin", branch)
+	temp_repo.CreateCommit(t, dir, "feature.yml", "x\n", "feat: local commit")
+
+	var buf strings.Builder
+	// decline the upstream push, then confirm creating the branch on mirror.
+	stub := &stubSelector{confirmAnswers: []bool{false, true}, selectAnswers: []string{"mirror"}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	err := cmd.Execute(nil)
+	require.NoError(t, err)
+
+	// picker offered only the non-upstream remote.
+	require.Equal(t, len(stub.selectCalls), 1)
+	assert.Equal(t, len(stub.selectCalls[0].Options), 1)
+	assert.Equal(t, stub.selectCalls[0].Options[0], "mirror")
+
+	// pushed to mirror, upstream moved to mirror, origin untouched.
+	log := temp_repo.RunGit(t, mirrorDir, "log", "--format=%s", branch)
+	assert.ContainsString(t, log, "feat: local commit")
+	upstream := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "--abbrev-ref", branch+"@{u}"))
+	assert.Equal(t, upstream, "mirror/"+branch)
+	originLog := temp_repo.RunGit(t, bareDir, "log", "--format=%s", branch)
+	assert.That(t, !strings.Contains(originLog, "feat: local commit"), "declined upstream must not receive the push")
+}
+
 // upstream configured and local matches the (stale) remote-tracking ref, but
 // the branch was deleted on the remote: push must notice via a live check and
 // offer to recreate it. Stub confirms the recreate prompt.
