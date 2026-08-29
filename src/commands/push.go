@@ -188,10 +188,10 @@ func (p *PushCommand) pushToRemote(selectedRemote, currentBranch string) error {
 		return nil
 	}
 
-	if err := p.repo().RunWriteStream("push", selectedRemote, currentBranch); err != nil {
+	if err := p.repo().RunWriteStream("push", "-u", selectedRemote, currentBranch); err != nil {
 		return fmt.Errorf("failed to push: %w", err)
 	}
-	fmt.Fprintf(p.out(), "Pushed to remote branch '%s'.\n", expectedRemoteBranchName)
+	fmt.Fprintf(p.out(), "Pushed to remote branch '%s' and updated upstream to it.\n", expectedRemoteBranchName)
 	return nil
 }
 
