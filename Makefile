@@ -5,7 +5,12 @@ SRCS := $(shell find ./cmd ./internal ./src -name '*.go' ! -name 'version.go')
 # Lint tools run via `go run` rather than being installed, matching how
 # generate-version is invoked below: CI gets them from the module cache with
 # no extra step. Pinned, so a new release cannot fail the build unannounced.
-STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.7.0
+#
+# staticcheck reads a toolchain's export data, so its pin has a floor as well
+# as a ceiling: too old for the Go running it and every package fails to
+# import. v0.8 covers 1.27 and needs 1.26 to build, which is the workflow's
+# go-version.
+STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.1
 DEADCODE    := golang.org/x/tools/cmd/deadcode@v0.48.0
 
 help:  ## Show this help
