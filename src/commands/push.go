@@ -130,6 +130,13 @@ func (p *PushCommand) Execute(args []string) error {
 		selectedRemote = remote
 	}
 
+	return p.pushToRemote(selectedRemote, currentBranch)
+}
+
+// pushToRemote pushes currentBranch to selectedRemote, prompting before
+// creating a missing remote branch or pushing to an existing one. Whichever
+// path runs, the branch ends up tracking the remote it was pushed to.
+func (p *PushCommand) pushToRemote(selectedRemote, currentBranch string) error {
 	expectedRemoteBranchName := selectedRemote + "/" + currentBranch
 
 	if !p.repo().RemoteBranchExists(selectedRemote, currentBranch) {
