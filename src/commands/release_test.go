@@ -7,6 +7,8 @@ import (
 
 	"github.com/lczyk/assert"
 	"github.com/lczyk/assert/require"
+	"github.com/lczyk/gitgum/internal/git"
+	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
 )
 
 func TestParseSemver(t *testing.T) {
@@ -211,4 +213,49 @@ func TestBuildRevisionTags(t *testing.T) {
 		buildRevisionTags("r3", []string{"go", "rust"}),
 		[]string{"r3", "go/r3", "rust/r3"},
 	)
+}
+
+// The publish hint follows the branch the release actually landed on, so the
+// remote comes from that branch's upstream -- not the default branch's, which
+// may be a read-only canonical remote.
+func TestBranchPushRemote_UsesTheGivenBranchesUpstream(t *testing.T) {
+	t.Parallel()
+	local, _ := temp_repo.NewRepoWithRemote(t)
+	temp_repo.RunGit(t, local, "remote", "add", "fork", "https://example.invalid/fork")
+	temp_repo.RunGit(t, local, "branch", "feature")
+	temp_repo.RunGit(t, local, "config", "branch.feature.remote", "fork")
+	temp_repo.RunGit(t, local, "config", "branch.feature.merge", "refs/heads/feature")
+
+	r := git.Repo{Dir: local}
+	def, err := r.GetCurrentBranch()
+	require.NoError(t, err, "current branch")
+
+	assert.Equal(t, branchPushRemote(r, "feature"), "fork")
+	assert.Equal(t, branchPushRemote(r, def), "origin")
+}
+
+// No upstream: a single remote is unambiguous, so it wins over the "origin"
+// guess even when it's named something else.
+func TestBranchPushRemote_FallsBackToSoleRemote(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "remote", "add", "fork", "https://example.invalid/fork")
+
+	r := git.Repo{Dir: dir}
+	branch, err := r.GetCurrentBranch()
+	require.NoError(t, err, "current branch")
+	assert.Equal(t, branchPushRemote(r, branch), "fork")
+}
+
+// No upstream and several remotes to choose from: fall back to "origin".
+func TestBranchPushRemote_FallsBackToOrigin(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "remote", "add", "fork", "https://example.invalid/fork")
+	temp_repo.RunGit(t, dir, "remote", "add", "other", "https://example.invalid/other")
+
+	r := git.Repo{Dir: dir}
+	branch, err := r.GetCurrentBranch()
+	require.NoError(t, err, "current branch")
+	assert.Equal(t, branchPushRemote(r, branch), "origin")
 }

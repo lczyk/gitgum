@@ -78,12 +78,12 @@ func (r *ReleaseCommand) Execute(args []string) error {
 			return fmt.Errorf("aborted: not on %s branch", defaultBranch)
 		}
 	}
-	remote := defaultBranchPushRemote(repo, defaultBranch)
+	remote := branchPushRemote(repo, branch)
 
 	if state, ok := alreadyReleased(repo); ok {
 		fmt.Fprintf(r.out(), "Already released: HEAD is %q (tag %s already at HEAD).\n", state.subject, state.tag)
 		fmt.Fprintf(r.out(), "Nothing to do. To publish:\n")
-		fmt.Fprintf(r.out(), "  %s\n", formatPublishPushes(remote, defaultBranch, []string{state.tag}))
+		fmt.Fprintf(r.out(), "  %s\n", formatPublishPushes(remote, branch, []string{state.tag}))
 		return nil
 	}
 
@@ -177,7 +177,7 @@ func (r *ReleaseCommand) Execute(args []string) error {
 	}
 
 	fmt.Fprintf(r.out(), "\nTagged %s. To publish:\n", strings.Join(tags, ", "))
-	fmt.Fprintf(r.out(), "  %s\n", formatPublishPushes(remote, defaultBranch, tags))
+	fmt.Fprintf(r.out(), "  %s\n", formatPublishPushes(remote, branch, tags))
 	fmt.Fprintln(r.out(), "\nTo fully undo (drops the commit and the tag(s)):")
 	fmt.Fprintf(r.out(), "  git reset --hard HEAD~1 && git tag -d %s\n", strings.Join(tags, " "))
 	return nil
@@ -268,11 +268,11 @@ func alreadyReleased(r git.Repo) (releasedState, bool) {
 	return releasedState{tag: tag, subject: subject}, true
 }
 
-// defaultBranchPushRemote returns the remote the default branch tracks.
-// Falls back to the sole configured remote, then "origin", so the suggested
-// push command stays useful even when the default branch has no upstream yet.
-func defaultBranchPushRemote(r git.Repo, defaultBranch string) string {
-	if name, _ := r.GetBranchTrackingRemote(defaultBranch); name != "" {
+// branchPushRemote returns the remote the given branch tracks. Falls back to
+// the sole configured remote, then "origin", so the suggested push command
+// stays useful even when the branch has no upstream yet.
+func branchPushRemote(r git.Repo, branch string) string {
+	if name, _ := r.GetBranchTrackingRemote(branch); name != "" {
 		return name
 	}
 	if remotes, _ := r.GetRemotes(); len(remotes) == 1 {
