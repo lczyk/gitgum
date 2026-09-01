@@ -173,17 +173,43 @@ func (r *ReleaseCommand) Execute(args []string) error {
 	if err := repo.Commit(commitMsg); err != nil {
 		return err
 	}
+	// Past the commit a failure leaves work behind, so say what landed and how
+	// to drop it rather than reporting the tag error on its own.
+	made := make([]string, 0, len(tags))
 	for _, t := range tags {
 		if err := repo.TagAnnotated(t, "release "+t); err != nil {
-			return err
+			fmt.Fprintf(r.err(), "%s the release commit is made%s. To undo:\n  %s\n",
+				paint(ansiBoldYellow, "warning:"), taggedSuffix(made), undoRelease(made))
+			return fmt.Errorf("tagging %s: %w", t, err)
 		}
+		made = append(made, t)
 	}
 
 	fmt.Fprintf(r.out(), "\nTagged %s. To publish:\n", strings.Join(tags, ", "))
 	fmt.Fprintf(r.out(), "  %s\n", formatPublishPushes(remote, branch, tags))
 	fmt.Fprintln(r.out(), "\nTo fully undo (drops the commit and the tag(s)):")
-	fmt.Fprintf(r.out(), "  git reset --hard HEAD~1 && git tag -d %s\n", strings.Join(tags, " "))
+	fmt.Fprintf(r.out(), "  %s\n", undoRelease(tags))
 	return nil
+}
+
+// undoRelease is the command that drops a release commit and the tags made on
+// it. Printed on the way out either way: after a full release as the undo
+// route, after a half-made one as the cleanup.
+func undoRelease(tags []string) string {
+	cmd := "git reset --hard HEAD~1"
+	if len(tags) > 0 {
+		cmd += " && git tag -d " + strings.Join(tags, " ")
+	}
+	return cmd
+}
+
+// taggedSuffix names the tags that did land, for the warning that has to
+// describe a half-made release.
+func taggedSuffix(made []string) string {
+	if len(made) == 0 {
+		return ""
+	}
+	return ", tagged " + strings.Join(made, ", ")
 }
 
 // maxTagsPerPush is github's ceiling: a single push carrying more than this

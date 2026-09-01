@@ -15,6 +15,39 @@ import (
 	"github.com/lczyk/gitgum/internal/ui"
 )
 
+// A tags directive means several tags per release, and the second one can fail
+// on its own (here a D/F ref clash) with the release commit already made. The
+// error has to come with what landed and how to drop it.
+func TestReleaseCommand_Execute_PartialTaggingReportsUndo(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.WriteFile(t, dir, "VERSION", "# tags: foo\n1.0.0\n")
+	temp_repo.RunGit(t, dir, "add", "VERSION")
+	temp_repo.RunGit(t, dir, "commit", "-m", "chore: version")
+	// refs/tags/foo blocks refs/tags/foo/v1.0.1, but not the bare v1.0.1 made
+	// first -- so tagging fails half way through.
+	temp_repo.RunGit(t, dir, "tag", "foo")
+
+	var out, errBuf strings.Builder
+	cmd := &ReleaseCommand{cmdIO: cmdIO{Out: &out, Err: &errBuf, UI: &stubSelector{}, Repo: git.Repo{Dir: dir}}}
+	cmd.Args.Bump = "patch"
+
+	err := cmd.Execute(nil)
+	assert.Error(t, err, assert.AnyError)
+	assert.ContainsString(t, err.Error(), "tagging foo/v1.0.1")
+	assert.ContainsString(t, errBuf.String(), "the release commit is made, tagged v1.0.1")
+	assert.ContainsString(t, errBuf.String(), undoRelease([]string{"v1.0.1"}))
+	// the commit and the first tag really are there to be undone
+	assert.ContainsString(t, temp_repo.RunGit(t, dir, "log", "-1", "--format=%s"), "release: v1.0.1")
+	assert.ContainsString(t, temp_repo.RunGit(t, dir, "tag", "--list"), "v1.0.1")
+}
+
+func TestUndoRelease(t *testing.T) {
+	t.Parallel()
+	assert.That(t, !strings.Contains(undoRelease(nil), "tag"), "nothing tagged, nothing to delete")
+	assert.ContainsString(t, undoRelease([]string{"v1.0.1", "foo/v1.0.1"}), "v1.0.1 foo/v1.0.1")
+}
+
 func readFileIn(t *testing.T, dir, name string) string {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(dir, name))
