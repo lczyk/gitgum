@@ -9,8 +9,10 @@ import (
 
 	"github.com/lczyk/assert"
 	"github.com/lczyk/assert/require"
+	"github.com/lczyk/gitgum/internal/dirty"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
+	"github.com/lczyk/gitgum/internal/ui"
 )
 
 func currentBranchIn(t *testing.T, dir string) string {
@@ -178,6 +180,31 @@ func TestSwitchCommand_Execute_PicksLocalBranch(t *testing.T) {
 	assert.ContainsString(t, buf.String(), "Switched to branch 'feature'.")
 	assert.Equal(t, len(stub.selectCalls), 1)
 	assert.Equal(t, stub.selectCalls[0].Stream, true)
+}
+
+// Backing out of the branch picker after choosing discard must leave the
+// working tree alone -- the answer to the dirty prompt only takes effect once
+// there is a branch to switch to.
+func TestSwitchCommand_Execute_DiscardWaitsForSelection(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "branch", "feature")
+	temp_repo.WriteFile(t, dir, "README.md", "edited\n")
+
+	var buf strings.Builder
+	stub := &stubSelector{
+		selectAnswers: []string{discardLabel(
+			dirty.Plan{Tracked: []string{"README.md"}},
+			dirty.Options{Tracked: true, Untracked: true})},
+		// the dirty prompt answers, the branch picker is escaped
+		selectErrs: []error{nil, ui.ErrCancelled},
+	}
+	cmd := &SwitchCommand{cmdIO: cmdIO{Out: &buf, Err: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	err := cmd.Execute(nil)
+	assert.ErrorIs(t, err, ui.ErrCancelled)
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "status", "--porcelain")), "M README.md")
+	assert.That(t, !strings.Contains(buf.String(), "Discarded"), "nothing was discarded")
 }
 
 // Same-name branch on a different remote must appear even when the current

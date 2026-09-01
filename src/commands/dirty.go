@@ -20,37 +20,46 @@ const (
 	dirtyDiscard = "discard"
 )
 
-// handleDirtyTree inspects the working tree. Untracked files do not trigger the
-// prompt -- they do not block the operations that ask -- but discarding does
-// remove them, so they are listed alongside the tracked changes and counted in
-// the discard row.
+// dirtyApply performs the answer to the uncommitted-changes prompt and hands
+// back the cleanup for it. Nothing touches the working tree until it is
+// called, so a caller can ask the question early -- while the listing is the
+// natural thing to be reading -- and still commit to nothing until the
+// operation itself is locked in. Every path out of the prompt yields one;
+// cancelling is an error, not an apply that does nothing.
 //
-// Returns a cleanup function that callers should always defer. cleanup is a
-// no-op unless something was stashed; otherwise it pops the stash with --index
-// to preserve the original staged-vs-unstaged split (including partial-hunk
-// staging). On pop conflict, cleanup leaves the stash in place and warns --
-// callers must not retry, since git's partial state would compound.
+// cleanup is a no-op unless something was stashed; otherwise it pops the stash
+// with --index to preserve the original staged-vs-unstaged split (including
+// partial-hunk staging). On pop conflict, cleanup leaves the stash in place and
+// warns -- callers must not retry, since git's partial state would compound.
+type dirtyApply func() (cleanup func(), err error)
+
+// decideDirtyTree inspects the working tree and asks what to do with it,
+// returning the answer unapplied. Untracked files do not trigger the prompt --
+// they do not block the operations that ask -- but discarding does remove them,
+// so they are listed alongside the tracked changes and counted in the discard
+// row.
 //
 // label names the calling subcommand and appears in both the prompt and the
 // stash message ("gitgum <label> auto-stash") so users can identify auto-stashes
 // left behind.
-func handleDirtyTree(c *cmdIO, label string) (cleanup func(), err error) {
+func decideDirtyTree(c *cmdIO, label string) (dirtyApply, error) {
 	tracked, err := c.repo().DirtyTracked()
 	if err != nil {
-		return func() {}, err
+		return nil, err
 	}
-	return handleDirtyEntries(c, label, tracked)
+	return decideDirtyEntries(c, label, tracked)
 }
 
-// handleDirtyEntries is handleDirtyTree with the working-tree scan already
+// decideDirtyEntries is decideDirtyTree with the working-tree scan already
 // done -- tracked is DirtyTracked's output. Callers that fetch the status
 // concurrently with their other pre-picker reads (branch, switch) use this so
 // the scan isn't serialised behind them; everyone else goes through
-// handleDirtyTree.
-func handleDirtyEntries(c *cmdIO, label string, tracked []git.Entry) (cleanup func(), err error) {
+// decideDirtyTree.
+func decideDirtyEntries(c *cmdIO, label string, tracked []git.Entry) (dirtyApply, error) {
 	noop := func() {}
+	nothing := func() (func(), error) { return noop, nil }
 	if len(tracked) == 0 {
-		return noop, nil
+		return nothing, nil
 	}
 
 	// If the plan can't be read, the discard option is simply not offered
@@ -75,31 +84,44 @@ func handleDirtyEntries(c *cmdIO, label string, tracked []git.Entry) (cleanup fu
 
 	selected, err := c.sel().Select("Uncommitted changes -- what now?", options)
 	if err != nil {
-		return noop, err
+		return nil, err
 	}
 	switch {
 	case selected == options[0]:
 		// choosing abort and pressing escape are the same decision
-		return noop, ui.ErrCancelled
+		return nil, ui.ErrCancelled
 	case len(options) > 2 && selected == options[2]:
-		if err := plan.Discard(c.repo(), discardOpts); err != nil {
+		return func() (func(), error) {
+			if err := plan.Discard(c.repo(), discardOpts); err != nil {
+				return noop, err
+			}
+			fmt.Fprintf(c.out(), "Discarded %d file(s).\n", plan.Count(discardOpts))
+			return noop, nil
+		}, nil
+	}
+
+	return func() (func(), error) {
+		stashMsg := fmt.Sprintf("gitgum %s auto-stash", label)
+		if err := c.repo().StashPush(stashMsg); err != nil {
 			return noop, err
 		}
-		fmt.Fprintf(c.out(), "Discarded %d file(s).\n", plan.Count(discardOpts))
-		return noop, nil
-	}
-
-	stashMsg := fmt.Sprintf("gitgum %s auto-stash", label)
-	if err := c.repo().StashPush(stashMsg); err != nil {
-		return noop, err
-	}
-
-	return func() {
-		if err := c.repo().StashPopIndex(); err != nil {
-			fmt.Fprintf(c.err(), "warning: %v\n", err)
-			fmt.Fprintf(c.err(), "your changes are still in the stash (%q); resolve and run `git stash pop --index` manually\n", stashMsg)
-		}
+		return func() {
+			if err := c.repo().StashPopIndex(); err != nil {
+				fmt.Fprintf(c.err(), "warning: %v\n", err)
+				fmt.Fprintf(c.err(), "your changes are still in the stash (%q); resolve and run `git stash pop --index` manually\n", stashMsg)
+			}
+		}, nil
 	}, nil
+}
+
+// handleDirtyTree asks and applies in one step, for callers with no cancel
+// point between the question and the operation.
+func handleDirtyTree(c *cmdIO, label string) (cleanup func(), err error) {
+	apply, err := decideDirtyTree(c, label)
+	if err != nil {
+		return func() {}, err
+	}
+	return apply()
 }
 
 // maxDirtyPromptLines keeps a rebase touching hundreds of files from pushing

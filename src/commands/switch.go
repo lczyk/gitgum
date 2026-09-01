@@ -96,11 +96,13 @@ func (s *SwitchCommand) Execute(args []string) error {
 	}
 	fmt.Fprintln(s.out(), statusLine)
 
-	cleanup, err := handleDirtyEntries(&s.cmdIO, "switch", dirty)
+	// Asked here, where the listing is what you are reading, but applied only
+	// once a branch is picked -- backing out of the picker must leave a
+	// discard unperformed.
+	applyDirty, err := decideDirtyEntries(&s.cmdIO, "switch", dirty)
 	if err != nil {
 		return err
 	}
-	defer cleanup()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -124,6 +126,12 @@ func (s *SwitchCommand) Execute(args []string) error {
 		}
 		return err
 	}
+
+	cleanup, err := applyDirty()
+	if err != nil {
+		return err
+	}
+	defer cleanup()
 
 	if err := s.applySelection(selected); err != nil {
 		return err

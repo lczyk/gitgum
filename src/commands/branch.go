@@ -47,11 +47,11 @@ func (b *BranchCommand) Execute(args []string) error {
 	}
 	fmt.Fprintln(b.out(), statusLine)
 
-	cleanup, err := handleDirtyEntries(&b.cmdIO, "branch", dirty)
+	// Applied only once the new branch is fully specified -- see switch.
+	applyDirty, err := decideDirtyEntries(&b.cmdIO, "branch", dirty)
 	if err != nil {
 		return err
 	}
-	defer cleanup()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -101,6 +101,12 @@ func (b *BranchCommand) Execute(args []string) error {
 	if r.BranchExists(name) {
 		return fmt.Errorf("branch '%s' already exists; use `gg switch` to switch to it", name)
 	}
+
+	cleanup, err := applyDirty()
+	if err != nil {
+		return err
+	}
+	defer cleanup()
 
 	create := r.CheckoutNewBranch
 	if sp.remote != "" {

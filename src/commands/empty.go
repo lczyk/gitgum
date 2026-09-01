@@ -39,11 +39,10 @@ func (e *EmptyCommand) Execute(args []string) error {
 		}
 	}
 
-	cleanup, err := handleDirtyTree(&e.cmdIO, "empty")
+	applyDirty, err := decideDirtyTree(&e.cmdIO, "empty")
 	if err != nil {
 		return err
 	}
-	defer cleanup()
 
 	// Asked before the commit exists, not after. Cancelling here then has
 	// nothing to undo -- where the old order created the commit first and left
@@ -54,6 +53,12 @@ func (e *EmptyCommand) Execute(args []string) error {
 			return err
 		}
 	}
+
+	cleanup, err := applyDirty()
+	if err != nil {
+		return err
+	}
+	defer cleanup()
 
 	if err := r.CommitEmpty("chore: empty commit"); err != nil {
 		return fmt.Errorf("creating empty commit: %w", err)

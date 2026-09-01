@@ -6,9 +6,33 @@ import (
 
 	"github.com/lczyk/assert"
 	"github.com/lczyk/assert/require"
+	"github.com/lczyk/gitgum/internal/dirty"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
+	"github.com/lczyk/gitgum/internal/ui"
 )
+
+// Same as switch: escaping the branch picker after choosing discard must leave
+// the working tree untouched.
+func TestBranchCommand_Execute_DiscardWaitsForSelection(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.WriteFile(t, dir, "README.md", "edited\n")
+
+	var buf strings.Builder
+	stub := &stubSelector{
+		selectAnswers: []string{discardLabel(
+			dirty.Plan{Tracked: []string{"README.md"}},
+			dirty.Options{Tracked: true, Untracked: true})},
+		selectErrs: []error{nil, ui.ErrCancelled},
+	}
+	cmd := &BranchCommand{cmdIO: cmdIO{Out: &buf, Err: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	err := cmd.Execute(nil)
+	assert.ErrorIs(t, err, ui.ErrCancelled)
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "status", "--porcelain")), "M README.md")
+	assert.That(t, !strings.Contains(buf.String(), "Discarded"), "nothing was discarded")
+}
 
 func TestBranchCommand_NotInGitRepo(t *testing.T) {
 	t.Parallel()
