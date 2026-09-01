@@ -132,6 +132,15 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 			return err
 		}
 		if !confirmed {
+			// Still a checkout, so the working tree gets the same guard the
+			// reset path below gets -- git would refuse to carry the changes
+			// over, and refusing is not the answer the prompt can offer.
+			cleanup, err := handleDirtyTree(&c.cmdIO, "checkout-pr")
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+
 			if err := c.repo().Checkout(branchName); err != nil {
 				return fmt.Errorf("checking out existing branch '%s': %w", branchName, err)
 			}

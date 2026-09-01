@@ -85,3 +85,28 @@ func TestCheckoutPRCommand_ResetExistingBranch_DeclineStashAborts(t *testing.T) 
 	fileNotExists(t, dir, "pr.txt") // no reset happened
 	fileContent(t, dir, "README.md", "local edit worth keeping\n")
 }
+
+// Declining the reset still checks the branch out, so it gets the same
+// working-tree guard the reset path has -- the changes ride along in the stash
+// rather than making git refuse the checkout.
+func TestCheckoutPRCommand_DeclineReset_StashesDirtyTree(t *testing.T) {
+	t.Parallel()
+	dir := prRepoWithStaleBranch(t)
+	temp_repo.WriteFile(t, dir, "README.md", "local edit worth keeping\n")
+
+	var out bytes.Buffer
+	// Reset the branch: no. Then pick the stash row on the dirty prompt.
+	stub := &stubSelector{
+		selectAnswers:  []string{"PR #1 (head)", dirtyStashOption("checkout-pr")},
+		confirmAnswers: []bool{false},
+	}
+	cmd := &CheckoutPRCommand{cmdIO: cmdIO{Out: &out, UI: stub, Repo: git.Repo{Dir: dir}}}
+	require.NoError(t, cmd.Execute(nil))
+
+	require.Equal(t, len(stub.selectCalls), 2)
+	assert.ContainsString(t, stub.selectCalls[1].Options[1], "run checkout-pr")
+
+	assert.Equal(t, currentBranchIn(t, dir), "pr/origin/1")
+	fileNotExists(t, dir, "pr.txt") // declined, so the branch stays stale
+	fileContent(t, dir, "README.md", "local edit worth keeping\n")
+}
