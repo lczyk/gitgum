@@ -146,7 +146,9 @@ func isVersionTokenChar(b byte) bool {
 
 // pickVersionEdits asks the user which mentions (if any) the release should
 // auto-update via plain string replace. Returns the chosen mentions, or nil
-// if the picker was aborted (the release continues without auto-edits).
+// if the picker was aborted -- backing out skips the auto-edits, as the prompt
+// says, rather than abandoning a release whose working tree has already been
+// stashed or discarded.
 func pickVersionEdits(sel ui.Selector, mentions []versionMention, current string) ([]versionMention, error) {
 	if len(mentions) == 0 {
 		return nil, nil
@@ -164,6 +166,9 @@ func pickVersionEdits(sel ui.Selector, mentions []versionMention, current string
 	)
 	selected, err := sel.MultiSelect(prompt, options)
 	if err != nil {
+		if errors.Is(err, ui.ErrCancelled) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	picks := make([]versionMention, 0, len(selected))

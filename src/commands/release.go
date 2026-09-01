@@ -138,6 +138,9 @@ func (r *ReleaseCommand) Execute(args []string) error {
 		if err != nil {
 			return err
 		}
+		if len(mentions) > 0 && len(picks) == 0 {
+			fmt.Fprintln(r.out(), "  no mentions updated")
+		}
 		editedPaths, err = applyVersionEdits(root, picks, current, next)
 		if err != nil {
 			return err

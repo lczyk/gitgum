@@ -7,6 +7,7 @@ import (
 
 	"github.com/lczyk/assert"
 	"github.com/lczyk/assert/require"
+	"github.com/lczyk/gitgum/internal/ui"
 )
 
 func TestContainsVersionToken(t *testing.T) {
@@ -202,6 +203,18 @@ func TestPickVersionEdits_PickSubset(t *testing.T) {
 	assert.Equal(t, len(picks), 1)
 	assert.Equal(t, picks[0].path, "Cargo.toml")
 	assert.Equal(t, picks[0].line, 3)
+}
+
+// Backing out of the mention picker means "skip the auto-edits", as the prompt
+// says -- not "abort the release", which by then would strand a working tree
+// that was already stashed or discarded for it.
+func TestPickVersionEdits_AbortSkipsEdits(t *testing.T) {
+	mentions := []versionMention{{path: "Cargo.toml", line: 3, text: `version = "1.0.0"`}}
+	stub := &stubSelector{multiSelectErrs: []error{ui.ErrCancelled}}
+
+	picks, err := pickVersionEdits(stub, mentions, "1.0.0")
+	require.NoError(t, err)
+	assert.Equal(t, len(picks), 0)
 }
 
 func TestPickVersionEdits_PickNothing(t *testing.T) {

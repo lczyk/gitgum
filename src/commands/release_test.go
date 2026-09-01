@@ -5,11 +5,52 @@ import (
 	"path/filepath"
 	"testing"
 
+	"strings"
+
 	"github.com/lczyk/assert"
 	"github.com/lczyk/assert/require"
+	"github.com/lczyk/gitgum/internal/dirty"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
+	"github.com/lczyk/gitgum/internal/ui"
 )
+
+func readFileIn(t *testing.T, dir, name string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, name))
+	require.NoError(t, err)
+	return string(data)
+}
+
+// The mention picker is the last prompt of a release, and it comes after the
+// working tree has already been discarded for it -- so escaping it skips the
+// auto-edits and the release still lands.
+func TestReleaseCommand_Execute_MentionPickerAbortStillReleases(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.WriteFile(t, dir, "VERSION", "1.0.0\n")
+	temp_repo.WriteFile(t, dir, "Cargo.toml", "version = \"1.0.0\"\n")
+	temp_repo.RunGit(t, dir, "add", "VERSION", "Cargo.toml")
+	temp_repo.RunGit(t, dir, "commit", "-m", "chore: version")
+	temp_repo.WriteFile(t, dir, "README.md", "edited\n")
+
+	var out strings.Builder
+	stub := &stubSelector{
+		selectAnswers: []string{discardLabel(
+			dirty.Plan{Tracked: []string{"README.md"}},
+			dirty.Options{Tracked: true, Untracked: true})},
+		multiSelectErrs: []error{ui.ErrCancelled},
+	}
+	cmd := &ReleaseCommand{cmdIO: cmdIO{Out: &out, Err: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+	cmd.Args.Bump = "patch"
+
+	require.NoError(t, cmd.Execute(nil))
+	assert.ContainsString(t, out.String(), "no mentions updated")
+	assert.ContainsString(t, out.String(), "Tagged v1.0.1")
+	// the skipped mention is untouched, and the bump itself still landed
+	assert.Equal(t, readFileIn(t, dir, "Cargo.toml"), "version = \"1.0.0\"\n")
+	assert.Equal(t, readFileIn(t, dir, "VERSION"), "1.0.1\n")
+}
 
 func TestParseSemver(t *testing.T) {
 	tests := []struct {

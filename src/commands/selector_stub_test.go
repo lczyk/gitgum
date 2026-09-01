@@ -23,6 +23,8 @@ type stubSelector struct {
 	// confirmErrs does the same for Confirm, so a cancelled yes/no prompt can
 	// be driven as well as a cancelled picker.
 	confirmErrs []error
+	// multiSelectErrs likewise for MultiSelect.
+	multiSelectErrs []error
 
 	selectCalls      []selectCall
 	multiSelectCalls []selectCall
@@ -83,6 +85,11 @@ func (s *stubSelector) nextSelectErr() error {
 
 func (s *stubSelector) MultiSelect(prompt string, options []string) ([]string, error) {
 	s.multiSelectCalls = append(s.multiSelectCalls, selectCall{Prompt: prompt, Options: options})
+	if len(s.multiSelectErrs) > 0 {
+		err := s.multiSelectErrs[0]
+		s.multiSelectErrs = s.multiSelectErrs[1:]
+		return nil, err
+	}
 	if len(s.multiSelectAnswers) == 0 {
 		return nil, fmt.Errorf("stubSelector: unexpected MultiSelect call %q", prompt)
 	}
