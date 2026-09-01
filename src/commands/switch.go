@@ -127,58 +127,79 @@ func (s *SwitchCommand) Execute(args []string) error {
 		return err
 	}
 
+	// Planned before the dirty answer is spent: a remote branch with no local
+	// counterpart still has a question to ask, and declining it cancels the
+	// switch.
+	act, err := s.planSelection(selected)
+	if err != nil {
+		return err
+	}
+
 	cleanup, err := applyDirty()
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
-	if err := s.applySelection(selected); err != nil {
-		return err
-	}
-	return nil
+	return act()
 }
 
-func (s *SwitchCommand) applySelection(selected string) error {
-	// Every landing ends the same way: be on the branch, then bring it up to
-	// date via the shared pull flow (fetch + offer to integrate, PR-aware). The
-	// HEAD row is just the case where the checkout is a no-op -- you're already
-	// there -- so it goes straight to the update.
+// planSelection resolves what the picked entry means and returns the action
+// that carries it out. Nothing it does touches the repo -- any question left to
+// ask is asked here, so a caller can hold back an irreversible step until the
+// switch is certain to happen.
+//
+// Every landing ends the same way: be on the branch, then bring it up to date
+// via the shared pull flow (fetch + offer to integrate, PR-aware). The HEAD row
+// is just the case where the checkout is a no-op -- you're already there -- so
+// it goes straight to the update.
+func (s *SwitchCommand) planSelection(selected string) (func() error, error) {
 	if strings.Contains(selected, currentBranchMarker) {
-		return s.pullCurrent()
+		return s.pullCurrent, nil
 	}
 
 	typ, name, err := parseBranchEntry(selected)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	switch typ {
 	case "local":
-		if err := s.checkoutBranch(name); err != nil {
-			return err
-		}
-		fmt.Fprintf(s.out(), "Switched to branch '%s'.\n", name)
-		return s.pullCurrent()
+		return s.planCheckout(name), nil
 	case "local/remote":
 		branch, ok := localRemoteBranch(name)
 		if !ok {
-			return fmt.Errorf("invalid local/remote branch format: %s", name)
+			return nil, fmt.Errorf("invalid local/remote branch format: %s", name)
 		}
+		return s.planCheckout(branch), nil
+	case "remote":
+		remoteParts := strings.SplitN(name, "/", 2)
+		if len(remoteParts) != 2 {
+			return nil, fmt.Errorf("invalid remote branch format: %s", name)
+		}
+		return s.planRemoteSelection(remoteParts[0], remoteParts[1])
+	default:
+		return nil, fmt.Errorf("unknown branch type: %s", typ)
+	}
+}
+
+func (s *SwitchCommand) planCheckout(branch string) func() error {
+	return func() error {
 		if err := s.checkoutBranch(branch); err != nil {
 			return err
 		}
 		fmt.Fprintf(s.out(), "Switched to branch '%s'.\n", branch)
 		return s.pullCurrent()
-	case "remote":
-		remoteParts := strings.SplitN(name, "/", 2)
-		if len(remoteParts) != 2 {
-			return fmt.Errorf("invalid remote branch format: %s", name)
-		}
-		return s.handleRemoteSelection(remoteParts[0], remoteParts[1])
-	default:
-		return fmt.Errorf("unknown branch type: %s", typ)
 	}
+}
+
+// applySelection plans and acts in one step, for callers holding nothing back.
+func (s *SwitchCommand) applySelection(selected string) error {
+	act, err := s.planSelection(selected)
+	if err != nil {
+		return err
+	}
+	return act()
 }
 
 // pullCurrent updates the branch currently checked out via the shared pull

@@ -207,6 +207,32 @@ func TestSwitchCommand_Execute_DiscardWaitsForSelection(t *testing.T) {
 	assert.That(t, !strings.Contains(buf.String(), "Discarded"), "nothing was discarded")
 }
 
+// The tracking-branch offer is the last question of a switch, and declining it
+// cancels -- so it has to be asked before the dirty answer is spent, not after.
+func TestSwitchCommand_Execute_DiscardWaitsForTrackingOffer(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.WriteFile(t, dir, "README.md", "edited\n")
+
+	var out, errBuf strings.Builder
+	stub := &stubSelector{
+		selectAnswers: []string{
+			discardLabel(
+				dirty.Plan{Tracked: []string{"README.md"}},
+				dirty.Options{Tracked: true, Untracked: true}),
+			"remote: origin/feature",
+		},
+		confirmAnswers: []bool{false}, // no, don't create the tracking branch
+	}
+	cmd := &SwitchCommand{cmdIO: cmdIO{Out: &out, Err: &errBuf, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	err := cmd.Execute(nil)
+	assert.ErrorIs(t, err, ui.ErrCancelled)
+	assert.ContainsString(t, errBuf.String(), "Not creating a local tracking branch")
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "status", "--porcelain")), "M README.md")
+	assert.That(t, !strings.Contains(out.String(), "Discarded"), "nothing was discarded")
+}
+
 // Same-name branch on a different remote must appear even when the current
 // branch is checked out. Regression: checkedOut["main"] was true (current
 // branch is checked out), but the checkedOut filter in streamRemoteBranches
