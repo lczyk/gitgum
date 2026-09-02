@@ -89,7 +89,7 @@ A branch with no upstream (a purely local branch) just reports there's nothing t
 
 ### `gitgum branch`
 
-Create a new branch and switch to it. Pick the start point from the same live picker `switch` uses -- including the current branch, and branches checked out in other worktrees -- then type the new name. Existing local branches are listed while you type, so a colliding name shows up before you commit to it; picking a remote branch as the start point creates the new branch with `--no-track`, so a later `gg push` won't target someone else's branch.
+Create a new branch and switch to it. Pick the start point from the same live picker `switch` uses -- including the current branch, and branches checked out in other worktrees -- then type the new name. Existing local branches are listed while you type, so a colliding name shows up before you commit to it; picking a remote branch, or a local branch that tracks one, fetches it first and cuts the new branch from the remote tip (not a possibly-stale local copy), with `--no-track` so a later `gg push` won't target someone else's branch.
 
 On a detached HEAD the picker offers `HEAD (detached at <sha>)` as a start point, which is how commits made there stop being unreachable. `gg switch` shows the same row but refuses it -- a detached HEAD is not a branch to switch to.
 
