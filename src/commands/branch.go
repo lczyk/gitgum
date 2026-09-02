@@ -124,8 +124,8 @@ func (b *BranchCommand) Execute(args []string) error {
 // names a remote-tracking ref ("origin/foo"), which has two consequences: the
 // ref wants a fetch first (it's as stale as the last one), and the new branch
 // must be created --no-track (it's someone else's branch, and git's
-// branch.autoSetupMerge default would silently adopt it as upstream). Local
-// start points carry no upstream to inherit, so neither applies.
+// branch.autoSetupMerge default would silently adopt it as upstream). Purely
+// local start points carry no upstream to inherit, so neither applies.
 type startPoint struct {
 	ref    string
 	remote string
@@ -146,18 +146,14 @@ func startPointFor(selected string) (startPoint, error) {
 			return startPoint{ref: short}, nil
 		}
 		return startPoint{ref: name}, nil
-	case "local/remote":
-		branch, ok := localRemoteBranch(name)
-		if !ok {
-			return startPoint{}, fmt.Errorf("invalid local/remote branch format: %s", name)
-		}
-		return startPoint{ref: branch}, nil
-	case "remote":
-		// Cut on the first '/' -- see localRemoteBranch for why that is the
-		// remote/branch boundary.
+	case "local/remote", "remote":
+		// Both cut from the remote-tracking ref: a local branch with an upstream
+		// is only as current as its last pull, and the remote tip is what you
+		// mean by "branch off main". Cut on the first '/' -- see
+		// localRemoteBranch for why that is the remote/branch boundary.
 		remote, branch, ok := strings.Cut(name, "/")
 		if !ok {
-			return startPoint{}, fmt.Errorf("invalid remote branch format: %s", name)
+			return startPoint{}, fmt.Errorf("invalid %s branch format: %s", typ, name)
 		}
 		return startPoint{ref: name, remote: remote, branch: branch}, nil
 	default:

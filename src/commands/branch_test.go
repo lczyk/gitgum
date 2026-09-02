@@ -260,9 +260,15 @@ func TestStartPointFor(t *testing.T) {
 		"local with slash": {selected: "local: feat/login", want: startPoint{ref: "feat/login"}},
 		"detached head":    {selected: "local: HEAD (detached at cf10b5f)", want: startPoint{ref: "cf10b5f"}},
 		// current branch carries the HEAD marker for search; it strips back off.
-		"current local":        {selected: "local: main (checked out here. HEAD)", want: startPoint{ref: "main"}},
-		"current local/remote": {selected: "local/remote: origin/main (checked out here. HEAD)", want: startPoint{ref: "main"}},
-		"local/remote":         {selected: "local/remote: origin/feat/login", want: startPoint{ref: "feat/login"}},
+		"current local": {selected: "local: main (checked out here. HEAD)", want: startPoint{ref: "main"}},
+		// a tracked local branch cuts from its remote-tracking ref, not the
+		// possibly-stale local one -- same as a bare remote row.
+		"current local/remote": {selected: "local/remote: origin/main (checked out here. HEAD)", want: startPoint{
+			ref: "origin/main", remote: "origin", branch: "main",
+		}},
+		"local/remote": {selected: "local/remote: origin/feat/login", want: startPoint{
+			ref: "origin/feat/login", remote: "origin", branch: "feat/login",
+		}},
 		"remote": {selected: "remote: origin/feat/login", want: startPoint{
 			ref: "origin/feat/login", remote: "origin", branch: "feat/login",
 		}},
