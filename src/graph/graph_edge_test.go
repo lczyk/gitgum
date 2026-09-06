@@ -122,13 +122,15 @@ func TestEdge_ConcurrentLayout(t *testing.T) {
 	want := strings.Join(graph.Render(graph.Layout(nodes, graph.Opt{}), graph.Style{}), "\n")
 	var wg sync.WaitGroup
 	for range 64 {
-		wg.Go(func() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			got := strings.Join(graph.Render(graph.Layout(nodes, graph.Opt{}), graph.Style{}), "\n")
 			// assert, not require: require's Fatalf calls runtime.Goexit, which
 			// only unwinds this goroutine -- the failure would go unreported and
 			// the test would pass. assert reports via Errorf, which is safe here.
 			assert.EqualLineByLine(t, got, want, "concurrent layout produced different output")
-		})
+		}()
 	}
 	wg.Wait()
 }

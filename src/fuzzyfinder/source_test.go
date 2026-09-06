@@ -96,22 +96,28 @@ func TestSliceSource_ConcurrentMutations(t *testing.T) {
 	var wg sync.WaitGroup
 
 	for range 4 {
-		wg.Go(func() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			for range 200 {
 				s.Add("item")
 			}
-		})
+		}()
 	}
-	wg.Go(func() {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 		for j := range 200 {
 			s.RemoveFunc(func(x string) bool { return x == "item" && j%3 == 0 })
 		}
-	})
-	wg.Go(func() {
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 		for range 200 {
 			_ = s.Snapshot()
 		}
-	})
+	}()
 	wg.Wait()
 
 	assert.That(t, s.Version() > 0, "some mutations occurred")
