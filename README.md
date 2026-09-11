@@ -71,7 +71,7 @@ gg completion --cd nu | save -f ~/.gitgum-cd.nu
 
 Every other command passes straight through the function. Without it, `cd (gg w)` does the same by hand, and [`gg doctor`](#gitgum-doctor) reports the function as missing.
 
-Commands can have a one-letter alias: `gg s` is `gg status`, `gg t` is `gg tree`, `gg w` is `gg worktree-switch`. Aliases are listed in `gg --help` next to their command, and the completions treat them like the full name (nushell excepted: `gg s` runs, but only `gg status` completes its sections).
+Commands can have a one-letter alias: `gg b` is `gg branch`, `gg p` is `gg push`, `gg s` is `gg status`, `gg t` is `gg tree`, `gg w` is `gg worktree-switch`. Aliases are listed in `gg --help` next to their command, and the completions treat them like the full name (nushell excepted: `gg s` runs, but only `gg status` completes its sections).
 
 ## Commands
 
