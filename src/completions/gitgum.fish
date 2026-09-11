@@ -1,5 +1,5 @@
 function __fish_gitgum_no_subcommand
-    not __fish_seen_subcommand_from clone switch branch checkout-pr add-remote completion status push pull tree diff doctor clean delete replay-list empty release worktree-switch w s
+    not __fish_seen_subcommand_from clone switch branch checkout-pr add-remote completion status push pull tree diff doctor clean delete replay-list empty release worktree-switch w s t
 end
 
 function __fish_gitgum_branches
@@ -39,9 +39,9 @@ complete -c __GITGUM_CMD__ -s v -l version -d 'Show version'
 complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from clone' -l depth -d 'Create a shallow clone with the given history depth'
 
 # tree flags
-complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from tree' -l since -d 'Limit to commits since <expr> (empty for all history)'
-complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from tree' -s a -l all -d 'Show the full history'
-complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from tree' -s f -l follow -d 'Follow mode: refresh every N seconds'
+complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from tree t' -l since -d 'Limit to commits since <expr> (empty for all history)'
+complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from tree t' -s a -l all -d 'Show the full history'
+complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from tree t' -s f -l follow -d 'Follow mode: refresh every N seconds'
 
 # diff flags
 complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from diff' -s m -l mode -d 'Lock to a diff level: work, index, untracked, head'

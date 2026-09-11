@@ -41,7 +41,7 @@ _gitgum_completion() {
             gitgum,pull)
                 cmd="gitgum_pull"
                 ;;
-            gitgum,tree)
+            gitgum,tree|gitgum,t)
                 cmd="gitgum_tree"
                 ;;
             gitgum,diff)

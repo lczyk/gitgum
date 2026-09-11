@@ -59,7 +59,7 @@ _gitgum() {
                         '(-h --help)'{-h,--help}'[Show help]' \
                         && ret=0
                     ;;
-                tree)
+                tree|t)
                     _arguments \
                         '--since[Limit to commits since <expr> (empty for all history)]:since:' \
                         '(-a --all)'{-a,--all}'[Show the full history]' \

@@ -40,7 +40,7 @@ type Options struct {
 	ReplayList commands.ReplayListCommand `command:"replay-list" description:"List commits on branch A since divergence from trunk B"`
 	Empty      commands.EmptyCommand      `command:"empty" description:"Create an empty commit and optionally push it"`
 	Release    commands.ReleaseCommand    `command:"release" description:"Bump VERSION (or latest tag), commit, and tag"`
-	Tree       commands.TreeCommand       `command:"tree" description:"Print a colored commit graph across all branches"`
+	Tree       commands.TreeCommand       `command:"tree" alias:"t" description:"Print a colored commit graph across all branches"`
 	Diff       commands.DiffCommand       `command:"diff" description:"Show working-tree diff with --compact-summary"`
 	Doctor     commands.DoctorCommand     `command:"doctor" description:"Diagnose known inconsistencies in the repo's remote/worktree layout"`
 	// Aliases are the one-letter forms the shell wrapper and completions know
