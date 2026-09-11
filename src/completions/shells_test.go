@@ -83,6 +83,8 @@ var bins = []binSpec{
 			{"status sections", []string{"status", ""}, []string{"all", "branch", "remote", "worktree", "changes", "head"}},
 			{"status alias sections", []string{"s", ""}, []string{"all", "branch", "remote", "worktree", "changes", "head"}},
 			{"tree alias flags", []string{"t", "--"}, []string{"--since", "--all", "--follow"}},
+			{"branch alias flags", []string{"b", "--"}, []string{"--help"}},
+			{"push alias flags", []string{"p", "--"}, []string{"--help"}},
 			{"completion shells", []string{"completion", ""}, []string{"bash", "fish", "zsh", "nu"}},
 			{"completion flags", []string{"completion", "--"}, []string{"--cd"}},
 			{"release bumps", []string{"release", ""}, []string{"patch", "minor", "major"}},

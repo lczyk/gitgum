@@ -1,5 +1,5 @@
 function __fish_gitgum_no_subcommand
-    not __fish_seen_subcommand_from clone switch branch checkout-pr add-remote completion status push pull tree diff doctor clean delete replay-list empty release worktree-switch w s t
+    not __fish_seen_subcommand_from clone switch branch checkout-pr add-remote completion status push pull tree diff doctor clean delete replay-list empty release worktree-switch w s t b p
 end
 
 function __fish_gitgum_branches

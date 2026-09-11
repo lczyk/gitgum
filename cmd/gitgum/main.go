@@ -28,12 +28,12 @@ const (
 type Options struct {
 	Clone      commands.CloneCommand      `command:"clone" description:"Clone a repository, applying gg doctor's naming rules"`
 	Switch     commands.SwitchCommand     `command:"switch" description:"Switch to a branch interactively"`
-	Branch     commands.BranchCommand     `command:"branch" description:"Create a new branch off an existing one and switch to it"`
+	Branch     commands.BranchCommand     `command:"branch" alias:"b" description:"Create a new branch off an existing one and switch to it"`
 	CheckoutPR commands.CheckoutPRCommand `command:"checkout-pr" description:"Checkout a pull request from a remote repository"`
 	AddRemote  commands.AddRemoteCommand  `command:"add-remote" description:"Add a remote, applying gg doctor's naming rules"`
 	Completion commands.CompletionCommand `command:"completion" description:"Output shell completion script"`
 	Status     commands.StatusCommand     `command:"status" alias:"s" description:"Show the status of the current git repository"`
-	Push       commands.PushCommand       `command:"push" description:"Push the current branch to a remote repository"`
+	Push       commands.PushCommand       `command:"push" alias:"p" description:"Push the current branch to a remote repository"`
 	Pull       commands.PullCommand       `command:"pull" description:"Fetch and integrate the current branch's upstream"`
 	Clean      commands.CleanCommand      `command:"clean" description:"Discard working tree changes and untracked files"`
 	Delete     commands.DeleteCommand     `command:"delete" description:"Delete a local branch and optionally its remote tracking branch"`

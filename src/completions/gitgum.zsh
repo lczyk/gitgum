@@ -54,7 +54,7 @@ _gitgum() {
                         '(-h --help)'{-h,--help}'[Show help]' \
                         && ret=0
                     ;;
-                switch|branch|checkout-pr|add-remote|push|pull|doctor|delete|empty)
+                switch|branch|b|checkout-pr|add-remote|push|p|pull|doctor|delete|empty)
                     _arguments \
                         '(-h --help)'{-h,--help}'[Show help]' \
                         && ret=0

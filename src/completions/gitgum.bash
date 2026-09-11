@@ -20,7 +20,7 @@ _gitgum_completion() {
             gitgum,switch)
                 cmd="gitgum_switch"
                 ;;
-            gitgum,branch)
+            gitgum,branch|gitgum,b)
                 cmd="gitgum_branch"
                 ;;
             gitgum,checkout-pr)
@@ -35,7 +35,7 @@ _gitgum_completion() {
             gitgum,status|gitgum,s)
                 cmd="gitgum_status"
                 ;;
-            gitgum,push)
+            gitgum,push|gitgum,p)
                 cmd="gitgum_push"
                 ;;
             gitgum,pull)
