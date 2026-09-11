@@ -68,7 +68,7 @@ gg completion --cd nu | save -f ~/.gitgum-cd.nu
 
 Every other command passes straight through the function. Without it, `cd (gg w)` does the same by hand, and [`gg doctor`](#gitgum-doctor) reports the function as missing.
 
-Commands can have a one-letter alias: `gg s` is `gg status`, `gg w` is `gg worktree-switch`. Aliases are listed in `gg --help` next to their command, and the completions treat them like the full name (nushell excepted: `gg s` runs, but only `gg status` completes its sections).
+Commands can have a one-letter alias: `gg s` is `gg status`, `gg t` is `gg tree`, `gg w` is `gg worktree-switch`. Aliases are listed in `gg --help` next to their command, and the completions treat them like the full name (nushell excepted: `gg s` runs, but only `gg status` completes its sections).
 
 ## Commands
 
@@ -139,7 +139,7 @@ On a detached HEAD, `head` names the commit and every ref that contains it -- lo
 
 Pass `--flat` for a porcelain list instead of the change tree. Pass `--follow` / `-f` (optional `=N` interval, default 2s, min 1) to refresh the selected sections in an alt-screen with `j/k g/G PgUp/PgDn` scroll and `q` to exit; no remote ops run in follow mode.
 
-### `gitgum tree`
+### `gitgum tree` (`gg t`)
 
 Print a colored commit graph across all branches, oldest at the top, so the checked-out commit ends up at the bottom (right above the next prompt) and stays visible after the output scrolls. Roughly:
 ```bash
