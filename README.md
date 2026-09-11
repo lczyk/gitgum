@@ -50,6 +50,26 @@ eval "$(gitgum completion zsh)"
 gitgum completion nu | save -f ~/.gitgum-completions.nu
 ```
 
+### The `cd` wrapper
+
+[`worktree-switch`](#gitgum-worktree-switch-n-gg-w) needs one more line. A child process can't `cd` its parent, so the binary only prints the path and a shell function named after the binary does the `cd`. `gg completion --cd <shell>` prints that function, and nothing else -- it is separate from the completions so sourcing them never redefines the command:
+
+```bash
+# Fish
+gg completion --cd fish | source
+
+# Bash / Zsh
+eval "$(gg completion --cd bash)"
+eval "$(gg completion --cd zsh)"
+
+# Nushell (save next to the completions, then `source` it from config.nu)
+gg completion --cd nu | save -f ~/.gitgum-cd.nu
+```
+
+Every other command passes straight through the function. Without it, `cd (gg w)` does the same by hand, and [`gg doctor`](#gitgum-doctor) reports the function as missing.
+
+Commands can have a one-letter alias: `gg s` is `gg status`, `gg w` is `gg worktree-switch`. Aliases are listed in `gg --help` next to their command, and the completions treat them like the full name (nushell excepted: `gg s` runs, but only `gg status` completes its sections).
+
 ## Commands
 
 ### `gitgum clone URL [DIR]`
@@ -93,7 +113,7 @@ Create a new branch and switch to it. Pick the start point from the same live pi
 
 On a detached HEAD the picker offers `HEAD (detached at <sha>)` as a start point, which is how commits made there stop being unreachable. `gg switch` shows the same row but refuses it -- a detached HEAD is not a branch to switch to.
 
-### `gitgum status`
+### `gitgum status` (`gg s`)
 
 Print one or more status sections, named by a comma-separated argument:
 
@@ -189,9 +209,18 @@ Bump `VERSION` (or fall back to the latest `vX.Y.Z` tag), commit, and create an 
 
 Before committing, scans every tracked text file for lines mentioning the current version (line contains the word "version" + a boundaried token match), and offers them in a multi-select picker. Picked lines get a plain string-replace bump (no language-specific parsing) and ride in the release commit. Esc / no picks skips the auto-edits; the release proceeds either way. Binary files and files larger than 4 MiB are soft-skipped.
 
-### `gitgum completion fish|bash|zsh|nu`
+### `gitgum worktree-switch [N]` (`gg w`)
 
-Print the shell completion script for the given shell.
+`cd` between the worktrees of the current repo. Worktrees are numbered by [`gg doctor`](#gitgum-doctor)'s naming rule -- `<repo>` is 1, `<repo>-N` is N -- and only worktrees that follow it, sitting beside the main one, count; anything else (a bare entry, a pruned one, a worktree named after its branch) is ignored. `<repo>` is the forge repo name when the remotes agree on one, else the main worktree's own directory name.
+
+- `gg w 3` -- go to `<repo>-3`; an unknown number errors, listing the ones that exist
+- `gg w` -- cycle to the next number, wrapping from the highest back to 1; from a directory that isn't a numbered worktree it lands on 1
+
+The binary itself only prints the chosen path on stdout (a subdirectory of a worktree counts as that worktree); the `cd` happens in the [shell function](#the-cd-wrapper) `gg completion --cd` prints. Nothing is stashed or checked out -- it's a `cd`.
+
+### `gitgum completion [--cd] fish|bash|zsh|nu`
+
+Print the shell completion script for the given shell, or with `--cd` the [wrapper function](#the-cd-wrapper) that lets `worktree-switch` change directory.
 
 ### `gitgum doctor`
 
@@ -204,6 +233,7 @@ Diagnose known inconsistencies in the repo's remote / worktree layout and branch
 - `prunable-worktree` -- a registered worktree whose directory is gone (fixable by pruning).
 - `gone-upstream` -- a branch whose upstream was deleted on the remote (warning).
 - `duplicate-remote` -- two remotes pointing at the same url (warning).
+- `cd-wrapper` -- the [shell function](#the-cd-wrapper) behind `gg w` is not installed in the calling shell (fixable; the fix names your `$SHELL`). Detected via a marker the function sets, so this is about the shell you ran doctor from, not the repo.
 
 ## `fuzzyfinder` (`ff`) — the standalone CLI
 
