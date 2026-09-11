@@ -10,6 +10,7 @@ import (
 
 type CompletionCommand struct {
 	cmdIO
+	Cd   bool `long:"cd" description:"Print the cd wrapper for worktree-switch instead of the completions"`
 	Args struct {
 		Shell string `positional-arg-name:"shell" description:"Shell type (bash, fish, zsh, or nu)"`
 	} `positional-args:"yes" required:"yes"`
@@ -23,7 +24,11 @@ func (c *CompletionCommand) Execute(args []string) error {
 		cmdName = filepath.Base(os.Args[0])
 	}
 
-	result, err := completions.Render(c.Args.Shell, cmdName)
+	render := completions.Render
+	if c.Cd {
+		render = completions.RenderCd
+	}
+	result, err := render(c.Args.Shell, cmdName)
 	if err != nil {
 		return fmt.Errorf("rendering completion: %w", err)
 	}

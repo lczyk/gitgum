@@ -47,6 +47,7 @@ module completions {
 
   export extern "__GITGUM_CMD__ completion" [
     shell: string@"nu-complete gitgum shell" # Shell type
+    --cd                     # Print the cd wrapper for worktree-switch instead
     --help(-h)               # Show help
   ]
 
@@ -108,6 +109,12 @@ module completions {
 
   export extern "__GITGUM_CMD__ release" [
     bump: string@"nu-complete gitgum bump" # Version bump level
+    --help(-h)               # Show help
+  ]
+
+  # Only prints the path; `completion --cd nu` has the command that cds.
+  export extern "__GITGUM_CMD__ worktree-switch" [
+    n?: int                  # Worktree number (1 is <repo>, N is <repo>-N); omit to cycle
     --help(-h)               # Show help
   ]
 

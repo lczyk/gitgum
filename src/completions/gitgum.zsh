@@ -23,6 +23,7 @@ _gitgum() {
                 completion)
                     _arguments \
                         '1:shell:((bash\:"Bourne Again SHell" fish\:"Friendly Interactive SHell" zsh\:"Z shell" nu\:"Nushell"))' \
+                        '--cd[Print the cd wrapper for worktree-switch instead]' \
                         '(-h --help)'{-h,--help}'[Show help]' \
                         && ret=0
                     ;;
@@ -47,6 +48,12 @@ _gitgum() {
                         '1:bump:(patch minor major)' \
                         && ret=0
                     ;;
+                worktree-switch|w)
+                    _arguments \
+                        '1:worktree:_gitgum_worktree_numbers' \
+                        '(-h --help)'{-h,--help}'[Show help]' \
+                        && ret=0
+                    ;;
                 switch|branch|checkout-pr|add-remote|push|pull|doctor|delete|empty)
                     _arguments \
                         '(-h --help)'{-h,--help}'[Show help]' \
@@ -67,7 +74,7 @@ _gitgum() {
                         '(-h --help)'{-h,--help}'[Show help]' \
                         && ret=0
                     ;;
-                status)
+                status|s)
                     _arguments \
                         '1:sections:(all branch remote worktree changes head)' \
                         '(-a --all)'{-a,--all}'[Render every section]' \
@@ -103,6 +110,7 @@ _gitgum_commands() {
         'replay-list:List commits on branch A since divergence from trunk B'
         'empty:Create an empty commit and optionally push it'
         'release:Bump VERSION (or latest tag), commit, and tag'
+        'worktree-switch:cd to worktree N, or cycle to the next one'
     )
     _describe -t commands 'command' commands
 }
@@ -111,6 +119,12 @@ _gitgum_branches() {
     local -a branches
     branches=(${(f)"$(git for-each-ref --format='%(refname:short)' refs/heads refs/remotes 2>/dev/null)"})
     _describe -t branches 'branch' branches
+}
+
+_gitgum_worktree_numbers() {
+    local -a numbers
+    numbers=(${(f)"$(git worktree list --porcelain 2>/dev/null | awk '/^worktree /{p=substr($0,10); n=split(p,a,"/"); b=a[n]; if(m==""){m=b; print 1; next} if(index(b,m"-")==1){s=substr(b,length(m)+2); if(s ~ /^[0-9]+$/) print s+0}}')"})
+    _describe -t numbers 'worktree' numbers
 }
 
 if [ "$funcstack[1]" = "_gitgum" ]; then

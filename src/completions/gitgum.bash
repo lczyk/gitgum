@@ -32,7 +32,7 @@ _gitgum_completion() {
             gitgum,completion)
                 cmd="gitgum_completion"
                 ;;
-            gitgum,status)
+            gitgum,status|gitgum,s)
                 cmd="gitgum_status"
                 ;;
             gitgum,push)
@@ -65,12 +65,15 @@ _gitgum_completion() {
             gitgum,release)
                 cmd="gitgum_release"
                 ;;
+            gitgum,worktree-switch|gitgum,w)
+                cmd="gitgum_worktree_switch"
+                ;;
         esac
     done
 
     case "${cmd}" in
         gitgum)
-            opts="-h --help -v --version clone switch branch checkout-pr add-remote completion status push pull tree diff doctor clean delete replay-list empty release"
+            opts="-h --help -v --version clone switch branch checkout-pr add-remote completion status push pull tree diff doctor clean delete replay-list empty release worktree-switch"
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
@@ -95,7 +98,7 @@ _gitgum_completion() {
             return 0
             ;;
         gitgum_completion)
-            opts="bash fish zsh nu -h --help"
+            opts="bash fish zsh nu --cd -h --help"
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
@@ -118,6 +121,12 @@ _gitgum_completion() {
         gitgum_release)
             opts="patch minor major -h --help"
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        gitgum_worktree_switch)
+            local numbers
+            numbers="$(git worktree list --porcelain 2>/dev/null | awk '/^worktree /{p=substr($0,10); n=split(p,a,"/"); b=a[n]; if(m==""){m=b; print 1; next} if(index(b,m"-")==1){s=substr(b,length(m)+2); if(s ~ /^[0-9]+$/) print s+0}}') -h --help"
+            COMPREPLY=( $(compgen -W "${numbers}" -- "${cur}") )
             return 0
             ;;
     esac

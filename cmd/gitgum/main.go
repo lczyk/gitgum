@@ -32,7 +32,7 @@ type Options struct {
 	CheckoutPR commands.CheckoutPRCommand `command:"checkout-pr" description:"Checkout a pull request from a remote repository"`
 	AddRemote  commands.AddRemoteCommand  `command:"add-remote" description:"Add a remote, applying gg doctor's naming rules"`
 	Completion commands.CompletionCommand `command:"completion" description:"Output shell completion script"`
-	Status     commands.StatusCommand     `command:"status" description:"Show the status of the current git repository"`
+	Status     commands.StatusCommand     `command:"status" alias:"s" description:"Show the status of the current git repository"`
 	Push       commands.PushCommand       `command:"push" description:"Push the current branch to a remote repository"`
 	Pull       commands.PullCommand       `command:"pull" description:"Fetch and integrate the current branch's upstream"`
 	Clean      commands.CleanCommand      `command:"clean" description:"Discard working tree changes and untracked files"`
@@ -43,7 +43,9 @@ type Options struct {
 	Tree       commands.TreeCommand       `command:"tree" description:"Print a colored commit graph across all branches"`
 	Diff       commands.DiffCommand       `command:"diff" description:"Show working-tree diff with --compact-summary"`
 	Doctor     commands.DoctorCommand     `command:"doctor" description:"Diagnose known inconsistencies in the repo's remote/worktree layout"`
-	WorktreeSwitch commands.WorktreeSwitchCommand `command:"worktree-switch" description:"Print the path of worktree N (or the next one) for the shell wrapper to cd into"`
+	// Aliases are the one-letter forms the shell wrapper and completions know
+	// about too; keep the three in step.
+	WorktreeSwitch commands.WorktreeSwitchCommand `command:"worktree-switch" alias:"w" description:"Print the path of worktree N (or the next one) for the shell wrapper to cd into"`
 }
 
 // isFollowArg reports whether an arg is -f / --follow, optionally with an =value.

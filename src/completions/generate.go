@@ -18,6 +18,18 @@ var gitgumZsh string
 //go:embed gitgum.nu
 var gitgumNu string
 
+//go:embed cd.bash
+var cdBash string
+
+//go:embed cd.fish
+var cdFish string
+
+//go:embed cd.zsh
+var cdZsh string
+
+//go:embed cd.nu
+var cdNu string
+
 //go:embed fuzzyfinder.bash
 var fuzzyfinderBash string
 
@@ -39,6 +51,13 @@ var gitgumTemplates = map[string]string{
 	"nu":   gitgumNu,
 }
 
+var cdTemplates = map[string]string{
+	"bash": cdBash,
+	"fish": cdFish,
+	"zsh":  cdZsh,
+	"nu":   cdNu,
+}
+
 var fuzzyfinderTemplates = map[string]string{
 	"bash": fuzzyfinderBash,
 	"fish": fuzzyfinderFish,
@@ -58,6 +77,13 @@ func render(templates map[string]string, shell, cmdName string) (string, error) 
 // substituted in place of the placeholder.
 func Render(shell, cmdName string) (string, error) {
 	return render(gitgumTemplates, shell, cmdName)
+}
+
+// RenderCd returns the shell function that makes `<cmdName> worktree-switch`
+// (and its `w` alias) change the shell's directory. It is kept apart from the
+// completion script so sourcing completions never redefines the command.
+func RenderCd(shell, cmdName string) (string, error) {
+	return render(cdTemplates, shell, cmdName)
 }
 
 // RenderFuzzyfinder returns the fuzzyfinder completion script for the given

@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"io"
+	"os"
 	"sort"
 
 	"github.com/lczyk/gitgum/internal/doctor"
@@ -21,7 +22,9 @@ func (d *DoctorCommand) Execute(args []string) error {
 	if err := r.CheckInRepo(); err != nil {
 		return err
 	}
-	renderFindings(d.out(), doctor.Diagnose(r))
+	findings := doctor.Diagnose(r)
+	findings = append(findings, checkCdWrapper(os.Getenv)...)
+	renderFindings(d.out(), findings)
 	return nil
 }
 

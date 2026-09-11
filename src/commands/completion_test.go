@@ -15,6 +15,7 @@ func TestCompletionCommand_Execute(t *testing.T) {
 	cases := map[string]struct {
 		cmdName string
 		shell   string
+		cd      bool
 		wantErr string // non-empty: expected error pattern; empty: expect success
 	}{
 		"bash with gitgum":      {cmdName: "gitgum", shell: "bash"},
@@ -22,6 +23,7 @@ func TestCompletionCommand_Execute(t *testing.T) {
 		"zsh with gg":           {cmdName: "gg", shell: "zsh"},
 		"invalid shell":         {shell: "invalid", wantErr: "invalid shell type 'invalid'"},
 		"default cmd name":      {shell: "bash"},
+		"cd wrapper":            {cmdName: "gg", shell: "fish", cd: true},
 	}
 
 	for name, tt := range cases {
@@ -29,6 +31,7 @@ func TestCompletionCommand_Execute(t *testing.T) {
 			var buf strings.Builder
 			cmd := &CompletionCommand{cmdIO: cmdIO{Out: &buf}, cmdName: tt.cmdName}
 			cmd.Args.Shell = tt.shell
+			cmd.Cd = tt.cd
 
 			err := cmd.Execute(nil)
 			output := buf.String()
@@ -43,6 +46,8 @@ func TestCompletionCommand_Execute(t *testing.T) {
 				} else {
 					assert.ContainsString(t, output, filepath.Base(os.Args[0]))
 				}
+				// the wrapper is only in the --cd output.
+				assert.Equal(t, strings.Contains(output, "GITGUM_CD_WRAPPER"), tt.cd)
 			}
 		})
 	}

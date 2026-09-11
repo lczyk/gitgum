@@ -57,7 +57,7 @@ var bins = []binSpec{
 			// subcommands
 			"clone", "switch", "branch", "checkout-pr", "add-remote", "completion", "status", "push",
 			"pull", "tree", "diff", "doctor",
-			"clean", "delete", "replay-list", "empty", "release",
+			"clean", "delete", "replay-list", "empty", "release", "worktree-switch",
 			// clone flag
 			"depth",
 			// tree / diff flags
@@ -70,21 +70,34 @@ var bins = []binSpec{
 			"worktree", "changes", "head",
 			// release bumps
 			"patch", "minor", "major",
-			// completion shell choices
-			"bash", "fish", "zsh", "nu",
+			// completion shell choices and flag
+			"bash", "fish", "zsh", "nu", "cd",
 		},
 		cases: []completionCase{
-			{"top-level", []string{""}, []string{"clone", "switch", "branch", "clean", "release", "replay-list", "pull", "tree", "diff", "doctor"}},
+			{"top-level", []string{""}, []string{"clone", "switch", "branch", "clean", "release", "replay-list", "pull", "tree", "diff", "doctor", "worktree-switch"}},
 			{"clone flags", []string{"clone", "--"}, []string{"--depth"}},
 			{"tree flags", []string{"tree", "--"}, []string{"--since", "--all", "--follow"}},
 			{"diff flags", []string{"diff", "--"}, []string{"--mode", "--follow"}},
 			{"clean flags", []string{"clean", "--"}, []string{"--changes", "--untracked", "--ignored", "--all", "--yes"}},
 			{"status flags", []string{"status", "--"}, []string{"--all", "--flat", "--follow"}},
 			{"status sections", []string{"status", ""}, []string{"all", "branch", "remote", "worktree", "changes", "head"}},
+			{"status alias sections", []string{"s", ""}, []string{"all", "branch", "remote", "worktree", "changes", "head"}},
 			{"completion shells", []string{"completion", ""}, []string{"bash", "fish", "zsh", "nu"}},
+			{"completion flags", []string{"completion", "--"}, []string{"--cd"}},
 			{"release bumps", []string{"release", ""}, []string{"patch", "minor", "major"}},
 		},
-		nuHelpExpect: []string{"clone", "switch", "branch", "checkout-pr", "add-remote", "completion", "clean", "release", "pull", "tree", "diff", "doctor"},
+		nuHelpExpect: []string{"clone", "switch", "branch", "checkout-pr", "add-remote", "completion", "clean", "release", "pull", "tree", "diff", "doctor", "worktree-switch"},
+	},
+	{
+		// The cd wrapper, rendered under the short name it is normally sourced
+		// as. It completes nothing itself; syntax, content and nu's help are
+		// what matter, and TestShellWrapperCd drives its behaviour.
+		cmdName: "gg",
+		render:  RenderCd,
+		requiredContent: []string{
+			"worktree-switch", "cd", "GITGUM_CD_WRAPPER",
+		},
+		nuHelpExpect: []string{"worktree-switch"},
 	},
 	{
 		cmdName: "ff",
@@ -245,5 +258,89 @@ func TestNuCompletion(t *testing.T) {
 				assert.ContainsString(t, string(out), want)
 			}
 		})
+	}
+}
+
+// wrapperShim writes a fake gitgum binary into a dir and returns the dir. The
+// shim answers worktree-switch with the path in $GG_TARGET (help flags print
+// HELP instead) and echoes anything else back, so the wrapper function each
+// completion script defines can be driven without building the real binary.
+func wrapperShim(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	script := `#!/bin/sh
+case "$1" in
+    w|worktree-switch)
+        for a in "$@"; do
+            case "$a" in -h|--help) echo HELP; exit 0;; esac
+        done
+        [ -n "$GG_TARGET" ] || { echo "no target" >&2; exit 1; }
+        echo "$GG_TARGET"
+        ;;
+    *) echo "passthrough $* wrapper=$GITGUM_CD_WRAPPER" ;;
+esac
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "gitgum"), []byte(script), 0o755), "write shim")
+	return dir
+}
+
+// TestShellWrapperCd: the gitgum function the cd script defines cds on
+// `gitgum w`, leaves help output alone, stays put when the binary fails, and
+// passes every other command through with the marker set. The completion
+// script is sourced first, as a user would, so the two must coexist (nu in
+// particular: the cd command shadows the completion extern).
+func TestShellWrapperCd(t *testing.T) {
+	shim := wrapperShim(t)
+	target, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	start, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+
+	// Each script sources completions then the cd file, runs the wrapper,
+	// prints pwd.
+	scripts := map[string]func(files, cmd string) string{
+		"bash": func(files, cmd string) string { return files + cmd + "\npwd" },
+		"zsh":  func(files, cmd string) string { return "autoload -Uz compinit; compinit -C\n" + files + cmd + "\npwd" },
+		"fish": func(files, cmd string) string { return files + cmd + "\npwd" },
+		// nu aborts a script on a failed external, so the call is caught to let
+		// the pwd print; a try block shares the caller's cwd.
+		"nu": func(files, cmd string) string { return files + "try { " + cmd + " }\npwd" },
+	}
+	cases := []struct {
+		name    string
+		cmd     string
+		env     string // GG_TARGET value; empty makes the shim fail
+		wantOut string
+		wantPwd string
+	}{
+		{"w cds", "gitgum w", target, "", target},
+		{"long form cds", "gitgum worktree-switch 2", target, "", target},
+		{"help stays put", "gitgum w --help", target, "HELP", start},
+		{"failure stays put", "gitgum w", "", "", start},
+		{"passthrough", "gitgum status --flat", target, "passthrough status --flat wrapper=1", start},
+	}
+	for _, s := range shells {
+		path := lookupShellOnce(t, s.bin)
+		files := "source " + renderToTemp(t, Render, "gitgum", s.template) + "\n" +
+			"source " + renderToTemp(t, RenderCd, "gitgum", s.template) + "\n"
+		for _, tc := range cases {
+			t.Run(s.template+"/"+tc.name, func(t *testing.T) {
+				if path == "" {
+					t.Skipf("%s not installed", s.bin)
+				}
+				cmd := exec.Command(path, "-c", scripts[s.template](files, tc.cmd))
+				cmd.Dir = start
+				cmd.Env = append(os.Environ(),
+					"PATH="+shim+string(os.PathListSeparator)+os.Getenv("PATH"),
+					"GG_TARGET="+tc.env)
+				out, _ := cmd.CombinedOutput()
+				lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+				gotPwd := lines[len(lines)-1]
+				assert.Equal(t, gotPwd, tc.wantPwd, "pwd after %q; output:\n%s", tc.cmd, out)
+				if tc.wantOut != "" {
+					assert.ContainsString(t, string(out), tc.wantOut)
+				}
+			})
+		}
 	}
 }
