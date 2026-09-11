@@ -36,6 +36,33 @@ func TestMatchesRepoDir(t *testing.T) {
 	}
 }
 
+func TestRepoDirIndex(t *testing.T) {
+	t.Parallel()
+	cases := map[string]int{"foo": 1, "foo-2": 2, "foo-42": 42, "foo-02": 2}
+	for base, want := range cases {
+		n, ok := RepoDirIndex(base, "foo")
+		assert.Equal(t, ok, true, base)
+		assert.Equal(t, n, want, base)
+	}
+	for _, base := range []string{"foo-0", "foo-", "foo-1x", "foobar", "bar"} {
+		_, ok := RepoDirIndex(base, "foo")
+		assert.Equal(t, ok, false, base)
+	}
+}
+
+func TestForgeRepoNames(t *testing.T) {
+	t.Parallel()
+	got := ForgeRepoNames([]string{
+		"https://github.com/lczyk/gitgum",
+		"git@gitlab.com:someone/gitgum.git",
+		"https://github.com/other/fork",
+		"git@example.com:team/x.git",
+	})
+	assert.Equal(t, len(got), 2)
+	assert.Equal(t, got[0], "fork")
+	assert.Equal(t, got[1], "gitgum")
+}
+
 func TestCheckRemoteNaming(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)

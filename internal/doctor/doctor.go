@@ -252,26 +252,37 @@ func canonicalRepoName(f *facts) (name string, ok bool, findings []Finding) {
 	if f.remotesErr != nil {
 		return "", false, nil
 	}
-	seen := map[string]bool{}
+	var urls []string
 	for _, rem := range f.remotes {
-		url, err := f.remoteURL(rem)
-		if err != nil {
-			continue
+		if url, err := f.remoteURL(rem); err == nil {
+			urls = append(urls, url)
 		}
+	}
+	names := ForgeRepoNames(urls)
+	switch len(names) {
+	case 0:
+		return "", false, nil
+	case 1:
+		return names[0], true, nil
+	default:
+		return "", false, []Finding{{Check: "dir-naming", Severity: SevWarning,
+			Message: fmt.Sprintf("forge remotes disagree on the repo name (%s); cannot check directory naming",
+				strings.Join(names, ", "))}}
+	}
+}
+
+// ForgeRepoNames collects the distinct repo names (the "REPO" in
+// github.com/USER/REPO) named by the given remote urls, sorted. Urls on an
+// unmodelled forge contribute nothing. Exported so gg worktree-switch can
+// derive the canonical dir name the same way doctor does.
+func ForgeRepoNames(urls []string) []string {
+	seen := map[string]bool{}
+	for _, url := range urls {
 		if ref, ok := git.ParseRepoRef(url); ok && ref.Forge != git.ForgeUnknown {
 			seen[ref.Repo()] = true
 		}
 	}
-	switch len(seen) {
-	case 0:
-		return "", false, nil
-	case 1:
-		return sortedKeys(seen)[0], true, nil
-	default:
-		return "", false, []Finding{{Check: "dir-naming", Severity: SevWarning,
-			Message: fmt.Sprintf("forge remotes disagree on the repo name (%s); cannot check directory naming",
-				strings.Join(sortedKeys(seen), ", "))}}
-	}
+	return sortedKeys(seen)
 }
 
 // MatchesRepoDir reports whether base is "<repo>" or "<repo>-N" for a positive
@@ -279,19 +290,31 @@ func canonicalRepoName(f *facts) (name string, ok bool, findings []Finding) {
 // exported because gg clone shares this dir-naming rule, so the two agree on
 // what a clean dir looks like.
 func MatchesRepoDir(base, repo string) bool {
+	_, ok := RepoDirIndex(base, repo)
+	return ok
+}
+
+// RepoDirIndex is MatchesRepoDir with the number: "<repo>" is 1, "<repo>-N" is
+// N. gg worktree-switch addresses worktrees by it. Leading zeros are accepted
+// ("foo-02" is 2), so two dirs can map to one index; callers decide.
+func RepoDirIndex(base, repo string) (int, bool) {
 	if base == repo {
-		return true
+		return 1, true
 	}
 	rest, ok := strings.CutPrefix(base, repo+"-")
 	if !ok || rest == "" {
-		return false
+		return 0, false
 	}
 	for _, c := range rest {
 		if c < '0' || c > '9' {
-			return false
+			return 0, false
 		}
 	}
-	return true
+	n, err := strconv.Atoi(rest)
+	if err != nil || n < 1 {
+		return 0, false
+	}
+	return n, true
 }
 
 // checkPRBranchNaming flags local branches using the old "pr-N" scheme (gg now

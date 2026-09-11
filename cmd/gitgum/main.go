@@ -43,6 +43,7 @@ type Options struct {
 	Tree       commands.TreeCommand       `command:"tree" description:"Print a colored commit graph across all branches"`
 	Diff       commands.DiffCommand       `command:"diff" description:"Show working-tree diff with --compact-summary"`
 	Doctor     commands.DoctorCommand     `command:"doctor" description:"Diagnose known inconsistencies in the repo's remote/worktree layout"`
+	WorktreeSwitch commands.WorktreeSwitchCommand `command:"worktree-switch" description:"Print the path of worktree N (or the next one) for the shell wrapper to cd into"`
 }
 
 // isFollowArg reports whether an arg is -f / --follow, optionally with an =value.
