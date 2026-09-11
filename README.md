@@ -1,5 +1,7 @@
 # gitgum
 
+<img src="assets/logo_01.png" alt="gitgum logo" align="right" width="300">
+
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/lczyk/gitgum)
 ![GitHub Tag](https://img.shields.io/github/v/tag/lczyk/gitgum?label=release)
 [![lint_and_test](https://github.com/lczyk/gitgum/actions/workflows/lint_and_test.yml/badge.svg)](https://github.com/lczyk/gitgum/actions/workflows/lint_and_test.yml)
