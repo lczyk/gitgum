@@ -208,7 +208,7 @@ Useful for identifying the feature commits on a branch that need to be replayed 
 
 ### `gitgum release patch|minor|major`
 
-Bump `VERSION` (or fall back to the latest `vX.Y.Z` tag), commit, and create an annotated tag. Prompts (default no) when not on `main`. If the working tree has tracked uncommitted changes, prompts to auto-stash them (untracked files are left alone, partial-hunk staging is preserved on restore). Push is left manual so the result can be inspected.
+Bump `VERSION` (or fall back to the latest `vX.Y.Z` tag), commit, and create an annotated tag. Prompts (default no) when not on `main`. If the working tree has tracked uncommitted changes, prompts to auto-stash them (untracked files are left alone, partial-hunk staging is preserved on restore). Push is left manual so the result can be inspected. If HEAD is already a release (a `release: vX.Y.Z` commit with that tag at HEAD) it does nothing but print the push command; `--force` / `-f` bumps again on top of it.
 
 Before committing, scans every tracked text file for lines mentioning the current version (line contains the word "version" + a boundaried token match), and offers them in a multi-select picker. Picked lines get a plain string-replace bump (no language-specific parsing) and ride in the release commit. Esc / no picks skips the auto-edits; the release proceeds either way. Binary files and files larger than 4 MiB are soft-skipped.
 
