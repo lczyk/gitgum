@@ -9,6 +9,7 @@ import (
 	"github.com/lczyk/assert/require"
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/testutil/temp_repo"
+	"github.com/lczyk/gitgum/internal/ui"
 )
 
 func TestPushCommand_NotInGitRepo(t *testing.T) {
@@ -59,8 +60,9 @@ func TestPushCommand_CreatesRemoteBranch(t *testing.T) {
 	assert.ContainsString(t, stub.confirmCalls[0].Prompt, "No remote branch")
 }
 
-// User declines the create-remote-branch confirmation: command exits cleanly
-// without pushing or setting upstream.
+// User declines the create-remote-branch confirmation and there is no other
+// remote to offer: command says so and exits without pushing or setting
+// upstream.
 func TestPushCommand_DeclinesCreateRemoteBranch(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)
@@ -71,11 +73,14 @@ func TestPushCommand_DeclinesCreateRemoteBranch(t *testing.T) {
 
 	branch := currentBranchIn(t, dir)
 
+	var buf strings.Builder
 	stub := &stubSelector{confirmAnswers: []bool{false}}
-	cmd := &PushCommand{cmdIO: cmdIO{UI: stub, Repo: git.Repo{Dir: dir}}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: dir}}}
 
 	err := cmd.Execute([]string{"origin"})
 	require.NoError(t, err)
+	assert.Equal(t, len(stub.selectCalls), 0)
+	assert.ContainsString(t, buf.String(), "Nothing pushed")
 
 	upstreamCmd := exec.Command("git", "rev-parse", "--abbrev-ref", branch+"@{u}")
 	upstreamCmd.Dir = dir
@@ -134,7 +139,8 @@ func TestPushCommand_UpstreamSet_ShowsDelta(t *testing.T) {
 }
 
 // user declines pushing to the upstream and there is only one remote: nothing
-// else to offer, so the command exits cleanly without a picker.
+// else to offer, so the command says nothing was pushed and exits without a
+// picker.
 func TestPushCommand_DeclineUpstream_SingleRemoteBreaks(t *testing.T) {
 	t.Parallel()
 	dir := temp_repo.NewRepo(t)
@@ -155,6 +161,7 @@ func TestPushCommand_DeclineUpstream_SingleRemoteBreaks(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, len(stub.selectCalls), 0)
+	assert.ContainsString(t, buf.String(), "Nothing pushed")
 	log := temp_repo.RunGit(t, bareDir, "log", "--format=%s", branch)
 	assert.That(t, !strings.Contains(log, "feat: local commit"), "decline must not push")
 }
@@ -222,8 +229,9 @@ func TestPushCommand_UpstreamDeleted_RecreatesOnConfirm(t *testing.T) {
 	assert.NotEqual(t, listed, "", "feat must exist on remote after recreate")
 }
 
-// same stale-upstream setup, but the user declines the recreate prompt: push
-// exits cleanly and does not resurrect the branch on the remote.
+// same stale-upstream setup with a single remote, user declines the recreate
+// prompt: nothing else to offer, so push says nothing was pushed and does not
+// resurrect the branch on the remote.
 func TestPushCommand_UpstreamDeleted_DeclineDoesNotRecreate(t *testing.T) {
 	t.Parallel()
 	dir, bareDir := pushRepoWithStaleUpstream(t, "feat")
@@ -236,6 +244,8 @@ func TestPushCommand_UpstreamDeleted_DeclineDoesNotRecreate(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, len(stub.confirmCalls), 1)
+	assert.Equal(t, len(stub.selectCalls), 0)
+	assert.ContainsString(t, buf.String(), "Nothing pushed")
 	listed := strings.TrimSpace(temp_repo.RunGit(t, bareDir, "branch", "--list", "feat"))
 	assert.Equal(t, listed, "", "feat must not be recreated when user declines")
 }
@@ -289,26 +299,30 @@ func TestPushCommand_Diverged_OffersRebaseAndPushes(t *testing.T) {
 	assert.ContainsString(t, log, "remote commit")
 }
 
-// same diverged setup, user declines the rebase: push exits cleanly and does
-// not touch the remote.
+// same diverged setup with a single remote, user declines the rebase: nothing
+// else to offer, so push says nothing was pushed and leaves the remote alone.
 func TestPushCommand_Diverged_DeclineDoesNotPush(t *testing.T) {
 	t.Parallel()
 	dir, bareDir, branch := pushRepoWithRemoteAhead(t, "remote.txt", "remote change\n")
 	temp_repo.CreateCommit(t, dir, "local.txt", "local change\n", "feat: local commit")
 
+	var buf strings.Builder
 	stub := &stubSelector{confirmAnswers: []bool{false}}
-	cmd := &PushCommand{cmdIO: cmdIO{UI: stub, Repo: git.Repo{Dir: dir}}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: dir}}}
 
 	err := cmd.Execute(nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, len(stub.confirmCalls), 1)
+	assert.Equal(t, len(stub.selectCalls), 0)
+	assert.ContainsString(t, buf.String(), "Nothing pushed")
 	log := temp_repo.RunGit(t, bareDir, "log", "--format=%s", branch)
 	assert.That(t, !strings.Contains(log, "feat: local commit"), "local commit must not reach remote on decline")
 }
 
 // remote diverged and a rebase would conflict (both sides touched the same
-// file): push errors before prompting, telling the user to integrate manually.
+// file), with no other remote to offer: push errors before prompting, telling
+// the user to integrate manually.
 func TestPushCommand_Diverged_ConflictErrors(t *testing.T) {
 	t.Parallel()
 	dir, _, _ := pushRepoWithRemoteAhead(t, "conflict.txt", "remote version\n")
@@ -415,4 +429,286 @@ func TestPushCommand_RejectedPushSurfacesTheFailure(t *testing.T) {
 	err := cmd.Execute(nil)
 	assert.Error(t, err, assert.AnyError, "git should refuse a non-fast-forward")
 	assert.ContainsString(t, err.Error(), "push")
+}
+
+// addBareRemote creates an empty bare repo and adds it to dir as remote name,
+// returning the bare repo's path.
+func addBareRemote(t *testing.T, dir, name string) string {
+	t.Helper()
+	bare := t.TempDir()
+	temp_repo.RunGit(t, bare, "init", "--bare")
+	temp_repo.RunGit(t, dir, "remote", "add", name, bare)
+	return bare
+}
+
+// upstreamOf returns branch's configured upstream in dir, e.g. "origin/main".
+func upstreamOf(t *testing.T, dir, branch string) string {
+	t.Helper()
+	return strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "--abbrev-ref", branch+"@{u}"))
+}
+
+// remote diverged and the user declines the rebase because the commits belong
+// elsewhere: push offers the other remotes rather than exiting, and pushing
+// there moves the upstream.
+func TestPushCommand_Diverged_DeclineOffersOtherRemotes(t *testing.T) {
+	t.Parallel()
+	dir, bareDir, branch := pushRepoWithRemoteAhead(t, "remote.txt", "remote change\n")
+	temp_repo.CreateCommit(t, dir, "local.txt", "local change\n", "feat: local commit")
+	mirrorDir := addBareRemote(t, dir, "mirror")
+
+	// decline the rebase, pick mirror, confirm creating the branch there.
+	stub := &stubSelector{confirmAnswers: []bool{false, true}, selectAnswers: []string{"mirror"}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute(nil))
+
+	require.Equal(t, len(stub.confirmCalls), 2)
+	assert.ContainsString(t, stub.confirmCalls[0].Prompt, "diverged")
+	require.Equal(t, len(stub.selectCalls), 1)
+	require.Equal(t, len(stub.selectCalls[0].Options), 1)
+	assert.Equal(t, stub.selectCalls[0].Options[0], "mirror")
+
+	assert.ContainsString(t, temp_repo.RunGit(t, mirrorDir, "log", "--format=%s", branch), "feat: local commit")
+	assert.Equal(t, upstreamOf(t, dir, branch), "mirror/"+branch)
+	originLog := temp_repo.RunGit(t, bareDir, "log", "--format=%s", branch)
+	assert.That(t, !strings.Contains(originLog, "feat: local commit"), "declined upstream must not receive the push")
+}
+
+// local strictly behind, user declines the fast-forward: the other remotes are
+// offered, and the local tip goes there as it is.
+func TestPushCommand_Behind_DeclineOffersOtherRemotes(t *testing.T) {
+	t.Parallel()
+	dir, _, branch := pushRepoWithRemoteAhead(t, "remote.txt", "remote change\n")
+	mirrorDir := addBareRemote(t, dir, "mirror")
+
+	stub := &stubSelector{confirmAnswers: []bool{false, true}, selectAnswers: []string{"mirror"}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute(nil))
+
+	require.Equal(t, len(stub.confirmCalls), 2)
+	assert.ContainsString(t, stub.confirmCalls[0].Prompt, "fast-forward")
+	require.Equal(t, len(stub.selectCalls), 1)
+	assert.Equal(t, stub.selectCalls[0].Options[0], "mirror")
+
+	local := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", branch))
+	pushed := strings.TrimSpace(temp_repo.RunGit(t, mirrorDir, "rev-parse", branch))
+	assert.Equal(t, pushed, local)
+	assert.Equal(t, upstreamOf(t, dir, branch), "mirror/"+branch)
+}
+
+// upstream branch deleted on the remote, user declines recreating it: the
+// other remotes are offered instead, and the branch lands there.
+func TestPushCommand_UpstreamDeleted_DeclineOffersOtherRemotes(t *testing.T) {
+	t.Parallel()
+	dir, bareDir := pushRepoWithStaleUpstream(t, "feat")
+	mirrorDir := addBareRemote(t, dir, "mirror")
+
+	stub := &stubSelector{confirmAnswers: []bool{false, true}, selectAnswers: []string{"mirror"}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute(nil))
+
+	require.Equal(t, len(stub.confirmCalls), 2)
+	assert.ContainsString(t, stub.confirmCalls[0].Prompt, "Recreate remote branch")
+	require.Equal(t, len(stub.selectCalls), 1)
+	assert.Equal(t, stub.selectCalls[0].Options[0], "mirror")
+
+	assert.NotEqual(t, strings.TrimSpace(temp_repo.RunGit(t, mirrorDir, "branch", "--list", "feat")), "")
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, bareDir, "branch", "--list", "feat")), "",
+		"declined recreate must leave origin alone")
+	assert.Equal(t, upstreamOf(t, dir, "feat"), "mirror/feat")
+}
+
+// remote diverged and a rebase would conflict, but another remote exists: push
+// says why it won't rebase, then offers that remote rather than erroring.
+func TestPushCommand_Diverged_ConflictOffersOtherRemotes(t *testing.T) {
+	t.Parallel()
+	dir, _, branch := pushRepoWithRemoteAhead(t, "conflict.txt", "remote version\n")
+	temp_repo.CreateCommit(t, dir, "conflict.txt", "local version\n", "feat: local commit")
+	mirrorDir := addBareRemote(t, dir, "mirror")
+
+	var errBuf strings.Builder
+	stub := &stubSelector{confirmAnswers: []bool{true}, selectAnswers: []string{"mirror"}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, Err: &errBuf, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute(nil))
+
+	assert.ContainsString(t, errBuf.String(), "would conflict")
+	require.Equal(t, len(stub.confirmCalls), 1)
+	assert.ContainsString(t, stub.confirmCalls[0].Prompt, "No remote branch")
+	assert.ContainsString(t, temp_repo.RunGit(t, mirrorDir, "log", "--format=%s", branch), "feat: local commit")
+}
+
+// Escape on the other-remotes picker cancels, like every other prompt, and
+// leaves the upstream where it was.
+func TestPushCommand_DeclineOffer_EscapeCancels(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	addBareRemote(t, dir, "origin")
+	addBareRemote(t, dir, "mirror")
+	branch := currentBranchIn(t, dir)
+	temp_repo.RunGit(t, dir, "push", "-u", "origin", branch)
+	temp_repo.CreateCommit(t, dir, "feature.yml", "x\n", "feat: local commit")
+
+	stub := &stubSelector{confirmAnswers: []bool{false}, selectErrs: []error{ui.ErrCancelled}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	assert.ErrorIs(t, cmd.Execute(nil), ui.ErrCancelled)
+	assert.Equal(t, upstreamOf(t, dir, branch), "origin/"+branch)
+}
+
+// declining the remote picked from the offer rules it out too: the remaining
+// remotes are offered next.
+func TestPushCommand_DeclinePickedRemote_OffersTheRest(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	addBareRemote(t, dir, "origin")
+	mirrorDir := addBareRemote(t, dir, "mirror")
+	backupDir := addBareRemote(t, dir, "backup")
+	branch := currentBranchIn(t, dir)
+	temp_repo.RunGit(t, dir, "push", "-u", "origin", branch)
+	temp_repo.CreateCommit(t, dir, "feature.yml", "x\n", "feat: local commit")
+
+	// decline origin, pick mirror, decline creating it there, pick backup, create.
+	stub := &stubSelector{confirmAnswers: []bool{false, false, true}, selectAnswers: []string{"mirror", "backup"}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute(nil))
+
+	require.Equal(t, len(stub.selectCalls), 2)
+	assert.Equal(t, len(stub.selectCalls[0].Options), 2)
+	require.Equal(t, len(stub.selectCalls[1].Options), 1)
+	assert.Equal(t, stub.selectCalls[1].Options[0], "backup")
+
+	assert.ContainsString(t, temp_repo.RunGit(t, backupDir, "log", "--format=%s", branch), "feat: local commit")
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, mirrorDir, "branch", "--list", branch)), "")
+	assert.Equal(t, upstreamOf(t, dir, branch), "backup/"+branch)
+}
+
+// no upstream, the named remote lacks the branch and the user declines
+// creating it there: the other remotes are offered.
+func TestPushCommand_NoUpstream_DeclineCreateOffersOtherRemotes(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	originDir := addBareRemote(t, dir, "origin")
+	mirrorDir := addBareRemote(t, dir, "mirror")
+	branch := currentBranchIn(t, dir)
+
+	stub := &stubSelector{confirmAnswers: []bool{false, true}, selectAnswers: []string{"mirror"}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute([]string{"origin"}))
+
+	require.Equal(t, len(stub.selectCalls), 1)
+	require.Equal(t, len(stub.selectCalls[0].Options), 1)
+	assert.Equal(t, stub.selectCalls[0].Options[0], "mirror")
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, originDir, "branch", "--list", branch)), "")
+	assert.NotEqual(t, strings.TrimSpace(temp_repo.RunGit(t, mirrorDir, "branch", "--list", branch)), "")
+	assert.Equal(t, upstreamOf(t, dir, branch), "mirror/"+branch)
+}
+
+// no upstream, the named remote already has the branch at an older commit and
+// the user declines pushing to it: the other remotes are offered.
+func TestPushCommand_DeclineExistingRemoteBranch_OffersOtherRemotes(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	originDir := addBareRemote(t, dir, "origin")
+	mirrorDir := addBareRemote(t, dir, "mirror")
+	branch := currentBranchIn(t, dir)
+	temp_repo.RunGit(t, dir, "push", "mirror", branch)
+	temp_repo.CreateCommit(t, dir, "feature.yml", "x\n", "feat: local commit")
+
+	// decline pushing to mirror's existing branch, pick origin, create it there.
+	stub := &stubSelector{confirmAnswers: []bool{false, true}, selectAnswers: []string{"origin"}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute([]string{"mirror"}))
+
+	require.Equal(t, len(stub.confirmCalls), 2)
+	assert.ContainsString(t, stub.confirmCalls[0].Prompt, "already exists")
+	require.Equal(t, len(stub.selectCalls), 1)
+	assert.Equal(t, stub.selectCalls[0].Options[0], "origin")
+	assert.ContainsString(t, temp_repo.RunGit(t, originDir, "log", "--format=%s", branch), "feat: local commit")
+	mirrorLog := temp_repo.RunGit(t, mirrorDir, "log", "--format=%s", branch)
+	assert.That(t, !strings.Contains(mirrorLog, "feat: local commit"), "declined remote must not receive the push")
+}
+
+// single remote, local strictly behind, user declines the fast-forward:
+// nothing else to offer, so push says nothing was pushed and moves nothing.
+func TestPushCommand_Behind_DeclineSingleRemote(t *testing.T) {
+	t.Parallel()
+	dir, _, branch := pushRepoWithRemoteAhead(t, "remote.txt", "remote change\n")
+	before := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", branch))
+
+	var buf strings.Builder
+	stub := &stubSelector{confirmAnswers: []bool{false}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute(nil))
+
+	assert.Equal(t, len(stub.selectCalls), 0)
+	assert.ContainsString(t, buf.String(), "Nothing pushed")
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", branch)), before)
+}
+
+// single remote that already has the branch at an older commit, no upstream,
+// user declines pushing to it: nothing else to offer, so push says nothing was
+// pushed and sets no upstream.
+func TestPushCommand_DeclineExistingRemoteBranch_SingleRemote(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	addBareRemote(t, dir, "origin")
+	branch := currentBranchIn(t, dir)
+	temp_repo.RunGit(t, dir, "push", "origin", branch)
+	temp_repo.CreateCommit(t, dir, "feature.yml", "x\n", "feat: local commit")
+
+	var buf strings.Builder
+	stub := &stubSelector{confirmAnswers: []bool{false}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute([]string{"origin"}))
+
+	require.Equal(t, len(stub.confirmCalls), 1)
+	assert.ContainsString(t, stub.confirmCalls[0].Prompt, "already exists")
+	assert.Equal(t, len(stub.selectCalls), 0)
+	assert.ContainsString(t, buf.String(), "Nothing pushed")
+	_, err := temp_repo.RunGitAllowFail(t, dir, "rev-parse", "--abbrev-ref", branch+"@{u}")
+	assert.Error(t, err, assert.AnyError, "upstream must not be set when user declines")
+}
+
+// the in-memory rebase check itself fails (not a conflict) with a single
+// remote: push reports it couldn't check, before any prompt.
+func TestPushCommand_Diverged_MergeTreeFailureErrors(t *testing.T) {
+	dir, _, _ := pushRepoWithRemoteAhead(t, "remote.txt", "remote change\n")
+	temp_repo.CreateCommit(t, dir, "local.txt", "local change\n", "feat: local commit")
+	failGitSubcommand(t, "merge-tree")
+
+	stub := &stubSelector{}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	err := cmd.Execute(nil)
+	assert.Error(t, err, assert.AnyError, "a failed rebase check with nowhere else to go should error")
+	assert.ContainsString(t, err.Error(), "could not check")
+	assert.Equal(t, len(stub.confirmCalls), 0)
+}
+
+// same failing check with another remote: push says it couldn't check, then
+// offers that remote.
+func TestPushCommand_Diverged_MergeTreeFailureOffersOtherRemotes(t *testing.T) {
+	dir, _, branch := pushRepoWithRemoteAhead(t, "remote.txt", "remote change\n")
+	temp_repo.CreateCommit(t, dir, "local.txt", "local change\n", "feat: local commit")
+	mirrorDir := addBareRemote(t, dir, "mirror")
+	failGitSubcommand(t, "merge-tree")
+
+	var errBuf strings.Builder
+	stub := &stubSelector{confirmAnswers: []bool{true}, selectAnswers: []string{"mirror"}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, Err: &errBuf, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute(nil))
+
+	assert.ContainsString(t, errBuf.String(), "could not check")
+	require.Equal(t, len(stub.selectCalls), 1)
+	assert.Equal(t, stub.selectCalls[0].Options[0], "mirror")
+	assert.ContainsString(t, temp_repo.RunGit(t, mirrorDir, "log", "--format=%s", branch), "feat: local commit")
 }

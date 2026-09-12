@@ -3,6 +3,7 @@ package commands
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/lczyk/gitgum/internal/git"
@@ -86,7 +87,8 @@ func (p *PushCommand) Execute(args []string) error {
 			return fmt.Errorf("confirming push to upstream: %w", err)
 		}
 		if !confirmed {
-			return p.offerOtherRemotes(currentBranch, remoteBranch)
+			upstreamRemote, _, _ := strings.Cut(remoteBranch, "/")
+			return p.offerOtherRemotes(currentBranch, []string{upstreamRemote}, nil)
 		}
 		if err := p.repo().Push(); err != nil {
 			return fmt.Errorf("failed to push: %w", err)
@@ -130,13 +132,14 @@ func (p *PushCommand) Execute(args []string) error {
 		selectedRemote = remote
 	}
 
-	return p.pushToRemote(selectedRemote, currentBranch)
+	return p.pushToRemote(selectedRemote, currentBranch, nil)
 }
 
 // pushToRemote pushes currentBranch to selectedRemote, prompting before
 // creating a missing remote branch or pushing to an existing one. Whichever
 // path runs, the branch ends up tracking the remote it was pushed to.
-func (p *PushCommand) pushToRemote(selectedRemote, currentBranch string) error {
+// Declining offers the remotes not already in ruledOut.
+func (p *PushCommand) pushToRemote(selectedRemote, currentBranch string, ruledOut []string) error {
 	expectedRemoteBranchName := selectedRemote + "/" + currentBranch
 
 	if !p.repo().RemoteBranchExists(selectedRemote, currentBranch) {
@@ -146,7 +149,7 @@ func (p *PushCommand) pushToRemote(selectedRemote, currentBranch string) error {
 			return fmt.Errorf("confirming create remote branch: %w", err)
 		}
 		if !confirmed {
-			return nil
+			return p.offerOtherRemotes(currentBranch, slices.Concat(ruledOut, []string{selectedRemote}), nil)
 		}
 
 		if err := p.repo().RunWriteStream("push", "-u", selectedRemote, currentBranch); err != nil {
@@ -185,7 +188,7 @@ func (p *PushCommand) pushToRemote(selectedRemote, currentBranch string) error {
 		return fmt.Errorf("confirming push to remote: %w", err)
 	}
 	if !confirmed {
-		return nil
+		return p.offerOtherRemotes(currentBranch, slices.Concat(ruledOut, []string{selectedRemote}), nil)
 	}
 
 	if err := p.repo().RunWriteStream("push", "-u", selectedRemote, currentBranch); err != nil {
@@ -195,34 +198,38 @@ func (p *PushCommand) pushToRemote(selectedRemote, currentBranch string) error {
 	return nil
 }
 
-// offerOtherRemotes runs after the user declines pushing to the configured
-// upstream: with a single remote there is nowhere else to go, so it exits
-// quietly; with more it offers the remaining remotes and pushes there, moving
-// the upstream to the chosen remote.
-func (p *PushCommand) offerOtherRemotes(currentBranch, upstream string) error {
+// offerOtherRemotes runs once the push can't go where it was headed -- the
+// user declined that destination, or push can't reconcile with it -- and
+// offers every remote not in ruledOut, pushing to the one picked and moving
+// the upstream there. With none left, stuck is the outcome; a plain decline
+// passes nil and just says nothing was pushed.
+func (p *PushCommand) offerOtherRemotes(currentBranch string, ruledOut []string, stuck error) error {
 	remotes, err := p.repo().GetRemotes()
 	if err != nil {
 		return fmt.Errorf("getting remotes: %w", err)
 	}
-	upstreamRemote, _, _ := strings.Cut(upstream, "/")
 	others := make([]string, 0, len(remotes))
 	for _, r := range remotes {
-		if r != upstreamRemote {
+		if !slices.Contains(ruledOut, r) {
 			others = append(others, r)
 		}
 	}
 	if len(others) == 0 {
+		if stuck != nil {
+			return stuck
+		}
+		fmt.Fprintln(p.out(), "Nothing pushed.")
 		return nil
+	}
+	if stuck != nil {
+		fmt.Fprintf(p.err(), "%s %v.\n", paint(ansiBoldYellow, "note:"), stuck)
 	}
 
 	remote, err := p.sel().Select(fmt.Sprintf("Push '%s' to", currentBranch), others)
 	if err != nil {
-		if errors.Is(err, ui.ErrCancelled) {
-			return nil
-		}
 		return fmt.Errorf("selecting remote: %w", err)
 	}
-	return p.pushToRemote(remote, currentBranch)
+	return p.pushToRemote(remote, currentBranch, ruledOut)
 }
 
 // showPushDelta prints a compact-summary of the commits about to be pushed
@@ -243,7 +250,8 @@ func (p *PushCommand) showPushDelta(remoteCommit, localCommit string) {
 // upstream is gone (remote reachable, ref missing) it offers to recreate it;
 // if the remote is unreachable it warns and lets the caller fall through to
 // the (best-effort) up-to-date message. Returns handled=true when it has
-// fully dealt with the push (recreated, declined, or cancelled).
+// fully dealt with the push (recreated it, or offered the other remotes on a
+// decline).
 func (p *PushCommand) handleStaleUpstream(currentBranch, upstream string) (handled bool, err error) {
 	remote, branch, ok := strings.Cut(upstream, "/")
 	if !ok {
@@ -267,7 +275,7 @@ func (p *PushCommand) handleStaleUpstream(currentBranch, upstream string) (handl
 		return false, fmt.Errorf("confirming recreate upstream: %w", err)
 	}
 	if !confirmed {
-		return true, nil
+		return true, p.offerOtherRemotes(currentBranch, []string{remote}, nil)
 	}
 	if err := p.repo().RunWriteStream("push", "-u", remote, currentBranch); err != nil {
 		return false, fmt.Errorf("failed to push: %w", err)
@@ -284,12 +292,15 @@ func (p *PushCommand) handleStaleUpstream(currentBranch, upstream string) (handl
 //     is a pure fast-forward -- always clean, but it leaves nothing to push.
 //     Offer to catch up.
 //   - genuinely diverged (each side has unique commits): offer the rebase only
-//     if it would apply without conflicts (checked in memory, no side effects);
-//     otherwise error rather than dropping the user into a half-finished
-//     rebase. On confirmation it rebases and pushes the result.
+//     if it would apply without conflicts (checked in memory, no side effects),
+//     rather than drop the user into a half-finished rebase. On confirmation it
+//     rebases and pushes the result.
 //
-// It owns the whole remote-ahead case: the caller returns whatever this returns.
+// Declining, or a rebase that won't apply, offers the other remotes instead;
+// with none left, the latter is an error. It owns the whole remote-ahead case:
+// the caller returns whatever this returns.
 func (p *PushCommand) reconcileDiverged(currentBranch, upstream string) error {
+	upstreamRemote, _, _ := strings.Cut(upstream, "/")
 	localAhead, err := p.repo().IsBranchAheadOfRemote(currentBranch, upstream)
 	if err != nil {
 		return fmt.Errorf("checking divergence: %w", err)
@@ -304,7 +315,7 @@ func (p *PushCommand) reconcileDiverged(currentBranch, upstream string) error {
 			return fmt.Errorf("confirming rebase: %w", err)
 		}
 		if !confirmed {
-			return nil
+			return p.offerOtherRemotes(currentBranch, []string{upstreamRemote}, nil)
 		}
 		cleanup, err := handleDirtyTree(&p.cmdIO, "push")
 		if err != nil {
@@ -323,12 +334,14 @@ func (p *PushCommand) reconcileDiverged(currentBranch, upstream string) error {
 	// conflict never leaves the repo mid-rebase.
 	conflict, err := p.repo().WouldRebaseConflict(upstream, currentBranch)
 	if err != nil {
-		return fmt.Errorf("remote '%s' has diverged from '%s'; could not check whether a rebase applies cleanly (%w). "+
-			"Run `gg pull` to integrate manually", upstream, currentBranch, err)
+		return p.offerOtherRemotes(currentBranch, []string{upstreamRemote}, fmt.Errorf(
+			"remote '%s' has diverged from '%s'; could not check whether a rebase applies cleanly (%w). "+
+				"Run `gg pull` to integrate manually", upstream, currentBranch, err))
 	}
 	if conflict {
-		return fmt.Errorf("remote '%s' has diverged from '%s' and a rebase would conflict. "+
-			"Run `gg pull` to integrate manually", upstream, currentBranch)
+		return p.offerOtherRemotes(currentBranch, []string{upstreamRemote}, fmt.Errorf(
+			"remote '%s' has diverged from '%s' and a rebase would conflict. "+
+				"Run `gg pull` to integrate manually", upstream, currentBranch))
 	}
 
 	confirmed, err := p.sel().Confirm(
@@ -337,7 +350,7 @@ func (p *PushCommand) reconcileDiverged(currentBranch, upstream string) error {
 		return fmt.Errorf("confirming rebase: %w", err)
 	}
 	if !confirmed {
-		return nil
+		return p.offerOtherRemotes(currentBranch, []string{upstreamRemote}, nil)
 	}
 
 	cleanup, err := handleDirtyTree(&p.cmdIO, "push")
