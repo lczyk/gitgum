@@ -158,6 +158,68 @@ func TestGetBranchUpstream(t *testing.T) {
 	})
 }
 
+func TestGetBranchPushTarget(t *testing.T) {
+	t.Parallel()
+
+	// origin is the repo itself, fetched so origin/main exists.
+	setup := func(t *testing.T, pushDefault string) string {
+		t.Helper()
+		dir := temp_repo.NewRepo(t)
+		temp_repo.RunGit(t, dir, "remote", "add", "origin", dir)
+		temp_repo.RunGit(t, dir, "fetch", "origin")
+		temp_repo.RunGit(t, dir, "config", "push.default", pushDefault)
+		return dir
+	}
+
+	t.Run("same-name upstream", func(t *testing.T) {
+		t.Parallel()
+		dir := setup(t, "simple")
+		temp_repo.RunGit(t, dir, "branch", "--set-upstream-to=origin/main", "main")
+		target, err := git.Repo{Dir: dir}.GetBranchPushTarget("main")
+		require.NoError(t, err)
+		assert.Equal(t, "origin/main", target)
+	})
+
+	t.Run("differently-named upstream", func(t *testing.T) {
+		t.Parallel()
+		dir := setup(t, "simple")
+		temp_repo.RunGit(t, dir, "branch", "fix")
+		temp_repo.RunGit(t, dir, "branch", "--set-upstream-to=origin/main", "fix")
+		target, err := git.Repo{Dir: dir}.GetBranchPushTarget("fix")
+		require.NoError(t, err)
+		assert.Equal(t, "", target)
+	})
+
+	t.Run("push.default=nothing", func(t *testing.T) {
+		t.Parallel()
+		dir := setup(t, "nothing")
+		temp_repo.RunGit(t, dir, "branch", "--set-upstream-to=origin/main", "main")
+		target, err := git.Repo{Dir: dir}.GetBranchPushTarget("main")
+		require.NoError(t, err)
+		assert.Equal(t, "", target)
+	})
+}
+
+// push.default usually lives in the global config the read env blanks, so it
+// has to be forwarded for gg to name the same destination the user's git does.
+func TestGetBranchPushTargetHonoursGlobalPushDefault(t *testing.T) {
+	cfgDir := t.TempDir()
+	temp_repo.WriteFile(t, cfgDir, "config", "[push]\n\tdefault = current\n")
+	t.Setenv("GIT_CONFIG_GLOBAL", cfgDir+"/config")
+
+	dir := temp_repo.NewRepo(t)
+	// NewRepo pins push.default locally, which would shadow the global one.
+	temp_repo.RunGit(t, dir, "config", "--unset", "push.default")
+	temp_repo.RunGit(t, dir, "remote", "add", "origin", dir)
+	temp_repo.RunGit(t, dir, "fetch", "origin")
+	temp_repo.RunGit(t, dir, "branch", "fix")
+	temp_repo.RunGit(t, dir, "branch", "--set-upstream-to=origin/main", "fix")
+
+	target, err := git.Repo{Dir: dir}.GetBranchPushTarget("fix")
+	require.NoError(t, err)
+	assert.Equal(t, "origin/fix", target)
+}
+
 func TestGetCurrentBranchUpstream(t *testing.T) {
 	t.Parallel()
 

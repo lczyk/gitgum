@@ -850,3 +850,137 @@ func TestPushCommand_RemoteArg_PickerEscapeCancels(t *testing.T) {
 	assert.ErrorIs(t, cmd.Execute([]string{"nope"}), ui.ErrCancelled)
 	assert.Equal(t, upstreamOf(t, dir, branch), "origin/"+branch)
 }
+
+// pushRepoTrackingBase builds a local repo whose branch "fix" tracks
+// origin/<base> -- another name, as a branch cut from a PR base does.
+// origin/<base> has moved on since fix was cut, and fix has a commit of its
+// own. Returns (localDir, bareDir, base).
+func pushRepoTrackingBase(t *testing.T) (dir, bareDir, base string) {
+	t.Helper()
+	dir, bareDir, base = pushRepoWithRemoteAhead(t, "remote.txt", "remote change\n")
+	temp_repo.RunGit(t, dir, "checkout", "-b", "fix")
+	temp_repo.RunGit(t, dir, "branch", "--set-upstream-to=origin/"+base, "fix")
+	temp_repo.CreateCommit(t, dir, "fix.txt", "x\n", "fix: local commit")
+	return dir, bareDir, base
+}
+
+// the branch tracks a differently-named upstream, so git has no push
+// destination for it: push says so and asks where to go -- every remote
+// offered, the upstream's included -- rather than comparing against the base.
+func TestPushCommand_NoPushTarget_AsksWhereTo(t *testing.T) {
+	t.Parallel()
+	dir, bareDir, base := pushRepoTrackingBase(t)
+	forkDir := addBareRemote(t, dir, "fork")
+
+	var buf strings.Builder
+	stub := &stubSelector{confirmAnswers: []bool{true}, selectAnswers: []string{"fork"}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute(nil))
+
+	assert.ContainsString(t, buf.String(), "no push destination")
+	require.Equal(t, len(stub.selectCalls), 1)
+	assert.Equal(t, len(stub.selectCalls[0].Options), 2)
+	require.Equal(t, len(stub.confirmCalls), 1)
+	assert.ContainsString(t, stub.confirmCalls[0].Prompt, "No remote branch 'fork/fix'")
+	assert.ContainsString(t, temp_repo.RunGit(t, forkDir, "log", "--format=%s", "fix"), "fix: local commit")
+	assert.Equal(t, upstreamOf(t, dir, "fix"), "fork/fix")
+	baseLog := temp_repo.RunGit(t, bareDir, "log", "--format=%s", base)
+	assert.That(t, !strings.Contains(baseLog, "fix: local commit"), "the base must not receive the push")
+}
+
+// same setup, picking the upstream's own remote: the branch goes there under
+// its own name, not onto the base.
+func TestPushCommand_NoPushTarget_UpstreamRemoteUnderOwnName(t *testing.T) {
+	t.Parallel()
+	dir, bareDir, base := pushRepoTrackingBase(t)
+
+	stub := &stubSelector{confirmAnswers: []bool{true}, selectAnswers: []string{"origin"}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute(nil))
+
+	require.Equal(t, len(stub.selectCalls), 1)
+	assert.ContainsString(t, temp_repo.RunGit(t, bareDir, "log", "--format=%s", "fix"), "fix: local commit")
+	baseLog := temp_repo.RunGit(t, bareDir, "log", "--format=%s", base)
+	assert.That(t, !strings.Contains(baseLog, "fix: local commit"), "the base must not receive the push")
+	assert.Equal(t, upstreamOf(t, dir, "fix"), "origin/fix")
+}
+
+// Escape on that picker cancels and leaves the upstream alone.
+func TestPushCommand_NoPushTarget_EscapeCancels(t *testing.T) {
+	t.Parallel()
+	dir, _, base := pushRepoTrackingBase(t)
+
+	stub := &stubSelector{selectErrs: []error{ui.ErrCancelled}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	assert.ErrorIs(t, cmd.Execute(nil), ui.ErrCancelled)
+	assert.Equal(t, upstreamOf(t, dir, "fix"), "origin/"+base)
+}
+
+// declining to create the branch on the picked remote offers the others, the
+// upstream's included.
+func TestPushCommand_NoPushTarget_DeclineOffersOtherRemotes(t *testing.T) {
+	t.Parallel()
+	dir, bareDir, _ := pushRepoTrackingBase(t)
+	forkDir := addBareRemote(t, dir, "fork")
+
+	// pick fork, decline creating the branch there, pick origin, create it there.
+	stub := &stubSelector{confirmAnswers: []bool{false, true}, selectAnswers: []string{"fork", "origin"}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute(nil))
+
+	require.Equal(t, len(stub.selectCalls), 2)
+	require.Equal(t, len(stub.selectCalls[1].Options), 1)
+	assert.Equal(t, stub.selectCalls[1].Options[0], "origin")
+	assert.ContainsString(t, temp_repo.RunGit(t, bareDir, "log", "--format=%s", "fix"), "fix: local commit")
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, forkDir, "branch", "--list", "fix")), "")
+	assert.Equal(t, upstreamOf(t, dir, "fix"), "origin/fix")
+}
+
+// push.default=nothing leaves git no destination even for a same-name
+// upstream: push asks where to go.
+func TestPushCommand_NoPushTarget_PushDefaultNothing(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	bareDir := addBareRemote(t, dir, "origin")
+	branch := currentBranchIn(t, dir)
+	temp_repo.RunGit(t, dir, "push", "-u", "origin", branch)
+	temp_repo.RunGit(t, dir, "config", "push.default", "nothing")
+	temp_repo.CreateCommit(t, dir, "feature.yml", "x\n", "feat: local commit")
+
+	var buf strings.Builder
+	stub := &stubSelector{confirmAnswers: []bool{true}, selectAnswers: []string{"origin"}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute(nil))
+
+	assert.ContainsString(t, buf.String(), "no push destination")
+	require.Equal(t, len(stub.selectCalls), 1)
+	require.Equal(t, len(stub.confirmCalls), 1)
+	assert.ContainsString(t, stub.confirmCalls[0].Prompt, "already exists")
+	assert.ContainsString(t, temp_repo.RunGit(t, bareDir, "log", "--format=%s", branch), "feat: local commit")
+}
+
+// a branch tracking a local branch has no remote destination either: push
+// asks, and the local branch it tracks is left where it was.
+func TestPushCommand_NoPushTarget_LocalUpstream(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	bareDir := addBareRemote(t, dir, "origin")
+	base := currentBranchIn(t, dir)
+	baseTip := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", base))
+	temp_repo.RunGit(t, dir, "checkout", "-b", "feature", "--track", base)
+	temp_repo.CreateCommit(t, dir, "feature.yml", "x\n", "feat: local commit")
+
+	stub := &stubSelector{confirmAnswers: []bool{true}, selectAnswers: []string{"origin"}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute(nil))
+
+	require.Equal(t, len(stub.selectCalls), 1)
+	assert.ContainsString(t, temp_repo.RunGit(t, bareDir, "log", "--format=%s", "feature"), "feat: local commit")
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", base)), baseTip)
+}

@@ -40,6 +40,21 @@ func (p *PushCommand) Execute(args []string) error {
 		}
 	}
 
+	// When git names no destination for a plain push (an upstream of another
+	// name under push.default=simple -- usually a PR base -- push.default=nothing,
+	// a local upstream), ask where to push as if there were no upstream.
+	if remoteBranch != "" {
+		target, err := p.repo().GetBranchPushTarget(currentBranch)
+		if err != nil {
+			return fmt.Errorf("getting push target: %w", err)
+		}
+		if target == "" {
+			fmt.Fprintf(p.out(), "Branch '%s' tracks '%s', but git has no push destination for it.\n",
+				currentBranch, remoteBranch)
+			remoteBranch = ""
+		}
+	}
+
 	if remoteBranch != "" {
 		// Refresh the remote-tracking ref before comparing. It's a local cache;
 		// pushing against a stale one is exactly what produces the surprise

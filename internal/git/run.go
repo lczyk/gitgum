@@ -47,17 +47,19 @@ var readPrelude = []string{
 
 // forwardedConfig names the settings a read carries over from the user's
 // config rather than locking. Everything else in the read prelude decides the
-// shape of the output; these two decide the answer -- which lines count as
-// changed, and whether a file that moved is one row or two -- so locking them
-// would have gg report something other than what the git sitting next to it
-// reports.
+// shape of the output; these decide the answer -- which lines count as
+// changed, whether a file that moved is one row or two, where a plain push
+// goes -- so locking them would have gg report something other than what the
+// git sitting next to it reports.
 //
 // Values are forwarded unexamined. git refuses one it does not understand, and
 // a gg that quietly substituted a working default there would disagree with
 // the git that just refused the same config.
 var forwardedConfig = map[string]bool{
-	"diff.algorithm": true,
-	"diff.renames":   true,
+	"diff.algorithm":     true,
+	"diff.renames":       true,
+	"push.default":       true,
+	"remote.pushdefault": true,
 }
 
 // forwardedConfigCache memoises the lookup per repo. A command lives too
@@ -75,10 +77,10 @@ func (r Repo) forwardedConfigArgs(ctx context.Context) []string {
 	if cached, ok := forwardedConfigCache.Load(r.Dir); ok {
 		return cached.([]string)
 	}
-	// One listing of the whole diff section, filtered here: naming the keys in
+	// One listing of the sections involved, filtered here: naming the keys in
 	// a pattern as well as in forwardedConfig would be two places to keep in
-	// step, and the section is small.
-	args := buildArgs(r.Dir, []string{"--no-pager"}, []string{"config", "--get-regexp", `^diff\.`}, false)
+	// step, and the sections are small.
+	args := buildArgs(r.Dir, []string{"--no-pager"}, []string{"config", "--get-regexp", `^(diff|push|remote)\.`}, false)
 	stdout, _, err := runCaptured(ctx, args, writeEnv())
 	values := map[string]string{}
 	if err == nil {

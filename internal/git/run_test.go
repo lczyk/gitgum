@@ -360,8 +360,10 @@ func TestForwardedConfigCarriesOnlyTheNamedKeys(t *testing.T) {
 	temp_repo.RunGit(t, dir, "config", "diff.algorithm", "patience")
 	temp_repo.RunGit(t, dir, "config", "diff.tool", "meld")
 	temp_repo.RunGit(t, dir, "config", "diff.context", "7")
+	temp_repo.RunGit(t, dir, "config", "push.followTags", "true")
 	forwardedConfigCache.Delete(dir)
 
+	// push.default is NewRepo's own pin.
 	args := Repo{Dir: dir}.forwardedConfigArgs(context.Background())
-	assert.EqualArrays(t, args, []string{"-c", "diff.algorithm=patience"})
+	assert.EqualArrays(t, args, []string{"-c", "diff.algorithm=patience", "-c", "push.default=simple"})
 }

@@ -300,6 +300,14 @@ func (r Repo) GetBranchTrackingRemote(branch string) (string, error) {
 	return remote, err
 }
 
+// GetBranchPushTarget returns where a plain `git push` from branch would go,
+// as "<remote>/<branch>", or "" when git names no destination -- as with
+// push.default=simple and an upstream of another name, or push.default=nothing.
+func (r Repo) GetBranchPushTarget(branch string) (string, error) {
+	stdout, _, err := r.run("for-each-ref", "--format=%(push:short)", "refs/heads/"+branch)
+	return stdout, err
+}
+
 // RefExists reports whether ref resolves to a commit in this repo. Unlike
 // GetCommitHash it treats "no such ref" as a plain false rather than an error,
 // so callers can probe for a ref they may still need to fetch.
