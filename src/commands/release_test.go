@@ -85,6 +85,33 @@ func TestReleaseCommand_Execute_MentionPickerAbortStillReleases(t *testing.T) {
 	assert.Equal(t, readFileIn(t, dir, "VERSION"), "1.0.1\n")
 }
 
+// A HEAD that already carries its release tag is a no-op, unless forced -- then
+// the bump lands on top of the previous release.
+func TestReleaseCommand_Execute_AlreadyReleased(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	temp_repo.WriteFile(t, dir, "VERSION", "1.0.0\n")
+	temp_repo.RunGit(t, dir, "add", "VERSION")
+	temp_repo.RunGit(t, dir, "commit", "-m", "release: v1.0.0")
+	temp_repo.RunGit(t, dir, "tag", "-a", "v1.0.0", "-m", "release v1.0.0")
+
+	release := func(force bool) string {
+		var out strings.Builder
+		cmd := &ReleaseCommand{cmdIO: cmdIO{Out: &out, Err: &strings.Builder{}, UI: &stubSelector{}, Repo: git.Repo{Dir: dir}}}
+		cmd.Args.Bump = "patch"
+		cmd.Force = force
+		require.NoError(t, cmd.Execute(nil))
+		return out.String()
+	}
+
+	assert.ContainsString(t, release(false), "Already released")
+	assert.Equal(t, readFileIn(t, dir, "VERSION"), "1.0.0\n")
+
+	assert.ContainsString(t, release(true), "Tagged v1.0.1")
+	assert.Equal(t, readFileIn(t, dir, "VERSION"), "1.0.1\n")
+	assert.ContainsString(t, temp_repo.RunGit(t, dir, "log", "-1", "--format=%s"), "release: v1.0.1")
+}
+
 func TestParseSemver(t *testing.T) {
 	tests := []struct {
 		in      string

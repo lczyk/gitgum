@@ -46,6 +46,7 @@ _gitgum() {
                 release)
                     _arguments \
                         '1:bump:(patch minor major)' \
+                        '(-f --force)'{-f,--force}'[Release even if HEAD is already a release]' \
                         && ret=0
                     ;;
                 worktree-switch|w)

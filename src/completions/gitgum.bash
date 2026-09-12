@@ -119,7 +119,7 @@ _gitgum_completion() {
             return 0
             ;;
         gitgum_release)
-            opts="patch minor major -h --help"
+            opts="patch minor major -f --force -h --help"
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;

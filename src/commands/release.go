@@ -19,7 +19,8 @@ import (
 // manual so the result can be inspected.
 type ReleaseCommand struct {
 	cmdIO
-	Args struct {
+	Force bool `short:"f" long:"force" description:"Release even if HEAD is already a release"`
+	Args  struct {
 		// go-flags spells an enum as a repeated choice tag; staticcheck reads
 		// the repetition as a mistake.
 		//lint:ignore SA5008 repeated choice tags are the go-flags enum syntax
@@ -80,7 +81,7 @@ func (r *ReleaseCommand) Execute(args []string) error {
 	}
 	remote := branchPushRemote(repo, branch)
 
-	if state, ok := alreadyReleased(repo); ok {
+	if state, ok := alreadyReleased(repo); ok && !r.Force {
 		fmt.Fprintf(r.out(), "Already released: HEAD is %q (tag %s already at HEAD).\n", state.subject, state.tag)
 		fmt.Fprintf(r.out(), "Nothing to do. To publish:\n")
 		fmt.Fprintf(r.out(), "  %s\n", formatPublishPushes(remote, branch, []string{state.tag}))

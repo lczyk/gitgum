@@ -109,6 +109,7 @@ module completions {
 
   export extern "__GITGUM_CMD__ release" [
     bump: string@"nu-complete gitgum bump" # Version bump level
+    --force(-f)              # Release even if HEAD is already a release
     --help(-h)               # Show help
   ]
 

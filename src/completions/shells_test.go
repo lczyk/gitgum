@@ -68,8 +68,8 @@ var bins = []binSpec{
 			"flat", "follow",
 			// status sections
 			"worktree", "changes", "head",
-			// release bumps
-			"patch", "minor", "major",
+			// release bumps and flag
+			"patch", "minor", "major", "force",
 			// completion shell choices and flag
 			"bash", "fish", "zsh", "nu", "cd",
 		},
@@ -88,6 +88,7 @@ var bins = []binSpec{
 			{"completion shells", []string{"completion", ""}, []string{"bash", "fish", "zsh", "nu"}},
 			{"completion flags", []string{"completion", "--"}, []string{"--cd"}},
 			{"release bumps", []string{"release", ""}, []string{"patch", "minor", "major"}},
+			{"release flags", []string{"release", "--"}, []string{"--force"}},
 		},
 		nuHelpExpect: []string{"clone", "switch", "branch", "checkout-pr", "add-remote", "completion", "clean", "release", "pull", "tree", "diff", "doctor", "worktree-switch"},
 	},

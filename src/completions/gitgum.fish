@@ -68,6 +68,7 @@ complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from replay-list' -f -a '(
 complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from release' -f -a 'patch' -d 'Patch version bump'
 complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from release' -f -a 'minor' -d 'Minor version bump'
 complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from release' -f -a 'major' -d 'Major version bump'
+complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from release' -s f -l force -d 'Release even if HEAD is already a release'
 
 # status <sections>
 complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from status s' -f -a all -d 'Every section'
