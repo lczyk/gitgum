@@ -23,12 +23,24 @@ func (p *PushCommand) Execute(args []string) error {
 	if err != nil {
 		return err
 	}
-	if remoteBranch != "" {
-		currentBranch, err := p.repo().GetCurrentBranch()
-		if err != nil {
-			return fmt.Errorf("getting current branch: %w", err)
-		}
+	currentBranch, err := p.repo().GetCurrentBranch()
+	if err != nil {
+		return fmt.Errorf("getting current branch: %w", err)
+	}
 
+	// A named remote overrides the upstream -- unless it names the upstream
+	// itself, which is just a plain `gg push`.
+	if len(args) > 0 {
+		remote, err := p.selectRemote(currentBranch, args[0])
+		if err != nil {
+			return err
+		}
+		if remote+"/"+currentBranch != remoteBranch {
+			return p.pushToRemote(remote, currentBranch, nil)
+		}
+	}
+
+	if remoteBranch != "" {
 		// Refresh the remote-tracking ref before comparing. It's a local cache;
 		// pushing against a stale one is exactly what produces the surprise
 		// non-fast-forward rejection this flow exists to catch ahead of time.
@@ -97,42 +109,36 @@ func (p *PushCommand) Execute(args []string) error {
 		return nil
 	}
 
-	currentBranch, err := p.repo().GetCurrentBranch()
+	remote, err := p.selectRemote(currentBranch, "")
 	if err != nil {
-		return fmt.Errorf("getting current branch: %w", err)
+		return err
 	}
+	return p.pushToRemote(remote, currentBranch, nil)
+}
 
+// selectRemote picks the remote to push currentBranch to: name, when it is
+// one, otherwise the picker with name as its query.
+func (p *PushCommand) selectRemote(currentBranch, name string) (string, error) {
 	remotes, err := p.repo().GetRemotes()
 	if err != nil {
-		return fmt.Errorf("getting remotes: %w", err)
+		return "", fmt.Errorf("getting remotes: %w", err)
 	}
-
 	if len(remotes) == 0 {
-		return fmt.Errorf("no remotes")
+		return "", fmt.Errorf("no remotes")
+	}
+	if slices.Contains(remotes, name) {
+		return name, nil
 	}
 
-	var selectedRemote string
-	if len(args) > 0 {
-		for _, r := range remotes {
-			if r == args[0] {
-				selectedRemote = r
-				break
-			}
-		}
+	var query []string
+	if name != "" {
+		query = []string{name}
 	}
-	if selectedRemote == "" {
-		var query []string
-		if len(args) > 0 {
-			query = args[:1]
-		}
-		remote, err := p.sel().Select(fmt.Sprintf("Push '%s' to", currentBranch), remotes, query...)
-		if err != nil {
-			return fmt.Errorf("selecting remote: %w", err)
-		}
-		selectedRemote = remote
+	remote, err := p.sel().Select(fmt.Sprintf("Push '%s' to", currentBranch), remotes, query...)
+	if err != nil {
+		return "", fmt.Errorf("selecting remote: %w", err)
 	}
-
-	return p.pushToRemote(selectedRemote, currentBranch, nil)
+	return remote, nil
 }
 
 // pushToRemote pushes currentBranch to selectedRemote, prompting before

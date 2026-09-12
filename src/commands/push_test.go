@@ -712,3 +712,141 @@ func TestPushCommand_Diverged_MergeTreeFailureOffersOtherRemotes(t *testing.T) {
 	assert.Equal(t, stub.selectCalls[0].Options[0], "mirror")
 	assert.ContainsString(t, temp_repo.RunGit(t, mirrorDir, "log", "--format=%s", branch), "feat: local commit")
 }
+
+// an upstream is set but the user names another remote: push goes there,
+// skipping the upstream comparison, and moves the upstream.
+func TestPushCommand_RemoteArg_OverridesUpstream(t *testing.T) {
+	t.Parallel()
+	dir, bareDir, branch := pushRepoWithRemoteAhead(t, "remote.txt", "remote change\n")
+	temp_repo.CreateCommit(t, dir, "local.txt", "local change\n", "feat: local commit")
+	mirrorDir := addBareRemote(t, dir, "mirror")
+
+	stub := &stubSelector{confirmAnswers: []bool{true}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute([]string{"mirror"}))
+
+	// straight to creating the branch on mirror: no rebase prompt, no picker.
+	require.Equal(t, len(stub.confirmCalls), 1)
+	assert.ContainsString(t, stub.confirmCalls[0].Prompt, "No remote branch")
+	assert.Equal(t, len(stub.selectCalls), 0)
+	assert.ContainsString(t, temp_repo.RunGit(t, mirrorDir, "log", "--format=%s", branch), "feat: local commit")
+	assert.Equal(t, upstreamOf(t, dir, branch), "mirror/"+branch)
+	originLog := temp_repo.RunGit(t, bareDir, "log", "--format=%s", branch)
+	assert.That(t, !strings.Contains(originLog, "feat: local commit"), "origin must not receive the push")
+}
+
+// an argument resolving to the upstream's own branch -- via the picker here,
+// so the argument is visibly read -- is a plain `gg push`: the upstream flow
+// runs.
+func TestPushCommand_RemoteArg_NamingUpstreamIsPlainPush(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	bareDir := addBareRemote(t, dir, "origin")
+	addBareRemote(t, dir, "mirror")
+	branch := currentBranchIn(t, dir)
+	temp_repo.RunGit(t, dir, "push", "-u", "origin", branch)
+	temp_repo.CreateCommit(t, dir, "feature.yml", "x\n", "feat: local commit")
+
+	var buf strings.Builder
+	stub := &stubSelector{confirmAnswers: []bool{true}, selectAnswers: []string{"origin"}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute([]string{"orig"}))
+
+	assert.Equal(t, len(stub.selectCalls), 1)
+	require.Equal(t, len(stub.confirmCalls), 1)
+	assert.ContainsString(t, stub.confirmCalls[0].Prompt, "remote tracking branch")
+	assert.ContainsString(t, buf.String(), "Pushed to remote tracking branch")
+	assert.ContainsString(t, temp_repo.RunGit(t, bareDir, "log", "--format=%s", branch), "feat: local commit")
+}
+
+// the upstream is a differently-named branch (a PR base, say) and the user
+// names its remote: push creates the branch there under its own name rather
+// than pushing onto the upstream.
+func TestPushCommand_RemoteArg_UpstreamRemoteUnderOwnName(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	bareDir := addBareRemote(t, dir, "origin")
+	base := currentBranchIn(t, dir)
+	temp_repo.RunGit(t, dir, "push", "-u", "origin", base)
+	temp_repo.RunGit(t, dir, "checkout", "-b", "fix")
+	temp_repo.RunGit(t, dir, "branch", "--set-upstream-to=origin/"+base, "fix")
+	temp_repo.CreateCommit(t, dir, "fix.txt", "x\n", "fix: local commit")
+
+	stub := &stubSelector{confirmAnswers: []bool{true}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute([]string{"origin"}))
+
+	require.Equal(t, len(stub.confirmCalls), 1)
+	assert.ContainsString(t, stub.confirmCalls[0].Prompt, "No remote branch 'origin/fix'")
+	assert.ContainsString(t, temp_repo.RunGit(t, bareDir, "log", "--format=%s", "fix"), "fix: local commit")
+	baseLog := temp_repo.RunGit(t, bareDir, "log", "--format=%s", base)
+	assert.That(t, !strings.Contains(baseLog, "fix: local commit"), "the upstream branch must not receive the push")
+	assert.Equal(t, upstreamOf(t, dir, "fix"), "origin/fix")
+}
+
+// a name that isn't a remote seeds the picker, as it does with no upstream;
+// the pick then overrides the upstream.
+func TestPushCommand_RemoteArg_NotARemoteOpensPicker(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	addBareRemote(t, dir, "origin")
+	mirrorDir := addBareRemote(t, dir, "mirror")
+	branch := currentBranchIn(t, dir)
+	temp_repo.RunGit(t, dir, "push", "-u", "origin", branch)
+	temp_repo.CreateCommit(t, dir, "feature.yml", "x\n", "feat: local commit")
+
+	stub := &stubSelector{confirmAnswers: []bool{true}, selectAnswers: []string{"mirror"}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute([]string{"mir"}))
+
+	require.Equal(t, len(stub.selectCalls), 1)
+	assert.Equal(t, len(stub.selectCalls[0].Options), 2)
+	require.Equal(t, len(stub.confirmCalls), 1)
+	assert.ContainsString(t, stub.confirmCalls[0].Prompt, "No remote branch")
+	assert.ContainsString(t, temp_repo.RunGit(t, mirrorDir, "log", "--format=%s", branch), "feat: local commit")
+	assert.Equal(t, upstreamOf(t, dir, branch), "mirror/"+branch)
+}
+
+// declining the named remote offers the others, the upstream's remote included.
+func TestPushCommand_RemoteArg_DeclineOffersOtherRemotes(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	bareDir := addBareRemote(t, dir, "origin")
+	mirrorDir := addBareRemote(t, dir, "mirror")
+	branch := currentBranchIn(t, dir)
+	temp_repo.RunGit(t, dir, "push", "-u", "origin", branch)
+	temp_repo.CreateCommit(t, dir, "feature.yml", "x\n", "feat: local commit")
+
+	// decline creating the branch on mirror, pick origin, push to its branch.
+	stub := &stubSelector{confirmAnswers: []bool{false, true}, selectAnswers: []string{"origin"}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute([]string{"mirror"}))
+
+	require.Equal(t, len(stub.selectCalls), 1)
+	require.Equal(t, len(stub.selectCalls[0].Options), 1)
+	assert.Equal(t, stub.selectCalls[0].Options[0], "origin")
+	require.Equal(t, len(stub.confirmCalls), 2)
+	assert.ContainsString(t, stub.confirmCalls[1].Prompt, "already exists")
+	assert.ContainsString(t, temp_repo.RunGit(t, bareDir, "log", "--format=%s", branch), "feat: local commit")
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, mirrorDir, "branch", "--list", branch)), "")
+}
+
+// Escape on that picker cancels and leaves the upstream alone.
+func TestPushCommand_RemoteArg_PickerEscapeCancels(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	addBareRemote(t, dir, "origin")
+	branch := currentBranchIn(t, dir)
+	temp_repo.RunGit(t, dir, "push", "-u", "origin", branch)
+
+	stub := &stubSelector{selectErrs: []error{ui.ErrCancelled}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	assert.ErrorIs(t, cmd.Execute([]string{"nope"}), ui.ErrCancelled)
+	assert.Equal(t, upstreamOf(t, dir, branch), "origin/"+branch)
+}
