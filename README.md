@@ -167,9 +167,9 @@ Show the working-tree diff as a coloured diffstat -- one row per file with a bar
 
 ### `gitgum push`
 
-Push the current branch. Picks a remote interactively when the branch has no upstream, or confirms a push to the existing tracking branch.
+Push the current branch. Picks a remote interactively when the branch has no upstream, or confirms a push to the existing tracking branch. Name a remote -- `gg push <remote>`, or part of one to seed the picker -- to push there instead, even when the branch has an upstream; the upstream then moves to it.
 
-When the branch has an upstream, push fetches first so it compares against fresh remote state rather than a stale tracking ref, then acts on where local sits: strictly ahead pushes as usual; the remote holding commits you lack (a plain push would be rejected as non-fast-forward) is handled without dropping you into a surprise rejection. If a `pull --rebase` would apply cleanly it offers to rebase and push the result; if it would conflict it errors and points you at `gg pull` to integrate manually. A branch that is merely behind is offered a fast-forward instead.
+When the branch has an upstream, push fetches first so it compares against fresh remote state rather than a stale tracking ref, then acts on where local sits: strictly ahead pushes as usual; the remote holding commits you lack (a plain push would be rejected as non-fast-forward) is handled without dropping you into a surprise rejection. If a `pull --rebase` would apply cleanly it offers to rebase and push the result; if it would conflict it errors and points you at `gg pull` to integrate manually. A branch that is merely behind is offered a fast-forward instead. Declining any of these -- or a rebase that would conflict -- offers the other remotes rather than stopping, and so does declining a remote you then pick. With none left, a decline says nothing was pushed and a conflict stays an error.
 
 ### `gitgum pull`
 
