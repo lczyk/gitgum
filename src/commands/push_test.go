@@ -984,3 +984,53 @@ func TestPushCommand_NoPushTarget_LocalUpstream(t *testing.T) {
 	assert.ContainsString(t, temp_repo.RunGit(t, bareDir, "log", "--format=%s", "feature"), "feat: local commit")
 	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", base)), baseTip)
 }
+
+// the picker lists the remotes most local branches track first -- where a
+// user usually pushes -- so Enter lands on that one.
+func TestPushCommand_PickerListsMostTrackedRemoteFirst(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	addBareRemote(t, dir, "alpha")
+	addBareRemote(t, dir, "zeta")
+	base := currentBranchIn(t, dir)
+	temp_repo.RunGit(t, dir, "push", "-u", "zeta", base)
+	temp_repo.RunGit(t, dir, "checkout", "-b", "other")
+	temp_repo.RunGit(t, dir, "push", "-u", "zeta", "other")
+	temp_repo.RunGit(t, dir, "checkout", "-b", "feature")
+
+	stub := &stubSelector{confirmAnswers: []bool{true}, selectAnswers: []string{"zeta"}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute(nil))
+
+	require.Equal(t, len(stub.selectCalls), 1)
+	require.Equal(t, len(stub.selectCalls[0].Options), 2)
+	assert.Equal(t, stub.selectCalls[0].Options[0], "zeta")
+	assert.Equal(t, stub.selectCalls[0].Options[1], "alpha")
+}
+
+// the other-remotes offer is ranked the same way.
+func TestPushCommand_OfferListsMostTrackedRemoteFirst(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	addBareRemote(t, dir, "origin")
+	addBareRemote(t, dir, "alpha")
+	addBareRemote(t, dir, "zeta")
+	base := currentBranchIn(t, dir)
+	for _, branch := range []string{"b1", "b2"} {
+		temp_repo.RunGit(t, dir, "branch", branch)
+		temp_repo.RunGit(t, dir, "push", "-u", "zeta", branch)
+	}
+	temp_repo.RunGit(t, dir, "push", "-u", "origin", base)
+	temp_repo.CreateCommit(t, dir, "feature.yml", "x\n", "feat: local commit")
+
+	// decline origin, then back out of the offer: only its order matters here.
+	stub := &stubSelector{confirmAnswers: []bool{false}, selectErrs: []error{ui.ErrCancelled}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	assert.ErrorIs(t, cmd.Execute(nil), ui.ErrCancelled)
+	require.Equal(t, len(stub.selectCalls), 1)
+	require.Equal(t, len(stub.selectCalls[0].Options), 2)
+	assert.Equal(t, stub.selectCalls[0].Options[0], "zeta")
+	assert.Equal(t, stub.selectCalls[0].Options[1], "alpha")
+}

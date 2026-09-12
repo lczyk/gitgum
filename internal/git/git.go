@@ -300,6 +300,21 @@ func (r Repo) GetBranchTrackingRemote(branch string) (string, error) {
 	return remote, err
 }
 
+// TrackedRemoteCounts counts, per remote, the local branches whose upstream
+// lives there. It reads %(upstream:remotename) alone rather than going through
+// LocalBranches, whose track field walks history for every tracked branch.
+func (r Repo) TrackedRemoteCounts() (map[string]int, error) {
+	stdout, _, err := r.run("for-each-ref", "--format=%(upstream:remotename)", "refs/heads")
+	if err != nil {
+		return nil, err
+	}
+	counts := map[string]int{}
+	for _, remote := range strutil.SplitTrimmedLines(stdout) {
+		counts[remote]++
+	}
+	return counts, nil
+}
+
 // GetBranchPushTarget returns where a plain `git push` from branch would go,
 // as "<remote>/<branch>", or "" when git names no destination -- as with
 // push.default=simple and an upstream of another name, or push.default=nothing.

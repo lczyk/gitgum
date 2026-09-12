@@ -149,11 +149,24 @@ func (p *PushCommand) selectRemote(currentBranch, name string) (string, error) {
 	if name != "" {
 		query = []string{name}
 	}
-	remote, err := p.sel().Select(fmt.Sprintf("Push '%s' to", currentBranch), remotes, query...)
+	remote, err := p.sel().Select(fmt.Sprintf("Push '%s' to", currentBranch), p.rankRemotes(remotes), query...)
 	if err != nil {
 		return "", fmt.Errorf("selecting remote: %w", err)
 	}
 	return remote, nil
+}
+
+// rankRemotes puts the remotes most local branches track first -- where a user
+// usually pushes -- keeping git's order among equals. A failed count leaves
+// the order as it was.
+func (p *PushCommand) rankRemotes(remotes []string) []string {
+	counts, err := p.repo().TrackedRemoteCounts()
+	if err != nil {
+		return remotes
+	}
+	ranked := slices.Clone(remotes)
+	slices.SortStableFunc(ranked, func(a, b string) int { return counts[b] - counts[a] })
+	return ranked
 }
 
 // pushToRemote pushes currentBranch to selectedRemote, prompting before
@@ -246,7 +259,7 @@ func (p *PushCommand) offerOtherRemotes(currentBranch string, ruledOut []string,
 		fmt.Fprintf(p.err(), "%s %v.\n", paint(ansiBoldYellow, "note:"), stuck)
 	}
 
-	remote, err := p.sel().Select(fmt.Sprintf("Push '%s' to", currentBranch), others)
+	remote, err := p.sel().Select(fmt.Sprintf("Push '%s' to", currentBranch), p.rankRemotes(others))
 	if err != nil {
 		return fmt.Errorf("selecting remote: %w", err)
 	}

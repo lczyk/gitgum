@@ -220,6 +220,26 @@ func TestGetBranchPushTargetHonoursGlobalPushDefault(t *testing.T) {
 	assert.Equal(t, "origin/fix", target)
 }
 
+func TestTrackedRemoteCounts(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	for _, remote := range []string{"a", "b"} {
+		temp_repo.RunGit(t, dir, "remote", "add", remote, dir)
+		temp_repo.RunGit(t, dir, "fetch", remote)
+	}
+	temp_repo.RunGit(t, dir, "branch", "--set-upstream-to=a/main", "main")
+	for _, branch := range []string{"x", "y"} {
+		temp_repo.RunGit(t, dir, "branch", branch)
+		temp_repo.RunGit(t, dir, "branch", "--set-upstream-to=b/main", branch)
+	}
+	temp_repo.RunGit(t, dir, "branch", "untracked")
+
+	counts, err := git.Repo{Dir: dir}.TrackedRemoteCounts()
+	require.NoError(t, err)
+	assert.Equal(t, 1, counts["a"])
+	assert.Equal(t, 2, counts["b"])
+}
+
 func TestGetCurrentBranchUpstream(t *testing.T) {
 	t.Parallel()
 
