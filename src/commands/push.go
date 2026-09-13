@@ -25,6 +25,9 @@ func (p *PushCommand) Execute(args []string) error {
 	if err != nil {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
+	if currentBranch == "HEAD" {
+		return fmt.Errorf("HEAD is detached: check out a branch to push")
+	}
 
 	// A named remote overrides the upstream -- unless it names the upstream
 	// itself, which is just a plain `gg push`.

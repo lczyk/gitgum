@@ -1144,3 +1144,20 @@ func TestPushCommand_FetchesOnlyTheBranch(t *testing.T) {
 	assert.Equal(t, countCalls(calls(), "fetch"), 1)
 	assert.Equal(t, countExact(calls(), "fetch", "origin", "+refs/heads/"+branch+":refs/remotes/origin/"+branch), 1)
 }
+
+// a detached HEAD has no branch to push: push says so before asking anything.
+func TestPushCommand_DetachedHeadErrors(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	addBareRemote(t, dir, "origin")
+	temp_repo.RunGit(t, dir, "checkout", "-q", "--detach")
+
+	stub := &stubSelector{}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	err := cmd.Execute(nil)
+	assert.Error(t, err, assert.AnyError, "a detached HEAD has nothing to push")
+	assert.ContainsString(t, err.Error(), "detached")
+	assert.Equal(t, len(stub.selectCalls), 0)
+	assert.Equal(t, len(stub.confirmCalls), 0)
+}
