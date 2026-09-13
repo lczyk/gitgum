@@ -81,6 +81,8 @@ func TestSyncTrackingRef(t *testing.T) {
 
 		require.NoError(t, Repo{Dir: local}.SyncTrackingRef("origin", "main", tip))
 		assert.Equal(t, tip, strings.TrimSpace(temp_repo.RunGit(t, local, "rev-parse", "origin/main")))
+		reflog := temp_repo.RunGit(t, local, "reflog", "show", "-n", "1", "--format=%gs", "refs/remotes/origin/main")
+		assert.Equal(t, "gg: tip from ls-remote", strings.TrimSpace(reflog))
 	})
 
 	// the commit only exists on the remote: that one branch is fetched.

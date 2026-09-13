@@ -26,7 +26,7 @@ func (r Repo) SyncTrackingRef(remote, branch, tip string) error {
 	if !r.HasObject(tip) {
 		return r.Fetch(remote, "+refs/heads/"+branch+":"+ref)
 	}
-	if _, stderr, err := r.runWrite(context.Background(), "update-ref", ref, tip); err != nil {
+	if _, stderr, err := r.runWrite(context.Background(), "update-ref", "-m", "gg: tip from ls-remote", ref, tip); err != nil {
 		return fmt.Errorf("git update-ref %s: %w: %s", ref, err, stderr)
 	}
 	return nil
