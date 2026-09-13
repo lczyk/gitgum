@@ -93,7 +93,7 @@ func (p *PushCommand) Execute(args []string) error {
 			return fmt.Errorf("checking divergence: %w", err)
 		}
 		if remoteAhead {
-			return p.reconcileDiverged(currentBranch, remoteBranch)
+			return p.reconcileDiverged(currentBranch, remoteBranch, remoteCommit)
 		}
 
 		// Local is strictly ahead: a plain push fast-forwards the remote.
@@ -312,14 +312,16 @@ func (p *PushCommand) offerRecreate(currentBranch, remote, branch string) error 
 //   - genuinely diverged (each side has unique commits): offer the rebase only
 //     if it would apply without conflicts (checked in memory, no side effects),
 //     rather than drop the user into a half-finished rebase. On confirmation it
-//     rebases and pushes the result.
+//     rebases onto the tip it checked and pushes the result; a rebase that
+//     stops part-way is aborted, and a push that fails undoes the rebase
+//     unless the remote turns out to have it.
 //
 // Declining, or a rebase that won't apply, offers the other remotes instead;
 // with none left, the latter is an error. It owns the whole remote-ahead case:
 // the caller returns whatever this returns.
-func (p *PushCommand) reconcileDiverged(currentBranch, upstream string) error {
+func (p *PushCommand) reconcileDiverged(currentBranch, upstream, remoteTip string) error {
 	upstreamRemote, _, _ := strings.Cut(upstream, "/")
-	localAhead, err := p.repo().IsBranchAheadOfRemote(currentBranch, upstream)
+	localAhead, err := p.repo().IsBranchAheadOfRemote(currentBranch, remoteTip)
 	if err != nil {
 		return fmt.Errorf("checking divergence: %w", err)
 	}
@@ -340,7 +342,7 @@ func (p *PushCommand) reconcileDiverged(currentBranch, upstream string) error {
 			return err
 		}
 		defer cleanup()
-		if err := p.repo().Integrate(git.PullFFOnly, upstream); err != nil {
+		if err := p.repo().Integrate(git.PullFFOnly, remoteTip); err != nil {
 			return err
 		}
 		fmt.Fprintf(p.out(), "Fast-forwarded '%s' to '%s'. Nothing to push.\n", currentBranch, upstream)
@@ -350,7 +352,7 @@ func (p *PushCommand) reconcileDiverged(currentBranch, upstream string) error {
 	// Genuine divergence. Only offer the rebase if it would apply cleanly --
 	// checked in memory (no working-tree / index / HEAD changes) so a would-be
 	// conflict never leaves the repo mid-rebase.
-	conflict, err := p.repo().WouldRebaseConflict(upstream, currentBranch)
+	conflict, err := p.repo().WouldRebaseConflict(remoteTip, currentBranch)
 	if err != nil {
 		return p.offerOtherRemotes(currentBranch, []string{upstreamRemote}, fmt.Errorf(
 			"remote '%s' has diverged from '%s'; could not check whether a rebase applies cleanly (%w). "+
@@ -375,14 +377,67 @@ func (p *PushCommand) reconcileDiverged(currentBranch, upstream string) error {
 	if err != nil {
 		return err
 	}
+	// Deferred, so the stash comes back after any undo below has put the
+	// branch back where it was.
 	defer cleanup()
 
-	if err := p.repo().Integrate(git.PullRebase, upstream); err != nil {
-		return err
+	before, err := p.repo().GetCommitHash(currentBranch)
+	if err != nil {
+		return fmt.Errorf("getting local commit: %w", err)
+	}
+	if err := p.repo().Integrate(git.PullRebase, remoteTip); err != nil {
+		return p.abortRebase(currentBranch, err)
 	}
 	if err := p.repo().Push(); err != nil {
-		return fmt.Errorf("failed to push: %w", err)
+		return p.undoRebase(currentBranch, upstream, before, remoteTip, err)
 	}
 	fmt.Fprintf(p.out(), "Rebased '%s' onto '%s' and pushed.\n", currentBranch, upstream)
 	return nil
+}
+
+// abortRebase backs out of a rebase that stopped part-way -- a conflict the
+// in-memory check missed, or a hook refusing a commit -- so the branch is left
+// as it was rather than mid-rebase.
+func (p *PushCommand) abortRebase(currentBranch string, rebaseErr error) error {
+	if op, yes := p.repo().InProgress(); !yes || !strings.Contains(op, "rebase") {
+		return rebaseErr
+	}
+	if err := p.repo().RebaseAbort(); err != nil {
+		return fmt.Errorf("%w; aborting the rebase failed too (%v): finish or abort it by hand", rebaseErr, err)
+	}
+	fmt.Fprintf(p.err(), "The rebase stopped part-way; aborted it, so '%s' is as it was.\n", currentBranch)
+	return rebaseErr
+}
+
+// undoRebase runs when the push after a rebase failed. The push may have
+// landed anyway -- a connection can drop after the remote took it -- so the
+// remote is asked first: undoing a rebase it already has would leave the
+// branch diverged from it all over again.
+func (p *PushCommand) undoRebase(currentBranch, upstream, before, remoteTip string, pushErr error) error {
+	pushErr = fmt.Errorf("failed to push: %w", pushErr)
+	pushed, err := p.repo().GetCommitHash(currentBranch)
+	if err != nil {
+		return pushErr
+	}
+	var tip string
+	if remote, branch, ok := strings.Cut(upstream, "/"); ok {
+		tip, _, _ = p.repo().RemoteBranchTip(remote, branch)
+	}
+	switch tip {
+	case pushed:
+		fmt.Fprintf(p.out(), "Rebased '%s' onto '%s' and pushed; git reported an error, but the remote has it.\n",
+			currentBranch, upstream)
+		return nil
+	case remoteTip:
+		if err := p.repo().ResetKeep(before); err != nil {
+			return fmt.Errorf("%w; undoing the rebase failed too (%v): undo it by hand with git reset --keep %s",
+				pushErr, err, before)
+		}
+		fmt.Fprintf(p.err(), "Undid the rebase: '%s' is back where it was.\n", currentBranch)
+		return pushErr
+	default:
+		fmt.Fprintf(p.err(), "Couldn't tell whether the push reached '%s', so the rebase stays; to undo it: git reset --keep %s\n",
+			upstream, before)
+		return pushErr
+	}
 }

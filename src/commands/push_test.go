@@ -1161,3 +1161,78 @@ func TestPushCommand_DetachedHeadErrors(t *testing.T) {
 	assert.Equal(t, len(stub.selectCalls), 0)
 	assert.Equal(t, len(stub.confirmCalls), 0)
 }
+
+// the rebase applied, but the push after it failed and the remote still has
+// what it had: the rebase is undone, leaving the branch where it started.
+func TestPushCommand_Diverged_PushFailsUndoesRebase(t *testing.T) {
+	dir, _, branch := pushRepoWithRemoteAhead(t, "remote.txt", "remote change\n")
+	temp_repo.CreateCommit(t, dir, "local.txt", "local change\n", "feat: local commit")
+	before := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", branch))
+	failGitSubcommand(t, "push")
+
+	var errBuf strings.Builder
+	stub := &stubSelector{confirmAnswers: []bool{true}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, Err: &errBuf, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	err := cmd.Execute(nil)
+	assert.Error(t, err, assert.AnyError, "the push failed")
+	assert.ContainsString(t, errBuf.String(), "Undid the rebase")
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", branch)), before)
+}
+
+// the push reported an error after the remote took it: nothing is undone.
+func TestPushCommand_Diverged_PushLandedDespiteError(t *testing.T) {
+	dir, bareDir, branch := pushRepoWithRemoteAhead(t, "remote.txt", "remote change\n")
+	temp_repo.CreateCommit(t, dir, "local.txt", "local change\n", "feat: local commit")
+	shimGitSubcommand(t, "push", "\"$git\" \"$@\"; exit 1")
+
+	var buf strings.Builder
+	stub := &stubSelector{confirmAnswers: []bool{true}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute(nil))
+	assert.ContainsString(t, buf.String(), "the remote has it")
+	local := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", branch))
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, bareDir, "rev-parse", branch)), local)
+}
+
+// the push failed and the remote can't be asked whether it landed: the rebase
+// stays -- right either way -- and push says how to undo it.
+func TestPushCommand_Diverged_PushOutcomeUnknownKeepsRebase(t *testing.T) {
+	dir, bareDir, branch := pushRepoWithRemoteAhead(t, "remote.txt", "remote change\n")
+	temp_repo.CreateCommit(t, dir, "local.txt", "local change\n", "feat: local commit")
+	before := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", branch))
+	shimGitSubcommand(t, "push", "rm -rf '"+bareDir+"'; exit 128")
+
+	var errBuf strings.Builder
+	stub := &stubSelector{confirmAnswers: []bool{true}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, Err: &errBuf, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	err := cmd.Execute(nil)
+	assert.Error(t, err, assert.AnyError, "the push failed")
+	assert.ContainsString(t, errBuf.String(), "git reset --keep "+before)
+	assert.NotEqual(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", branch)), before)
+}
+
+// the in-memory check passed but the rebase stops part-way anyway -- an
+// intermediate commit clashes though the tips merge cleanly: it's aborted,
+// leaving the branch as it was rather than mid-rebase.
+func TestPushCommand_Diverged_RebaseStopsIsAborted(t *testing.T) {
+	t.Parallel()
+	dir, _, branch := pushRepoWithRemoteAhead(t, "clash.txt", "remote version\n")
+	temp_repo.CreateCommit(t, dir, "clash.txt", "local version\n", "feat: add clash")
+	temp_repo.RunGit(t, dir, "rm", "-q", "clash.txt")
+	temp_repo.RunGit(t, dir, "commit", "-q", "-m", "feat: drop clash")
+	before := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", branch))
+
+	var errBuf strings.Builder
+	stub := &stubSelector{confirmAnswers: []bool{true}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, Err: &errBuf, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	err := cmd.Execute(nil)
+	assert.Error(t, err, assert.AnyError, "the rebase stopped")
+	assert.ContainsString(t, errBuf.String(), "aborted it")
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", branch)), before)
+	_, inProgress := git.Repo{Dir: dir}.InProgress()
+	assert.That(t, !inProgress, "no rebase left in progress")
+}

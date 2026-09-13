@@ -43,6 +43,15 @@ func (r Repo) Integrate(mode PullMode, upstream string) error {
 	return nil
 }
 
+// RebaseAbort abandons the rebase in progress, putting the branch, index and
+// working tree back as they were before it started.
+func (r Repo) RebaseAbort() error {
+	if _, stderr, err := r.runWrite(context.Background(), "rebase", "--abort"); err != nil {
+		return fmt.Errorf("git rebase --abort: %w: %s", err, strings.TrimSpace(stderr))
+	}
+	return nil
+}
+
 // WouldRebaseConflict reports whether replaying `branch`'s commits onto
 // `upstream` (a pull --rebase) would hit textual conflicts, without touching
 // the working tree, index, or HEAD. It uses `git merge-tree --write-tree`,

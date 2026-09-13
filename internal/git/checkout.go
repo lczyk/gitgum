@@ -72,3 +72,14 @@ func (r Repo) ResetHard(ref string) error {
 	}
 	return nil
 }
+
+// ResetKeep moves the current branch to ref, updating the files that differ
+// and refusing where that would overwrite a local change -- the safe way to
+// take back a rebase.
+func (r Repo) ResetKeep(ref string) error {
+	_, stderr, err := r.runWrite(context.Background(), "reset", "--keep", ref)
+	if err != nil {
+		return fmt.Errorf("git reset --keep %s: %w: %s", ref, err, stderr)
+	}
+	return nil
+}

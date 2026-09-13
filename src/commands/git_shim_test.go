@@ -65,22 +65,29 @@ func countCalls(calls []string, subcommand string) int {
 	return n
 }
 
-// failGitSubcommand puts a fake `git` in front of the real one on PATH that
-// fails every call to subcommand and passes the rest through, for error paths
-// real git won't take on demand.
+// shimGitSubcommand puts a fake `git` in front of the real one on PATH that
+// runs action -- sh, with $git naming the real git -- for every call to
+// subcommand and passes the rest through, for paths real git won't take on
+// demand.
 //
 // Callers must not t.Parallel: t.Setenv forbids it.
-func failGitSubcommand(t *testing.T, subcommand string) {
+func shimGitSubcommand(t *testing.T, subcommand, action string) {
 	t.Helper()
 	realGit, err := exec.LookPath("git")
 	require.NoError(t, err, "git must be on PATH")
 
 	dir := t.TempDir()
-	script := "#!/bin/sh\n" +
-		"case \" $* \" in *\" " + subcommand + " \"*) echo 'fatal: forced by test' >&2; exit 128 ;; esac\n" +
-		"exec " + realGit + " \"$@\"\n"
+	script := "#!/bin/sh\ngit=" + realGit + "\n" +
+		"case \" $* \" in *\" " + subcommand + " \"*) " + action + " ;; esac\n" +
+		"exec \"$git\" \"$@\"\n"
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755), "write git shim")
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// failGitSubcommand fails every call to subcommand.
+func failGitSubcommand(t *testing.T, subcommand string) {
+	t.Helper()
+	shimGitSubcommand(t, subcommand, "echo 'fatal: forced by test' >&2; exit 128")
 }
 
 // countExact counts invocations whose subcommand and arguments match want
