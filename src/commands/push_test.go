@@ -1285,3 +1285,35 @@ func TestPushCommand_Behind_InterruptRestoresStash(t *testing.T) {
 	assert.ContainsString(t, temp_repo.RunGit(t, dir, "diff", "README.md"), "+edited")
 	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "stash", "list")), "")
 }
+
+// Ctrl-C while the changes are being stashed is a cancel too, and leaves them
+// where they were.
+func TestPushCommand_Behind_InterruptDuringStashCancels(t *testing.T) {
+	dir, _, _ := pushRepoWithRemoteAhead(t, "remote.txt", "remote change\n")
+	temp_repo.WriteFile(t, dir, "README.md", "# test repo\nedited\n")
+	shimGitSubcommand(t, "stash", "kill -INT $PPID; sleep 0.2; exit 130")
+
+	stub := &stubSelector{confirmAnswers: []bool{true}, selectAnswers: []string{dirtyStashOption("push")}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, Err: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	assert.ErrorIs(t, cmd.Execute(nil), ui.ErrCancelled)
+	assert.ContainsString(t, temp_repo.RunGit(t, dir, "diff", "README.md"), "+edited")
+}
+
+// a fast-forward that fails having written some files already: the tree is
+// put back as it was before the merge.
+func TestPushCommand_Behind_FailedMergeRestoresTree(t *testing.T) {
+	dir, _, branch := pushRepoWithRemoteAhead(t, "remote.txt", "remote change\n")
+	before := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", branch))
+	shimGitSubcommand(t, "merge", "printf 'half-written\\n' > '"+dir+"/README.md'; exit 1")
+
+	var errBuf strings.Builder
+	stub := &stubSelector{confirmAnswers: []bool{true}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, Err: &errBuf, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	err := cmd.Execute(nil)
+	assert.Error(t, err, assert.AnyError, "the fast-forward failed")
+	assert.ContainsString(t, errBuf.String(), "put '"+branch+"' back")
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", branch)), before)
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "status", "--porcelain")), "")
+}

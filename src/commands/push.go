@@ -350,7 +350,7 @@ func (p *PushCommand) reconcileDiverged(currentBranch, upstream, remoteTip strin
 		defer intr.stop()
 		cleanup, err := apply()
 		if err != nil {
-			return err
+			return intr.or(err)
 		}
 		defer cleanup()
 		before, err := p.repo().GetCommitHash(currentBranch)
@@ -358,7 +358,7 @@ func (p *PushCommand) reconcileDiverged(currentBranch, upstream, remoteTip strin
 			return fmt.Errorf("getting local commit: %w", err)
 		}
 		if err := p.repo().Integrate(git.PullFFOnly, remoteTip); err != nil {
-			return intr.or(err)
+			return intr.or(p.restoreFailedMerge(currentBranch, before, err))
 		}
 		if intr.seen() {
 			return p.undoInterrupted(currentBranch, before, "fast-forward")
@@ -399,7 +399,7 @@ func (p *PushCommand) reconcileDiverged(currentBranch, upstream, remoteTip strin
 	defer intr.stop()
 	cleanup, err := apply()
 	if err != nil {
-		return err
+		return intr.or(err)
 	}
 	// Deferred, so the stash comes back after any undo below has put the
 	// branch back where it was.
@@ -434,6 +434,23 @@ func (p *PushCommand) abortRebase(currentBranch string, rebaseErr error) error {
 	}
 	fmt.Fprintf(p.err(), "The rebase stopped part-way; aborted it, so '%s' is as it was.\n", currentBranch)
 	return rebaseErr
+}
+
+// restoreFailedMerge puts the tree back after a fast-forward that failed
+// part-way: git writes files before it moves the branch, so a merge cut off
+// mid-checkout leaves some changed under an unmoved HEAD. Any tracked change
+// now is the merge's -- the user's were stashed before it began.
+func (p *PushCommand) restoreFailedMerge(currentBranch, before string, mergeErr error) error {
+	tracked, err := p.repo().DirtyTracked()
+	if err != nil || len(tracked) == 0 {
+		return mergeErr
+	}
+	if err := p.repo().ResetHard(before); err != nil {
+		return fmt.Errorf("%w; restoring the tree failed too (%v): restore it by hand with git reset --hard %s",
+			mergeErr, err, before)
+	}
+	fmt.Fprintf(p.err(), "The fast-forward stopped part-way; put '%s' back as it was.\n", currentBranch)
+	return mergeErr
 }
 
 // undoRebase runs when the push after a rebase failed. The push may have
