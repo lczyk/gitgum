@@ -1,13 +1,11 @@
 package commands
 
 import (
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/lczyk/gitgum/internal/git"
-	"github.com/lczyk/gitgum/internal/ui"
 )
 
 type PushCommand struct {
@@ -56,12 +54,17 @@ func (p *PushCommand) Execute(args []string) error {
 	}
 
 	if remoteBranch != "" {
-		// Refresh the remote-tracking ref before comparing. It's a local cache;
-		// pushing against a stale one is exactly what produces the surprise
-		// non-fast-forward rejection this flow exists to catch ahead of time.
-		if remote, _, ok := strings.Cut(remoteBranch, "/"); ok {
-			if err := p.repo().Fetch(remote, ""); err != nil {
-				return err
+		// Ask the remote where the upstream is now: the remote-tracking ref is a
+		// local cache, and pushing against a stale one is exactly what produces
+		// the surprise non-fast-forward rejection this flow exists to catch. A
+		// local upstream (no remote in the name) has no one to ask.
+		if remote, branch, ok := strings.Cut(remoteBranch, "/"); ok {
+			_, exists, err := p.probeBranch(remote, branch)
+			if err != nil {
+				return p.offerOtherRemotes(currentBranch, []string{remote}, err)
+			}
+			if !exists {
+				return p.offerRecreate(currentBranch, remote, branch)
 			}
 		}
 
@@ -71,25 +74,9 @@ func (p *PushCommand) Execute(args []string) error {
 		}
 		remoteCommit, err := p.repo().GetCommitHash(remoteBranch)
 		if err != nil {
-			// The fetch above prunes a remote-tracking ref whose upstream was
-			// deleted, so it may no longer resolve. That's the deleted-upstream
-			// case -- offer to recreate rather than failing on a missing ref.
-			if handled, herr := p.handleStaleUpstream(currentBranch, remoteBranch); herr != nil {
-				return herr
-			} else if handled {
-				return nil
-			}
 			return fmt.Errorf("getting remote commit: %w", err)
 		}
 		if localCommit == remoteCommit {
-			// remoteBranch is the local remote-tracking ref (refs/remotes/...),
-			// which can be stale when the fetch above was skipped (no remote in
-			// the ref name). Verify it still exists before declaring "up to date".
-			if handled, err := p.handleStaleUpstream(currentBranch, remoteBranch); err != nil {
-				return err
-			} else if handled {
-				return nil
-			}
 			fmt.Fprintf(p.out(), "No changes to push. Local branch '%s' is up to date with '%s'.\n",
 				currentBranch, remoteBranch)
 			return nil
@@ -176,7 +163,11 @@ func (p *PushCommand) rankRemotes(remotes []string) []string {
 func (p *PushCommand) pushToRemote(selectedRemote, currentBranch string, ruledOut []string) error {
 	expectedRemoteBranchName := selectedRemote + "/" + currentBranch
 
-	if !p.repo().RemoteBranchExists(selectedRemote, currentBranch) {
+	remoteCommit, exists, err := p.probeBranch(selectedRemote, currentBranch)
+	if err != nil {
+		return p.offerOtherRemotes(currentBranch, slices.Concat(ruledOut, []string{selectedRemote}), err)
+	}
+	if !exists {
 		confirmed, err := p.sel().Confirm(fmt.Sprintf("No remote branch '%s' found. Do you want to create it?",
 			expectedRemoteBranchName), false)
 		if err != nil {
@@ -197,11 +188,6 @@ func (p *PushCommand) pushToRemote(selectedRemote, currentBranch string, ruledOu
 	localCommit, err := p.repo().GetCommitHash(currentBranch)
 	if err != nil {
 		return fmt.Errorf("getting local commit: %w", err)
-	}
-
-	remoteCommit, err := p.repo().GetCommitHash(expectedRemoteBranchName)
-	if err != nil {
-		return fmt.Errorf("could not find remote branch '%s': %w", expectedRemoteBranchName, err)
 	}
 
 	if localCommit == remoteCommit {
@@ -277,45 +263,40 @@ func (p *PushCommand) showPushDelta(remoteCommit, localCommit string) {
 	}
 }
 
-// handleStaleUpstream is called when the local branch matches its
-// remote-tracking ref, which would normally mean "nothing to push". Because
-// that ref is a local cache, it can lie when the upstream branch was deleted
-// remotely without a prune. handleStaleUpstream does a live check: if the
-// upstream is gone (remote reachable, ref missing) it offers to recreate it;
-// if the remote is unreachable it warns and lets the caller fall through to
-// the (best-effort) up-to-date message. Returns handled=true when it has
-// fully dealt with the push (recreated it, or offered the other remotes on a
-// decline).
-func (p *PushCommand) handleStaleUpstream(currentBranch, upstream string) (handled bool, err error) {
-	remote, branch, ok := strings.Cut(upstream, "/")
-	if !ok {
-		return false, nil
+// probeBranch asks remote for branch's tip and brings the remote-tracking ref
+// in line with it, so what follows compares against the remote as it is now:
+// one round trip, plus a fetch of that branch alone when its tip is new here.
+func (p *PushCommand) probeBranch(remote, branch string) (tip string, exists bool, err error) {
+	tip, exists, err = p.repo().RemoteBranchTip(remote, branch)
+	if err != nil {
+		return "", false, fmt.Errorf("could not reach remote '%s': %w", remote, err)
 	}
-	exists, reachable := p.repo().RemoteBranchReachability(remote, branch)
-	if exists {
-		return false, nil
+	if !exists {
+		return "", false, nil
 	}
-	if !reachable {
-		fmt.Fprintf(p.err(), "Warning: could not reach remote '%s' to verify branch '%s' (network/auth issue?).\n", remote, branch)
-		return false, nil
+	if err := p.repo().SyncTrackingRef(remote, branch, tip); err != nil {
+		return "", false, err
 	}
+	return tip, true, nil
+}
 
-	fmt.Fprintf(p.out(), "Branch '%s' no longer exists on remote '%s' (deleted upstream). Local tracking info is stale.\n", branch, upstream)
+// offerRecreate runs when the upstream branch is gone from its remote: it
+// offers to push the branch back there or, declined, the other remotes.
+func (p *PushCommand) offerRecreate(currentBranch, remote, branch string) error {
+	upstream := remote + "/" + branch
+	fmt.Fprintf(p.out(), "Branch '%s' no longer exists on remote '%s' (deleted upstream). Local tracking info is stale.\n", branch, remote)
 	confirmed, err := p.sel().Confirm(fmt.Sprintf("Recreate remote branch '%s'?", upstream), true)
 	if err != nil {
-		if errors.Is(err, ui.ErrCancelled) {
-			return false, err
-		}
-		return false, fmt.Errorf("confirming recreate upstream: %w", err)
+		return fmt.Errorf("confirming recreate upstream: %w", err)
 	}
 	if !confirmed {
-		return true, p.offerOtherRemotes(currentBranch, []string{remote}, nil)
+		return p.offerOtherRemotes(currentBranch, []string{remote}, nil)
 	}
 	if err := p.repo().RunWriteStream("push", "-u", remote, currentBranch); err != nil {
-		return false, fmt.Errorf("failed to push: %w", err)
+		return fmt.Errorf("failed to push: %w", err)
 	}
 	fmt.Fprintf(p.out(), "Recreated remote branch '%s'.\n", upstream)
-	return true, nil
+	return nil
 }
 
 // reconcileDiverged handles a push where the remote-tracking ref holds commits

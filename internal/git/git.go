@@ -465,15 +465,6 @@ func (r Repo) currentBranchUpstreamFromConfig() (string, error) {
 	return remote + "/" + merge, nil
 }
 
-// RemoteBranchExists checks if a branch exists on a remote. It is a bare
-// probe, like BranchExists and RefExists: an unreachable remote (auth, DNS)
-// reads as "absent" rather than surfacing. Callers that need to tell the two
-// apart want RemoteBranchReachability.
-func (r Repo) RemoteBranchExists(remote, branch string) bool {
-	_, _, err := r.runReadNet(context.Background(), "ls-remote", "--exit-code", "--heads", remote, branch)
-	return err == nil
-}
-
 // RemoteBranchReachability distinguishes "branch missing on remote" from
 // "remote itself couldn't be reached", so callers can give a precise
 // warning instead of conflating the two. `ls-remote --exit-code` exits 2

@@ -18,6 +18,20 @@ func (r Repo) Fetch(remote, refspec string) error {
 	return nil
 }
 
+// SyncTrackingRef points refs/remotes/<remote>/<branch> at tip, the branch's
+// tip as the remote just reported it. A commit already here makes that a local
+// ref update; only one this repo lacks costs a fetch, of that branch alone.
+func (r Repo) SyncTrackingRef(remote, branch, tip string) error {
+	ref := "refs/remotes/" + remote + "/" + branch
+	if !r.HasObject(tip) {
+		return r.Fetch(remote, "+refs/heads/"+branch+":"+ref)
+	}
+	if _, stderr, err := r.runWrite(context.Background(), "update-ref", ref, tip); err != nil {
+		return fmt.Errorf("git update-ref %s: %w: %s", ref, err, stderr)
+	}
+	return nil
+}
+
 // FetchObject fetches one object by hash, bounded to that object alone. In a
 // shallow clone this is how a commit outside the boundary is obtained without
 // pulling the history between here and there -- git records a new shallow

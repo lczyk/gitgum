@@ -1034,3 +1034,113 @@ func TestPushCommand_OfferListsMostTrackedRemoteFirst(t *testing.T) {
 	assert.Equal(t, stub.selectCalls[0].Options[0], "zeta")
 	assert.Equal(t, stub.selectCalls[0].Options[1], "alpha")
 }
+
+// the upstream's remote can't be reached: push says so and offers the other
+// remotes rather than failing outright.
+func TestPushCommand_UnreachableUpstream_OffersOtherRemotes(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	addBareRemote(t, dir, "origin")
+	mirrorDir := addBareRemote(t, dir, "mirror")
+	branch := currentBranchIn(t, dir)
+	temp_repo.RunGit(t, dir, "push", "-u", "origin", branch)
+	temp_repo.CreateCommit(t, dir, "feature.yml", "x\n", "feat: local commit")
+	temp_repo.RunGit(t, dir, "remote", "set-url", "origin", t.TempDir()+"/gone.git")
+
+	var errBuf strings.Builder
+	stub := &stubSelector{confirmAnswers: []bool{true}, selectAnswers: []string{"mirror"}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, Err: &errBuf, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute(nil))
+
+	assert.ContainsString(t, errBuf.String(), "could not reach remote 'origin'")
+	require.Equal(t, len(stub.selectCalls), 1)
+	assert.Equal(t, stub.selectCalls[0].Options[0], "mirror")
+	assert.ContainsString(t, temp_repo.RunGit(t, mirrorDir, "log", "--format=%s", branch), "feat: local commit")
+}
+
+// the same with no other remote: the unreachable upstream is the error.
+func TestPushCommand_UnreachableUpstream_SingleRemoteErrors(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	addBareRemote(t, dir, "origin")
+	branch := currentBranchIn(t, dir)
+	temp_repo.RunGit(t, dir, "push", "-u", "origin", branch)
+	temp_repo.RunGit(t, dir, "remote", "set-url", "origin", t.TempDir()+"/gone.git")
+
+	stub := &stubSelector{}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	err := cmd.Execute(nil)
+	assert.Error(t, err, assert.AnyError, "an unreachable upstream with nowhere else to go is an error")
+	assert.ContainsString(t, err.Error(), "could not reach remote 'origin'")
+	assert.Equal(t, len(stub.confirmCalls), 0)
+}
+
+// a named remote that can't be reached rules itself out: the rest are offered.
+func TestPushCommand_UnreachablePickedRemote_OffersTheRest(t *testing.T) {
+	t.Parallel()
+	dir := temp_repo.NewRepo(t)
+	originDir := addBareRemote(t, dir, "origin")
+	temp_repo.RunGit(t, dir, "remote", "add", "gone", t.TempDir()+"/gone.git")
+	branch := currentBranchIn(t, dir)
+
+	stub := &stubSelector{confirmAnswers: []bool{true}, selectAnswers: []string{"origin"}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, Err: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute([]string{"gone"}))
+
+	require.Equal(t, len(stub.selectCalls), 1)
+	require.Equal(t, len(stub.selectCalls[0].Options), 1)
+	assert.Equal(t, stub.selectCalls[0].Options[0], "origin")
+	assert.NotEqual(t, strings.TrimSpace(temp_repo.RunGit(t, originDir, "branch", "--list", branch)), "")
+}
+
+// the remote has the branch but this repo never fetched it: push reads the tip
+// from the remote rather than failing on the missing tracking ref.
+func TestPushCommand_UnfetchedRemoteBranch(t *testing.T) {
+	t.Parallel()
+	local, _ := temp_repo.NewRepoWithRemote(t)
+	temp_repo.RunGit(t, local, "branch", "--unset-upstream")
+	temp_repo.RunGit(t, local, "update-ref", "-d", "refs/remotes/origin/main")
+
+	var buf strings.Builder
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &buf, UI: &stubSelector{}, Repo: git.Repo{Dir: local}}}
+
+	require.NoError(t, cmd.Execute([]string{"origin"}))
+	assert.ContainsString(t, buf.String(), "No changes to push")
+	assert.Equal(t, upstreamOf(t, local, "main"), "origin/main")
+}
+
+// with the remote unchanged, a push asks it one question and fetches nothing.
+func TestPushCommand_ProbesOnlyTheBranch(t *testing.T) {
+	dir := temp_repo.NewRepo(t)
+	addBareRemote(t, dir, "origin")
+	branch := currentBranchIn(t, dir)
+	temp_repo.RunGit(t, dir, "push", "-u", "origin", branch)
+	temp_repo.CreateCommit(t, dir, "feature.yml", "x\n", "feat: local commit")
+	calls := gitShim(t)
+
+	stub := &stubSelector{confirmAnswers: []bool{true}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute(nil))
+	assert.Equal(t, countCalls(calls(), "ls-remote"), 1)
+	assert.Equal(t, countCalls(calls(), "fetch"), 0)
+	assert.Equal(t, countCalls(calls(), "push"), 1)
+}
+
+// the remote moved on: that one branch is fetched, by its own refspec rather
+// than the whole remote.
+func TestPushCommand_FetchesOnlyTheBranch(t *testing.T) {
+	dir, _, branch := pushRepoWithRemoteAhead(t, "remote.txt", "remote change\n")
+	calls := gitShim(t)
+
+	stub := &stubSelector{confirmAnswers: []bool{false}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	require.NoError(t, cmd.Execute(nil))
+	assert.Equal(t, countCalls(calls(), "ls-remote"), 1)
+	assert.Equal(t, countCalls(calls(), "fetch"), 1)
+	assert.Equal(t, countExact(calls(), "fetch", "origin", "+refs/heads/"+branch+":refs/remotes/origin/"+branch), 1)
+}

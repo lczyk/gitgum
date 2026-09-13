@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // minGitVersion is the lowest git release gg will run against.
@@ -246,6 +247,11 @@ func buildArgs(dir string, prelude, args []string, strictConfig bool) []string {
 func runCaptured(ctx context.Context, args, env []string) (string, string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = env
+	// A cancelled git can leave a child (ssh) holding the pipes; unbounded,
+	// Wait would sit that out for as long as it takes.
+	if ctx.Done() != nil {
+		cmd.WaitDelay = time.Second
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
