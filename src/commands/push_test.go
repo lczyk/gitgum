@@ -1236,3 +1236,52 @@ func TestPushCommand_Diverged_RebaseStopsIsAborted(t *testing.T) {
 	_, inProgress := git.Repo{Dir: dir}.InProgress()
 	assert.That(t, !inProgress, "no rebase left in progress")
 }
+
+// Ctrl-C arriving once the rebase is done but before the push: the rebase is
+// undone and push exits as cancelled.
+func TestPushCommand_Diverged_InterruptAfterRebaseUndoesIt(t *testing.T) {
+	dir, bareDir, branch := pushRepoWithRemoteAhead(t, "remote.txt", "remote change\n")
+	temp_repo.CreateCommit(t, dir, "local.txt", "local change\n", "feat: local commit")
+	before := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", branch))
+	shimGitSubcommand(t, "rebase", "\"$git\" \"$@\"; kill -INT $PPID; sleep 0.2; exit 0")
+
+	stub := &stubSelector{confirmAnswers: []bool{true}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, Err: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	assert.ErrorIs(t, cmd.Execute(nil), ui.ErrCancelled)
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", branch)), before)
+	originLog := temp_repo.RunGit(t, bareDir, "log", "--format=%s", branch)
+	assert.That(t, !strings.Contains(originLog, "feat: local commit"), "nothing may reach the remote")
+}
+
+// Ctrl-C during the push itself: git stops, the remote is unchanged, so the
+// rebase is undone and push exits as cancelled.
+func TestPushCommand_Diverged_InterruptDuringPushUndoesRebase(t *testing.T) {
+	dir, _, branch := pushRepoWithRemoteAhead(t, "remote.txt", "remote change\n")
+	temp_repo.CreateCommit(t, dir, "local.txt", "local change\n", "feat: local commit")
+	before := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", branch))
+	shimGitSubcommand(t, "push", "kill -INT $PPID; sleep 0.2; exit 130")
+
+	stub := &stubSelector{confirmAnswers: []bool{true}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, Err: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	assert.ErrorIs(t, cmd.Execute(nil), ui.ErrCancelled)
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", branch)), before)
+}
+
+// Ctrl-C during the fast-forward of a branch that is behind, with changes
+// stashed for it: push exits as cancelled and the changes come back.
+func TestPushCommand_Behind_InterruptRestoresStash(t *testing.T) {
+	dir, _, branch := pushRepoWithRemoteAhead(t, "remote.txt", "remote change\n")
+	before := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", branch))
+	temp_repo.WriteFile(t, dir, "README.md", "# test repo\nedited\n")
+	shimGitSubcommand(t, "merge", "kill -INT $PPID; sleep 0.2; exit 130")
+
+	stub := &stubSelector{confirmAnswers: []bool{true}, selectAnswers: []string{dirtyStashOption("push")}}
+	cmd := &PushCommand{cmdIO: cmdIO{Out: &strings.Builder{}, Err: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
+
+	assert.ErrorIs(t, cmd.Execute(nil), ui.ErrCancelled)
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", branch)), before)
+	assert.ContainsString(t, temp_repo.RunGit(t, dir, "diff", "README.md"), "+edited")
+	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "stash", "list")), "")
+}

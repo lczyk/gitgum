@@ -2,10 +2,14 @@ package commands
 
 import (
 	"fmt"
+	"os"
+	"os/signal"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/lczyk/gitgum/internal/git"
+	"github.com/lczyk/gitgum/internal/ui"
 )
 
 type PushCommand struct {
@@ -314,7 +318,8 @@ func (p *PushCommand) offerRecreate(currentBranch, remote, branch string) error 
 //     rather than drop the user into a half-finished rebase. On confirmation it
 //     rebases onto the tip it checked and pushes the result; a rebase that
 //     stops part-way is aborted, and a push that fails undoes the rebase
-//     unless the remote turns out to have it.
+//     unless the remote turns out to have it. Ctrl-C part-way through is a
+//     cancel, undone the same way.
 //
 // Declining, or a rebase that won't apply, offers the other remotes instead;
 // with none left, the latter is an error. It owns the whole remote-ahead case:
@@ -337,13 +342,26 @@ func (p *PushCommand) reconcileDiverged(currentBranch, upstream, remoteTip strin
 		if !confirmed {
 			return p.offerOtherRemotes(currentBranch, []string{upstreamRemote}, nil)
 		}
-		cleanup, err := handleDirtyTree(&p.cmdIO, "push")
+		apply, err := decideDirtyTree(&p.cmdIO, "push")
+		if err != nil {
+			return err
+		}
+		intr := catchInterrupts()
+		defer intr.stop()
+		cleanup, err := apply()
 		if err != nil {
 			return err
 		}
 		defer cleanup()
+		before, err := p.repo().GetCommitHash(currentBranch)
+		if err != nil {
+			return fmt.Errorf("getting local commit: %w", err)
+		}
 		if err := p.repo().Integrate(git.PullFFOnly, remoteTip); err != nil {
-			return err
+			return intr.or(err)
+		}
+		if intr.seen() {
+			return p.undoInterrupted(currentBranch, before, "fast-forward")
 		}
 		fmt.Fprintf(p.out(), "Fast-forwarded '%s' to '%s'. Nothing to push.\n", currentBranch, upstream)
 		return nil
@@ -373,7 +391,13 @@ func (p *PushCommand) reconcileDiverged(currentBranch, upstream, remoteTip strin
 		return p.offerOtherRemotes(currentBranch, []string{upstreamRemote}, nil)
 	}
 
-	cleanup, err := handleDirtyTree(&p.cmdIO, "push")
+	apply, err := decideDirtyTree(&p.cmdIO, "push")
+	if err != nil {
+		return err
+	}
+	intr := catchInterrupts()
+	defer intr.stop()
+	cleanup, err := apply()
 	if err != nil {
 		return err
 	}
@@ -386,10 +410,13 @@ func (p *PushCommand) reconcileDiverged(currentBranch, upstream, remoteTip strin
 		return fmt.Errorf("getting local commit: %w", err)
 	}
 	if err := p.repo().Integrate(git.PullRebase, remoteTip); err != nil {
-		return p.abortRebase(currentBranch, err)
+		return intr.or(p.abortRebase(currentBranch, err))
+	}
+	if intr.seen() {
+		return p.undoInterrupted(currentBranch, before, "rebase")
 	}
 	if err := p.repo().Push(); err != nil {
-		return p.undoRebase(currentBranch, upstream, before, remoteTip, err)
+		return intr.or(p.undoRebase(currentBranch, upstream, before, remoteTip, err))
 	}
 	fmt.Fprintf(p.out(), "Rebased '%s' onto '%s' and pushed.\n", currentBranch, upstream)
 	return nil
@@ -440,4 +467,62 @@ func (p *PushCommand) undoRebase(currentBranch, upstream, before, remoteTip stri
 			upstream, before)
 		return pushErr
 	}
+}
+
+// undoInterrupted takes back a step that finished before a Ctrl-C was noticed,
+// so the cancel leaves the branch where it started.
+func (p *PushCommand) undoInterrupted(currentBranch, before, step string) error {
+	if err := p.repo().ResetKeep(before); err != nil {
+		return fmt.Errorf("interrupted, and undoing the %s failed too (%v): undo it by hand with git reset --keep %s",
+			step, err, before)
+	}
+	fmt.Fprintf(p.err(), "Interrupted: undid the %s, so '%s' is back where it was.\n", step, currentBranch)
+	return ui.ErrCancelled
+}
+
+// interrupts catches Ctrl-C while push is changing things, so gg lives to undo
+// what it has done instead of dying part-way; git, sent the same signal, still
+// stops.
+type interrupts struct {
+	ch  chan os.Signal
+	hit bool
+}
+
+func catchInterrupts() *interrupts {
+	i := &interrupts{ch: make(chan os.Signal, 1)}
+	signal.Notify(i.ch, os.Interrupt)
+	return i
+}
+
+func (i *interrupts) stop() { signal.Stop(i.ch) }
+
+// seen reports whether a Ctrl-C has arrived since catching began.
+func (i *interrupts) seen() bool {
+	if !i.hit {
+		select {
+		case <-i.ch:
+			i.hit = true
+		default:
+		}
+	}
+	return i.hit
+}
+
+// or turns a failure into a cancel when a Ctrl-C caused it. The signal can
+// trail the failure it caused by a moment, so it is given one.
+func (i *interrupts) or(err error) error {
+	if err == nil {
+		return nil
+	}
+	if !i.hit {
+		select {
+		case <-i.ch:
+			i.hit = true
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	if i.hit {
+		return ui.ErrCancelled
+	}
+	return err
 }
