@@ -65,23 +65,23 @@ func (p *PushCommand) Execute(args []string) error {
 		// local cache, and pushing against a stale one is exactly what produces
 		// the surprise non-fast-forward rejection this flow exists to catch. A
 		// local upstream (no remote in the name) has no one to ask.
+		var remoteCommit string
 		if remote, branch, ok := strings.Cut(remoteBranch, "/"); ok {
-			_, exists, err := p.probeBranch(remote, branch)
+			tip, exists, err := p.probeBranch(remote, branch)
 			if err != nil {
 				return p.offerOtherRemotes(currentBranch, []string{remote}, err)
 			}
 			if !exists {
 				return p.offerRecreate(currentBranch, remote, branch)
 			}
+			remoteCommit = tip
+		} else if remoteCommit, err = p.repo().GetCommitHash(remoteBranch); err != nil {
+			return fmt.Errorf("getting remote commit: %w", err)
 		}
 
 		localCommit, err := p.repo().GetCommitHash(currentBranch)
 		if err != nil {
 			return fmt.Errorf("getting local commit: %w", err)
-		}
-		remoteCommit, err := p.repo().GetCommitHash(remoteBranch)
-		if err != nil {
-			return fmt.Errorf("getting remote commit: %w", err)
 		}
 		if localCommit == remoteCommit {
 			fmt.Fprintf(p.out(), "No changes to push. Local branch '%s' is up to date with '%s'.\n",
