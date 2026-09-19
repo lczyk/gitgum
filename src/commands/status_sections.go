@@ -246,16 +246,21 @@ func (s *StatusCommand) renderHead(out io.Writer, header func()) error {
 		return err
 	}
 	header()
+	for _, row := range headRows(s.repo(), branch, locals, colorEnabled()) {
+		fmt.Fprintln(out, row)
+	}
+	return nil
+}
+
+// headRows is the HEAD section's body for what r.HeadLine() returned: one row,
+// or one per containing ref under a detached HEAD.
+func headRows(r git.Repo, branch string, locals []git.LocalBranch, color bool) []string {
 	if branch == detachedHeadLine {
-		if rows, ok := s.detachedHeadRows(locals); ok {
-			for _, row := range rows {
-				fmt.Fprintln(out, row)
-			}
-			return nil
+		if rows, ok := detachedHeadRows(r, locals, color); ok {
+			return rows
 		}
 	}
-	fmt.Fprintln(out, formatHeadLine(branch, headHash(locals), colorEnabled()))
-	return nil
+	return []string{formatHeadLine(branch, headHash(locals), color)}
 }
 
 // headHash is the short sha of the checked-out branch, taken from the listing

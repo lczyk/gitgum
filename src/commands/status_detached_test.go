@@ -101,8 +101,8 @@ func TestDetachedHeadRows_RemoteBranches(t *testing.T) {
 	temp_repo.RunGit(t, dir, "config", "branch.main.merge", "refs/heads/main")
 	temp_repo.RunGit(t, dir, "checkout", "HEAD~1")
 
-	s := &StatusCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
-	rows, ok := s.detachedHeadRows(localBranchesIn(t, dir))
+	r := git.Repo{Dir: dir}
+	rows, ok := detachedHeadRows(r, localBranchesIn(t, dir), false)
 	assert.Equal(t, ok, true)
 	assert.Equal(t, len(rows), 3)
 	assert.Equal(t, strings.TrimSpace(stripAnsi(rows[1])), "(origin/)main~1")
@@ -118,8 +118,8 @@ func TestDetachedHeadRows_Integration(t *testing.T) {
 	temp_repo.RunGit(t, dir, "tag", "v1")
 	temp_repo.RunGit(t, dir, "checkout", "HEAD~1")
 
-	s := &StatusCommand{cmdIO: cmdIO{Repo: git.Repo{Dir: dir}}}
-	rows, ok := s.detachedHeadRows(localBranchesIn(t, dir))
+	r := git.Repo{Dir: dir}
+	rows, ok := detachedHeadRows(r, localBranchesIn(t, dir), false)
 	assert.Equal(t, ok, true)
 	assert.Equal(t, len(rows), 3)
 	assert.Equal(t, strings.TrimSpace(stripAnsi(rows[1])), "main~1")
@@ -127,7 +127,7 @@ func TestDetachedHeadRows_Integration(t *testing.T) {
 
 	// detached at the branch tip: same shape, ~0
 	temp_repo.RunGit(t, dir, "checkout", "--detach", "main")
-	rows, ok = s.detachedHeadRows(localBranchesIn(t, dir))
+	rows, ok = detachedHeadRows(r, localBranchesIn(t, dir), false)
 	assert.Equal(t, ok, true)
 	assert.Equal(t, len(rows), 3)
 	assert.Equal(t, strings.TrimSpace(stripAnsi(rows[1])), "main~0")
@@ -137,7 +137,7 @@ func TestDetachedHeadRows_Integration(t *testing.T) {
 	temp_repo.WriteFile(t, dir, "b.txt", "b\n")
 	temp_repo.RunGit(t, dir, "add", "b.txt")
 	temp_repo.RunGit(t, dir, "commit", "-m", "feat: orphan")
-	rows, ok = s.detachedHeadRows(localBranchesIn(t, dir))
+	rows, ok = detachedHeadRows(r, localBranchesIn(t, dir), false)
 	assert.Equal(t, ok, true)
 	assert.Equal(t, len(rows), 1)
 	assert.Equal(t, strings.HasSuffix(stripAnsi(rows[0]), " (no branch)"), true)

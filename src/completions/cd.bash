@@ -3,7 +3,7 @@
 # call passes through with a marker so `gg doctor` can tell the wrapper is on.
 __GITGUM_CMD__() {
     case "$1" in
-        w|worktree-switch)
+        w|w+|w-|worktree-switch|worktree-switch+|worktree-switch-)
             local arg target
             for arg in "$@"; do
                 case "$arg" in

@@ -85,6 +85,8 @@ var bins = []binSpec{
 			{"tree alias flags", []string{"t", "--"}, []string{"--since", "--all", "--follow"}},
 			{"branch alias flags", []string{"b", "--"}, []string{"--help"}},
 			{"push alias flags", []string{"p", "--"}, []string{"--help"}},
+			{"worktree back flags", []string{"worktree-switch-", "--"}, []string{"--help"}},
+			{"worktree back alias flags", []string{"w-", "--"}, []string{"--help"}},
 			{"completion shells", []string{"completion", ""}, []string{"bash", "fish", "zsh", "nu"}},
 			{"completion flags", []string{"completion", "--"}, []string{"--cd"}},
 			{"release bumps", []string{"release", ""}, []string{"patch", "minor", "major"}},
@@ -267,18 +269,21 @@ func TestNuCompletion(t *testing.T) {
 
 // wrapperShim writes a fake gitgum binary into a dir and returns the dir. The
 // shim answers worktree-switch with the path in $GG_TARGET (help flags print
-// HELP instead) and echoes anything else back, so the wrapper function each
-// completion script defines can be driven without building the real binary.
+// HELP instead), naming the direction it was asked for on stderr as the real
+// one names the worktrees, and echoes anything else back, so the wrapper
+// function each completion script defines can be driven without building the
+// real binary.
 func wrapperShim(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	script := `#!/bin/sh
 case "$1" in
-    w|worktree-switch)
+    w|w+|w-|worktree-switch|worktree-switch+|worktree-switch-)
         for a in "$@"; do
             case "$a" in -h|--help) echo HELP; exit 0;; esac
         done
         [ -n "$GG_TARGET" ] || { echo "no target" >&2; exit 1; }
+        case "$1" in *-) echo "announce back" >&2;; *) echo "announce next" >&2;; esac
         echo "$GG_TARGET"
         ;;
     *) echo "passthrough $* wrapper=$GITGUM_CD_WRAPPER" ;;
@@ -317,8 +322,13 @@ func TestShellWrapperCd(t *testing.T) {
 		wantOut string
 		wantPwd string
 	}{
-		{"w cds", "gitgum w", target, "", target},
-		{"long form cds", "gitgum worktree-switch 2", target, "", target},
+		{"w cds", "gitgum w", target, "announce next", target},
+		{"long form cds", "gitgum worktree-switch 2", target, "announce next", target},
+		{"w+ cds", "gitgum w+", target, "announce next", target},
+		{"long + form cds", "gitgum worktree-switch+ 2", target, "announce next", target},
+		{"w- cds", "gitgum w-", target, "announce back", target},
+		{"long - form cds", "gitgum worktree-switch-", target, "announce back", target},
+		{"w- help stays put", "gitgum w- --help", target, "HELP", start},
 		{"help stays put", "gitgum w --help", target, "HELP", start},
 		{"failure stays put", "gitgum w", "", "", start},
 		{"passthrough", "gitgum status --flat", target, "passthrough status --flat wrapper=1", start},

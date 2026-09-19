@@ -39,21 +39,30 @@ func TestPickWorktree(t *testing.T) {
 	cases := map[string]struct {
 		current string
 		n       int
+		back    bool
 		want    string
 		wantErr string
 	}{
-		"by number":                      {current: "/w/foo", n: 2, want: "/w/foo-2"},
-		"by number, gap in numbering":    {current: "/w/foo", n: 4, want: "/w/foo-4"},
-		"missing number lists what is":   {current: "/w/foo", n: 3, wantErr: "no worktree numbered 3; have 1, 2, 4"},
-		"negative number":                {current: "/w/foo", n: -1, wantErr: "must be positive"},
-		"cycle forward":                  {current: "/w/foo", want: "/w/foo-2"},
-		"cycle skips the gap":            {current: "/w/foo-2", want: "/w/foo-4"},
-		"cycle wraps":                    {current: "/w/foo-4", want: "/w/foo"},
-		"cycle from outside lands first": {current: "/w/scratch", want: "/w/foo"},
+		"by number":                          {current: "/w/foo", n: 2, want: "/w/foo-2"},
+		"by number, gap in numbering":        {current: "/w/foo", n: 4, want: "/w/foo-4"},
+		"missing number lists what is":       {current: "/w/foo", n: 3, wantErr: "no worktree numbered 3; have 1, 2, 4"},
+		"negative number":                    {current: "/w/foo", n: -1, wantErr: "must be positive"},
+		"cycle forward":                      {current: "/w/foo", want: "/w/foo-2"},
+		"cycle skips the gap":                {current: "/w/foo-2", want: "/w/foo-4"},
+		"cycle wraps":                        {current: "/w/foo-4", want: "/w/foo"},
+		"cycle from outside lands first":     {current: "/w/scratch", want: "/w/foo"},
+		"cycle back":                         {current: "/w/foo-2", back: true, want: "/w/foo"},
+		"cycle back skips the gap":           {current: "/w/foo-4", back: true, want: "/w/foo-2"},
+		"cycle back wraps":                   {current: "/w/foo", back: true, want: "/w/foo-4"},
+		"cycle back from outside lands last": {current: "/w/scratch", back: true, want: "/w/foo-4"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got, err := pickWorktree(entries, tc.current, tc.n)
+			step := 1
+			if tc.back {
+				step = -1
+			}
+			got, err := pickWorktree(entries, tc.current, tc.n, step)
 			if tc.wantErr != "" {
 				assert.Error(t, err, tc.wantErr)
 				return
@@ -63,11 +72,13 @@ func TestPickWorktree(t *testing.T) {
 		})
 	}
 
-	_, err := pickWorktree(nil, "/w/foo", 0)
+	_, err := pickWorktree(nil, "/w/foo", 0, 1)
 	assert.Error(t, err, "no worktrees follow")
-	_, err = pickWorktree(entries[:1], "/w/foo", 0)
+	_, err = pickWorktree(entries[:1], "/w/foo", 0, 1)
 	assert.Error(t, err, "only one numbered worktree")
-	only, err := pickWorktree(entries[:1], "/w/scratch", 0)
+	_, err = pickWorktree(entries[:1], "/w/foo", 0, -1)
+	assert.Error(t, err, "only one numbered worktree")
+	only, err := pickWorktree(entries[:1], "/w/scratch", 0, 1)
 	require.NoError(t, err)
 	assert.Equal(t, only.Path, "/w/foo")
 }
@@ -108,17 +119,29 @@ func worktreeFixture(t *testing.T) map[string]string {
 	return paths
 }
 
+// headRowOf is the `gg status head` row of a fixture worktree, which sits on a
+// branch named after its directory (the main one on main), all at one commit.
+func headRowOf(t *testing.T, paths map[string]string, name string) string {
+	t.Helper()
+	branch := name
+	if name == "gitgum" {
+		branch = "main"
+	}
+	sha := strings.TrimSpace(temp_repo.RunGit(t, paths[name], "rev-parse", "--short", "HEAD"))
+	return "* " + branch + " " + sha + "\n"
+}
+
 func TestWorktreeSwitch_Execute(t *testing.T) {
-	t.Parallel()
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "")
 	paths := worktreeFixture(t)
 
-	run := func(from string, n int) (string, error) {
+	run := func(from string, n int) (string, string, error) {
 		var out, errOut strings.Builder
 		cmd := &WorktreeSwitchCommand{cmdIO: cmdIO{Out: &out, Err: &errOut, Repo: git.Repo{Dir: paths[from]}}}
 		cmd.Args.N = n
 		err := cmd.Execute(nil)
-		assert.Equal(t, errOut.String(), "")
-		return strings.TrimSpace(out.String()), err
+		return strings.TrimSpace(out.String()), errOut.String(), err
 	}
 
 	cases := map[string]struct {
@@ -136,14 +159,64 @@ func TestWorktreeSwitch_Execute(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got, err := run(tc.from, tc.n)
+			got, announced, err := run(tc.from, tc.n)
 			require.NoError(t, err)
 			assert.Equal(t, got, paths[tc.want])
+			assert.Equal(t, announced, headRowOf(t, paths, tc.from)+headRowOf(t, paths, tc.want))
 		})
 	}
 
-	_, err := run("gitgum", 9)
+	_, announced, err := run("gitgum", 9)
 	assert.Error(t, err, "no worktree numbered 9; have 1, 2, 3")
+	assert.Equal(t, announced, "")
+}
+
+func TestWorktreeSwitchBack_Execute(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "")
+	paths := worktreeFixture(t)
+
+	cases := map[string]struct {
+		from string
+		want string
+	}{
+		"back from middle":   {from: "gitgum-2", want: "gitgum"},
+		"back wraps to last": {from: "gitgum", want: "gitgum-3"},
+		"back from stray":    {from: "scratch", want: "gitgum-3"},
+		"back from last":     {from: "gitgum-3", want: "gitgum-2"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			var out, errOut strings.Builder
+			cmd := &WorktreeSwitchBackCommand{cmdIO: cmdIO{Out: &out, Err: &errOut, Repo: git.Repo{Dir: paths[tc.from]}}}
+			require.NoError(t, cmd.Execute(nil))
+			assert.Equal(t, strings.TrimSpace(out.String()), paths[tc.want])
+			assert.Equal(t, errOut.String(), headRowOf(t, paths, tc.from)+headRowOf(t, paths, tc.want))
+		})
+	}
+
+	var out strings.Builder
+	cmd := &WorktreeSwitchBackCommand{cmdIO: cmdIO{Out: &out, Repo: git.Repo{Dir: paths["gitgum"]}}}
+	assert.Error(t, cmd.Execute([]string{"3"}), "takes no arguments")
+	assert.Equal(t, out.String(), "")
+}
+
+// A detached worktree announces itself the way `gg status head` would, which
+// is a row per containing ref once there are several.
+func TestWorktreeSwitch_DetachedTarget(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "")
+	paths := worktreeFixture(t)
+	temp_repo.RunGit(t, paths["gitgum-2"], "checkout", "--detach")
+
+	var out, errOut strings.Builder
+	cmd := &WorktreeSwitchCommand{cmdIO: cmdIO{Out: &out, Err: &errOut, Repo: git.Repo{Dir: paths["gitgum"]}}}
+	require.NoError(t, cmd.Execute(nil))
+	assert.Equal(t, strings.TrimSpace(out.String()), paths["gitgum-2"])
+	rows := strings.Split(strings.TrimSpace(errOut.String()), "\n")
+	assert.Equal(t, rows[0]+"\n", headRowOf(t, paths, "gitgum"))
+	assert.Equal(t, strings.HasPrefix(rows[1], "* HEAD "), true)
+	assert.Equal(t, len(rows) > 2, true)
 }
 
 // A subdirectory of a worktree is still that worktree: the cycle is computed

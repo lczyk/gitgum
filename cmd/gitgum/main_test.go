@@ -31,6 +31,23 @@ func TestHoistFollow(t *testing.T) {
 	}
 }
 
+// Every spelling of the worktree commands resolves, the ones added outside the
+// struct tags included.
+func TestWorktreeSwitchSpellings(t *testing.T) {
+	parser := newParser(&Options{})
+	for spelling, want := range map[string]string{
+		"worktree-switch":  "worktree-switch",
+		"w":                "worktree-switch",
+		"worktree-switch+": "worktree-switch",
+		"w+":               "worktree-switch",
+		"worktree-switch-": "worktree-switch-",
+		"w-":               "worktree-switch-",
+	} {
+		c := parser.Find(spelling)
+		assert.That(t, c != nil && c.Name == want, "%q resolves to %v, want %q", spelling, c, want)
+	}
+}
+
 // Ensures every field of Options implements flags.Commander. A wrong Execute
 // signature would otherwise silently become a no-op at runtime (command parses,
 // exits 0, prints nothing).

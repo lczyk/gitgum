@@ -3,6 +3,7 @@ package commands
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -14,12 +15,18 @@ import (
 // WorktreeSwitchCommand prints the path of a worktree for the shell to cd
 // into. A process cannot change its parent's directory, so the command's whole
 // output contract is one path on stdout; the wrapper function emitted by
-// `gg completion` does the cd (see src/completions).
+// `gg completion` does the cd (see src/completions). What is being left and
+// entered goes to stderr, which the wrapper leaves alone.
 type WorktreeSwitchCommand struct {
 	cmdIO
 	Args struct {
 		N int `positional-arg-name:"N" description:"Worktree number (1 is <repo>, N is <repo>-N); omit to cycle to the next"`
 	} `positional-args:"yes"`
+}
+
+// WorktreeSwitchBackCommand is WorktreeSwitchCommand's cycle run the other way.
+type WorktreeSwitchBackCommand struct {
+	cmdIO
 }
 
 // numberedWorktree is a worktree that follows doctor's <repo> / <repo>-N
@@ -65,9 +72,11 @@ func numberWorktrees(wts []git.Worktree, repoName string) (out []numberedWorktre
 }
 
 // pickWorktree chooses the worktree to land in. n > 0 asks for that number
-// outright. n == 0 cycles: the entry after the current one, wrapping, or the
-// first when the current dir is not a numbered worktree at all.
-func pickWorktree(entries []numberedWorktree, current string, n int) (numberedWorktree, error) {
+// outright. n == 0 cycles by step, +1 or -1: the entry after or before the
+// current one, wrapping. A current dir that is not a numbered worktree at all
+// sits outside the cycle, so stepping forward enters at the first and stepping
+// back at the last.
+func pickWorktree(entries []numberedWorktree, current string, n, step int) (numberedWorktree, error) {
 	if len(entries) == 0 {
 		return numberedWorktree{}, errNoWorktrees
 	}
@@ -90,12 +99,15 @@ func pickWorktree(entries []numberedWorktree, current string, n int) (numberedWo
 		}
 	}
 	if cur < 0 {
+		if step < 0 {
+			return entries[len(entries)-1], nil
+		}
 		return entries[0], nil
 	}
 	if len(entries) == 1 {
 		return numberedWorktree{}, fmt.Errorf("only one numbered worktree (%s); nothing to cycle to", entries[0].Path)
 	}
-	return entries[(cur+1)%len(entries)], nil
+	return entries[(cur+step+len(entries))%len(entries)], nil
 }
 
 func listIndices(entries []numberedWorktree) string {
@@ -132,7 +144,27 @@ func repoDirName(remoteURLs []string, mainPath string) string {
 	return filepath.Base(filepath.Clean(mainPath))
 }
 
+// worktreeHeadRows is what `gg status head` prints from inside r.
+func worktreeHeadRows(r git.Repo, color bool) ([]string, error) {
+	branch, locals, err := r.HeadLine()
+	if err != nil {
+		return nil, fmt.Errorf("getting head of %s: %w", r.Dir, err)
+	}
+	return headRows(r, branch, locals, color), nil
+}
+
 func (w *WorktreeSwitchCommand) Execute(args []string) error {
+	return switchWorktree(&w.cmdIO, w.Args.N, 1)
+}
+
+func (w *WorktreeSwitchBackCommand) Execute(args []string) error {
+	if len(args) > 0 {
+		return fmt.Errorf("worktree-switch- takes no arguments, got %d", len(args))
+	}
+	return switchWorktree(&w.cmdIO, 0, -1)
+}
+
+func switchWorktree(w *cmdIO, n, step int) error {
 	r := w.repo()
 	if err := r.CheckInRepo(); err != nil {
 		return err
@@ -177,10 +209,32 @@ func (w *WorktreeSwitchCommand) Execute(args []string) error {
 		fmt.Fprintln(w.err(), "warning:", warning)
 	}
 
-	target, err := pickWorktree(entries, canonicalPath(strings.TrimSpace(toplevel)), w.Args.N)
+	current := canonicalPath(strings.TrimSpace(toplevel))
+	target, err := pickWorktree(entries, current, n, step)
 	if err != nil {
 		return err
 	}
+
+	// The rows are a courtesy; the switch does not hang on them.
+	color := colorEnabledOn(os.Stderr)
+	var from, to []string
+	if err := runConcurrent(
+		func() (err error) {
+			from, err = worktreeHeadRows(git.Repo{Dir: current}, color)
+			return err
+		},
+		func() (err error) {
+			to, err = worktreeHeadRows(git.Repo{Dir: target.Path}, color)
+			return err
+		},
+	); err != nil {
+		fmt.Fprintln(w.err(), "warning:", err)
+	} else {
+		for _, row := range append(from, to...) {
+			fmt.Fprintln(w.err(), row)
+		}
+	}
+
 	fmt.Fprintln(w.out(), target.Path)
 	return nil
 }

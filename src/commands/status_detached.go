@@ -42,8 +42,7 @@ type headRef struct {
 // caller keeps git's own "## HEAD (no branch)".
 // locals is the branch listing the HEAD line was built from, reused here for
 // the tracking remotes rather than read again.
-func (s *StatusCommand) detachedHeadRows(locals []git.LocalBranch) ([]string, bool) {
-	r := s.repo()
+func detachedHeadRows(r git.Repo, locals []git.LocalBranch, color bool) ([]string, bool) {
 	var head, short string
 	var headErr, shortErr error
 	_ = runConcurrent(
@@ -60,7 +59,7 @@ func (s *StatusCommand) detachedHeadRows(locals []git.LocalBranch) ([]string, bo
 		return nil, false
 	}
 	head = strings.TrimSpace(head)
-	return formatDetachedRows(strings.TrimSpace(short), containingRefs(r, head, locals), colorEnabled()), true
+	return formatDetachedRows(strings.TrimSpace(short), containingRefs(r, head, locals), color), true
 }
 
 // containingRefs finds every branch and tag that has head as an ancestor:

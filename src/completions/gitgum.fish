@@ -1,5 +1,5 @@
 function __fish_gitgum_no_subcommand
-    not __fish_seen_subcommand_from clone switch branch checkout-pr add-remote completion status push pull tree diff doctor clean delete replay-list empty release worktree-switch w s t b p
+    not __fish_seen_subcommand_from clone switch branch checkout-pr add-remote completion status push pull tree diff doctor clean delete replay-list empty release worktree-switch worktree-switch+ worktree-switch- w w+ w- s t b p
 end
 
 function __fish_gitgum_branches
@@ -79,7 +79,7 @@ complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from status s' -f -a chang
 complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from status s' -f -a head -d 'HEAD summary line'
 
 # worktree-switch <N>
-complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from worktree-switch w' -f -a '(__fish_gitgum_worktree_numbers)' -d 'Worktree'
+complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from worktree-switch worktree-switch+ w w+' -f -a '(__fish_gitgum_worktree_numbers)' -d 'Worktree'
 
 # status flags
 complete -c __GITGUM_CMD__ -n '__fish_seen_subcommand_from status s' -s a -l all -d 'Render every section'

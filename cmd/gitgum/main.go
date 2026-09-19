@@ -44,8 +44,9 @@ type Options struct {
 	Diff       commands.DiffCommand       `command:"diff" description:"Show working-tree diff with --compact-summary"`
 	Doctor     commands.DoctorCommand     `command:"doctor" description:"Diagnose known inconsistencies in the repo's remote/worktree layout"`
 	// Aliases are the one-letter forms the shell wrapper and completions know
-	// about too; keep the three in step.
-	WorktreeSwitch commands.WorktreeSwitchCommand `command:"worktree-switch" alias:"w" description:"Print the path of worktree N (or the next one) for the shell wrapper to cd into"`
+	// about too; keep the three in step. The same goes for the +/- spellings.
+	WorktreeSwitch     commands.WorktreeSwitchCommand     `command:"worktree-switch" alias:"w" description:"Print the path of worktree N (or the next one) for the shell wrapper to cd into"`
+	WorktreeSwitchBack commands.WorktreeSwitchBackCommand `command:"worktree-switch-" alias:"w-" description:"Like worktree-switch without N, but the previous worktree"`
 }
 
 // isFollowArg reports whether an arg is -f / --follow, optionally with an =value.
@@ -108,17 +109,24 @@ func main() {
 	os.Args = hoistFollow(os.Args)
 
 	var opts Options
+	if _, err := newParser(&opts).Parse(); err != nil {
+		os.Exit(report(err))
+	}
+}
+
+func newParser(opts *Options) *flags.Parser {
 	// Deliberately not flags.Default: that bundles PrintErrors, which would
 	// make go-flags a second printer alongside the commands themselves. One
 	// owner for error text and exit codes means neither can disagree with the
 	// other, and a message cannot be printed twice.
-	parser := flags.NewParser(&opts, flags.HelpFlag|flags.PassDoubleDash)
+	parser := flags.NewParser(opts, flags.HelpFlag|flags.PassDoubleDash)
 	parser.Name = "gitgum"
 	parser.Usage = "[OPTIONS] COMMAND"
-
-	if _, err := parser.Parse(); err != nil {
-		os.Exit(report(err))
+	// go-flags reads a repeated alias tag, but staticcheck (SA5008) rejects one.
+	if c := parser.Find("worktree-switch"); c != nil {
+		c.Aliases = append(c.Aliases, "worktree-switch+", "w+")
 	}
+	return parser
 }
 
 // report prints an error the way its kind deserves and returns the exit code

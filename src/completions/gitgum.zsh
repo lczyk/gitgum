@@ -49,13 +49,13 @@ _gitgum() {
                         '(-f --force)'{-f,--force}'[Release even if HEAD is already a release]' \
                         && ret=0
                     ;;
-                worktree-switch|w)
+                worktree-switch|w|worktree-switch+|w+)
                     _arguments \
                         '1:worktree:_gitgum_worktree_numbers' \
                         '(-h --help)'{-h,--help}'[Show help]' \
                         && ret=0
                     ;;
-                switch|branch|b|checkout-pr|add-remote|push|p|pull|doctor|delete|empty)
+                switch|branch|b|checkout-pr|add-remote|push|p|pull|doctor|delete|empty|worktree-switch-|w-)
                     _arguments \
                         '(-h --help)'{-h,--help}'[Show help]' \
                         && ret=0

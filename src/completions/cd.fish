@@ -3,7 +3,7 @@
 # call passes through with a marker so `gg doctor` can tell the wrapper is on.
 function __GITGUM_CMD__ --wraps __GITGUM_CMD__ --description 'gitgum, with worktree-switch changing directory'
     switch "$argv[1]"
-        case w worktree-switch
+        case w w+ w- worktree-switch worktree-switch+ worktree-switch-
             if contains -- -h $argv; or contains -- --help $argv; or contains -- -v $argv; or contains -- --version $argv
                 command __GITGUM_CMD__ $argv
                 return

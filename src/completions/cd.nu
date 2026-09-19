@@ -1,8 +1,8 @@
 # worktree-switch prints a path; only the shell itself can cd, so the binary is
 # wrapped: the long form as its own command (nu resolves the two-word name
 # before the one-word one, so this shadows the completion extern), the `w`
-# alias through the top-level one. Help / version output must stay output, not
-# a cd target.
+# alias and the +/- spellings through the top-level one. Help / version output
+# must stay output, not a cd target.
 #
 # The marker `gg doctor` looks for is set here, at source time, rather than
 # per call as the other shells do: nu resolves `gg status` to the completion
@@ -29,9 +29,20 @@ module gitgum-cd {
     } | compact
   }
 
+  def --env cd-to-printed [args: list<string>] {
+    if ($args | any {|a| $a in ["-h" "--help" "-v" "--version"]}) {
+      ^__GITGUM_CMD__ ...$args
+    } else {
+      cd (^__GITGUM_CMD__ ...$args)
+    }
+  }
+
   export def --env --wrapped "__GITGUM_CMD__" [...args: string] {
-    if ($args | length) > 0 and ($args | first) in ["w" "worktree-switch"] {
-      __GITGUM_CMD__ worktree-switch ...($args | skip 1)
+    let first = ($args | get -o 0 | default "")
+    if $first in ["w" "w+" "worktree-switch" "worktree-switch+"] {
+      cd-to-printed ["worktree-switch" ...($args | skip 1)]
+    } else if $first in ["w-" "worktree-switch-"] {
+      cd-to-printed ["worktree-switch-" ...($args | skip 1)]
     } else {
       ^__GITGUM_CMD__ ...$args
     }
@@ -41,11 +52,7 @@ module gitgum-cd {
   export def --env --wrapped "__GITGUM_CMD__ worktree-switch" [
     ...args: string@"nu-complete gitgum worktree numbers" # Worktree number (1 is <repo>, N is <repo>-N); omit to cycle
   ] {
-    if ($args | any {|a| $a in ["-h" "--help" "-v" "--version"]}) {
-      ^__GITGUM_CMD__ worktree-switch ...$args
-    } else {
-      cd (^__GITGUM_CMD__ worktree-switch ...$args)
-    }
+    cd-to-printed ["worktree-switch" ...$args]
   }
 
 }
