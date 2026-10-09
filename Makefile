@@ -104,8 +104,12 @@ fizz:  ## Model-check the litescreen specs (needs the fizz cli)
 		echo "fizz not found: homebrew tap fizzbee-io/fizzbee, formula fizzbee"; exit 1; \
 	fi
 	@cd ./src/litescreen/spec && for f in *.fizz; do \
-		echo "== $$f"; out=$$(fizz "$$f" 2>&1); echo "$$out" | grep -E '^(PASSED|FAILED|Invariant)'; \
-		echo "$$out" | grep -q '^PASSED' || exit 1; \
+		printf '%s\n' "$$f"; \
+		out=$$(fizz "$$f" 2>&1); status=$$?; \
+		if [ "$$status" -ne 0 ] || ! printf '%s\n' "$$out" | grep -q '^PASSED:'; then \
+			printf '%s\n' "$$out"; exit 1; \
+		fi; \
+		printf '%s\n' "$$out" | grep -E '^(Valid Nodes:|IsLive:|PASSED:)'; \
 	done
 
 .PHONY: verify
@@ -117,3 +121,4 @@ clean:  ## Remove build artifacts and generated files
 	rm -f ./bin/gitgum ./bin/fuzzyfinder
 	rm -f ./src/version/version.go
 	rm -f ./cover.out ./cover.html
+	rm -rf ./src/litescreen/spec/out ./src/litescreen/spec/*.json
