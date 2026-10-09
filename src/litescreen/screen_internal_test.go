@@ -136,7 +136,60 @@ func TestParseSS3(t *testing.T) {
 			assert.Equal(t, ek.Key(), tc.key)
 		})
 	}
-	assert.That(t, parseSS3(preloaded('Q')) == nil, "unknown SS3 final returns nil")
+	assert.That(t, parseSS3(preloaded('q')) == nil, "unknown SS3 final returns nil")
+}
+
+// F1-F4 arrive as SS3 P-S in application mode (xterm, vt100 lineage) and as
+// CSI P-S in some others; F1-F12 also come as CSI <n>~ with the vt220 numbers.
+func TestFunctionKeys(t *testing.T) {
+	ss3 := []struct {
+		b   byte
+		key tcell.Key
+	}{
+		{'P', tcell.KeyF1}, {'Q', tcell.KeyF2}, {'R', tcell.KeyF3}, {'S', tcell.KeyF4},
+	}
+	for _, tc := range ss3 {
+		ev := parseSS3(preloaded(tc.b))
+		require.That(t, ev != nil, "SS3 %c", tc.b)
+		assert.Equal(t, ev.(*tcell.EventKey).Key(), tc.key)
+	}
+
+	csi := []struct {
+		params string
+		final  byte
+		key    tcell.Key
+		mod    tcell.ModMask
+	}{
+		{"", 'P', tcell.KeyF1, tcell.ModNone},
+		{"1;5", 'Q', tcell.KeyF2, tcell.ModCtrl},
+		{"", 'R', tcell.KeyF3, tcell.ModNone},
+		{"1;2", 'S', tcell.KeyF4, tcell.ModShift},
+		{"11", '~', tcell.KeyF1, tcell.ModNone},
+		{"12", '~', tcell.KeyF2, tcell.ModNone},
+		{"13", '~', tcell.KeyF3, tcell.ModNone},
+		{"14", '~', tcell.KeyF4, tcell.ModNone},
+		{"15", '~', tcell.KeyF5, tcell.ModNone},
+		{"17", '~', tcell.KeyF6, tcell.ModNone},
+		{"18", '~', tcell.KeyF7, tcell.ModNone},
+		{"19", '~', tcell.KeyF8, tcell.ModNone},
+		{"20", '~', tcell.KeyF9, tcell.ModNone},
+		{"21", '~', tcell.KeyF10, tcell.ModNone},
+		{"23", '~', tcell.KeyF11, tcell.ModNone},
+		{"24", '~', tcell.KeyF12, tcell.ModNone},
+		{"24;3", '~', tcell.KeyF12, tcell.ModAlt},
+	}
+	for _, tc := range csi {
+		t.Run(tc.params+string(tc.final), func(t *testing.T) {
+			ev := mapCSI(tc.params, tc.final)
+			require.That(t, ev != nil, "expected an event")
+			ek := ev.(*tcell.EventKey)
+			assert.Equal(t, ek.Key(), tc.key)
+			assert.Equal(t, ek.Modifiers(), tc.mod)
+		})
+	}
+	// 16 and 22 are not assigned.
+	assert.Nil(t, mapCSI("16", '~'))
+	assert.Nil(t, mapCSI("22", '~'))
 }
 
 // TestParseCSI_Malformed makes sure the parser doesn't panic and returns nil
