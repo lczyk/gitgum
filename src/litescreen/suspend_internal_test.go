@@ -18,10 +18,11 @@ import (
 // teardown so a test can see the reader stop for a suspend and come back on
 // resume.
 type gatedInput struct {
-	mu        sync.Mutex
-	queue     []byte
-	setupN    int
-	teardownN int
+	mu         sync.Mutex
+	queue      []byte
+	setupN     int
+	teardownN  int
+	onTeardown func() // runs inside teardown, on the reader goroutine
 }
 
 func (g *gatedInput) push(b ...byte) {
@@ -39,8 +40,12 @@ func (g *gatedInput) setup() error {
 
 func (g *gatedInput) teardown() {
 	g.mu.Lock()
-	defer g.mu.Unlock()
 	g.teardownN++
+	hook := g.onTeardown
+	g.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 }
 
 func (g *gatedInput) read(buf []byte) (int, error) {
@@ -281,4 +286,73 @@ func TestScreen_SuspendTogglesPasteMode(t *testing.T) {
 	out.Reset()
 	require.NoError(t, s.Resume())
 	assert.ContainsString(t, out.String(), enablePaste)
+}
+
+// rawTracker is an enterRaw stub that records whether the terminal is in raw
+// mode right now, so a signal hook can see what the re-raise would leave
+// behind.
+type rawTracker struct{ raw bool }
+
+func (r *rawTracker) enterRaw() (func(), error) {
+	r.raw = true
+	return func() { r.raw = false }, nil
+}
+
+// A signal that lands while Suspend is between marking the screen suspended
+// and handing the terminal back must still find the terminal restored when
+// it is re-raised: cleanup must not skip the hand-back just because Suspend
+// has started it. The signal is injected from the reader's teardown, which
+// runs inside Suspend's stopReader.
+func TestScreen_SignalInsideSuspendReraisesRestored(t *testing.T) {
+	s, _, _ := newTestScreen(5, 80, 24, strings.NewReader(""))
+	tr := &rawTracker{}
+	s.enterRaw = tr.enterRaw
+	in := &gatedInput{}
+	s.input = in
+	rawAtRaise := make(chan bool, 1)
+	s.raiseSignal = func(os.Signal) { rawAtRaise <- tr.raw }
+	in.onTeardown = func() {
+		s.sigCh <- syscall.SIGTERM
+		// Give signalLoop its chance to run cleanup in the window.
+		time.Sleep(20 * time.Millisecond)
+	}
+	require.NoError(t, s.Init())
+	defer s.Fini()
+
+	require.NoError(t, s.Suspend())
+	select {
+	case raw := <-rawAtRaise:
+		assert.That(t, !raw, "re-raised with the terminal still in raw mode")
+	case <-time.After(2 * time.Second):
+		t.Fatal("signal was never re-raised")
+	}
+}
+
+// The same window exists in Resume, between entering raw mode and taking
+// the terminal under the lock: a signal there sees the screen as suspended,
+// restores nothing, and re-raises onto a raw terminal. The signal is
+// injected from queryRow, which Resume calls after enterRaw.
+func TestScreen_SignalInsideResumeReraisesRestored(t *testing.T) {
+	s, _, _ := newTestScreen(5, 80, 24, strings.NewReader(""))
+	tr := &rawTracker{}
+	s.enterRaw = tr.enterRaw
+	s.input = &gatedInput{}
+	rawAtRaise := make(chan bool, 1)
+	s.raiseSignal = func(os.Signal) { rawAtRaise <- tr.raw }
+	require.NoError(t, s.Init())
+	defer s.Fini()
+	require.NoError(t, s.Suspend())
+
+	s.queryRow = func() (int, []byte) {
+		s.sigCh <- syscall.SIGTERM
+		time.Sleep(20 * time.Millisecond)
+		return 0, nil
+	}
+	require.NoError(t, s.Resume())
+	select {
+	case raw := <-rawAtRaise:
+		assert.That(t, !raw, "re-raised with the terminal still in raw mode")
+	case <-time.After(2 * time.Second):
+		t.Fatal("signal was never re-raised")
+	}
 }
