@@ -37,6 +37,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/lczyk/gitgum/src/litescreen/ansi"
 	"github.com/mattn/go-runewidth"
+	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 )
 
@@ -116,7 +117,7 @@ func realHooks(in *os.File, out *os.File) hooks {
 // (with or without simulated EAGAIN) without needing a real *os.File.
 //
 // Lifecycle: setup once before reads, teardown once after. read returns
-// errNoData when no bytes are available right now (caller sleeps and
+// errNoData when no bytes are available right now (caller waits and
 // retries) or any other error to signal end-of-stream.
 type inputSource interface {
 	setup() error
@@ -124,37 +125,116 @@ type inputSource interface {
 	read(buf []byte) (int, error)
 }
 
+// waiter is the optional half of an inputSource that can block until input
+// is ready instead of being polled. readLoop uses it when present; Fini
+// calls wake so a blocked wait returns at once instead of at its timeout.
+// Sources without it are polled every pollInterval.
+type waiter interface {
+	wait(timeout time.Duration)
+	wake()
+}
+
+const (
+	// pollInterval paces readLoop on sources that cannot wait: snappy
+	// enough that keystrokes feel responsive, slack enough not to spin.
+	pollInterval = 2 * time.Millisecond
+	// waitTimeout bounds a wait so a lost wake can only ever delay Fini,
+	// never hang it.
+	waitTimeout = 250 * time.Millisecond
+)
+
 // errNoData is the sentinel inputSource.read returns when no bytes are
 // ready right now. Distinct from real errors so readLoop can poll instead
 // of exiting.
 var errNoData = errors.New("nonblocking read: no data ready")
 
-// fdInput wraps an *os.File with raw nonblocking syscall.Read. Production
-// uses this for /dev/tty so close(fd) interrupts the polling cleanly
-// (close alone doesn't unblock a stranded blocking read on darwin).
+// fdInput wraps an *os.File with raw nonblocking syscall.Read and a poll(2)
+// wait. Production uses this for /dev/tty so close(fd) interrupts the
+// reader cleanly (close alone doesn't unblock a stranded blocking read on
+// darwin).
 //
 // The fd is captured once in setup and reused in read. *os.File.Fd() must
 // NOT be called on every read: each call invokes pfd.SetBlocking(), which
-// clears O_NONBLOCK and turns syscall.Read back into a blocking call —
+// clears O_NONBLOCK and turns syscall.Read back into a blocking call,
 // stranding readLoop until kernel data arrives.
+//
+// wait polls the fd together with the read end of a private pipe; wake
+// writes a byte to the other end, which is how Fini gets a blocked wait to
+// return from another goroutine. The pipe lives from setup to teardown; mu
+// keeps wake from touching descriptors that are not (or no longer) ours.
 type fdInput struct {
 	f  *os.File
 	fd int
+
+	mu           sync.Mutex
+	wakeR, wakeW int // -1 outside setup..teardown
+}
+
+func newFdInput(f *os.File) *fdInput {
+	return &fdInput{f: f, wakeR: -1, wakeW: -1}
 }
 
 func (i *fdInput) setup() error {
 	i.fd = int(i.f.Fd())
-	return syscall.SetNonblock(i.fd, true)
+	if err := syscall.SetNonblock(i.fd, true); err != nil {
+		return err
+	}
+	var p [2]int
+	if err := unix.Pipe(p[:]); err != nil {
+		return err
+	}
+	i.mu.Lock()
+	i.wakeR, i.wakeW = p[0], p[1]
+	i.mu.Unlock()
+	return nil
 }
+
 func (i *fdInput) teardown() {
 	syscall.SetNonblock(i.fd, false)
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.wakeR >= 0 {
+		unix.Close(i.wakeR)
+		unix.Close(i.wakeW)
+		i.wakeR, i.wakeW = -1, -1
+	}
 }
+
 func (i *fdInput) read(buf []byte) (int, error) {
 	n, err := syscall.Read(i.fd, buf)
 	if err == syscall.EAGAIN || err == syscall.EWOULDBLOCK {
 		return 0, errNoData
 	}
 	return n, err
+}
+
+// wait blocks until the fd is readable, wake is called, or timeout passes.
+// A wake byte is drained so the next wait blocks again. EINTR (a SIGWINCH
+// landing mid-poll) just returns early; the caller loops.
+func (i *fdInput) wait(timeout time.Duration) {
+	i.mu.Lock()
+	wakeR := i.wakeR
+	i.mu.Unlock()
+	fds := []unix.PollFd{{Fd: int32(i.fd), Events: unix.POLLIN}}
+	if wakeR >= 0 {
+		fds = append(fds, unix.PollFd{Fd: int32(wakeR), Events: unix.POLLIN})
+	}
+	n, err := unix.Poll(fds, int(timeout/time.Millisecond))
+	if err != nil || n == 0 || len(fds) < 2 || fds[1].Revents == 0 {
+		return
+	}
+	var drain [16]byte
+	unix.Read(wakeR, drain[:])
+}
+
+// wake makes a concurrent wait return. Safe to call at any time; outside
+// setup..teardown it does nothing.
+func (i *fdInput) wake() {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.wakeW >= 0 {
+		unix.Write(i.wakeW, []byte{0})
+	}
 }
 
 // readerInput wraps any io.Reader. Setup/teardown are no-ops; read
@@ -171,7 +251,7 @@ func (i *readerInput) read(buf []byte) (int, error) { return i.r.Read(buf) }
 // real *os.File, readerInput otherwise.
 func inputFor(r io.Reader) inputSource {
 	if f, ok := r.(*os.File); ok {
-		return &fdInput{f: f}
+		return newFdInput(f)
 	}
 	return &readerInput{r: r}
 }
@@ -967,6 +1047,9 @@ func (s *Screen) Fini() {
 		// and steals input (DSR, keystrokes) intended for the next Screen.
 		if s.quit != nil {
 			close(s.quit)
+			if w, ok := s.input.(waiter); ok {
+				w.wake()
+			}
 			<-s.readDone
 		}
 		s.closeIO()
@@ -1216,12 +1299,14 @@ func (s *Screen) readLoop(out chan<- byte) {
 			continue
 		}
 		if errors.Is(err, errNoData) {
-			// Poll interval: snappy enough that keystrokes feel responsive,
-			// slack enough not to busy-spin when idle.
+			if w, ok := s.input.(waiter); ok {
+				w.wait(waitTimeout)
+				continue
+			}
 			select {
 			case <-s.quit:
 				return
-			case <-time.After(2 * time.Millisecond):
+			case <-time.After(pollInterval):
 			}
 			continue
 		}
