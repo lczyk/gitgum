@@ -691,9 +691,8 @@ func queryCursorRow(in *os.File, out *os.File) (row int, pending []byte) {
 			time.Sleep(2 * time.Millisecond)
 			continue
 		}
-		if err != nil {
-			break
-		}
+		// EOF (0, nil) or a real error: no reply is coming.
+		break
 	}
 
 	row, pending = splitCPR(got)
