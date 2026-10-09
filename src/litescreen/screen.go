@@ -92,8 +92,12 @@ func realHooks(in *os.File, out *os.File) hooks {
 		queryRow:    func() (int, []byte) { return queryCursorRow(in, out) },
 		closeIO:     func() { in.Close(); out.Close() },
 		notifyWinch: func(ch chan<- os.Signal) { signal.Notify(ch, syscall.SIGWINCH) },
-		notifySig:   func(ch chan<- os.Signal) { signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM) },
-		stopSignal:  signal.Stop,
+		notifySig: func(ch chan<- os.Signal) {
+			// SIGHUP is left alone: catching it would undo an ignore set up
+			// by nohup, and there is no terminal left to restore anyway.
+			signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+		},
+		stopSignal: signal.Stop,
 		raiseSignal: func(sig os.Signal) {
 			signal.Reset(sig.(syscall.Signal))
 			syscall.Kill(syscall.Getpid(), sig.(syscall.Signal))
@@ -860,7 +864,7 @@ func initSequence(height, termW, termH, cursorRow int) (out []byte, yOrigin int,
 	return buf.Bytes(), yOrigin, fb, fullscreen
 }
 
-// signalLoop catches SIGINT/SIGTERM, restores the terminal, and re-raises
+// signalLoop catches SIGINT/SIGTERM/SIGQUIT, restores the terminal, and re-raises
 // the signal so the default handler runs (process exit with the correct
 // status). Without this, a Ctrl-C delivered while the picker is up leaves
 // the terminal in raw mode + cursor hidden.
