@@ -269,11 +269,20 @@ func TestStyleToSGR(t *testing.T) {
 	}{
 		{"default", tcell.StyleDefault, ""},
 		{"bold", tcell.StyleDefault.Bold(true), "\x1b[1m"},
-		// ColorBlue's palette index in tcell is 12 (16-color VGA order:
-		// black, maroon, green, olive, navy, ..., red=9, ..., blue=12).
-		{"fg blue palette", tcell.StyleDefault.Foreground(tcell.ColorBlue), "\x1b[38;5;12m"},
+		// The first 16 palette entries go out as the classic 30-37/90-97 and
+		// 40-47/100-107 codes, so the terminal's own palette applies even
+		// where 38;5 is unsupported. ColorBlue's index in tcell is 12 (VGA
+		// order: black, maroon, green, olive, navy, ..., red=9, ..., blue=12),
+		// which is bright blue, 94.
+		{"fg blue palette", tcell.StyleDefault.Foreground(tcell.ColorBlue), "\x1b[94m"},
 		{"fg+bg", tcell.StyleDefault.Foreground(tcell.ColorRed).Background(tcell.ColorBlack),
-			"\x1b[38;5;9;48;5;0m"},
+			"\x1b[91;40m"},
+		{"fg teal bg silver", tcell.StyleDefault.Foreground(tcell.ColorTeal).Background(tcell.ColorSilver),
+			"\x1b[36;47m"},
+		{"bg bright white", tcell.StyleDefault.Background(tcell.ColorWhite), "\x1b[107m"},
+		// Beyond the first 16 only the extended form exists.
+		{"fg 256 palette", tcell.StyleDefault.Foreground(tcell.PaletteColor(16)), "\x1b[38;5;16m"},
+		{"bg 256 palette", tcell.StyleDefault.Background(tcell.PaletteColor(200)), "\x1b[48;5;200m"},
 		{"bold+reverse", tcell.StyleDefault.Bold(true).Reverse(true), "\x1b[1;7m"},
 	}
 	for _, tc := range tests {
@@ -295,6 +304,8 @@ func TestStyleToSGR_RoundTrip(t *testing.T) {
 	cases := []tcell.Style{
 		tcell.StyleDefault.Bold(true),
 		tcell.StyleDefault.Foreground(tcell.PaletteColor(3)).Background(tcell.PaletteColor(5)),
+		tcell.StyleDefault.Foreground(tcell.PaletteColor(9)).Background(tcell.PaletteColor(15)),
+		tcell.StyleDefault.Foreground(tcell.PaletteColor(16)).Background(tcell.PaletteColor(255)),
 		tcell.StyleDefault.Italic(true).Underline(true).Reverse(true),
 		tcell.StyleDefault.Foreground(tcell.NewRGBColor(10, 20, 30)),
 	}
