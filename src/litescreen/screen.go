@@ -74,6 +74,9 @@ type hooks struct {
 	notifyWinch func(chan<- os.Signal)
 	notifySig   func(chan<- os.Signal)
 	stopSignal  func(chan<- os.Signal)
+	// raiseSignal sends sig to the process after the screen has withdrawn
+	// its own registration, so whoever else listens for it decides what
+	// happens; with nobody listening the default action ends the process.
 	raiseSignal func(os.Signal)
 }
 
@@ -104,11 +107,8 @@ func realHooks(in *os.File, out *os.File) hooks {
 			// by nohup, and there is no terminal left to restore anyway.
 			signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 		},
-		stopSignal: signal.Stop,
-		raiseSignal: func(sig os.Signal) {
-			signal.Reset(sig.(syscall.Signal))
-			syscall.Kill(syscall.Getpid(), sig.(syscall.Signal))
-		},
+		stopSignal:  signal.Stop,
+		raiseSignal: func(sig os.Signal) { syscall.Kill(syscall.Getpid(), sig.(syscall.Signal)) },
 	}
 }
 
@@ -953,19 +953,21 @@ func initSequence(height, termW, termH, cursorRow int) (out []byte, yOrigin int,
 	return buf.Bytes(), yOrigin, fb, fullscreen
 }
 
-// signalLoop catches SIGINT/SIGTERM/SIGQUIT, restores the terminal, and re-raises
-// the signal so the default handler runs (process exit with the correct
-// status). Without this, a Ctrl-C delivered while the screen is up leaves
-// the terminal in raw mode + cursor hidden.
+// signalLoop catches SIGINT/SIGTERM/SIGQUIT, restores the terminal, withdraws
+// its own registration and re-raises the signal. A handler the consumer
+// registered then gets it and decides; with none, the default action ends
+// the process with the right status. Without this, a Ctrl-C delivered while
+// the screen is up leaves the terminal in raw mode + cursor hidden.
 //
-// The channel is passed by value (not read off s.sigCh) so Fini can nil
-// the field without racing with this goroutine's receive.
-func (s *Screen) signalLoop(ch <-chan os.Signal) {
+// The channel is passed by value (not read off s.sigCh) so this goroutine
+// never reads the field.
+func (s *Screen) signalLoop(ch chan os.Signal) {
 	sig, ok := <-ch
 	if !ok {
 		return
 	}
 	s.cleanup()
+	s.stopSignal(ch)
 	s.raiseSignal(sig)
 }
 
