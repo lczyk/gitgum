@@ -745,10 +745,11 @@ func headlessHooks(size func() (int, int)) hooks {
 // stray one (e.g. a stale reply from a prior query) is dropped rather than
 // replayed as junk keys.
 //
-// Reads via raw syscall.Read on the fd in non-blocking mode; *os.File's
-// runtime poller doesn't reliably support SetReadDeadline on /dev/tty
-// opened via os.OpenFile (darwin), and a goroutine + blocking Read could
-// strand a reader that later steals user keystrokes.
+// Reads via raw syscall.Read on the fd in non-blocking mode, waiting in
+// poll(2) between reads; *os.File's runtime poller doesn't reliably support
+// SetReadDeadline on /dev/tty opened via os.OpenFile (darwin), and a
+// goroutine + blocking Read could strand a reader that later steals user
+// keystrokes.
 func queryCursorRow(in *os.File, out *os.File) (row int, pending []byte) {
 	fd := int(in.Fd())
 	if err := syscall.SetNonblock(fd, true); err != nil {
@@ -791,7 +792,10 @@ func queryCursorRow(in *os.File, out *os.File) (row int, pending []byte) {
 			continue
 		}
 		if err == syscall.EAGAIN || err == syscall.EWOULDBLOCK {
-			time.Sleep(2 * time.Millisecond)
+			// Block until the reply lands or the deadline passes; EINTR
+			// just comes back around to the deadline check.
+			fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
+			unix.Poll(fds, int(time.Until(deadline)/time.Millisecond)+1)
 			continue
 		}
 		// EOF (0, nil) or a real error: no reply is coming.

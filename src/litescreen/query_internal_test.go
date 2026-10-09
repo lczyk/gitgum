@@ -101,3 +101,20 @@ func TestQueryCursorRow_ReplyArrivesInPieces(t *testing.T) {
 	assert.Equal(t, row, 21)
 	assert.Equal(t, len(pending), 0)
 }
+
+// The wait between reads is a poll on the fd, not a sleep: a reply that
+// lands mid-wait returns straight away, and the deadline still holds.
+func TestQueryCursorRow_WaitsOnTheFd(t *testing.T) {
+	in, write, out := pipeTTY(t)
+	go func() {
+		time.Sleep(60 * time.Millisecond)
+		write.Write([]byte("\x1b[7;1R"))
+	}()
+	start := time.Now()
+	row, pending := queryCursorRow(in, out)
+	elapsed := time.Since(start)
+	assert.Equal(t, row, 7)
+	assert.Equal(t, len(pending), 0)
+	assert.That(t, elapsed >= 60*time.Millisecond, "returned before the reply: %v", elapsed)
+	assert.That(t, elapsed < 150*time.Millisecond, "took %v, the reply was not picked up as it landed", elapsed)
+}
