@@ -52,3 +52,34 @@ func TestRegressionTrailingEscDropped(t *testing.T) {
 func TestRegressionEscBeforeMultibyteRune(t *testing.T) {
 	assert.Equal(t, ansi.Strip("a\x1b\u00e9b"), "a\u00e9b")
 }
+
+// ITU T.416 truecolour carries an optional colour-space id as the sub-param
+// after the 2: "38:2::r:g:b". Regression: the empty id was read as the red
+// channel, shifting the channels and leaving a stray 0 that reset the style.
+func TestRegressionColonTrueColorWithColorSpaceID(t *testing.T) {
+	got := ansi.Parse("\x1b[38:2::255:0:0mX", tcell.StyleDefault)
+	fg, _, _ := got[0].Style.Decompose()
+	r, g, b := fg.RGB()
+	assert.Equal(t, r, int32(255))
+	assert.Equal(t, g, int32(0))
+	assert.Equal(t, b, int32(0))
+
+	// A non-empty id is skipped the same way.
+	got = ansi.Parse("\x1b[48:2:1:10:20:30mX", tcell.StyleDefault)
+	_, bg, _ := got[0].Style.Decompose()
+	r, g, b = bg.RGB()
+	assert.Equal(t, r, int32(10))
+	assert.Equal(t, g, int32(20))
+	assert.Equal(t, b, int32(30))
+}
+
+// Channel values above 255 are out of range; tcell packs them into a colour
+// word where they corrupt the neighbouring channel. Clamp instead.
+func TestRegressionTrueColorChannelsClamped(t *testing.T) {
+	got := ansi.Parse("\x1b[38;2;300;0;999mX", tcell.StyleDefault)
+	fg, _, _ := got[0].Style.Decompose()
+	r, g, b := fg.RGB()
+	assert.Equal(t, r, int32(255))
+	assert.Equal(t, g, int32(0))
+	assert.Equal(t, b, int32(255))
+}
