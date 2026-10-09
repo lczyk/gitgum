@@ -190,6 +190,13 @@ func TestFunctionKeys(t *testing.T) {
 	// 16 and 22 are not assigned.
 	assert.Nil(t, mapCSI("16", '~'))
 	assert.Nil(t, mapCSI("22", '~'))
+	// Bracketed paste delimiters are events of their own.
+	start, ok := mapCSI("200", '~').(*tcell.EventPaste)
+	require.That(t, ok, "CSI 200~ is a paste event")
+	assert.That(t, start.Start(), "CSI 200~ opens the paste")
+	end, ok := mapCSI("201", '~').(*tcell.EventPaste)
+	require.That(t, ok, "CSI 201~ is a paste event")
+	assert.That(t, end.End(), "CSI 201~ closes the paste")
 	// A cursor-position report ends in R too; it is not F3, not even from
 	// row 1 column 1 where it looks like the xterm modifier form.
 	assert.Nil(t, mapCSI("24;80", 'R'))

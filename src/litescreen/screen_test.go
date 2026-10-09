@@ -344,3 +344,58 @@ func TestNewWithOptions_MethodsBeforeInitAreInert(t *testing.T) {
 	assert.Equal(t, out.String(), "")
 	s.Fini()
 }
+
+// Bracketed paste: with the mode on, the terminal wraps pasted text in
+// CSI 200~ and CSI 201~. Those become paste events around the keys of the
+// text, so a consumer can tell a pasted newline from a typed Enter.
+func TestNewWithOptions_PasteEvents(t *testing.T) {
+	s, err := litescreen.NewWithOptions(litescreen.Options{
+		In: strings.NewReader("\x1b[200~a\r\x1b[201~"),
+	})
+	require.NoError(t, err)
+	require.NoError(t, s.Init())
+	defer s.Fini()
+
+	events := make(chan tcell.Event, 8)
+	go s.ChannelEvents(events, nil)
+
+	start, ok := recvEvent(t, events).(*tcell.EventPaste)
+	require.That(t, ok, "expected a paste event first")
+	assert.That(t, start.Start(), "first event opens the paste")
+	assert.Equal(t, recvEvent(t, events).(*tcell.EventKey).Rune(), 'a')
+	assert.Equal(t, recvEvent(t, events).(*tcell.EventKey).Key(), tcell.KeyEnter)
+	end, ok := recvEvent(t, events).(*tcell.EventPaste)
+	require.That(t, ok, "expected a paste event last")
+	assert.That(t, end.End(), "last event closes the paste")
+}
+
+// EnablePaste turns the terminal mode on, DisablePaste and Fini turn it off.
+// Asked for before Init, the mode is switched on by Init.
+func TestNewWithOptions_EnablePaste(t *testing.T) {
+	var out bytes.Buffer
+	s, err := litescreen.NewWithOptions(litescreen.Options{Height: 3, Out: &out})
+	require.NoError(t, err)
+	require.NoError(t, s.Init())
+	assert.That(t, !strings.Contains(out.String(), "\x1b[?2004"), "paste mode is off by default")
+
+	out.Reset()
+	s.EnablePaste()
+	assert.Equal(t, out.String(), "\x1b[?2004h")
+	out.Reset()
+	s.DisablePaste()
+	assert.Equal(t, out.String(), "\x1b[?2004l")
+
+	out.Reset()
+	s.EnablePaste()
+	s.Fini()
+	assert.ContainsString(t, out.String(), "\x1b[?2004l", "fini turns paste mode off")
+
+	out.Reset()
+	s, err = litescreen.NewWithOptions(litescreen.Options{Height: 3, Out: &out})
+	require.NoError(t, err)
+	s.EnablePaste()
+	assert.Equal(t, out.String(), "", "nothing to write before init")
+	require.NoError(t, s.Init())
+	assert.ContainsString(t, out.String(), "\x1b[?2004h", "init applies the mode asked for earlier")
+	s.Fini()
+}
