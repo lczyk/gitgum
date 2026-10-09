@@ -152,3 +152,47 @@ func TestRegressionInitFailureClosesIO(t *testing.T) {
 	assert.Error(t, err, assert.AnyError)
 	assert.That(t, closed, "init failure must close the tty fds")
 }
+
+// A wide rune that moves one column right is never drawn. Regression: the
+// diff skipped the cell because back and front agreed on it, but the narrow
+// rune just emitted one column to the left had overwritten the wide rune's
+// left half, which makes the terminal blank both halves. front kept claiming
+// the rune was on screen, so no later Show re-emitted it either.
+func TestRegressionWideRuneShiftedRightReemitted(t *testing.T) {
+	wide := rune(0x65e5) // CJK 'day', 2 columns
+	fb := newFramebuf(6, 1)
+	_ = fb.flush(0, 0, 0, false)
+
+	fb.set(0, 0, liteCell{mainc: wide})
+	_ = fb.flush(0, 0, 0, false)
+
+	fb.clear()
+	fb.set(1, 0, liteCell{mainc: wide})
+	got := string(fb.flush(0, 0, 0, false))
+	assert.ContainsString(t, got, "\x1b[1;2H", "wide rune must be re-emitted at its new column; got %q", got)
+	assert.ContainsString(t, got, string(wide), "wide rune missing from the frame; got %q", got)
+}
+
+// Two adjacent wide runes shifting left lose the second one. Regression:
+// emitting the first at its new column overwrites the left half of what used
+// to be there -- the first rune's old position -- and the terminal blanks that
+// rune entirely, taking the column the second rune now needs with it. front
+// still matched back there, so the second rune was skipped.
+func TestRegressionAdjacentWideRunesShiftedLeftReemitted(t *testing.T) {
+	wide := rune(0x65e5)
+	fb := newFramebuf(6, 1)
+	_ = fb.flush(0, 0, 0, false)
+
+	fb.set(0, 0, liteCell{mainc: 'a'})
+	fb.set(1, 0, liteCell{mainc: wide})
+	fb.set(3, 0, liteCell{mainc: wide})
+	_ = fb.flush(0, 0, 0, false)
+
+	fb.clear()
+	fb.set(0, 0, liteCell{mainc: wide})
+	fb.set(2, 0, liteCell{mainc: wide})
+	got := string(fb.flush(0, 0, 0, false))
+	assert.ContainsString(t, got, "\x1b[1;1H", "first wide rune must be emitted at column 1; got %q", got)
+	assert.ContainsString(t, got, "\x1b[1;3H", "second wide rune must be emitted at column 3; got %q", got)
+	assert.Equal(t, strings.Count(got, string(wide)), 2)
+}
