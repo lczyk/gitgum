@@ -262,3 +262,61 @@ func TestNewWithOptions_DefaultSizeFallback(t *testing.T) {
 	assert.Equal(t, h, 24)
 	s.Fini()
 }
+
+// ShowCursor outside the grid hides the cursor, as it does in tcell, where
+// ShowCursor(-1, -1) is the idiom for "no cursor". Emitting the position as
+// given would let the terminal clamp it and show the cursor somewhere else.
+func TestNewWithOptions_ShowCursorOutsideGridHides(t *testing.T) {
+	var out bytes.Buffer
+	s, err := litescreen.NewWithOptions(litescreen.Options{
+		Height: 3,
+		Out:    &out,
+		Size:   fixedSize(20, 10),
+	})
+	require.NoError(t, err)
+	require.NoError(t, s.Init())
+	defer s.Fini()
+
+	s.ShowCursor(1, 1)
+	s.Show()
+	assert.ContainsString(t, out.String(), "\x1b[?25h", "in-range cursor is shown")
+
+	for _, xy := range [][2]int{{-1, -1}, {20, 0}, {0, 3}, {-1, 0}} {
+		out.Reset()
+		s.ShowCursor(xy[0], xy[1])
+		s.Show()
+		got := out.String()
+		assert.That(t, !strings.Contains(got, "\x1b[?25h"),
+			"cursor at %v must be hidden, got %q", xy, got)
+		s.ShowCursor(1, 1)
+		s.Show()
+	}
+}
+
+func TestNewWithOptions_HideCursor(t *testing.T) {
+	var out bytes.Buffer
+	s, err := litescreen.NewWithOptions(litescreen.Options{
+		Height: 3,
+		Out:    &out,
+		Size:   fixedSize(20, 10),
+	})
+	require.NoError(t, err)
+	require.NoError(t, s.Init())
+	defer s.Fini()
+
+	s.ShowCursor(1, 1)
+	s.Show()
+	out.Reset()
+
+	s.HideCursor()
+	s.Show()
+	got := out.String()
+	assert.That(t, got != "", "hiding a shown cursor is a change the terminal must hear about")
+	assert.That(t, !strings.Contains(got, "\x1b[?25h"), "cursor must stay hidden, got %q", got)
+
+	// Idempotent: nothing changed, nothing to say.
+	out.Reset()
+	s.HideCursor()
+	s.Show()
+	assert.Equal(t, out.String(), "")
+}
