@@ -29,28 +29,32 @@ func TestControlByteEvent(t *testing.T) {
 		name string
 		b    byte
 		key  tcell.Key
+		r    rune
 		mod  tcell.ModMask
 	}{
-		{"NUL/Ctrl-Space", 0x00, tcell.KeyCtrlSpace, tcell.ModCtrl},
-		{"Ctrl-A", 0x01, tcell.KeyCtrlA, tcell.ModCtrl},
-		{"Ctrl-C", 0x03, tcell.KeyCtrlC, tcell.ModCtrl},
-		{"Ctrl-D", 0x04, tcell.KeyCtrlD, tcell.ModCtrl},
-		{"Backspace", 0x08, tcell.KeyBackspace, tcell.ModNone},
-		{"Tab", 0x09, tcell.KeyTab, tcell.ModNone},
-		{"Ctrl-J", 0x0a, tcell.KeyCtrlJ, tcell.ModCtrl},
-		{"Ctrl-K", 0x0b, tcell.KeyCtrlK, tcell.ModCtrl},
-		{"Enter", 0x0d, tcell.KeyEnter, tcell.ModNone},
-		{"Ctrl-N", 0x0e, tcell.KeyCtrlN, tcell.ModCtrl},
-		{"Ctrl-P", 0x10, tcell.KeyCtrlP, tcell.ModCtrl},
-		{"Ctrl-U", 0x15, tcell.KeyCtrlU, tcell.ModCtrl},
-		{"Ctrl-W", 0x17, tcell.KeyCtrlW, tcell.ModCtrl},
-		{"Ctrl-Z", 0x1a, tcell.KeyCtrlZ, tcell.ModCtrl},
-		{"Esc", 0x1b, tcell.KeyEsc, tcell.ModNone},
+		// Ctrl-Space carries no rune in tcell: only the letters do, and the
+		// finder inserts whatever rune an unbound key carries.
+		{"NUL/Ctrl-Space", 0x00, tcell.KeyCtrlSpace, 0, tcell.ModCtrl},
+		{"Ctrl-A", 0x01, tcell.KeyCtrlA, 'a', tcell.ModCtrl},
+		{"Ctrl-C", 0x03, tcell.KeyCtrlC, 'c', tcell.ModCtrl},
+		{"Ctrl-D", 0x04, tcell.KeyCtrlD, 'd', tcell.ModCtrl},
+		{"Backspace", 0x08, tcell.KeyBackspace, 0, tcell.ModNone},
+		{"Tab", 0x09, tcell.KeyTab, 0, tcell.ModNone},
+		{"Ctrl-J", 0x0a, tcell.KeyCtrlJ, 'j', tcell.ModCtrl},
+		{"Ctrl-K", 0x0b, tcell.KeyCtrlK, 'k', tcell.ModCtrl},
+		{"Enter", 0x0d, tcell.KeyEnter, 0, tcell.ModNone},
+		{"Ctrl-N", 0x0e, tcell.KeyCtrlN, 'n', tcell.ModCtrl},
+		{"Ctrl-P", 0x10, tcell.KeyCtrlP, 'p', tcell.ModCtrl},
+		{"Ctrl-U", 0x15, tcell.KeyCtrlU, 'u', tcell.ModCtrl},
+		{"Ctrl-W", 0x17, tcell.KeyCtrlW, 'w', tcell.ModCtrl},
+		{"Ctrl-Z", 0x1a, tcell.KeyCtrlZ, 'z', tcell.ModCtrl},
+		{"Esc", 0x1b, tcell.KeyEsc, 0, tcell.ModNone},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ev := controlByteEvent(tc.b).(*tcell.EventKey)
 			assert.Equal(t, ev.Key(), tc.key)
+			assert.Equal(t, ev.Rune(), tc.r)
 			assert.Equal(t, ev.Modifiers(), tc.mod)
 		})
 	}
@@ -160,22 +164,25 @@ func TestParseCSI_Malformed(t *testing.T) {
 	}
 }
 
-// TestControlByteEvent_RareControls covers the 0x1c-0x1f range that the
-// finder doesn't currently use. Locking the passthrough so we notice if it
-// changes.
+// TestControlByteEvent_RareControls covers the 0x1c-0x1f range. tcell reports
+// every control byte that is not Backspace/Tab/Enter/Esc as KeyCtrlSpace plus
+// the byte value, so these land on the named Ctrl-\ Ctrl-] Ctrl-^ Ctrl-_ keys
+// with no rune, the same as a tcell-backed consumer would see.
 func TestControlByteEvent_RareControls(t *testing.T) {
 	tests := []struct {
 		b   byte
 		key tcell.Key
 	}{
-		{0x1c, tcell.KeyFS}, // Ctrl-\
-		{0x1d, tcell.KeyGS}, // Ctrl-]
-		{0x1e, tcell.KeyRS}, // Ctrl-^
-		{0x1f, tcell.KeyUS}, // Ctrl-/ (or Ctrl-_)
+		{0x1c, tcell.KeyCtrlBackslash},
+		{0x1d, tcell.KeyCtrlRightSq},
+		{0x1e, tcell.KeyCtrlCarat},
+		{0x1f, tcell.KeyCtrlUnderscore},
 	}
 	for _, tc := range tests {
 		ev := controlByteEvent(tc.b).(*tcell.EventKey)
 		assert.Equal(t, ev.Key(), tc.key)
+		assert.Equal(t, ev.Rune(), rune(0))
+		assert.Equal(t, ev.Modifiers(), tcell.ModCtrl)
 	}
 }
 
