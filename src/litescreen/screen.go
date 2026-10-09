@@ -372,6 +372,34 @@ const (
 	endFrame   = "\x1b[?2026l"
 )
 
+// isWide reports whether a front cell holds a 2-column rune. The sentinel
+// (mainc -1) and blanks are never wide.
+func isWide(c liteCell) bool {
+	return c.mainc > 0 && runewidth.RuneWidth(c.mainc) > 1
+}
+
+// phantomIntact reports whether the second half of a wide back cell at x is
+// still what the terminal shows. A narrow write one column to the left blanks
+// the whole rune and leaves the phantom slot forgotten, so the main cell must
+// be re-emitted even though back and front agree on it. Narrow cells, and a
+// wide cell in the last column (which is drawn blank), have no phantom.
+func (f *framebuf) phantomIntact(x, y int, c liteCell) bool {
+	if !isWide(c) || x+1 >= f.width {
+		return true
+	}
+	return cellEqual(c, f.front[y][x+1])
+}
+
+// forgetWideAt marks the far half of a wide rune drawn at front (x, y) as
+// unknown. front stores the same cell in both halves, so a phantom slot looks
+// like a left half; forgetting one column past a phantom costs a spurious
+// re-emit of that cell and nothing else.
+func (f *framebuf) forgetWideAt(x, y int) {
+	if isWide(f.front[y][x]) && x+1 < f.width {
+		f.front[y][x+1] = liteCell{mainc: -1}
+	}
+}
+
 // cursorInSync reports whether the terminal's cursor already is where this
 // frame wants it. Position is only compared when the cursor is visible: while
 // hidden it can sit anywhere, since the next visible frame repositions it.
@@ -406,7 +434,7 @@ func (f *framebuf) flushTo(buf *bytes.Buffer, yOrigin, cx, cy int, cursorVisible
 	for y := 0; y < f.height; y++ {
 		for x := 0; x < f.width; x++ {
 			c := f.back[y][x]
-			if cellEqual(c, f.front[y][x]) {
+			if cellEqual(c, f.front[y][x]) && f.phantomIntact(x, y, c) {
 				// Wide cells leave a phantom slot; if main cell unchanged,
 				// the phantom doesn't need re-emission either.
 				w := runewidth.RuneWidth(c.mainc)
@@ -414,6 +442,15 @@ func (f *framebuf) flushTo(buf *bytes.Buffer, yOrigin, cx, cy int, cursorVisible
 					x += w - 1
 				}
 				continue
+			}
+
+			// Writing a cell destroys any wide rune it overlaps: terminals
+			// blank both halves when either is overwritten. Forget the other
+			// half in front so the diff re-emits it rather than trusting a
+			// glyph that is no longer on screen.
+			f.forgetWideAt(x, y)
+			if runewidth.RuneWidth(c.mainc) > 1 && x+1 < f.width {
+				f.forgetWideAt(x+1, y)
 			}
 
 			// Cursor positioning is 1-indexed and absolute. Add yOrigin to
