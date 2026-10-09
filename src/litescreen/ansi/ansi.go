@@ -112,7 +112,7 @@ func walk(s string, base tcell.Style, emit func(rune, tcell.Style)) {
 	i := 0
 	for i < len(s) {
 		c := s[i]
-		if c == 0x1b && i+1 < len(s) {
+		if c == 0x1b {
 			consumed, newStyle, ok := handleEscape(s[i:], cur, base)
 			if ok {
 				cur = newStyle
@@ -143,14 +143,31 @@ func handleEscape(s string, cur, base tcell.Style) (int, tcell.Style, bool) {
 	if len(s) < 2 {
 		return 0, cur, false
 	}
-	switch s[1] {
-	case '[':
+	switch c := s[1]; {
+	case c == '[':
 		return handleCSI(s, cur, base)
-	case ']':
+	case c == ']':
 		return handleOSC(s), cur, true
-	default:
+	case c >= 0x20 && c <= 0x2f:
+		// nF escape (ECMA-35): intermediates 0x20-0x2f, then one final byte
+		// 0x30-0x7e. Charset designations like the ESC ( B in xterm's sgr0
+		// live here. Consume through the final byte, ignore.
+		i := 2
+		for i < len(s) && s[i] >= 0x20 && s[i] <= 0x2f {
+			i++
+		}
+		if i < len(s) && s[i] >= 0x30 && s[i] <= 0x7e {
+			i++
+		}
+		return i, cur, true
+	case c >= 0x30 && c <= 0x7e:
 		// Two-char escape (ESC X). Consume both, ignore.
 		return 2, cur, true
+	default:
+		// ESC followed by a control byte or a non-ASCII byte is not a
+		// sequence at all. Drop the ESC alone and leave the byte for the
+		// rune decoder.
+		return 0, cur, false
 	}
 }
 
