@@ -193,6 +193,10 @@ type Screen struct {
 	cursorX, cursorY int
 	cursorVisible    bool
 
+	// paste records whether bracketed paste mode is wanted. Applied by Init,
+	// toggled by EnablePaste/DisablePaste, undone by cleanup. Guarded by mu.
+	paste bool
+
 	winch chan os.Signal
 
 	// signal-driven cleanup. SIGINT/SIGTERM mid-picker leaves terminal in
@@ -795,6 +799,11 @@ func (s *Screen) Init() error {
 	s.fullscreen = fullscreen
 	s.out.Write(out)
 	s.cursorVisible = false
+	s.mu.Lock()
+	if s.paste {
+		s.out.Write([]byte(enablePaste))
+	}
+	s.mu.Unlock()
 
 	if s.input == nil {
 		s.input = inputFor(s.in)
@@ -878,6 +887,9 @@ func (s *Screen) cleanup() {
 		// from its own goroutine while a draw may be in flight).
 		s.mu.Lock()
 		defer s.mu.Unlock()
+		if s.paste {
+			s.out.Write([]byte(disablePaste))
+		}
 		s.out.Write(finiSequence(s.fullscreen, s.yOrigin))
 		if s.restore != nil {
 			s.restore()
@@ -991,6 +1003,37 @@ func (s *Screen) HideCursor() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cursorVisible = false
+}
+
+// Bracketed paste mode: the terminal wraps pasted text in CSI 200~ and
+// CSI 201~, which ChannelEvents delivers as tcell.EventPaste around the keys
+// of the text.
+const (
+	enablePaste  = "\x1b[?2004h"
+	disablePaste = "\x1b[?2004l"
+)
+
+// EnablePaste turns bracketed paste mode on. Before Init the request is
+// remembered and applied by Init; Fini turns the mode off again.
+func (s *Screen) EnablePaste() {
+	s.setPaste(true, enablePaste)
+}
+
+// DisablePaste turns bracketed paste mode off.
+func (s *Screen) DisablePaste() {
+	s.setPaste(false, disablePaste)
+}
+
+func (s *Screen) setPaste(on bool, seq string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.paste == on {
+		return
+	}
+	s.paste = on
+	if s.fb != nil && !s.done {
+		s.out.Write([]byte(seq))
+	}
 }
 
 // cursorShown reports whether the next frame shows the cursor: wanted, and
@@ -1392,6 +1435,12 @@ func mapCSI(params string, final byte) tcell.Event {
 		}
 		return tcell.NewEventKey(tcell.KeyF1+tcell.Key(final-'P'), 0, mod)
 	case '~':
+		switch params {
+		case "200":
+			return tcell.NewEventPaste(true)
+		case "201":
+			return tcell.NewEventPaste(false)
+		}
 		if key, ok := tildeKeys[params]; ok {
 			return tcell.NewEventKey(key, 0, mod)
 		}
