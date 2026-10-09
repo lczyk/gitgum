@@ -959,11 +959,30 @@ func (s *Screen) SetContent(x, y int, mainc rune, combc []rune, style tcell.Styl
 	s.fb.set(x, y, liteCell{mainc: mainc, combc: combc, style: style})
 }
 
+// ShowCursor places the cursor at (x, y) on the next Show. Coordinates
+// outside the grid hide it instead, so ShowCursor(-1, -1) reads as "no
+// cursor", the same as in tcell.
 func (s *Screen) ShowCursor(x, y int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cursorX, s.cursorY = x, y
 	s.cursorVisible = true
+}
+
+// HideCursor hides the cursor on the next Show.
+func (s *Screen) HideCursor() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cursorVisible = false
+}
+
+// cursorShown reports whether the next frame shows the cursor: wanted, and
+// inside the grid as it is now. Checked at flush time rather than in
+// ShowCursor because a resize can move the edge after the position was set.
+func (s *Screen) cursorShown() bool {
+	return s.cursorVisible &&
+		s.cursorX >= 0 && s.cursorX < s.fb.width &&
+		s.cursorY >= 0 && s.cursorY < s.fb.height
 }
 
 func (s *Screen) Show() {
@@ -975,7 +994,7 @@ func (s *Screen) Show() {
 	buf := bufPool.Get().(*bytes.Buffer)
 	defer bufPool.Put(buf)
 	buf.Reset()
-	s.fb.flushTo(buf, s.yOrigin, s.cursorX, s.cursorY, s.cursorVisible)
+	s.fb.flushTo(buf, s.yOrigin, s.cursorX, s.cursorY, s.cursorShown())
 	// A no-op frame emits nothing; skip the write rather than syscall with an
 	// empty slice. Idle pickers redraw on a timer, so this is the common case.
 	if buf.Len() > 0 {
@@ -1008,7 +1027,7 @@ func (s *Screen) Sync() {
 	// Sync the pool buffer's backing already covers this — Grow on a
 	// large-enough buffer is a no-op.
 	buf.Grow(s.fb.width*s.fb.height*10 + 64)
-	s.fb.flushTo(buf, s.yOrigin, s.cursorX, s.cursorY, s.cursorVisible)
+	s.fb.flushTo(buf, s.yOrigin, s.cursorX, s.cursorY, s.cursorShown())
 	s.out.Write(buf.Bytes())
 }
 
