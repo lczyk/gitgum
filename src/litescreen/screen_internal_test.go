@@ -186,14 +186,40 @@ func TestControlByteEvent_RareControls(t *testing.T) {
 	}
 }
 
-// TestParseEscape_AltLetter: ESC followed by a printable byte. fzf treats
-// these as Alt-<letter>; we don't support Alt and the finder doesn't use
-// them, so we collapse to bare Esc and discard the follow-up. Locking that
-// behavior here so a future change to support Alt is a deliberate choice.
-func TestParseEscape_AltLetter(t *testing.T) {
-	ev := parseEscape(preloaded('a'))
-	ek := ev.(*tcell.EventKey)
-	assert.Equal(t, ek.Key(), tcell.KeyEsc)
+// ESC as a prefix is Alt, as in tcell and every xterm-like terminal: ESC x is
+// Alt-x, ESC followed by a control byte is Alt+Ctrl, and ESC ahead of a whole
+// sequence puts Alt on that key. Enter, Backspace, Tab and Esc keep their key
+// codes under Alt rather than turning into Ctrl-letters.
+func TestParseEscape_Alt(t *testing.T) {
+	s := &Screen{}
+	tests := []struct {
+		name  string
+		bytes []byte
+		key   tcell.Key
+		r     rune
+		mod   tcell.ModMask
+	}{
+		{"Alt-a", []byte{'a'}, tcell.KeyRune, 'a', tcell.ModAlt},
+		{"Alt-A", []byte{'A'}, tcell.KeyRune, 'A', tcell.ModAlt},
+		{"Alt-Ctrl-b", []byte{0x02}, tcell.KeyCtrlB, 'b', tcell.ModAlt | tcell.ModCtrl},
+		{"Alt-Backspace", []byte{0x7f}, tcell.KeyBackspace, 0, tcell.ModAlt},
+		{"Alt-Enter", []byte{0x0d}, tcell.KeyEnter, 0, tcell.ModAlt},
+		{"Alt-Tab", []byte{0x09}, tcell.KeyTab, 0, tcell.ModAlt},
+		{"Alt-Esc", []byte{0x1b}, tcell.KeyEsc, 0, tcell.ModAlt},
+		{"Alt-Up", []byte{0x1b, '[', 'A'}, tcell.KeyUp, 0, tcell.ModAlt},
+		{"Alt-Ctrl-Right", []byte{0x1b, '[', '1', ';', '5', 'C'}, tcell.KeyRight, 0, tcell.ModAlt | tcell.ModCtrl},
+		{"Alt-e-acute", []byte{0xc3, 0xa9}, tcell.KeyRune, 0xe9, tcell.ModAlt},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ev := s.parseEvent(0x1b, preloaded(tc.bytes...))
+			require.That(t, ev != nil, "expected an event")
+			ek := ev.(*tcell.EventKey)
+			assert.Equal(t, ek.Key(), tc.key)
+			assert.Equal(t, ek.Rune(), tc.r)
+			assert.Equal(t, ek.Modifiers(), tc.mod)
+		})
+	}
 }
 
 func TestParseUTF8(t *testing.T) {
