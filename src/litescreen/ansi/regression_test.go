@@ -26,3 +26,29 @@ func TestRegressionColonSeparatedTrueColor(t *testing.T) {
 	assert.Equal(t, g, int32(20))
 	assert.Equal(t, b, int32(30))
 }
+
+// xterm's sgr0 is "\x1b(B\x1b[m": a three-byte charset designation ahead of
+// the reset. Regression: every non-CSI, non-OSC escape was assumed to be two
+// bytes, so the 'B' leaked into the text of anything built with tput sgr0.
+func TestRegressionCharsetDesignationConsumed(t *testing.T) {
+	assert.Equal(t, ansi.Strip("a\x1b(B\x1b[mb"), "ab")
+	assert.Equal(t, ansi.Strip("a\x1b)0b"), "ab")
+	// The nF family allows several intermediates before the final byte.
+	assert.Equal(t, ansi.Strip("a\x1b%@b"), "ab")
+	assert.Equal(t, ansi.Strip("a\x1b#8b"), "ab")
+}
+
+// A bare ESC at the very end of the input is not an escape sequence, but it is
+// not text either. Regression: walk only looked for escapes with a byte after
+// them, so the ESC fell through as a rune and Strip returned it.
+func TestRegressionTrailingEscDropped(t *testing.T) {
+	assert.Equal(t, ansi.Strip("abc\x1b"), "abc")
+	assert.Equal(t, len(ansi.Parse("abc\x1b", tcell.StyleDefault)), 3)
+}
+
+// ESC followed by a multibyte rune is a malformed escape, not an instruction to
+// eat half the rune. Regression: the two-byte branch swallowed the rune's lead
+// byte and the leftover continuation bytes decoded as U+FFFD.
+func TestRegressionEscBeforeMultibyteRune(t *testing.T) {
+	assert.Equal(t, ansi.Strip("a\x1b\u00e9b"), "a\u00e9b")
+}
