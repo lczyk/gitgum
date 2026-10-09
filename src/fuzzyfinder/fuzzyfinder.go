@@ -867,7 +867,9 @@ func (f *finder) readKey(ctx context.Context) error {
 			}
 			f.scrollAwayFromPrompt(pageSize, matchedLinesCount)
 		default:
-			if e.Rune() != 0 {
+			// Only a plain rune types. Ctrl-letter events carry the letter as
+			// their rune and Alt-x carries x; both are unbound, not text.
+			if e.Key() == tcell.KeyRune && e.Modifiers()&^tcell.ModShift == 0 && e.Rune() != 0 {
 				width, _ := f.term.Size()
 				maxLineWidth := width - 2 - 1
 				// Measure display columns, not rune count -- wide (CJK) runes
