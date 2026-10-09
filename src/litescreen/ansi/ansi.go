@@ -185,7 +185,11 @@ func handleCSI(s string, cur, base tcell.Style) (int, tcell.Style, bool) {
 		if c >= 0x40 && c <= 0x7e {
 			final := c
 			params := s[2:i]
-			if final == 'm' {
+			// A private-parameter marker (0x3c-0x3f: < = > ?) makes the
+			// sequence vendor-specific whatever its final byte; xterm's
+			// "CSI > 4 ; 2 m" is a keyboard setting, not SGR.
+			private := len(params) > 0 && params[0] >= 0x3c && params[0] <= 0x3f
+			if final == 'm' && !private {
 				return i + 1, applySGR(params, cur, base), true
 			}
 			return i + 1, cur, true
