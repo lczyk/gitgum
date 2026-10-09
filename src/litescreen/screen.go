@@ -975,9 +975,9 @@ func (s *Screen) Show() {
 // Sync forces a full repaint: every back-buffer cell is re-emitted regardless
 // of whether the diff thinks it changed. Used to recover from external writes
 // to the terminal (e.g. a sibling process writing to stderr while the picker
-// is up — `find ~ 2>&1 | ff` style tearing). Also clears the picker's region
-// before redrawing so stray bytes left in cells we don't otherwise touch are
-// wiped. Cost is a few KB of ANSI per call (full grid + SGR) vs. O(diff)
+// is up -- `find ~ 2>&1 | ff` style tearing). No explicit clear is emitted:
+// re-emitting every cell of the grid paints over whatever landed in the
+// region. Cost is a few KB of ANSI per call (full grid + SGR) vs. O(diff)
 // for Show; cheap enough to call on a timer.
 func (s *Screen) Sync() {
 	s.mu.Lock()
