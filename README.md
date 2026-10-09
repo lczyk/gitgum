@@ -124,7 +124,7 @@ Print one or more status sections, named by a comma-separated argument:
 - `remote` (`r`) -- configured remotes
 - `worktree` (`w`) -- linked worktrees
 - `changes` (`c`) -- a tree-formatted view of the working-tree changes (modified files get an inline `(+a,-d)` line-change count)
-- `head` (`h`) -- the current branch, its short sha and its upstream, as `* (origin/)main 1a2b3c4 [ahead 7]`
+- `head` (`h`) -- the current branch, its short sha and its upstream, as `* (origin/)main 1a2b3c4 [ahead 7]`. A merge, rebase, cherry-pick, revert or bisect in progress is reported under that line
 - `all` (`a`) -- every section above, in that order
 
 Sections render in the order given, and a repeated section moves to its last position -- `b,r,b` renders as `r,b`, and `all,b` is every section with `branch` at the end. Surrounding whitespace is ignored, so `gg status "b, r"` works. A single section prints bare; two or more get headers. `gg status` with no argument is `gg status changes,head`, and `gg status -a` / `--all` is `gg status all`.
@@ -138,6 +138,15 @@ On a detached HEAD, `head` names the commit and every ref that contains it -- lo
     (origin/)feat/x~1
     feat/y~3
     v1.2.0~4
+```
+
+A stopped operation is printed there too, including when the working tree is clean and `changes` has nothing to say. A rebase names the branch, what it is onto, how far along, and whether it stopped to edit, on conflicts, or ready to continue, plus the last instruction and the next few:
+
+```
+* HEAD 083cdfe (no branch)
+  rebasing topic onto f9ba3c7 (1/2, editing a commit)
+    done  edit 083cdfe chore: two
+    next  pick 0cfb447 chore: three
 ```
 
 Pass `--flat` for a porcelain list instead of the change tree. Pass `--follow` / `-f` (optional `=N` interval, default 2s, min 1) to refresh the selected sections in an alt-screen with `j/k g/G PgUp/PgDn` scroll and `q` to exit; no remote ops run in follow mode.
