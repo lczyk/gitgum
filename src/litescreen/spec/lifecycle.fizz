@@ -3,8 +3,11 @@
 # every one of them is a caller's decision, not a reaction.
 options:
   crash_on_yield: false
+deadlock_detection: true
 action_options:
   Signal:
+    max_actions: 1
+  SignalUnhandled:
     max_actions: 1
   Winch:
     max_actions: 2
@@ -42,14 +45,20 @@ action_options:
 #
 # Not modelled: the contents of the grid and the diff, the DSR cursor query,
 # type-ahead ordering, ChannelEvents' parser, the darwin stranded-read
-# problem Fini's wait exists for (the wait is taken as given), SIGHUP.
+# problem Fini's wait exists for (the wait is taken as given), SIGHUP, a
+# signal already queued on the channel when a failed Init withdraws the
+# registration (handBack's no-grid guard covers it in the code).
+#
+# A caught signal may or may not end the process: whoever else registered
+# for it decides after the re-raise. Both outcomes are explored.
 #
 # Requirements (R-numbers are referenced from the assertions):
 #
 # R1:  THE SYSTEM SHALL write to the terminal only while it holds it: raw
 #      mode entered and the region laid out (or being laid out / torn down
 #      by the same call that entered / leaves raw mode).
-# R2:  WHEN a caught signal is re-raised, THE SYSTEM SHALL have handed the
+# R2:  WHEN a signal ends the process -- caught and re-raised, or arriving
+#      while no handler is registered -- THE SYSTEM SHALL have handed the
 #      terminal back first: raw mode restored, region cleared, bracketed
 #      paste off.
 # R3:  WHEN Fini returns, THE SYSTEM SHALL have handed the terminal back,
@@ -64,15 +73,18 @@ action_options:
 # R7:  WHILE suspended or done, WHEN SIGWINCH arrives or Show is called,
 #      THE SYSTEM SHALL NOT write.
 # R8:  IF entering raw mode fails in Init, THEN THE SYSTEM SHALL release
-#      the fds and refuse further calls; IF it fails in Resume, THEN THE
-#      SYSTEM SHALL stay suspended.
+#      the fds, withdraw its signal registration and refuse further calls;
+#      IF it fails in Resume, THEN THE SYSTEM SHALL stay suspended.
 # R9:  Bracketed paste on the terminal SHALL follow the wanted setting
 #      whenever the region is held, and be off whenever it is not.
 # R10: WHILE running, not suspended and the input has not hit EOF, THE
 #      SYSTEM SHALL have the reader running (input never silently stops).
 #
-# Decisions the model forced: see the "findings" section of the commit
-# that introduced it; the properties below are the agreed ones.
+# decisions: lifecycle calls are serialised; Suspend and Resume hold mu
+# throughout their terminal handover. reader shutdown is assumed to finish.
+# this model checks the abstraction, not the go implementation. coverage of
+# raw-mode failures records actual failed calls, not merely suspended or
+# uninitialised states. see README.md for findings and test mappings.
 
 Phase = enum('NEW', 'RUNNING', 'FINISHED')
 Api = enum('NONE', 'INIT', 'SUSPEND', 'RESUME', 'FINI')
@@ -80,7 +92,8 @@ Api = enum('NONE', 'INIT', 'SUSPEND', 'RESUME', 'FINI')
 action Init:
     phase = Phase.NEW
     api = Api.NONE
-    alive = True        # False once a signal was re-raised: the process is gone
+    alive = True        # false only when the signal ends the process
+    signal_seen = False
     done = False        # cleanup ran
     suspended = False
     fb = False          # a grid exists (takeOver ran at least once)
@@ -92,6 +105,8 @@ action Init:
     # Goroutines and channels.
     reader = False      # readLoop running
     resumes = 0         # Resumes that took the terminal again
+    init_failed = False
+    resume_failures = 0
     eof = False         # inputEOF
     bytes_open = False
     sig_reg = False     # sigCh registered with signal.Notify
@@ -116,13 +131,16 @@ atomic func enter_raw():
         raw_twice = True
     t_raw = True
 
-# hand_back is handBack: caller holds mu.
+# hand_back is handBack: caller holds mu. Without a grid there is nothing
+# on the terminal to undo, only raw mode (a signal queued while a failed
+# Init withdraws its registration).
 atomic func hand_back():
-    if want_paste:
+    if fb:
+        if want_paste:
+            write()
+            t_paste = False
         write()
-        t_paste = False
-    write()
-    t_region = False
+        t_region = False
     t_raw = False
 
 # take_over is takeOver: caller holds mu, raw mode already entered.
@@ -154,34 +172,27 @@ atomic func stop_reader():
 
 # ---- api calls (serialised through `api`) --------------------------------
 
+# One mu section, with the signal handler registered before raw mode is
+# entered: a signal during Init is handled after Init finishes, by which
+# time there is a grid to hand back.
 action InitScreen:
     require alive and api == Api.NONE and phase == Phase.NEW
     atomic:
         api = Api.INIT
         phase = Phase.RUNNING
-    # enterRaw, outside mu.
-    atomic:
+        sig_reg = True
         raw_ok = oneof [True, False]
         if not raw_ok:
+            init_failed = True
+            sig_reg = False
             fds_open = False
             phase = Phase.FINISHED
-            api = Api.NONE
         else:
             enter_raw()
-    if not raw_ok:
-        return
-    # getSize + queryRow: no screen state. Then takeOver under mu.
-    atomic:
-        require alive
-        take_over()
-    atomic:
-        require alive
-        bytes_open = True
-        start_reader()
-    atomic:
-        require alive
-        winch_open = True
-        sig_reg = True
+            take_over()
+            bytes_open = True
+            start_reader()
+            winch_open = True
         api = Api.NONE
 
 action Suspend:
@@ -213,14 +224,9 @@ action Resume:
             suspended = False
             start_reader()
             resumes += 1
-        else:
-            api = Api.NONE
-    if not (ok and raw_ok):
-        return
-    # The resize notification goes through the winch channel outside mu;
-    # it only writes once ChannelEvents picks it up (Winch below).
-    atomic:
-        require alive
+        elif ok:
+            resume_failures += 1
+        # Resume queues resize under mu; Winch consumes it later.
         api = Api.NONE
 
 action Fini:
@@ -279,14 +285,22 @@ atomic action DisablePaste:
 
 # ---- environment -----------------------------------------------------------
 
-# signalLoop: cleanup under mu, signal.Stop, re-raise. One step: the mu
-# section is the only part that touches screen state, and the process is
-# gone after the re-raise.
+# signalLoop restores the terminal before re-raising. another registered
+# handler may keep the process alive; Fini must still release resources.
 atomic action Signal:
     require alive and sig_reg
     cleanup()
     sig_reg = False
-    alive = False
+    if t_raw or t_region or t_paste:
+        raised_dirty = True
+    alive = oneof [False, True]
+
+# A signal with no handler registered: the default disposition ends the
+# process on the spot, whatever the terminal looks like.
+atomic action SignalUnhandled:
+    require alive and not sig_reg
+    signal_seen = True
+    alive = oneof [True, False]
     if t_raw or t_region or t_paste:
         raised_dirty = True
 
@@ -351,6 +365,19 @@ always assertion PasteFollowsRegion:        # R9
         return t_paste == want_paste
     return not t_paste
 
+always assertion InitFailureIsSpent:        # R8
+    if not init_failed:
+        return True
+    return phase == Phase.FINISHED and not fds_open and not fb
+
+transition assertion ResumeFailureKeepsSuspended(before, after):  # R8
+    if after.resume_failures == before.resume_failures:
+        return True
+    return (after.suspended and not after.t_raw and not after.t_region
+            and not after.t_paste and not after.reader
+            and after.fds_open == before.fds_open
+            and after.bytes_open == before.bytes_open)
+
 # ---- coverage --------------------------------------------------------------
 
 exists assertion ReachesSuspended:
@@ -360,13 +387,19 @@ exists assertion ResumesWithReader:
     return resumes > 0 and not suspended and reader and api == Api.NONE
 
 exists assertion SignalWhileSuspended:
-    return not alive and suspended
+    return signal_seen and suspended
+
+exists assertion SignalThenFini:
+    return signal_seen and alive and phase == Phase.FINISHED and api == Api.NONE
+
+exists assertion SurvivedSignalThenFini:
+    return done and alive and phase == Phase.FINISHED and api == Api.NONE and not sig_reg
 
 exists assertion InitRawFails:
-    return phase == Phase.FINISHED and not fb
+    return init_failed
 
 exists assertion ResumeRawFails:
-    return suspended and api == Api.NONE and done == False and not t_raw and fb and resumes == 0
+    return resume_failures > 0
 
 exists assertion EOFThenFini:
     return eof and phase == Phase.FINISHED and api == Api.NONE
