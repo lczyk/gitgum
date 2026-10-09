@@ -14,6 +14,7 @@ package ansi
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -405,26 +406,35 @@ func StyleToSGR(st tcell.Style) string {
 	if attr&tcell.AttrStrikeThrough != 0 {
 		params = append(params, "9")
 	}
-	switch {
-	case fg == tcell.ColorDefault:
-	case fg > tcell.Color255:
-		r, g, b := fg.RGB()
-		params = append(params, fmt.Sprintf("38;2;%d;%d;%d", r, g, b))
-	default:
-		params = append(params, fmt.Sprintf("38;5;%d", fg-tcell.ColorValid))
-	}
-	switch {
-	case bg == tcell.ColorDefault:
-	case bg > tcell.Color255:
-		r, g, b := bg.RGB()
-		params = append(params, fmt.Sprintf("48;2;%d;%d;%d", r, g, b))
-	default:
-		params = append(params, fmt.Sprintf("48;5;%d", bg-tcell.ColorValid))
-	}
+	params = appendColor(params, fg, 30)
+	params = appendColor(params, bg, 40)
 	if len(params) == 0 {
 		return ""
 	}
 	return "\x1b[" + strings.Join(params, ";") + "m"
+}
+
+// appendColor appends the SGR parameter selecting c, where base is 30 for the
+// foreground and 40 for the background. The first 16 palette entries use the
+// classic 30-37/90-97 (40-47/100-107) codes so the terminal's own palette
+// applies even where the extended forms are unsupported; the rest of the
+// palette uses 38;5;n and RGB colours 38;2;r;g;b.
+func appendColor(params []string, c tcell.Color, base int) []string {
+	switch {
+	case c == tcell.ColorDefault:
+		return params
+	case c > tcell.Color255:
+		r, g, b := c.RGB()
+		return append(params, fmt.Sprintf("%d;2;%d;%d;%d", base+8, r, g, b))
+	}
+	n := int(c - tcell.ColorValid)
+	switch {
+	case n < 8:
+		return append(params, strconv.Itoa(base+n))
+	case n < 16:
+		return append(params, strconv.Itoa(base+60+n-8))
+	}
+	return append(params, fmt.Sprintf("%d;5;%d", base+8, n))
 }
 
 // Strip removes ANSI escape sequences from s, returning only the rune
