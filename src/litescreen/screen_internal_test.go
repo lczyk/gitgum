@@ -1076,3 +1076,29 @@ func TestScreen_InitAfterFiniIsRejected(t *testing.T) {
 	s.Fini()
 	assert.Error(t, s.Init(), assert.AnyError)
 }
+
+// Tilde-form keys carry their modifier as a second parameter ("3;5~" is
+// Ctrl-Delete), the same xterm encoding the letter-final forms use after "1;".
+// Dropping them loses Ctrl-Delete / Shift-PgUp silently.
+func TestMapCSI_TildeFormModifiers(t *testing.T) {
+	tests := []struct {
+		params string
+		key    tcell.Key
+		mod    tcell.ModMask
+	}{
+		{"3;5", tcell.KeyDelete, tcell.ModCtrl},
+		{"5;2", tcell.KeyPgUp, tcell.ModShift},
+		{"6;3", tcell.KeyPgDn, tcell.ModAlt},
+		{"1;6", tcell.KeyHome, tcell.ModShift | tcell.ModCtrl},
+		{"2;7", tcell.KeyInsert, tcell.ModAlt | tcell.ModCtrl},
+	}
+	for _, tc := range tests {
+		t.Run(tc.params+"~", func(t *testing.T) {
+			ev := mapCSI(tc.params, '~')
+			ek, ok := ev.(*tcell.EventKey)
+			require.That(t, ok, "expected *EventKey for %q~, got %v", tc.params, ev)
+			assert.Equal(t, ek.Key(), tc.key)
+			assert.Equal(t, ek.Modifiers(), tc.mod)
+		})
+	}
+}
