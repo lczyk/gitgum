@@ -1103,3 +1103,31 @@ func TestMapCSI_TildeFormModifiers(t *testing.T) {
 		})
 	}
 }
+
+// Letter-final keys carry their modifier after the "1;" placeholder.
+func TestMapCSI_LetterFormModifiers(t *testing.T) {
+	tests := []struct {
+		params string
+		final  byte
+		key    tcell.Key
+		mod    tcell.ModMask
+	}{
+		{"1;2", 'A', tcell.KeyUp, tcell.ModShift},
+		{"1;3", 'B', tcell.KeyDown, tcell.ModAlt},
+		{"1;5", 'C', tcell.KeyRight, tcell.ModCtrl},
+		{"1;6", 'D', tcell.KeyLeft, tcell.ModShift | tcell.ModCtrl},
+		{"1;7", 'H', tcell.KeyHome, tcell.ModAlt | tcell.ModCtrl},
+		{"1;8", 'F', tcell.KeyEnd, tcell.ModShift | tcell.ModAlt | tcell.ModCtrl},
+		{"", 'A', tcell.KeyUp, tcell.ModNone},
+		{"1;9", 'A', tcell.KeyUp, tcell.ModNone}, // unknown modifier code: key still delivered
+	}
+	for _, tc := range tests {
+		t.Run(tc.params+string(tc.final), func(t *testing.T) {
+			ev := mapCSI(tc.params, tc.final)
+			ek, ok := ev.(*tcell.EventKey)
+			require.That(t, ok, "expected *EventKey for %q%c, got %v", tc.params, tc.final, ev)
+			assert.Equal(t, ek.Key(), tc.key)
+			assert.Equal(t, ek.Modifiers(), tc.mod)
+		})
+	}
+}
