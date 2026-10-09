@@ -144,9 +144,9 @@ func TestScreen_SuspendPausesInput(t *testing.T) {
 	expectNoEvent(t, events, 50*time.Millisecond)
 
 	require.NoError(t, s.Resume())
+	assert.Equal(t, recvKey(t, events).Rune(), 'b')
 	setups, _ = in.counts()
 	assert.Equal(t, setups, 2)
-	assert.Equal(t, recvKey(t, events).Rune(), 'b')
 }
 
 // Type-ahead that queued while the terminal was borrowed is replayed on
@@ -206,13 +206,15 @@ func TestScreen_ResizeWhileSuspended(t *testing.T) {
 	assert.Equal(t, out.String(), "", "no writes while suspended")
 
 	require.NoError(t, s.Resume())
+	// The resize event is the sync point: its handler wrote to out before
+	// sending it, so out is quiet once it has arrived.
+	rw, rh := recvResize(t, events)
+	assert.Equal(t, rw, 100)
+	assert.Equal(t, rh, 5)
 	w, h := s.Size()
 	assert.Equal(t, w, 100)
 	assert.Equal(t, h, 5)
 	assert.ContainsString(t, out.String(), "\x1b[26;1H\x1b[J", "region laid out for the new height")
-	rw, rh := recvResize(t, events)
-	assert.Equal(t, rw, 100)
-	assert.Equal(t, rh, 5)
 }
 
 // A signal while suspended has no terminal state to undo: nothing is

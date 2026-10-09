@@ -8,8 +8,9 @@
 // 2004), which every terminal in current use speaks; unknown private modes
 // are ignored by the terminals that lack them. Input covers UTF-8 runes,
 // the control bytes, Alt as an ESC prefix, the CSI/SS3 editing, arrow and
-// function keys with xterm modifiers, and bracketed paste. There is no
-// mouse support and no suspend/resume.
+// function keys with xterm modifiers, and bracketed paste. Suspend/Resume
+// hand the terminal to a child process and take it back. There is no mouse
+// support.
 //
 // The renderer was developed based on fzf's LightRenderer (junegunn/fzf,
 // src/tui/light.go). The architecture, ANSI handling approach, and several
@@ -305,17 +306,24 @@ type Screen struct {
 	// corrupting whatever the shell prints next.
 	done bool
 
-	// readLoop lifecycle. Init starts the goroutine; quit closes when Fini
-	// wants it to stop; readDone closes when the goroutine actually exits.
-	// Fini waits on readDone before closing fds — without that, darwin leaves
+	// suspended records that Suspend handed the terminal back and Resume has
+	// not taken it again: no writes, no input, nothing for cleanup to undo.
+	// Guarded by mu.
+	suspended bool
+
+	// readLoop lifecycle. startReader starts the goroutine (from Init and
+	// Resume); stopReader closes readStop and waits on readDone (from Fini and
+	// Suspend). Fini waits before closing fds -- without that, darwin leaves
 	// readLoop stranded in syscall.Read on the closed fd, where it later
 	// steals input bytes (including DSR responses) intended for the next
-	// Screen. Starting readLoop in Init (caller's goroutine) instead of
-	// inside ChannelEvents (a goroutine) keeps the start happens-before the
-	// Fini wait, so the race detector is satisfied.
-	quit     chan struct{}
+	// Screen. Starting readLoop from the caller's goroutine rather than
+	// inside ChannelEvents keeps the start happens-before the stop wait, so
+	// the race detector is satisfied. bytesCh outlives suspends; readLoop
+	// closes it on EOF (inputEOF), Fini otherwise.
+	readStop chan struct{}
 	readDone chan struct{}
 	bytesCh  chan byte
+	inputEOF bool
 
 	// pending is type-ahead captured by queryRow at Init (keystrokes typed
 	// before the screen was ready). readLoop replays it ahead of live input.
@@ -890,28 +898,15 @@ func (s *Screen) Init() error {
 	w, termH := s.getSize()
 	cursorRow, pending := s.queryRow()
 	s.pending = pending
-	out, yOrigin, fb, fullscreen := initSequence(s.height, w, termH, cursorRow)
-	s.yOrigin = yOrigin
-	s.fb = fb
-	s.fullscreen = fullscreen
-	s.out.Write(out)
-	s.cursorVisible = false
 	s.mu.Lock()
-	if s.paste {
-		s.out.Write([]byte(enablePaste))
-	}
+	s.takeOver(w, termH, cursorRow)
 	s.mu.Unlock()
 
 	if s.input == nil {
 		s.input = inputFor(s.in)
 	}
-	s.quit = make(chan struct{})
-	s.readDone = make(chan struct{})
 	s.bytesCh = make(chan byte, 256)
-	go func() {
-		defer close(s.readDone)
-		s.readLoop(s.bytesCh)
-	}()
+	s.startReader()
 
 	s.winch = make(chan os.Signal, 1)
 	s.notifyWinch(s.winch)
@@ -986,16 +981,141 @@ func (s *Screen) cleanup() {
 		// from its own goroutine while a draw may be in flight).
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if s.paste {
-			s.out.Write([]byte(disablePaste))
-		}
-		s.out.Write(finiSequence(s.fullscreen, s.yOrigin))
-		if s.restore != nil {
-			s.restore()
-			s.restore = nil
-		}
 		s.done = true
+		if s.suspended {
+			// Suspend already handed the terminal back.
+			return
+		}
+		s.handBack()
 	})
+}
+
+// handBack undoes the terminal state takeOver set up: paste mode, the
+// region or alt screen, raw mode. Caller holds mu.
+func (s *Screen) handBack() {
+	if s.paste {
+		s.out.Write([]byte(disablePaste))
+	}
+	s.out.Write(finiSequence(s.fullscreen, s.yOrigin))
+	if s.restore != nil {
+		s.restore()
+		s.restore = nil
+	}
+}
+
+// takeOver sets the terminal up for drawing: raw mode is already entered by
+// the caller; this lays out the region for the current size and cursor row,
+// applies paste mode, and installs or invalidates the grid. Caller holds mu.
+func (s *Screen) takeOver(termW, termH, cursorRow int) {
+	out, yOrigin, fb, fullscreen := initSequence(s.height, termW, termH, cursorRow)
+	s.yOrigin = yOrigin
+	s.fullscreen = fullscreen
+	if s.fb != nil && s.fb.width == fb.width && s.fb.height == fb.height {
+		// Same grid: keep the back buffer, forget what the terminal showed.
+		s.fb.invalidate()
+	} else {
+		s.fb = fb
+	}
+	s.out.Write(out)
+	s.cursorVisible = false
+	if s.paste {
+		s.out.Write([]byte(enablePaste))
+	}
+}
+
+// Suspend hands the terminal back -- region cleared or alt screen left, raw
+// mode restored, input stopped -- while keeping the Screen and its buffers,
+// so a child process (an editor, a pager) can use the terminal, or the
+// process can stop itself with SIGTSTP. Drawing calls are dropped until
+// Resume. Errors when the screen is not running or already suspended.
+func (s *Screen) Suspend() error {
+	s.mu.Lock()
+	if s.phase != phaseRunning || s.done {
+		s.mu.Unlock()
+		return errors.New("litescreen: Suspend when not running")
+	}
+	if s.suspended {
+		s.mu.Unlock()
+		return errors.New("litescreen: Suspend called twice")
+	}
+	s.suspended = true
+	s.mu.Unlock()
+
+	s.stopReader()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.handBack()
+	return nil
+}
+
+// Resume takes the terminal again after Suspend: raw mode, a fresh layout
+// from the current size and cursor row (an inline region is re-anchored,
+// since the child left output behind), input restarted with any type-ahead
+// replayed. The next Show repaints everything from the back buffer. If the
+// terminal changed size meanwhile a resize event is delivered. Errors when
+// the screen is not suspended, or raw mode cannot be entered (the screen
+// stays suspended).
+func (s *Screen) Resume() error {
+	s.mu.Lock()
+	if !s.suspended || s.done {
+		s.mu.Unlock()
+		return errors.New("litescreen: Resume when not suspended")
+	}
+	s.mu.Unlock()
+
+	restore, err := s.enterRaw()
+	if err != nil {
+		return fmt.Errorf("raw mode: %w", err)
+	}
+	w, termH := s.getSize()
+	cursorRow, pending := s.queryRow()
+
+	s.mu.Lock()
+	s.restore = restore
+	s.pending = pending
+	prevW, prevH := s.fb.width, s.fb.height
+	s.takeOver(w, termH, cursorRow)
+	resized := s.fb.width != prevW || s.fb.height != prevH
+	s.suspended = false
+	s.mu.Unlock()
+
+	s.startReader()
+	if resized {
+		select {
+		case s.winch <- syscall.SIGWINCH:
+		default:
+		}
+	}
+	return nil
+}
+
+// startReader runs readLoop in its own goroutine, feeding bytesCh. A source
+// that already hit EOF is not restarted: bytesCh is closed.
+func (s *Screen) startReader() {
+	if s.inputEOF {
+		return
+	}
+	s.readStop = make(chan struct{})
+	s.readDone = make(chan struct{})
+	go func() {
+		defer close(s.readDone)
+		s.readLoop(s.bytesCh, s.readStop)
+	}()
+}
+
+// stopReader stops readLoop and waits for it to exit. No-op when it is not
+// running.
+func (s *Screen) stopReader() {
+	if s.readStop == nil {
+		return
+	}
+	close(s.readStop)
+	if w, ok := s.input.(waiter); ok {
+		w.wake()
+	}
+	<-s.readDone
+	s.readStop = nil
 }
 
 // finiSequence is the pure-byte composition for Fini. Fullscreen leaves the
@@ -1048,15 +1168,12 @@ func (s *Screen) Fini() {
 			s.stopSignal(s.sigCh)
 			close(s.sigCh)
 		}
-		// Signal readLoop to exit and wait for it BEFORE closing fds.
-		// Otherwise the goroutine sits stranded in syscall.Read on darwin
-		// and steals input (DSR, keystrokes) intended for the next Screen.
-		if s.quit != nil {
-			close(s.quit)
-			if w, ok := s.input.(waiter); ok {
-				w.wake()
-			}
-			<-s.readDone
+		// Stop readLoop and wait for it BEFORE closing fds. Otherwise the
+		// goroutine sits stranded in syscall.Read on darwin and steals input
+		// (DSR, keystrokes) intended for the next Screen.
+		s.stopReader()
+		if !s.inputEOF {
+			close(s.bytesCh)
 		}
 		s.closeIO()
 	})
@@ -1137,7 +1254,7 @@ func (s *Screen) setPaste(on bool, seq string) {
 		return
 	}
 	s.paste = on
-	if s.fb != nil && !s.done {
+	if s.fb != nil && !s.done && !s.suspended {
 		s.out.Write([]byte(seq))
 	}
 }
@@ -1156,7 +1273,7 @@ func (s *Screen) cursorShown() bool {
 func (s *Screen) Show() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.fb == nil || s.done {
+	if s.fb == nil || s.done || s.suspended {
 		return
 	}
 	buf := bufPool.Get().(*bytes.Buffer)
@@ -1180,7 +1297,7 @@ func (s *Screen) Show() {
 func (s *Screen) Sync() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.fb == nil || s.done {
+	if s.fb == nil || s.done || s.suspended {
 		return
 	}
 	// Sentinel every front cell so flush's diff treats every back cell as
@@ -1258,30 +1375,36 @@ func (s *Screen) ChannelEvents(out chan<- tcell.Event, quit <-chan struct{}) {
 }
 
 // readLoop reads input bytes off s.input and forwards them to out. It MUST
-// exit when s.quit closes; otherwise on darwin a stranded blocking
+// exit when stop closes; otherwise on darwin a stranded blocking
 // syscall.Read on the closed /dev/tty fd later steals input bytes (DSR
-// responses, keystrokes) from the next Screen that opens /dev/tty.
+// responses, keystrokes) from the next Screen that opens /dev/tty. On EOF
+// or a read error it closes out, which ends ChannelEvents; on stop it leaves
+// out open so a later Resume can carry on feeding it.
 //
-// The polling+quit pattern is uniform across input types: the inputSource
+// The polling+stop pattern is uniform across input types: the inputSource
 // is responsible for whatever setup makes errNoData possible (production:
 // SetNonblock(fd) + raw syscall.Read; tests: any io.Reader, with a fake
 // inputSource if EAGAIN simulation is wanted).
-func (s *Screen) readLoop(out chan<- byte) {
-	defer close(out)
+func (s *Screen) readLoop(out chan<- byte, stop <-chan struct{}) {
+	eof := func() {
+		s.inputEOF = true
+		close(out)
+	}
 
-	// Replay type-ahead captured during Init ahead of live input, so keystrokes
-	// typed before the screen was ready reach the consumer rather than being
-	// lost. Ordered first because they were typed first.
+	// Replay type-ahead captured by Init or Resume ahead of live input, so
+	// keystrokes typed before the screen was ready reach the consumer rather
+	// than being lost. Ordered first because they were typed first.
 	for _, b := range s.pending {
 		select {
 		case out <- b:
-		case <-s.quit:
+		case <-stop:
 			return
 		}
 	}
 	s.pending = nil
 
 	if err := s.input.setup(); err != nil {
+		eof()
 		return
 	}
 	defer s.input.teardown()
@@ -1289,7 +1412,7 @@ func (s *Screen) readLoop(out chan<- byte) {
 	buf := make([]byte, 64)
 	for {
 		select {
-		case <-s.quit:
+		case <-stop:
 			return
 		default:
 		}
@@ -1298,7 +1421,7 @@ func (s *Screen) readLoop(out chan<- byte) {
 			for i := range n {
 				select {
 				case out <- buf[i]:
-				case <-s.quit:
+				case <-stop:
 					return
 				}
 			}
@@ -1310,13 +1433,14 @@ func (s *Screen) readLoop(out chan<- byte) {
 				continue
 			}
 			select {
-			case <-s.quit:
+			case <-stop:
 				return
 			case <-time.After(pollInterval):
 			}
 			continue
 		}
-		// EOF or any other error → exit.
+		// EOF or any other error: this source is finished.
+		eof()
 		return
 	}
 }
@@ -1324,9 +1448,10 @@ func (s *Screen) readLoop(out chan<- byte) {
 func (s *Screen) handleResize() (int, int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.done {
+	if s.done || s.suspended {
 		// A SIGWINCH delivered between cleanup and ChannelEvents noticing it
-		// should stop must not redraw the region we just handed back.
+		// should stop, or while suspended, must not redraw a region we have
+		// handed back. Resume measures again.
 		return s.fb.width, s.fb.height
 	}
 	w, termH := s.getSize()
