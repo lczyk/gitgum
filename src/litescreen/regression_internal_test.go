@@ -213,3 +213,20 @@ func TestRegressionCombiningRunesAreCopied(t *testing.T) {
 	assert.ContainsString(t, out, "e\u0308", "changed combining rune must be re-emitted, got %q", out)
 	assert.That(t, !strings.Contains(out, "\u0301"), "the old combining rune must not survive, got %q", out)
 }
+
+// A zero-width rune (combining mark, zero-width space, joiner) as a cell's
+// main rune has no cell of its own on the terminal: written at its own
+// position it merges into the glyph to the left, and the column it was
+// supposed to fill is never touched. Regression: it was emitted as-is, so the
+// grid and the terminal disagreed about that column from then on. Blanked
+// instead, like control runes.
+func TestRegressionZeroWidthMaincBlanked(t *testing.T) {
+	for _, zw := range []rune{0x0301, 0x200b, 0x200d} {
+		fb := newFramebuf(4, 1)
+		fb.set(0, 0, liteCell{mainc: 'a'})
+		fb.set(1, 0, liteCell{mainc: zw})
+		out := string(fb.flush(0, 0, 0, false))
+		assert.That(t, !strings.Contains(out, string(zw)), "rune %U must not reach the terminal, got %q", zw, out)
+		assert.ContainsString(t, out, "\x1b[1;2H ", "its column is drawn blank, got %q", out)
+	}
+}

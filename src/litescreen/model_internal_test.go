@@ -116,7 +116,7 @@ func expectedRow(fb *framebuf, y int) []rune {
 	row := make([]rune, fb.width)
 	for x := 0; x < fb.width; x++ {
 		r := fb.back[y][x].mainc
-		if r < 0x20 || r == 0x7f {
+		if r < 0x20 || r == 0x7f || runewidth.RuneWidth(r) == 0 {
 			r = ' '
 		}
 		if runewidth.RuneWidth(r) > 1 {
@@ -135,7 +135,7 @@ func expectedRow(fb *framebuf, y int) []rune {
 
 func TestFramebuf_FlushMatchesTerminalModel(t *testing.T) {
 	const w, h, frames = 12, 3, 3000
-	alphabet := []rune{' ', ' ', 'a', 'b', 0x65e5, 0x3042, 0x1b, 0, '\t'}
+	alphabet := []rune{' ', ' ', 'a', 'b', 0x65e5, 0x3042, 0x1b, 0, '\t', 0x0301, 0x200b}
 	rng := rand.New(rand.NewPCG(7, 11))
 
 	fb := newFramebuf(w, h)
