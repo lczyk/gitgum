@@ -196,3 +196,20 @@ func TestRegressionAdjacentWideRunesShiftedLeftReemitted(t *testing.T) {
 	assert.ContainsString(t, got, "\x1b[1;3H", "second wide rune must be emitted at column 3; got %q", got)
 	assert.Equal(t, strings.Count(got, string(wide)), 2)
 }
+
+// SetContent must own its combining runes. Regression: the caller's slice was
+// stored as-is in back and, after a flush, shared with front, so a caller that
+// reused the buffer for the next frame changed both sides at once and the diff
+// never re-emitted the cell.
+func TestRegressionCombiningRunesAreCopied(t *testing.T) {
+	fb := newFramebuf(4, 1)
+	comb := []rune{0x0301} // combining acute
+	fb.set(0, 0, liteCell{mainc: 'e', combc: comb})
+	fb.flush(0, 0, 0, false)
+
+	comb[0] = 0x0308 // combining diaeresis, same buffer
+	fb.set(0, 0, liteCell{mainc: 'e', combc: comb})
+	out := string(fb.flush(0, 0, 0, false))
+	assert.ContainsString(t, out, "e\u0308", "changed combining rune must be re-emitted, got %q", out)
+	assert.That(t, !strings.Contains(out, "\u0301"), "the old combining rune must not survive, got %q", out)
+}
