@@ -1028,23 +1028,22 @@ func (s *Screen) takeOver(termW, termH, cursorRow int) {
 // so a child process (an editor, a pager) can use the terminal, or the
 // process can stop itself with SIGTSTP. Drawing calls are dropped until
 // Resume. Errors when the screen is not running or already suspended.
+//
+// The whole call runs under mu, including the wait for the reader: cleanup
+// takes the suspended flag to mean the terminal is already handed back, so
+// a signal must not get between setting it and the hand-back. readLoop
+// never takes mu, so waiting for it under the lock cannot deadlock.
 func (s *Screen) Suspend() error {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.phase != phaseRunning || s.done {
-		s.mu.Unlock()
 		return errors.New("litescreen: Suspend when not running")
 	}
 	if s.suspended {
-		s.mu.Unlock()
 		return errors.New("litescreen: Suspend called twice")
 	}
 	s.suspended = true
-	s.mu.Unlock()
-
 	s.stopReader()
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.handBack()
 	return nil
 }
@@ -1056,13 +1055,16 @@ func (s *Screen) Suspend() error {
 // terminal changed size meanwhile a resize event is delivered. Errors when
 // the screen is not suspended, or raw mode cannot be entered (the screen
 // stays suspended).
+//
+// Under mu from the guard to the reader start, for the reason given on
+// Suspend: once raw mode is entered the screen holds something cleanup
+// would have to undo, and cleanup only knows that once suspended is clear.
 func (s *Screen) Resume() error {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	if !s.suspended || s.done {
-		s.mu.Unlock()
 		return errors.New("litescreen: Resume when not suspended")
 	}
-	s.mu.Unlock()
 
 	restore, err := s.enterRaw()
 	if err != nil {
@@ -1071,14 +1073,12 @@ func (s *Screen) Resume() error {
 	w, termH := s.getSize()
 	cursorRow, pending := s.queryRow()
 
-	s.mu.Lock()
 	s.restore = restore
 	s.pending = pending
 	prevW, prevH := s.fb.width, s.fb.height
 	s.takeOver(w, termH, cursorRow)
 	resized := s.fb.width != prevW || s.fb.height != prevH
 	s.suspended = false
-	s.mu.Unlock()
 
 	s.startReader()
 	if resized {
