@@ -83,3 +83,15 @@ func TestRegressionTrueColorChannelsClamped(t *testing.T) {
 	assert.Equal(t, g, int32(0))
 	assert.Equal(t, b, int32(255))
 }
+
+// A CSI with a private-parameter marker ("\x1b[>4;2m", xterm's modifyOtherKeys
+// setting, or "\x1b[?...") is not SGR even when it ends in 'm'. Regression:
+// the marker byte was skipped as noise and the digits applied as attributes.
+func TestRegressionPrivateMarkerCSINotSGR(t *testing.T) {
+	for _, in := range []string{"\x1b[>4;2mX", "\x1b[?1;7mX", "\x1b[=5mX", "\x1b[<1mX"} {
+		got := ansi.Parse(in, tcell.StyleDefault)
+		assert.Equal(t, len(got), 1)
+		assert.Equal(t, got[0].R, 'X')
+		assert.Equal(t, got[0].Style, tcell.StyleDefault, "%q must not change the style", in)
+	}
+}
