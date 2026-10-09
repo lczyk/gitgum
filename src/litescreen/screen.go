@@ -183,6 +183,10 @@ type Screen struct {
 
 	restore func() // set by Init via enterRaw, called by cleanup
 
+	// phase orders the lifecycle: Init is accepted once, from phaseNew, and
+	// Fini keys what it has to undo off how far Init got. Guarded by mu.
+	phase lifecycle
+
 	mu               sync.Mutex
 	fb               *framebuf
 	cursorX, cursorY int
@@ -224,6 +228,14 @@ type Screen struct {
 	// that goroutine after, so no lock is needed.
 	pending []byte
 }
+
+type lifecycle int
+
+const (
+	phaseNew      lifecycle = iota // constructed; tty fds open, nothing else
+	phaseRunning                   // Init succeeded
+	phaseFinished                  // Fini ran, or Init failed and released the fds
+)
 
 // resolveHeight turns the user-supplied Height value into an actual row
 // count given the current terminal height. Returns (rows, fullscreen).
@@ -736,11 +748,27 @@ func matchCPR(b []byte) (row, n int, ok bool) {
 }
 
 func (s *Screen) Init() error {
+	s.mu.Lock()
+	phase := s.phase
+	if phase == phaseNew {
+		s.phase = phaseRunning
+	}
+	s.mu.Unlock()
+	switch phase {
+	case phaseRunning:
+		return errors.New("litescreen: Init called twice")
+	case phaseFinished:
+		return errors.New("litescreen: Init after Fini")
+	}
+
 	restore, err := s.enterRaw()
 	if err != nil {
 		// Callers bail on an Init error without calling Fini, so the tty fds
 		// opened at construction must be released here.
 		s.closeIO()
+		s.mu.Lock()
+		s.phase = phaseFinished
+		s.mu.Unlock()
 		return fmt.Errorf("raw mode: %w", err)
 	}
 	s.restore = restore
@@ -868,6 +896,20 @@ func finiSequence(fullscreen bool, yOrigin int) []byte {
 // state. Without finiOnce, calling Fini twice would double-close.
 func (s *Screen) Fini() {
 	s.finiOnce.Do(func() {
+		s.mu.Lock()
+		phase := s.phase
+		s.phase = phaseFinished
+		s.mu.Unlock()
+		switch phase {
+		case phaseNew:
+			// Never initialised: no terminal state to restore, only the fds
+			// opened at construction to release.
+			s.closeIO()
+			return
+		case phaseFinished:
+			return
+		}
+
 		s.cleanup()
 
 		if s.winch != nil {
