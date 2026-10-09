@@ -1321,7 +1321,7 @@ func withAlt(ev tcell.Event) tcell.Event {
 
 // parseCSI reads bytes after "ESC [" until a final byte (0x40-0x7e) and
 // dispatches to a tcell key. Recognised: arrows, Home, End, PgUp, PgDn,
-// Insert, Delete.
+// Insert, Delete, F1-F12.
 func parseCSI(ch <-chan byte) tcell.Event {
 	var params []byte
 	timer := time.NewTimer(escTimeout)
@@ -1383,29 +1383,36 @@ func mapCSI(params string, final byte) tcell.Event {
 		return tcell.NewEventKey(tcell.KeyEnd, 0, mod)
 	case 'Z':
 		return tcell.NewEventKey(tcell.KeyBacktab, 0, tcell.ModShift)
+	case 'P', 'Q', 'R', 'S':
+		// Only the bare form and the xterm "1;<mod>" form are F1-F4. A
+		// cursor-position report (CSI <row>;<col> R) must not become F3,
+		// and row 1 column 1 looks exactly like "1;1" with no modifier.
+		if params != "" && (params != "1" || mod == tcell.ModNone) {
+			return nil
+		}
+		return tcell.NewEventKey(tcell.KeyF1+tcell.Key(final-'P'), 0, mod)
 	case '~':
-		switch params {
-		case "1", "7":
-			return tcell.NewEventKey(tcell.KeyHome, 0, mod)
-		case "2":
-			return tcell.NewEventKey(tcell.KeyInsert, 0, mod)
-		case "3":
-			return tcell.NewEventKey(tcell.KeyDelete, 0, mod)
-		case "4", "8":
-			return tcell.NewEventKey(tcell.KeyEnd, 0, mod)
-		case "5":
-			return tcell.NewEventKey(tcell.KeyPgUp, 0, mod)
-		case "6":
-			return tcell.NewEventKey(tcell.KeyPgDn, 0, mod)
+		if key, ok := tildeKeys[params]; ok {
+			return tcell.NewEventKey(key, 0, mod)
 		}
 	}
 	return nil
 }
 
+// tildeKeys maps the parameter of a CSI <n>~ sequence to its key: the vt220
+// editing keys and the function keys, with 16 and 22 unassigned.
+var tildeKeys = map[string]tcell.Key{
+	"1": tcell.KeyHome, "2": tcell.KeyInsert, "3": tcell.KeyDelete, "4": tcell.KeyEnd,
+	"5": tcell.KeyPgUp, "6": tcell.KeyPgDn, "7": tcell.KeyHome, "8": tcell.KeyEnd,
+	"11": tcell.KeyF1, "12": tcell.KeyF2, "13": tcell.KeyF3, "14": tcell.KeyF4, "15": tcell.KeyF5,
+	"17": tcell.KeyF6, "18": tcell.KeyF7, "19": tcell.KeyF8, "20": tcell.KeyF9, "21": tcell.KeyF10,
+	"23": tcell.KeyF11, "24": tcell.KeyF12,
+}
+
 // parseSS3 handles "ESC O X" sequences. tmux, emacs, and some terminal
 // configs emit SS3-form arrow keys (\x1bOA etc.) instead of the more common
 // CSI form (\x1b[A). Both must work, so we map the same final bytes here as
-// in parseCSI.
+// in parseCSI. F1-F4 arrive this way in application keypad mode.
 func parseSS3(ch <-chan byte) tcell.Event {
 	timer := time.NewTimer(escTimeout)
 	defer timer.Stop()
@@ -1429,6 +1436,8 @@ func parseSS3(ch <-chan byte) tcell.Event {
 			return tcell.NewEventKey(tcell.KeyHome, 0, tcell.ModNone)
 		case 'F':
 			return tcell.NewEventKey(tcell.KeyEnd, 0, tcell.ModNone)
+		case 'P', 'Q', 'R', 'S':
+			return tcell.NewEventKey(tcell.KeyF1+tcell.Key(b-'P'), 0, tcell.ModNone)
 		}
 	}
 	return nil

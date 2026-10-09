@@ -190,6 +190,10 @@ func TestFunctionKeys(t *testing.T) {
 	// 16 and 22 are not assigned.
 	assert.Nil(t, mapCSI("16", '~'))
 	assert.Nil(t, mapCSI("22", '~'))
+	// A cursor-position report ends in R too; it is not F3, not even from
+	// row 1 column 1 where it looks like the xterm modifier form.
+	assert.Nil(t, mapCSI("24;80", 'R'))
+	assert.Nil(t, mapCSI("1;1", 'R'))
 }
 
 // TestParseCSI_Malformed makes sure the parser doesn't panic and returns nil
