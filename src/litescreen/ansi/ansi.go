@@ -233,7 +233,9 @@ func applySGR(params string, cur, base tcell.Style) tcell.Style {
 	//   mode:    5 = 256-color, 2 = truecolor, 0 = awaiting selector
 	//   need:    params still expected for current sub-sequence
 	//   buf:     accumulated R,G,B (mode 2) or N (mode 5)
+	//   skipID:  the next sub-param is a T.416 colour-space id to discard
 	var role, mode, need, bufLen int
+	var skipID bool
 	var buf [3]int
 	// scan params: parse decimal ints separated by ';' or ':'. Empty /
 	// non-numeric -> 0. Colon is the ITU T.416 sub-parameter separator
@@ -262,9 +264,16 @@ func applySGR(params string, cur, base tcell.Style) tcell.Style {
 					mode, need = 5, 1
 				case 2:
 					mode, need = 2, 3
+					// T.416's colon form may carry a colour-space id ahead of
+					// the channels ("38:2::r:g:b"); a colon group with four or
+					// more sub-params after the 2 has one. Lookahead is the
+					// only way to tell it from the three-channel kitty form.
+					skipID = i < len(params) && params[i] == ':' && colonFields(params[i+1:]) >= 4
 				default:
 					role, mode, need, bufLen = 0, 0, 0, 0
 				}
+			} else if skipID {
+				skipID = false
 			} else {
 				buf[bufLen] = n
 				bufLen++
@@ -281,7 +290,7 @@ func applySGR(params string, cur, base tcell.Style) tcell.Style {
 							color = tcell.PaletteColor(v)
 						}
 					case 2:
-						color = tcell.NewRGBColor(int32(buf[0]), int32(buf[1]), int32(buf[2]))
+						color = tcell.NewRGBColor(clampChannel(buf[0]), clampChannel(buf[1]), clampChannel(buf[2]))
 					}
 					if ok {
 						if role == 1 {
@@ -344,6 +353,25 @@ func applySGR(params string, cur, base tcell.Style) tcell.Style {
 		n = 0
 	}
 	return st
+}
+
+// colonFields counts the colon-separated sub-params at the start of s, up to
+// the next ';' or the end of the string.
+func colonFields(s string) int {
+	if j := strings.IndexByte(s, ';'); j >= 0 {
+		s = s[:j]
+	}
+	return strings.Count(s, ":") + 1
+}
+
+// clampChannel bounds a truecolour channel to 0-255. tcell packs the three
+// channels into one word, so an out-of-range value would bleed into its
+// neighbour.
+func clampChannel(v int) int32 {
+	if v > 255 {
+		return 255
+	}
+	return int32(v)
 }
 
 // StyleToSGR encodes a tcell.Style as the corresponding SGR escape sequence.
