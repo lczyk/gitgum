@@ -1096,7 +1096,7 @@ func (s *Screen) ChannelEvents(out chan<- tcell.Event, quit <-chan struct{}) {
 			if !ok {
 				return
 			}
-			ev := s.parseEvent(b, bytesCh)
+			ev := parseEvent(b, bytesCh)
 			if ev != nil {
 				select {
 				case out <- ev:
@@ -1240,7 +1240,7 @@ func resetEscTimer(t *time.Timer) {
 // event, and returns it. May read additional bytes from ch (for escape
 // sequences and UTF-8 continuation bytes). Returns nil if the bytes don't
 // form a recognized event.
-func (s *Screen) parseEvent(b byte, ch <-chan byte) tcell.Event {
+func parseEvent(b byte, ch <-chan byte) tcell.Event {
 	switch {
 	case b == 0x1b:
 		return parseEscape(ch)
@@ -1304,9 +1304,19 @@ func parseEscape(ch <-chan byte) tcell.Event {
 	case 'O':
 		return parseSS3(ch)
 	}
-	// ESC + char with no recognised intro — treat as bare ESC and drop char.
-	// (Could also emit Alt+char if we cared.)
-	return tcell.NewEventKey(tcell.KeyEsc, 0, tcell.ModNone)
+	// Any other byte after ESC is a key with Alt held: ESC x is Alt-x, and
+	// ESC ahead of a whole sequence (ESC ESC [ A) is that key with Alt.
+	return withAlt(parseEvent(b, ch))
+}
+
+// withAlt adds the Alt modifier to a key event; nil and non-key events pass
+// through unchanged.
+func withAlt(ev tcell.Event) tcell.Event {
+	ek, ok := ev.(*tcell.EventKey)
+	if !ok {
+		return ev
+	}
+	return tcell.NewEventKey(ek.Key(), ek.Rune(), ek.Modifiers()|tcell.ModAlt)
 }
 
 // parseCSI reads bytes after "ESC [" until a final byte (0x40-0x7e) and

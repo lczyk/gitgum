@@ -61,23 +61,21 @@ func TestControlByteEvent(t *testing.T) {
 }
 
 func TestParseEvent_Runes(t *testing.T) {
-	s := &Screen{}
-	ev := s.parseEvent('a', preloaded()).(*tcell.EventKey)
+	ev := parseEvent('a', preloaded()).(*tcell.EventKey)
 	assert.Equal(t, ev.Key(), tcell.KeyRune)
 	assert.Equal(t, ev.Rune(), 'a')
 
 	// 0x7f is Backspace (DEL), not a control byte. tcell.NewEventKey
 	// normalizes KeyBackspace2 → KeyBackspace at construction time, so the
 	// returned event reports KeyBackspace.
-	ev = s.parseEvent(0x7f, preloaded()).(*tcell.EventKey)
+	ev = parseEvent(0x7f, preloaded()).(*tcell.EventKey)
 	assert.Equal(t, ev.Key(), tcell.KeyBackspace)
 }
 
 func TestParseEvent_CtrlC(t *testing.T) {
 	// This is the regression test for the original bug: byte 0x03 must
 	// produce KeyCtrlC, not Key(3) (which is KeyETX).
-	s := &Screen{}
-	ev := s.parseEvent(0x03, preloaded()).(*tcell.EventKey)
+	ev := parseEvent(0x03, preloaded()).(*tcell.EventKey)
 	assert.Equal(t, ev.Key(), tcell.KeyCtrlC)
 }
 
@@ -191,7 +189,6 @@ func TestControlByteEvent_RareControls(t *testing.T) {
 // sequence puts Alt on that key. Enter, Backspace, Tab and Esc keep their key
 // codes under Alt rather than turning into Ctrl-letters.
 func TestParseEscape_Alt(t *testing.T) {
-	s := &Screen{}
 	tests := []struct {
 		name  string
 		bytes []byte
@@ -212,7 +209,7 @@ func TestParseEscape_Alt(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ev := s.parseEvent(0x1b, preloaded(tc.bytes...))
+			ev := parseEvent(0x1b, preloaded(tc.bytes...))
 			require.That(t, ev != nil, "expected an event")
 			ek := ev.(*tcell.EventKey)
 			assert.Equal(t, ek.Key(), tc.key)
@@ -260,9 +257,8 @@ func TestParseEscape_BareEsc(t *testing.T) {
 
 func TestParseEscape_CSIArrow(t *testing.T) {
 	// Full ESC [ A sequence consumed via parseEvent.
-	s := &Screen{}
 	ch := preloaded('[', 'A')
-	ev := s.parseEvent(0x1b, ch).(*tcell.EventKey)
+	ev := parseEvent(0x1b, ch).(*tcell.EventKey)
 	assert.Equal(t, ev.Key(), tcell.KeyUp)
 }
 
