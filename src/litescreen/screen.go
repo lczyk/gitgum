@@ -1292,11 +1292,13 @@ func parseCSI(ch <-chan byte) tcell.Event {
 }
 
 func mapCSI(params string, final byte) tcell.Event {
-	// Modifier-prefixed forms: "1;<mod>" before A/B/C/D/H/F. xterm modifier
-	// codes: 2=shift, 3=alt, 5=ctrl, 6=shift+ctrl, 7=alt+ctrl, 8=all.
+	// xterm encodes modifiers as a second parameter: "1;<mod>" before the
+	// letter finals (the 1 is a placeholder), "<key>;<mod>" before '~'.
+	// Codes: 2=shift, 3=alt, 5=ctrl, 6=shift+ctrl, 7=alt+ctrl, 8=all.
 	mod := tcell.ModNone
-	if rest, ok := strings.CutPrefix(params, "1;"); ok {
-		switch rest {
+	if key, modStr, ok := strings.Cut(params, ";"); ok {
+		params = key
+		switch modStr {
 		case "2":
 			mod = tcell.ModShift
 		case "3":
@@ -1307,6 +1309,8 @@ func mapCSI(params string, final byte) tcell.Event {
 			mod = tcell.ModShift | tcell.ModCtrl
 		case "7":
 			mod = tcell.ModAlt | tcell.ModCtrl
+		case "8":
+			mod = tcell.ModShift | tcell.ModAlt | tcell.ModCtrl
 		}
 	}
 	switch final {
@@ -1327,17 +1331,17 @@ func mapCSI(params string, final byte) tcell.Event {
 	case '~':
 		switch params {
 		case "1", "7":
-			return tcell.NewEventKey(tcell.KeyHome, 0, tcell.ModNone)
+			return tcell.NewEventKey(tcell.KeyHome, 0, mod)
 		case "2":
-			return tcell.NewEventKey(tcell.KeyInsert, 0, tcell.ModNone)
+			return tcell.NewEventKey(tcell.KeyInsert, 0, mod)
 		case "3":
-			return tcell.NewEventKey(tcell.KeyDelete, 0, tcell.ModNone)
+			return tcell.NewEventKey(tcell.KeyDelete, 0, mod)
 		case "4", "8":
-			return tcell.NewEventKey(tcell.KeyEnd, 0, tcell.ModNone)
+			return tcell.NewEventKey(tcell.KeyEnd, 0, mod)
 		case "5":
-			return tcell.NewEventKey(tcell.KeyPgUp, 0, tcell.ModNone)
+			return tcell.NewEventKey(tcell.KeyPgUp, 0, mod)
 		case "6":
-			return tcell.NewEventKey(tcell.KeyPgDn, 0, tcell.ModNone)
+			return tcell.NewEventKey(tcell.KeyPgDn, 0, mod)
 		}
 	}
 	return nil

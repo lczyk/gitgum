@@ -148,7 +148,8 @@ func TestParseCSI_Malformed(t *testing.T) {
 		{"DSR response (CSI R)", []byte{'1', ';', '1', 'R'}}, // \x1b[1;1R — terminal's reply to \e[6n
 		{"Mouse intro (CSI <)", []byte{'<'}},
 		{"Unknown final", []byte{'1', 'X'}},
-		{"Extra param after ~", []byte{'3', ';', '3', '~', '1'}},
+		{"Unknown tilde key", []byte{'9', '9', '~'}},
+		{"Non-numeric params", []byte{'a', ';', 'b', '~'}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
