@@ -116,14 +116,16 @@ func TestRealHooks_ReraiseReachesOtherHandlers(t *testing.T) {
 func TestScreen_SignalRegisteredBeforeRawMode(t *testing.T) {
 	s, _, _ := newTestScreen(5, 80, 24, strings.NewReader(""))
 	tr := &rawTracker{}
-	s.enterRaw = tr.enterRaw
-	s.input = &gatedInput{}
 	registered := false
+	s.enterRaw = func() (func(), error) {
+		assert.That(t, registered, "signal handler must be registered before entering raw mode")
+		return tr.enterRaw()
+	}
+	s.input = &gatedInput{}
 	s.notifySig = func(chan<- os.Signal) { registered = true }
 	rawAtRaise := make(chan bool, 1)
 	s.raiseSignal = func(os.Signal) { rawAtRaise <- tr.raw }
 	s.queryRow = func() (int, []byte) {
-		assert.That(t, registered, "signal handler must be registered before the cursor query")
 		select {
 		case s.sigCh <- syscall.SIGINT:
 		default:

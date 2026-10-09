@@ -2,6 +2,7 @@ package litescreen
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"strings"
 	"sync"
@@ -286,6 +287,38 @@ func TestScreen_SuspendTogglesPasteMode(t *testing.T) {
 	out.Reset()
 	require.NoError(t, s.Resume())
 	assert.ContainsString(t, out.String(), enablePaste)
+}
+
+// A Resume whose raw-mode call fails leaves the screen suspended and its
+// drawing calls silent; a later Resume may still succeed.
+func TestScreen_ResumeRawFailureKeepsSuspendedAndAllowsRetry(t *testing.T) {
+	s, out, _ := newTestScreen(5, 80, 24, strings.NewReader(""))
+	s.input = &gatedInput{}
+	s.EnablePaste()
+	require.NoError(t, s.Init())
+	defer s.Fini()
+	require.NoError(t, s.Suspend())
+	out.Reset()
+
+	enterRaw := s.enterRaw
+	boom := errors.New("raw mode unavailable")
+	s.enterRaw = func() (func(), error) { return nil, boom }
+	assert.Error(t, s.Resume(), boom)
+	assert.That(t, s.suspended, "failed resume must keep the terminal suspended")
+	assert.That(t, s.restore == nil, "failed resume must not acquire raw mode")
+	assert.That(t, s.readStop == nil, "failed resume must not restart input")
+	assert.Equal(t, s.phase, phaseRunning)
+	assert.That(t, !s.done, "failed resume must allow a retry")
+	s.Show()
+	s.Sync()
+	s.handleResize()
+	assert.Equal(t, out.String(), "")
+
+	s.enterRaw = enterRaw
+	require.NoError(t, s.Resume())
+	assert.That(t, !s.suspended, "successful retry must take the terminal again")
+	assert.That(t, s.readStop != nil, "successful retry must restart input")
+	assert.ContainsString(t, out.String(), enablePaste, "retry must restore wanted paste mode")
 }
 
 // rawTracker is an enterRaw stub that records whether the terminal is in raw
