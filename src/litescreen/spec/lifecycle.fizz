@@ -300,8 +300,7 @@ atomic action Signal:
 # process on the spot, whatever the terminal looks like.
 atomic action SignalUnhandled:
     require alive and not sig_reg
-    signal_seen = True
-    alive = oneof [True, False]
+    alive = False
     if t_raw or t_region or t_paste:
         raised_dirty = True
 
@@ -369,7 +368,7 @@ always assertion PasteFollowsRegion:        # R9
 always assertion InitFailureIsSpent:        # R8
     if not init_failed:
         return True
-    return phase == Phase.FINISHED and not fds_open and not fb
+    return phase == Phase.FINISHED and not fds_open and not fb and not sig_reg
 
 transition assertion ResumeFailureKeepsSuspended(before, after):  # R8
     if after.resume_failures == before.resume_failures:
@@ -392,9 +391,6 @@ exists assertion SignalWhileSuspended:
 
 exists assertion SignalThenFini:
     return signal_seen and alive and phase == Phase.FINISHED and api == Api.NONE
-
-exists assertion SurvivedSignalThenFini:
-    return done and alive and phase == Phase.FINISHED and api == Api.NONE and not sig_reg
 
 exists assertion InitRawFails:
     return init_failed

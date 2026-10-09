@@ -1,6 +1,7 @@
 ---
 options:
   crash_on_yield: false
+deadlock_detection: true
 action_options:
   Stop:
     max_actions: 1
@@ -21,11 +22,14 @@ action_options:
 # out on purpose: with the timeout any wake-up scheme is live, only late.
 # What the self-pipe buys is that the wake is never lost, and that is what
 # the model checks: the stopper returns without relying on the timeout.
+# setup has completed, reads are nonblocking, and EOF/read errors are
+# excluded here; lifecycle.fizz covers EOF. scheduling is weakly fair.
 #
 # R1:  WHEN stopReader is called, THE SYSTEM SHALL return from it, whatever
 #      readLoop was doing at the time and whether or not the consumer still
 #      drains the byte channel.
-# R2:  THE SYSTEM SHALL NOT exit readLoop before stop was requested.
+# R2:  WHILE input neither EOFs nor fails, THE SYSTEM SHALL NOT exit
+#      readLoop before stop was requested.
 # R3:  WHILE readLoop is blocked sending a byte to a full channel, WHEN stop
 #      is requested, THE SYSTEM SHALL exit readLoop without the send.
 
@@ -36,6 +40,8 @@ action Init:
     pos = Pos.CHECK
     stopper = Stopper.IDLE
     stop = False        # readStop closed
+    stopped_at = None
+    stopped_full = False
     wake = False        # a byte sits in the wake pipe
     data = False        # the input has a byte to read
     chan_full = oneof [False, True]  # consumer slow or gone
@@ -57,9 +63,13 @@ atomic fair action ReaderStep:
     elif pos == Pos.SEND:
         # select { case out <- b: case <-stop: }
         require stop or not chan_full
-        if stop:
+        take_stop = stop
+        if stop and not chan_full:
+            take_stop = oneof [False, True]
+        if take_stop:
             pos = Pos.DONE
         else:
+            chan_full = True
             pos = Pos.CHECK
     elif pos == Pos.WAIT:
         # poll on the tty fd and the wake pipe; a wake byte is drained.
@@ -72,6 +82,8 @@ atomic action Stop:
     require stopper == Stopper.IDLE
     stop = True
     wake = True
+    stopped_at = pos
+    stopped_full = chan_full
     stopper = Stopper.WAITING
 
 atomic fair action StopperReturns:
@@ -98,15 +110,15 @@ always assertion NoExitBeforeStop:           # R2
 transition assertion SendGivesWayToStop(before, after):  # R3
     if before.pos != Pos.SEND or after.pos == Pos.SEND:
         return True
-    if before.stop:
+    if before.stop and before.chan_full:
         return after.pos == Pos.DONE
     return True
 
 exists assertion StopWhileParked:
-    return stop and pos == Pos.WAIT
+    return stopped_at == Pos.WAIT
 
 exists assertion StopWhileBlockedSending:
-    return stop and pos == Pos.SEND and chan_full
+    return stopped_at == Pos.SEND and stopped_full
 
 exists assertion StopWhileChecking:
-    return stop and pos == Pos.CHECK
+    return stopped_at == Pos.CHECK

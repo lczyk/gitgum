@@ -1,6 +1,7 @@
 ---
 options:
   crash_on_yield: false
+deadlock_detection: true
 action_options:
   Close:
     max_actions: 1
@@ -17,20 +18,23 @@ action_options:
 # Bytes are abstracted to four classes: ESC, '[' (CSI introducer), a CSI
 # final byte, and a plain rune. Events to: esc, alt-rune, rune, csi key,
 # dropped (a cut sequence yields nil).
+# close means the parser observes a drained, closed channel; bytes buffered
+# before that observation remain eligible. key mappings, UTF-8 and SS3 are
+# excluded. the model tracks outer Alt modifiers separately from mappings.
 #
 # R1:  THE SYSTEM SHALL NOT wait for a byte forever: WHEN the timer fires
 #      or the channel closes, THE SYSTEM SHALL return to the idle state.
 # R2:  THE SYSTEM SHALL account for every byte: each consumed byte is part
 #      of exactly one emitted event or of one dropped sequence.
 # R3:  WHILE waiting after ESC, WHEN the timer fires, THE SYSTEM SHALL
-#      emit a bare esc and treat the following bytes afresh.
+#      emit esc with any outer Alt modifier and treat following bytes afresh.
 # R4:  WHILE inside a CSI sequence, WHEN the timer fires or the channel
 #      closes, THE SYSTEM SHALL drop the sequence (no event).
 # R5:  WHEN the channel has closed, THE SYSTEM SHALL NOT consume bytes.
 
 Byte = enum('ESC', 'BRACKET', 'FINAL', 'RUNE')
 State = enum('IDLE', 'AFTER_ESC', 'CSI', 'CLOSED')
-Ev = enum('ESC', 'ALT_RUNE', 'RUNE', 'CSI_KEY', 'DROPPED')
+Ev = enum('ESC', 'ALT_ESC', 'ALT_RUNE', 'RUNE', 'CSI_KEY', 'ALT_CSI_KEY', 'DROPPED')
 
 MAX_BYTES = 4
 
@@ -43,8 +47,13 @@ action Init:
     events = []
     splits = 0          # sequences cut by the timer or the close
     closed = False
+    closed_in_csi = False
 
 atomic func emit(ev, n):
+    if alt and ev == Ev.ESC:
+        ev = Ev.ALT_ESC
+    elif alt and ev == Ev.CSI_KEY:
+        ev = Ev.ALT_CSI_KEY
     events = events + [ev]
     accounted += n
     pending = 0
@@ -89,6 +98,7 @@ atomic fair action Timer:
 # The byte channel closes: readLoop hit EOF or Fini.
 atomic action Close:
     require not closed
+    closed_in_csi = state == State.CSI
     closed = True
     if state == State.AFTER_ESC:
         emit(Ev.ESC, pending)
@@ -108,10 +118,11 @@ always assertion EveryByteAccounted:            # R2
 always assertion NothingAfterClose:             # R5
     return not closed or state == State.CLOSED
 
-transition assertion TimerAfterEscIsBareEsc(before, after):  # R3
+transition assertion TimerAfterEscKeepsModifier(before, after):  # R3
     if before.state != State.AFTER_ESC or after.splits == before.splits:
         return True
-    return after.events[-1] == Ev.ESC and after.state == State.IDLE
+    expected = Ev.ALT_ESC if before.alt else Ev.ESC
+    return after.events[-1] == expected and after.state == State.IDLE
 
 transition assertion CutCSIDropped(before, after):           # R4
     if before.state != State.CSI or after.state == State.CSI:
@@ -126,7 +137,7 @@ exists assertion SplitSequenceGivesTwoEvents:
     return splits > 0 and len(events) >= 2 and events[0] == Ev.ESC
 
 exists assertion ClosedMidCSI:
-    return state == State.CLOSED and len(events) > 0 and events[-1] == Ev.DROPPED
+    return closed_in_csi
 
 exists assertion AltCSIKey:
-    return len(events) > 0 and events[-1] == Ev.CSI_KEY and accounted >= 4
+    return len(events) > 0 and events[-1] == Ev.ALT_CSI_KEY

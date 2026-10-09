@@ -1,0 +1,330 @@
+---
+options:
+  max_actions: 12
+  crash_on_yield: false
+deadlock_detection: true
+action_options:
+  Edit:
+    max_actions: 2
+  Cursor:
+    max_actions: 1
+  Resize:
+    max_actions: 1
+  Suspend:
+    max_actions: 1
+  Resume:
+    max_actions: 1
+  ExternalWrite:
+    max_actions: 1
+---
+
+# this models framebuf.flushTo and Screen.Show/Sync/handleResize/takeOver.
+# run: fizz src/litescreen/spec/rendering.fizz
+# optional output-failure exploration:
+# fizz --preinit-hook 'WRITE_FAILURES = True' src/litescreen/spec/rendering.fizz
+#
+# one row has two or three columns and moves between two terminal rows.
+# cells are blank, narrow, wide or a sanitised control rune. the terminal
+# stores wide heads and tails separately; the front cache stores the same
+# glyph in both halves, as the code does. the assertion is an independent
+# projection of the back buffer, not a copy of the incremental diff.
+#
+# Show/Sync hold mu for their whole transition. two draw calls bound the
+# caller, not an autonomous refresh loop. diff edits choose a complete row:
+# this compresses SetContent/Clear calls between frames, including every
+# pair of three-column rows from the blank/narrow/wide alphabet.
+# Init chooses one scenario: diff, controls, cursor, resize, resume or
+# external damage. each scenario enables its own environment actions, so
+# one run covers all of them while every history stays small. non-diff
+# histories permit one cell edit; cursor histories only move the cursor.
+# resize and resume each test one geometry change; external writes
+# deliberately leave the cache stale until Sync. every write succeeds in
+# the default run. WRITE_FAILURES additionally permits a write to deliver
+# zero bytes and fail; the code has already advanced front at that point.
+#
+# R1: WHEN Show succeeds and there has been no external terminal damage,
+#     THE SYSTEM SHALL display the back buffer's projected cells and cursor.
+# R2: WHEN Sync succeeds, THE SYSTEM SHALL repair external terminal damage.
+# R3: THE SYSTEM SHALL emit drawing coordinates only inside its held region.
+# R4: WHILE suspended, drawing calls SHALL emit nothing.
+# R5: WHEN Show follows an unchanged successful frame, THE SYSTEM SHALL
+#     emit nothing; resize, resume and Sync SHALL invalidate cached output.
+# R6: WHEN a wide glyph is overwritten, THE SYSTEM SHALL redraw any other
+#     affected cell; a wide glyph at the right edge SHALL render as blank.
+#
+# decision: the WRITE_FAILURES run fails R1 and that is accepted. a failed
+# Show leaves front ahead of the terminal, so an unchanged Show afterwards
+# is silent and the terminal stays stale until Sync. os.File.Write already
+# retries short writes, EINTR and EAGAIN, so only a hard error such as EIO
+# or a closed descriptor reaches that path, and the code stays as it is.
+# the failure choice is drawn before draw mutates anything: fizzbee 0.5.4
+# evaluates transition assertions at oneof fork points inside an atomic
+# action, so a later choice would expose half-finished frames to R2.
+# excluded: actual ANSI/SGR bytes, styles, combining runes, multiple grid
+# rows, terminal reflow, partial writes and external writes during a frame.
+# region layout/cleanup may clear outside the grid; R3 concerns draws only.
+
+BLANK = 0
+NARROW = 1
+WIDE = 2
+TAIL = 3
+CONTROL = 4
+UNKNOWN = -1
+STRIDE = 3
+WRITE_FAILURES = False
+
+action Init:
+    scenario = oneof ['diff', 'controls', 'cursor', 'resize', 'resume', 'external']
+    edited = False
+    edited_frame = -1
+    width = 3
+    origin = 0
+    back = [BLANK, BLANK, BLANK]
+    front = [UNKNOWN, UNKNOWN, UNKNOWN]
+    terminal = [BLANK, BLANK, BLANK, BLANK, BLANK, BLANK]
+    cursor_x = 0
+    cursor_wanted = False
+    cursor_synced = False
+    front_x = 0
+    front_visible = False
+    terminal_x = 0
+    terminal_y = 0
+    terminal_visible = False
+    suspended = False
+    external_dirty = False
+    presented = False
+    frames = 0
+    syncs = 0
+    resumes = 0
+    resizes = 0
+    last_wire = False
+    last_success = False
+    bad_coordinate = False
+    quiet_show = False
+    wide_overwritten = False
+    clipped_wide = False
+    resumed_frame = False
+    resized_frame = False
+    repaired_damage = False
+
+atomic func invalidate():
+    front = [UNKNOWN for x in range(width)]
+    cursor_synced = False
+    presented = False
+
+atomic func erase_terminal(p):
+    if terminal[p] == TAIL:
+        terminal[p - 1] = BLANK
+        wide_overwritten = True
+    elif terminal[p] == WIDE and p % STRIDE + 1 < STRIDE:
+        terminal[p + 1] = BLANK
+        wide_overwritten = True
+    terminal[p] = BLANK
+
+atomic func draw(force):
+    fail = False
+    if WRITE_FAILURES:
+        fail = oneof [False, True]
+    frames += 1
+    last_wire = False
+    last_success = True
+    if suspended:
+        return
+    was_presented = presented
+    was_dirty = external_dirty
+    if force:
+        syncs += 1
+        invalidate()
+    ops = []
+    skip = False
+    for x in range(width):
+        if skip:
+            skip = False
+            continue
+        c = back[x]
+        intact = c != WIDE or x + 1 == width or front[x + 1] == c
+        if front[x] == c and intact:
+            skip = c == WIDE
+            continue
+        if front[x] == WIDE and x + 1 < width:
+            front[x + 1] = UNKNOWN
+        if c == WIDE and x + 1 < width:
+            if front[x + 1] == WIDE and x + 2 < width:
+                front[x + 2] = UNKNOWN
+        emitted = c
+        if c == CONTROL or (c == WIDE and x + 1 == width):
+            emitted = BLANK
+            if c == WIDE:
+                clipped_wide = True
+        ops.append((x, emitted))
+        front[x] = c
+        if c == WIDE:
+            if x + 1 < width:
+                front[x + 1] = c
+            skip = True
+    visible = cursor_wanted and cursor_x >= 0 and cursor_x < width
+    same_cursor = (cursor_synced and front_visible == visible
+                   and (not visible or front_x == cursor_x))
+    last_wire = len(ops) > 0 or not same_cursor
+    if last_wire:
+        front_x = cursor_x
+        front_visible = visible
+        cursor_synced = True
+        last_success = not fail
+        if last_success:
+            for op in ops:
+                x = op[0]
+                c = op[1]
+                if x < 0 or x >= width or (c == WIDE and x + 1 >= width):
+                    bad_coordinate = True
+                p = origin * STRIDE + x
+                erase_terminal(p)
+                if c == WIDE:
+                    erase_terminal(p + 1)
+                    terminal[p + 1] = TAIL
+                terminal[p] = c
+            terminal_visible = visible
+            if visible:
+                terminal_x = cursor_x
+                terminal_y = origin
+    elif not force and was_presented:
+        quiet_show = True
+    if force and last_success:
+        external_dirty = False
+        if was_dirty:
+            repaired_damage = True
+    presented = last_success and not external_dirty
+    if resumes > 0:
+        resumed_frame = True
+    if resizes > 0:
+        resized_frame = True
+
+atomic action Edit:
+    require scenario != 'cursor' and (scenario == 'diff' or not edited)
+    require frames < 2 and edited_frame != frames
+    if scenario == 'diff':
+        a = oneof [BLANK, NARROW, WIDE]
+        b = oneof [BLANK, NARROW, WIDE]
+        c = oneof [BLANK, NARROW, WIDE]
+        back = [a, b, c]
+    else:
+        x = oneof range(width)
+        c = oneof [NARROW, WIDE, CONTROL]
+        back[x] = c
+    edited = True
+    edited_frame = frames
+    presented = False
+
+atomic action Cursor:
+    require scenario == 'cursor'
+    cursor_x = oneof [-1, 0, 2]
+    cursor_wanted = oneof [False, True]
+    presented = False
+
+atomic action Show:
+    require frames < 2
+    draw(False)
+
+atomic action Sync:
+    require frames < 2
+    draw(True)
+
+atomic action Resize:
+    require scenario == 'resize' and not suspended
+    width = oneof [2, 3]
+    origin = oneof [0, 1]
+    back = [BLANK for x in range(width)]
+    terminal = [BLANK for x in range(6)]
+    external_dirty = False
+    resizes += 1
+    invalidate()
+
+atomic action Suspend:
+    require scenario == 'resume' and not suspended
+    suspended = True
+    terminal = [BLANK for x in range(6)]
+    terminal_visible = True
+    presented = False
+
+atomic action Resume:
+    require scenario == 'resume' and suspended
+    origin = oneof [0, 1]
+    suspended = False
+    cursor_wanted = False
+    terminal_visible = False
+    terminal = [BLANK for x in range(6)]
+    external_dirty = False
+    resumes += 1
+    invalidate()
+
+atomic action ExternalWrite:
+    require scenario == 'external' and not suspended
+    p = origin * STRIDE
+    erase_terminal(p)
+    terminal[p] = NARROW
+    terminal_visible = not terminal_visible
+    external_dirty = True
+    presented = False
+
+atomic action NoOp:
+    pass
+
+always assertion CompletedFrameMatchesBack:  # R1, R6
+    if not presented:
+        return True
+    expected = []
+    skip = False
+    for x in range(width):
+        if skip:
+            skip = False
+            continue
+        c = back[x]
+        if c == WIDE and x + 1 < width:
+            expected += [WIDE, TAIL]
+            skip = True
+        elif c == WIDE or c == CONTROL:
+            expected.append(BLANK)
+        else:
+            expected.append(c)
+    visible = cursor_wanted and cursor_x >= 0 and cursor_x < width
+    return (terminal[origin * STRIDE:origin * STRIDE + width] == expected
+            and terminal_visible == visible
+            and (not visible or (terminal_x == cursor_x and terminal_y == origin)))
+
+transition assertion SyncRepairsDamage(before, after):  # R2
+    if after.syncs == before.syncs or not before.external_dirty or not after.last_success:
+        return True
+    return not after.external_dirty and after.presented
+
+always assertion DrawCoordinatesStayInsideRegion:  # R3
+    return not bad_coordinate
+
+transition assertion SuspendedCallsAreSilent(before, after):  # R4
+    if after.frames == before.frames or not before.suspended:
+        return True
+    return not after.last_wire and after.terminal == before.terminal
+
+transition assertion UnchangedShowIsSilent(before, after):  # R5
+    if after.frames == before.frames or after.syncs != before.syncs:
+        return True
+    if not before.presented or before.suspended:
+        return True
+    return not after.last_wire
+
+exists assertion QuietSecondShow:
+    return quiet_show
+
+exists assertion WideOverlapRepainted:
+    return wide_overwritten and presented
+
+exists assertion RightEdgeWideClipped:
+    return clipped_wide and presented
+
+exists assertion DrewAfterResume:
+    return resumed_frame and presented
+
+exists assertion DrewAfterResize:
+    return resized_frame and presented
+
+exists assertion SyncRepairedExternalWrite:
+    return repaired_damage

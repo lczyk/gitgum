@@ -1,0 +1,389 @@
+---
+options:
+  crash_on_yield: false
+deadlock_detection: true
+---
+
+# this evaluates a candidate contract for two overlapping Screen callers.
+# run: fizz src/litescreen/spec/concurrent_callers.fizz
+#
+# each caller makes one independently chosen call. starting states are New,
+# running and suspended, so every pair can race without spending the bound
+# on setup. Fini/Fini checks sync.Once waiters; Fini/Resume can start from a
+# suspended screen. the signal goroutine is a third actor, and reader exit
+# is independent of mu. failed Init/Resume and reader EOF are permitted.
+#
+# atomic steps are mu sections except where a section waits for readDone.
+# Suspend retains mu through stopReader; Fini sets phase under mu, releases
+# it, runs cleanupOnce, and stops the reader outside mu. readStop check,
+# close, readDone wait and clearing the field remain distinct steps.
+# cleanupOnce and finiOnce each have unused/running/finished states, so a
+# second caller waits for completion rather than skipping an in-flight body.
+# Init/Resume have no blocking dependency on a modelled actor, so their mu
+# sections are atomic. I/O completes, reader shutdown and scheduling are fair.
+# a caught signal's external handler keeps the process alive in this model.
+#
+# R1: THE SYSTEM SHALL write only while it owns the terminal and open fds.
+# R2: WHEN any Fini call returns, THE SYSTEM SHALL have released terminal,
+#     reader, input channel, signal registrations and descriptors.
+# R3: THE SYSTEM SHALL NOT duplicate a reader, close a channel twice, send
+#     on a closed channel, or enter raw mode twice without restoring it.
+# R4: WHEN Suspend returns and no Resume has reacquired the terminal,
+#     THE SYSTEM SHALL retain no reader, raw mode, region or paste mode.
+# R5: WHEN a signal is re-raised, THE SYSTEM SHALL have restored the terminal.
+# R6: WHEN a call starts, THE SYSTEM SHALL eventually return from it under
+#     the stated fairness and I/O assumptions.
+#
+# these are proposed concurrency requirements, not a claim that the API
+# currently documents every overlap as supported. Resume may succeed while
+# an overlapping Fini has set phaseFinished but has not run cleanup; its
+# guard checks suspended/done. Fini must still clean that acquisition up.
+#
+# excluded: ChannelEvents starting before Init returns, parser consumers,
+# arbitrary memory-model data races, output failures, process termination,
+# SIGHUP, rendering bytes and more than two public calls per execution.
+# rendering.fizz checks buffer/terminal content separately. this models
+# present code; any failing requirement is retained for review, not fixed.
+
+NEW = 'new'
+RUNNING = 'running'
+FINISHED = 'finished'
+UNUSED = 0
+BUSY = 1
+COMPLETE = 2
+CALLS = ['Init', 'Suspend', 'Resume', 'Fini', 'Show', 'Sync', 'Paste']
+
+action Init:
+    initial = oneof ['new', 'running', 'suspended']
+    phase = NEW if initial == 'new' else RUNNING
+    suspended = initial == 'suspended'
+    grid = initial != 'new'
+    raw = initial == 'running'
+    region = raw
+    paste_wanted = False
+    terminal_paste = False
+    done = False
+    fds_open = True
+    bytes_open = grid
+    sig_registered = grid
+    winch_open = grid
+    reader = raw
+    read_stop = reader
+    stop_closed = False
+    read_done = not reader
+    eof = False
+    eof_delivered = False
+    mu = -1
+    fini_once = UNUSED
+    cleanup_once = UNUSED
+    callers = [record(op='', pc='idle', result='', previous='', stop_ref=False)
+               for i in range(2)]
+    signal_pc = 'idle'
+    fini_returns = 0
+    bad_write = False
+    bad_close = False
+    bad_send = False
+    duplicate_reader = False
+    nested_raw = False
+    dirty_signal = False
+    overlap = False
+    suppressed_draw = False
+    suspended_wait = False
+    resumed_during_fini = False
+    init_succeeded = False
+    resume_succeeded = False
+    init_failed = False
+    resume_failed = False
+
+atomic func write():
+    if not (raw and region and fds_open):
+        bad_write = True
+
+atomic func enter_raw():
+    if raw:
+        nested_raw = True
+    raw = True
+
+atomic func hand_back():
+    if grid:
+        write()
+    terminal_paste = False
+    region = False
+    raw = False
+
+atomic func start_reader():
+    if eof:
+        return
+    if reader:
+        duplicate_reader = True
+    reader = True
+    read_stop = True
+    stop_closed = False
+    read_done = False
+
+atomic func complete(i, result):
+    if mu == i:
+        mu = -1
+    callers[i].result = result
+    callers[i].pc = 'done'
+
+atomic func request(i):
+    require callers[i].pc == 'idle'
+    op = oneof CALLS
+    callers[i].op = op
+    callers[i].pc = 'enter'
+    if callers[1 - i].pc != 'idle' and callers[1 - i].pc != 'done':
+        overlap = True
+
+atomic func step(i):
+    c = callers[i]
+    require c.pc != 'idle' and c.pc != 'done'
+    if c.pc == 'enter':
+        if c.op == 'Fini':
+            require fini_once != BUSY
+            if fini_once == COMPLETE:
+                fini_returns += 1
+                complete(i, 'ok')
+            else:
+                fini_once = BUSY
+                c.pc = 'fini_phase'
+            return
+        require mu == -1
+        mu = i
+        if c.op == 'Init':
+            if phase != NEW:
+                complete(i, 'error')
+                return
+            phase = RUNNING
+            sig_registered = True
+            ok = oneof [False, True]
+            if not ok:
+                sig_registered = False
+                fds_open = False
+                phase = FINISHED
+                init_failed = True
+                complete(i, 'error')
+                return
+            enter_raw()
+            region = True
+            grid = True
+            terminal_paste = paste_wanted
+            bytes_open = True
+            start_reader()
+            winch_open = True
+            init_succeeded = True
+            complete(i, 'ok')
+        elif c.op == 'Suspend':
+            if phase != RUNNING or done or suspended:
+                complete(i, 'error')
+            else:
+                suspended = True
+                c.pc = 'stop_check'
+        elif c.op == 'Resume':
+            if not suspended or done:
+                complete(i, 'error')
+                return
+            ok = oneof [False, True]
+            if not ok:
+                resume_failed = True
+                complete(i, 'error')
+                return
+            enter_raw()
+            region = True
+            terminal_paste = paste_wanted
+            suspended = False
+            start_reader()
+            resume_succeeded = True
+            if phase == FINISHED:
+                resumed_during_fini = True
+            complete(i, 'ok')
+        else:
+            if c.op == 'Paste':
+                paste_wanted = not paste_wanted
+            if grid and not done and not suspended:
+                write()
+                if c.op == 'Paste':
+                    terminal_paste = paste_wanted
+            elif c.op == 'Show' or c.op == 'Sync':
+                suppressed_draw = True
+            complete(i, 'ok')
+    elif c.pc == 'fini_phase':
+        require mu == -1
+        c.previous = phase
+        phase = FINISHED
+        if c.previous == NEW:
+            c.pc = 'close_io'
+        elif c.previous == FINISHED:
+            c.pc = 'fini_done'
+        else:
+            c.pc = 'cleanup_once'
+    elif c.pc == 'cleanup_once':
+        require cleanup_once != BUSY
+        if cleanup_once == COMPLETE:
+            c.pc = 'close_signals'
+        else:
+            cleanup_once = BUSY
+            c.pc = 'cleanup_lock'
+    elif c.pc == 'cleanup_lock':
+        require mu == -1
+        done = True
+        if not suspended:
+            hand_back()
+        cleanup_once = COMPLETE
+        c.pc = 'close_signals'
+    elif c.pc == 'close_signals':
+        sig_registered = False
+        winch_open = False
+        c.pc = 'stop_check'
+    elif c.pc == 'stop_check':
+        c.stop_ref = read_stop
+        c.pc = 'stop_close' if c.stop_ref else 'after_stop'
+        if c.op == 'Suspend' and not read_done:
+            suspended_wait = True
+    elif c.pc == 'stop_close':
+        if stop_closed:
+            bad_close = True
+        stop_closed = True
+        c.pc = 'stop_wait'
+    elif c.pc == 'stop_wait':
+        require read_done
+        read_stop = False
+        c.pc = 'after_stop'
+    elif c.pc == 'after_stop':
+        if c.op == 'Suspend':
+            hand_back()
+            complete(i, 'ok')
+        else:
+            c.pc = 'close_bytes'
+    elif c.pc == 'close_bytes':
+        if not eof:
+            if not bytes_open:
+                bad_close = True
+            bytes_open = False
+        c.pc = 'close_io'
+    elif c.pc == 'close_io':
+        fds_open = False
+        c.pc = 'fini_done'
+    elif c.pc == 'fini_done':
+        fini_once = COMPLETE
+        fini_returns += 1
+        complete(i, 'ok')
+
+atomic action Call0:
+    request(0)
+
+atomic action Call1:
+    request(1)
+
+atomic fair action Caller0Step:
+    step(0)
+
+atomic fair action Caller1Step:
+    step(1)
+
+atomic action DeliverSignal:
+    require sig_registered and signal_pc == 'idle'
+    signal_pc = 'cleanup_once'
+
+atomic fair action SignalStep:
+    require signal_pc != 'idle' and signal_pc != 'done'
+    if signal_pc == 'cleanup_once':
+        require cleanup_once != BUSY
+        if cleanup_once == COMPLETE:
+            signal_pc = 'raise'
+        else:
+            cleanup_once = BUSY
+            signal_pc = 'cleanup_lock'
+    elif signal_pc == 'cleanup_lock':
+        require mu == -1
+        done = True
+        if not suspended:
+            hand_back()
+        cleanup_once = COMPLETE
+        signal_pc = 'raise'
+    else:
+        sig_registered = False
+        if raw or region or terminal_paste:
+            dirty_signal = True
+        signal_pc = 'done'
+
+atomic fair action ReaderStops:
+    require reader and stop_closed
+    reader = False
+    read_done = True
+
+atomic action ReaderEOF:
+    require reader and not eof_delivered
+    eof_delivered = True
+    eof = True
+    if not bytes_open:
+        bad_close = True
+    bytes_open = False
+    reader = False
+    read_done = True
+
+atomic action InputByte:
+    require reader
+    if not bytes_open:
+        bad_send = True
+
+atomic action NoOp:
+    pass
+
+always assertion WritesWhileOwned:  # R1
+    return not bad_write
+
+always assertion FiniReturnsReleased:  # R2
+    if fini_returns == 0:
+        return True
+    return (not raw and not region and not terminal_paste and not reader
+            and not bytes_open and not sig_registered and not winch_open
+            and not fds_open)
+
+always assertion ChannelsAndReadersSafe:  # R3
+    return (not bad_close and not bad_send and not duplicate_reader
+            and (not reader or fds_open))
+
+always assertion RawModeNotNested:  # R3
+    return not nested_raw
+
+always assertion SuspendedTerminalReleased:  # R4
+    if not suspended or mu != -1:
+        return True
+    return not raw and not region and not terminal_paste and not reader
+
+always assertion SignalRestoresTerminal:  # R5
+    return not dirty_signal
+
+always eventually assertion CallsReturn:  # R6
+    return all([c.pc == 'idle' or c.pc == 'done' for c in callers])
+
+exists assertion OverlappingCallsComplete:
+    return overlap and all([c.pc == 'done' for c in callers])
+
+exists assertion TwoFiniCallsReturn:
+    return fini_returns == 2
+
+exists assertion SuspendWaitsWithMutex:
+    return suspended_wait
+
+exists assertion ResumeOverlapsFini:
+    return resumed_during_fini and fini_returns > 0
+
+exists assertion DrawingSuppressed:
+    return suppressed_draw
+
+exists assertion InitialisationSucceeds:
+    return init_succeeded
+
+exists assertion InitialisationFails:
+    return init_failed
+
+exists assertion ResumeSucceeds:
+    return resume_succeeded
+
+exists assertion ResumeFails:
+    return resume_failed
+
+exists assertion CaughtSignalCompletes:
+    return signal_pc == 'done'
