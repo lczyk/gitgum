@@ -1,9 +1,15 @@
-// Package litescreen is a minimal tcell-free terminal renderer. It opens
-// /dev/tty directly so the process's stdin/stdout remain free for piping,
-// and implements a subset of the tcell.Screen surface (Init/Fini/Size/
-// SetContent/Clear/Show/ShowCursor/ChannelEvents) sufficient for fuzzy-
-// finder-style TUIs. The intended downstream is gitgum/fuzzyfinder, but the
-// package has no internal dependencies and can be used standalone.
+// Package litescreen is a minimal terminal renderer that uses tcell's types
+// (Style, Color, Event, Key) without tcell's screen. It opens /dev/tty
+// directly so the process's stdin/stdout remain free for piping, and
+// implements the subset of the tcell.Screen surface a cell-grid TUI needs:
+// Init/Fini/Size/SetContent/Clear/Show/Sync/ShowCursor/HideCursor/
+// EnablePaste/DisablePaste/ChannelEvents. No terminfo: the output is the
+// xterm dialect (CSI cursor moves, SGR, DEC private modes 1049/25/7/2026/
+// 2004), which every terminal in current use speaks; unknown private modes
+// are ignored by the terminals that lack them. Input covers UTF-8 runes,
+// the control bytes, Alt as an ESC prefix, the CSI/SS3 editing, arrow and
+// function keys with xterm modifiers, and bracketed paste. There is no
+// mouse support and no suspend/resume.
 //
 // The renderer was developed based on fzf's LightRenderer (junegunn/fzf,
 // src/tui/light.go). The architecture, ANSI handling approach, and several
@@ -60,7 +66,7 @@ type hooks struct {
 	getSize  func() (int, int)
 	// queryRow returns the 1-indexed cursor row at Init time (0 = unknown, so
 	// fall back to bottom-anchored layout) plus any type-ahead the user typed
-	// before the picker was ready -- Init replays it into the key stream instead
+	// before the screen was ready -- Init replays it into the key stream instead
 	// of dropping it.
 	queryRow    func() (row int, pending []byte)
 	closeIO     func()
@@ -203,7 +209,7 @@ type Screen struct {
 
 	winch chan os.Signal
 
-	// signal-driven cleanup. SIGINT/SIGTERM mid-picker leaves terminal in
+	// signal-driven cleanup. SIGINT/SIGTERM mid-run leaves terminal in
 	// raw mode + alt-screen + cursor hidden if we don't intercept. cleanup
 	// runs at most once, from either Fini or the signal goroutine.
 	sigCh       chan os.Signal
@@ -224,7 +230,7 @@ type Screen struct {
 	// Fini waits on readDone before closing fds — without that, darwin leaves
 	// readLoop stranded in syscall.Read on the closed fd, where it later
 	// steals input bytes (including DSR responses) intended for the next
-	// picker. Starting readLoop in Init (caller's goroutine) instead of
+	// Screen. Starting readLoop in Init (caller's goroutine) instead of
 	// inside ChannelEvents (a goroutine) keeps the start happens-before the
 	// Fini wait, so the race detector is satisfied.
 	quit     chan struct{}
@@ -232,7 +238,7 @@ type Screen struct {
 	bytesCh  chan byte
 
 	// pending is type-ahead captured by queryRow at Init (keystrokes typed
-	// before the picker was ready). readLoop replays it ahead of live input.
+	// before the screen was ready). readLoop replays it ahead of live input.
 	// Set once in Init before the readLoop goroutine starts and only touched by
 	// that goroutine after, so no lock is needed.
 	pending []byte
@@ -439,7 +445,7 @@ func (f *framebuf) cursorInSync(cx, cy int, visible bool) bool {
 // flushTo writes the front-to-back transform into buf. Production callers
 // (Show, Sync) pass a pooled buffer; tests call the simpler flush wrapper
 // when they want a fresh []byte. Writes nothing at all when the frame is a
-// no-op, so an idle picker is silent on the wire.
+// no-op, so an idle screen is silent on the wire.
 //
 // Callers must invalidate the front buffer whenever yOrigin moves: both the
 // cell diff and the cursor-sync check assume the region has not shifted
@@ -561,7 +567,7 @@ func (f *framebuf) flushTo(buf *bytes.Buffer, yOrigin, cx, cy int, cursorVisible
 
 // Options configure construction of a Screen with custom IO and/or size
 // reporting. Use with NewWithOptions when you need to redirect output (e.g.
-// to a bytes.Buffer for tests, or a remote pty for embedding the picker in
+// to a bytes.Buffer for tests, or a remote pty for embedding the screen in
 // a larger UI). When In or Out is set, the Screen runs in "headless" mode:
 // no raw mode is entered, no signal handlers are registered, and Size
 // queries fall back to the user-supplied Size func (default 80x24). The
@@ -650,7 +656,7 @@ func headlessHooks(size func() (int, int)) hooks {
 // queryCursorRow asks the terminal for the cursor's current row using DSR
 // (\e[6n) and parses the reply, a cursor-position report (\e[<row>;<col>R).
 // Returns the 1-indexed row (0 on error/timeout -> callers fall back to
-// bottom-anchored layout) and any type-ahead the user typed before the picker
+// bottom-anchored layout) and any type-ahead the user typed before the screen
 // was ready, so Init can replay it into the key stream instead of dropping it.
 //
 // Type-ahead sits in the tty queue ahead of (or interleaved with) the reply, so
@@ -768,6 +774,9 @@ func matchCPR(b []byte) (row, n int, ok bool) {
 	return row, i + 1, true // +1 for 'R'
 }
 
+// Init enters raw mode, lays out the region, and starts the input and signal
+// goroutines. It is accepted once; a second call, or one after Fini, returns
+// an error. On failure the tty handles are released and the Screen is spent.
 func (s *Screen) Init() error {
 	s.mu.Lock()
 	phase := s.phase
@@ -866,7 +875,7 @@ func initSequence(height, termW, termH, cursorRow int) (out []byte, yOrigin int,
 
 // signalLoop catches SIGINT/SIGTERM/SIGQUIT, restores the terminal, and re-raises
 // the signal so the default handler runs (process exit with the correct
-// status). Without this, a Ctrl-C delivered while the picker is up leaves
+// status). Without this, a Ctrl-C delivered while the screen is up leaves
 // the terminal in raw mode + cursor hidden.
 //
 // The channel is passed by value (not read off s.sigCh) so Fini can nil
@@ -919,10 +928,14 @@ func finiSequence(fullscreen bool, yOrigin int) []byte {
 	return fmt.Appendf(nil, endFrame+"\x1b[m\x1b[%d;1H\x1b[J\x1b[?25h", yOrigin+1)
 }
 
-// Fini is idempotent via finiOnce. We don't nil channel fields so that
-// concurrent reads in ChannelEvents (e.g. `winch := s.winch`) stay race-free
-// — close() on a channel doesn't mutate the field pointer, only the channel
-// state. Without finiOnce, calling Fini twice would double-close.
+// Fini restores the terminal (modes, raw state, the region or the alt
+// screen), stops the goroutines and closes the tty handles. Safe to call more
+// than once, and before Init, where it only releases the handles.
+//
+// Idempotent via finiOnce. We don't nil channel fields so that concurrent
+// reads in ChannelEvents (e.g. `winch := s.winch`) stay race-free: close()
+// on a channel doesn't mutate the field pointer, only the channel state.
+// Without finiOnce, calling Fini twice would double-close.
 func (s *Screen) Fini() {
 	s.finiOnce.Do(func() {
 		s.mu.Lock()
@@ -951,7 +964,7 @@ func (s *Screen) Fini() {
 		}
 		// Signal readLoop to exit and wait for it BEFORE closing fds.
 		// Otherwise the goroutine sits stranded in syscall.Read on darwin
-		// and steals input (DSR, keystrokes) intended for the next picker.
+		// and steals input (DSR, keystrokes) intended for the next Screen.
 		if s.quit != nil {
 			close(s.quit)
 			<-s.readDone
@@ -1062,7 +1075,7 @@ func (s *Screen) Show() {
 	buf.Reset()
 	s.fb.flushTo(buf, s.yOrigin, s.cursorX, s.cursorY, s.cursorShown())
 	// A no-op frame emits nothing; skip the write rather than syscall with an
-	// empty slice. Idle pickers redraw on a timer, so this is the common case.
+	// empty slice. Consumers that redraw on a timer make this the common case.
 	if buf.Len() > 0 {
 		s.out.Write(buf.Bytes())
 	}
@@ -1070,7 +1083,7 @@ func (s *Screen) Show() {
 
 // Sync forces a full repaint: every back-buffer cell is re-emitted regardless
 // of whether the diff thinks it changed. Used to recover from external writes
-// to the terminal (e.g. a sibling process writing to stderr while the picker
+// to the terminal (e.g. a sibling process writing to stderr while the screen
 // is up -- `find ~ 2>&1 | ff` style tearing). No explicit clear is emitted:
 // re-emitting every cell of the grid paints over whatever landed in the
 // region. Cost is a few KB of ANSI per call (full grid + SGR) vs. O(diff)
@@ -1112,10 +1125,10 @@ func cellEqual(a, b liteCell) bool {
 // ChannelEvents reads from /dev/tty in raw mode, parses keystrokes and
 // SIGWINCH, and emits tcell events on out. Stops when quit closes or input
 // EOFs. The parser handles UTF-8 multibyte runes, control bytes, and the
-// CSI/SS3 escape sequences the finder cares about.
+// CSI/SS3 escape sequences listed in the package doc.
 func (s *Screen) ChannelEvents(out chan<- tcell.Event, quit <-chan struct{}) {
-	// Don't close `out` on exit: the finder's receive loop doesn't check
-	// `ok` and would spin on the closed channel.
+	// Don't close `out` on exit, unlike tcell: a receive loop that doesn't
+	// check `ok` would spin on the closed channel.
 	// readLoop is started in Init (caller's goroutine) so its lifecycle is
 	// established before any Fini wait — ChannelEvents just consumes from
 	// the bytes channel Init prepared.
@@ -1158,7 +1171,7 @@ func (s *Screen) ChannelEvents(out chan<- tcell.Event, quit <-chan struct{}) {
 // readLoop reads input bytes off s.input and forwards them to out. It MUST
 // exit when s.quit closes; otherwise on darwin a stranded blocking
 // syscall.Read on the closed /dev/tty fd later steals input bytes (DSR
-// responses, keystrokes) from the next picker that opens /dev/tty.
+// responses, keystrokes) from the next Screen that opens /dev/tty.
 //
 // The polling+quit pattern is uniform across input types: the inputSource
 // is responsible for whatever setup makes errNoData possible (production:
@@ -1168,7 +1181,7 @@ func (s *Screen) readLoop(out chan<- byte) {
 	defer close(out)
 
 	// Replay type-ahead captured during Init ahead of live input, so keystrokes
-	// typed before the picker was ready land in the query box rather than being
+	// typed before the screen was ready reach the consumer rather than being
 	// lost. Ordered first because they were typed first.
 	for _, b := range s.pending {
 		select {
@@ -1237,10 +1250,10 @@ func (s *Screen) handleResize() (int, int) {
 // height policy, new terminal size, previous framebuf width, previous
 // yOrigin (so a mid-screen anchor survives a spurious SIGWINCH), and the
 // render mode pinned at Init, returns the byte stream + new yOrigin + new
-// picker row count.
+// region row count.
 //
-// The mode never flips mid-run: a fullscreen picker stays in the alt screen
-// (spanning however many rows the terminal now has), and an inline picker
+// The mode never flips mid-run: a fullscreen region stays in the alt screen
+// (spanning however many rows the terminal now has), and an inline region
 // stays on the main screen with its rows clamped to the terminal height.
 // Re-deriving the mode from resolveHeight here would flip it without the
 // matching alt-screen enter/leave, desynchronising Fini's cleanup.
@@ -1257,11 +1270,11 @@ func resizeSequence(height, termW, termH, prevWidth, prevYOrigin int, fullscreen
 			yOrigin = termH - rows
 		}
 		if termW < prevWidth {
-			// Narrowing reflows previous picker rows into more visual
+			// Narrowing reflows previous region rows into more visual
 			// lines that scroll up past yOrigin, leaving wrapped tails
 			// above it. We can't clear them precisely without knowing how
 			// much wrap happened, so wipe the entire visible viewport.
-			// Scrollback is untouched — pre-picker output stays scrollable.
+			// Scrollback is untouched: earlier output stays scrollable.
 			buf.WriteString("\x1b[2J")
 		}
 		fmt.Fprintf(&buf, "\x1b[%d;1H\x1b[J", yOrigin+1)
