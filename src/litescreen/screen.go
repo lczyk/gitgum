@@ -944,21 +944,35 @@ func (s *Screen) Fini() {
 	})
 }
 
+// Size returns the grid dimensions: the region's rows and the terminal's
+// columns. Zero before Init.
 func (s *Screen) Size() (int, int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.fb == nil {
+		return 0, 0
+	}
 	return s.fb.width, s.fb.height
 }
 
+// Clear blanks the back buffer; the next Show draws the blank cells.
 func (s *Screen) Clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.fb == nil {
+		return
+	}
 	s.fb.clear()
 }
 
+// SetContent writes one cell of the back buffer. Out-of-range coordinates are
+// ignored, as are calls before Init.
 func (s *Screen) SetContent(x, y int, mainc rune, combc []rune, style tcell.Style) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.fb == nil {
+		return
+	}
 	s.fb.set(x, y, liteCell{mainc: mainc, combc: combc, style: style})
 }
 
@@ -988,10 +1002,12 @@ func (s *Screen) cursorShown() bool {
 		s.cursorY >= 0 && s.cursorY < s.fb.height
 }
 
+// Show emits the difference between the last frame and the back buffer.
+// Nothing is written before Init or after Fini.
 func (s *Screen) Show() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.done {
+	if s.fb == nil || s.done {
 		return
 	}
 	buf := bufPool.Get().(*bytes.Buffer)
@@ -1015,7 +1031,7 @@ func (s *Screen) Show() {
 func (s *Screen) Sync() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.done {
+	if s.fb == nil || s.done {
 		return
 	}
 	// Sentinel every front cell so flush's diff treats every back cell as
