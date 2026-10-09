@@ -869,28 +869,36 @@ func matchCPR(b []byte) (row, n int, ok bool) {
 // Init enters raw mode, lays out the region, and starts the input and signal
 // goroutines. It is accepted once; a second call, or one after Fini, returns
 // an error. On failure the tty handles are released and the Screen is spent.
+//
+// The whole call runs under mu with the signal handler registered first:
+// a signal that lands anywhere in Init -- the cursor query alone can take
+// 200ms -- is handled once Init has finished, when there is a grid to hand
+// back. Registered last, the default action would end the process in raw
+// mode half way through the layout.
 func (s *Screen) Init() error {
 	s.mu.Lock()
-	phase := s.phase
-	if phase == phaseNew {
-		s.phase = phaseRunning
-	}
-	s.mu.Unlock()
-	switch phase {
+	defer s.mu.Unlock()
+	switch s.phase {
 	case phaseRunning:
 		return errors.New("litescreen: Init called twice")
 	case phaseFinished:
 		return errors.New("litescreen: Init after Fini")
 	}
+	s.phase = phaseRunning
+
+	s.sigCh = make(chan os.Signal, 1)
+	s.notifySig(s.sigCh)
+	go s.signalLoop(s.sigCh)
 
 	restore, err := s.enterRaw()
 	if err != nil {
-		// Callers bail on an Init error without calling Fini, so the tty fds
-		// opened at construction must be released here.
+		// Callers bail on an Init error without calling Fini, so the
+		// registration and the tty fds opened at construction must be
+		// released here.
+		s.stopSignal(s.sigCh)
+		close(s.sigCh)
 		s.closeIO()
-		s.mu.Lock()
 		s.phase = phaseFinished
-		s.mu.Unlock()
 		return fmt.Errorf("raw mode: %w", err)
 	}
 	s.restore = restore
@@ -898,9 +906,7 @@ func (s *Screen) Init() error {
 	w, termH := s.getSize()
 	cursorRow, pending := s.queryRow()
 	s.pending = pending
-	s.mu.Lock()
 	s.takeOver(w, termH, cursorRow)
-	s.mu.Unlock()
 
 	if s.input == nil {
 		s.input = inputFor(s.in)
@@ -910,10 +916,6 @@ func (s *Screen) Init() error {
 
 	s.winch = make(chan os.Signal, 1)
 	s.notifyWinch(s.winch)
-
-	s.sigCh = make(chan os.Signal, 1)
-	s.notifySig(s.sigCh)
-	go s.signalLoop(s.sigCh)
 	return nil
 }
 
@@ -991,12 +993,16 @@ func (s *Screen) cleanup() {
 }
 
 // handBack undoes the terminal state takeOver set up: paste mode, the
-// region or alt screen, raw mode. Caller holds mu.
+// region or alt screen, raw mode. Caller holds mu. Without a grid nothing
+// was drawn, so nothing is written: a signal queued while a failed Init
+// withdraws its registration still runs cleanup.
 func (s *Screen) handBack() {
-	if s.paste {
-		s.out.Write([]byte(disablePaste))
+	if s.fb != nil {
+		if s.paste {
+			s.out.Write([]byte(disablePaste))
+		}
+		s.out.Write(finiSequence(s.fullscreen, s.yOrigin))
 	}
-	s.out.Write(finiSequence(s.fullscreen, s.yOrigin))
 	if s.restore != nil {
 		s.restore()
 		s.restore = nil
