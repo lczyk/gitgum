@@ -399,3 +399,31 @@ func TestNewWithOptions_EnablePaste(t *testing.T) {
 	assert.ContainsString(t, out.String(), "\x1b[?2004h", "init applies the mode asked for earlier")
 	s.Fini()
 }
+
+// Suspend and Resume through the public surface, headless: the screen can
+// be handed back and taken again without a real terminal.
+func TestNewWithOptions_SuspendResume(t *testing.T) {
+	var out bytes.Buffer
+	s, err := litescreen.NewWithOptions(litescreen.Options{
+		Height: 3,
+		Out:    &out,
+		Size:   fixedSize(20, 10),
+	})
+	require.NoError(t, err)
+	require.NoError(t, s.Init())
+	defer s.Fini()
+	s.SetContent(0, 0, 'X', nil, tcell.StyleDefault)
+	s.Show()
+
+	out.Reset()
+	require.NoError(t, s.Suspend())
+	assert.ContainsString(t, out.String(), "\x1b[8;1H\x1b[J", "region cleared")
+	out.Reset()
+	s.Show()
+	assert.Equal(t, out.String(), "")
+
+	require.NoError(t, s.Resume())
+	out.Reset()
+	s.Show()
+	assert.ContainsString(t, out.String(), "X", "repainted from the back buffer")
+}
