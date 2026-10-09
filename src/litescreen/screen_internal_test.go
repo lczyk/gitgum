@@ -1043,3 +1043,36 @@ func TestReadLoop_ReplaysPendingTypeAhead(t *testing.T) {
 	assert.Equal(t, string(got), "hello")
 	s.Fini()
 }
+
+// --- lifecycle ordering -----------------------------------------------------
+
+// Fini on a screen that was never initialised has nothing to restore. Without
+// a guard it emitted the inline cleanup for a region at row 1 -- clearing the
+// caller's visible terminal -- and called a nil restore.
+func TestScreen_FiniBeforeInitIsInert(t *testing.T) {
+	s, out, restoreCalled := newTestScreen(5, 80, 24, strings.NewReader(""))
+	s.Fini()
+	assert.Equal(t, out.String(), "")
+	assert.That(t, !*restoreCalled, "nothing to restore before Init")
+}
+
+// A second Init would re-enter raw mode, start another readLoop and register
+// the signal channels twice, with only one Fini to undo it all.
+func TestScreen_InitTwiceIsRejected(t *testing.T) {
+	s, out, _ := newTestScreen(5, 80, 24, strings.NewReader(""))
+	require.NoError(t, s.Init())
+	out.Reset()
+	defer s.Fini()
+
+	err := s.Init()
+	assert.Error(t, err, assert.AnyError)
+	assert.Equal(t, out.String(), "", "a rejected Init must not touch the terminal")
+}
+
+// Init after Fini is the same mistake in the other order: the fds are closed.
+func TestScreen_InitAfterFiniIsRejected(t *testing.T) {
+	s, _, _ := newTestScreen(5, 80, 24, strings.NewReader(""))
+	require.NoError(t, s.Init())
+	s.Fini()
+	assert.Error(t, s.Init(), assert.AnyError)
+}
