@@ -20,6 +20,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -335,9 +336,14 @@ func (f *framebuf) clear() {
 }
 
 // set writes a cell into the back buffer, ignoring out-of-range coordinates.
+// The combining runes are copied: the caller may reuse its slice, and after a
+// flush the same cell is shared with front.
 func (f *framebuf) set(x, y int, c liteCell) {
 	if x < 0 || x >= f.width || y < 0 || y >= f.height {
 		return
+	}
+	if len(c.combc) > 0 {
+		c.combc = slices.Clone(c.combc)
 	}
 	f.back[y][x] = c
 }
