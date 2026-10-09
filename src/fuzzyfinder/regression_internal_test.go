@@ -365,3 +365,24 @@ func TestRegressionNoDrawAfterFini(t *testing.T) {
 		require.Equal(t, scr.late(), 0)
 	}
 }
+
+// Keys the finder has no binding for must not type anything. Regression: the
+// fallthrough inserted whatever rune the event carried, and tcell puts the
+// lowercase letter on every Ctrl-letter event, so Ctrl-G typed a g and Alt-x
+// typed an x.
+func TestRegressionUnboundKeysDoNotType(t *testing.T) {
+	f, m := NewWithMockedTerminal()
+	defer m.Fini()
+	require.NoError(t, f.initFinder([]string{"a"}, Opt{}))
+	ch := make(chan tcell.Event, 8)
+	f.termEventsChan = ch
+
+	ch <- tcell.NewEventKey(tcell.KeyCtrlG, 'g', tcell.ModCtrl)
+	ch <- tcell.NewEventKey(tcell.KeyRune, 'x', tcell.ModAlt)
+	ch <- tcell.NewEventKey(tcell.KeyCtrlSpace, 0, tcell.ModCtrl)
+	ch <- tcell.NewEventKey(tcell.KeyRune, 'y', tcell.ModNone)
+	for range 4 {
+		require.NoError(t, f.readKey(context.Background()))
+	}
+	assert.Equal(t, string(f.state.input), "y")
+}
