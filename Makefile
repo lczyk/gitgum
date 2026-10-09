@@ -99,11 +99,14 @@ cover-open: cover  ## Run coverage and open the HTML report in a browser
 	go tool cover -html=cover.out
 
 .PHONY: fizz
-fizz:  ## Model-check the litescreen lifecycle spec (needs the fizz cli)
+fizz:  ## Model-check the litescreen specs (needs the fizz cli)
 	@if ! command -v fizz >/dev/null 2>&1; then \
 		echo "fizz not found: homebrew tap fizzbee-io/fizzbee, formula fizzbee"; exit 1; \
 	fi
-	cd ./src/litescreen/spec && fizz lifecycle.fizz
+	@cd ./src/litescreen/spec && for f in *.fizz; do \
+		echo "== $$f"; out=$$(fizz "$$f" 2>&1); echo "$$out" | grep -E '^(PASSED|FAILED|Invariant)'; \
+		echo "$$out" | grep -q '^PASSED' || exit 1; \
+	done
 
 .PHONY: verify
 verify: lint test  ## Pre-commit gate: lint, test
