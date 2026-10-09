@@ -320,3 +320,27 @@ func TestNewWithOptions_HideCursor(t *testing.T) {
 	s.Show()
 	assert.Equal(t, out.String(), "")
 }
+
+// Before Init there is no grid. Drawing calls are dropped and Size reports
+// nothing rather than dereferencing a buffer that does not exist yet.
+func TestNewWithOptions_MethodsBeforeInitAreInert(t *testing.T) {
+	var out bytes.Buffer
+	s, err := litescreen.NewWithOptions(litescreen.Options{
+		Height: 3,
+		Out:    &out,
+		Size:   fixedSize(20, 10),
+	})
+	require.NoError(t, err)
+
+	w, h := s.Size()
+	assert.Equal(t, w, 0)
+	assert.Equal(t, h, 0)
+	s.Clear()
+	s.SetContent(0, 0, 'X', nil, tcell.StyleDefault)
+	s.ShowCursor(0, 0)
+	s.HideCursor()
+	s.Show()
+	s.Sync()
+	assert.Equal(t, out.String(), "")
+	s.Fini()
+}
