@@ -1,0 +1,112 @@
+---
+options:
+  crash_on_yield: false
+action_options:
+  Stop:
+    max_actions: 1
+  Input:
+    max_actions: 2
+  Drain:
+    max_actions: 2
+---
+
+# FizzBee model of stopping the reader goroutine: stopReader closes the
+# stop channel, wakes the self-pipe and waits; readLoop must notice from
+# wherever it is -- about to check stop, reading, blocked sending to a
+# full byte channel, or parked in poll.
+#
+# Run: make fizz   (or: fizz src/litescreen/spec/reader.fizz)
+#
+# The wait in poll has a 250ms timeout in the code. The model leaves it
+# out on purpose: with the timeout any wake-up scheme is live, only late.
+# What the self-pipe buys is that the wake is never lost, and that is what
+# the model checks: the stopper returns without relying on the timeout.
+#
+# R1:  WHEN stopReader is called, THE SYSTEM SHALL return from it, whatever
+#      readLoop was doing at the time and whether or not the consumer still
+#      drains the byte channel.
+# R2:  THE SYSTEM SHALL NOT exit readLoop before stop was requested.
+# R3:  WHILE readLoop is blocked sending a byte to a full channel, WHEN stop
+#      is requested, THE SYSTEM SHALL exit readLoop without the send.
+
+Pos = enum('CHECK', 'READ', 'SEND', 'WAIT', 'DONE')
+Stopper = enum('IDLE', 'WAITING', 'RETURNED')
+
+action Init:
+    pos = Pos.CHECK
+    stopper = Stopper.IDLE
+    stop = False        # readStop closed
+    wake = False        # a byte sits in the wake pipe
+    data = False        # the input has a byte to read
+    chan_full = oneof [False, True]  # consumer slow or gone
+
+# One iteration step of readLoop, from each of its blocking points.
+atomic fair action ReaderStep:
+    require pos != Pos.DONE
+    if pos == Pos.CHECK:
+        if stop:
+            pos = Pos.DONE
+        else:
+            pos = Pos.READ
+    elif pos == Pos.READ:
+        if data:
+            data = False
+            pos = Pos.SEND
+        else:
+            pos = Pos.WAIT
+    elif pos == Pos.SEND:
+        # select { case out <- b: case <-stop: }
+        require stop or not chan_full
+        if stop:
+            pos = Pos.DONE
+        else:
+            pos = Pos.CHECK
+    elif pos == Pos.WAIT:
+        # poll on the tty fd and the wake pipe; a wake byte is drained.
+        require data or wake
+        wake = False
+        pos = Pos.CHECK
+
+# stopReader: close(readStop), write a wake byte, then wait on readDone.
+atomic action Stop:
+    require stopper == Stopper.IDLE
+    stop = True
+    wake = True
+    stopper = Stopper.WAITING
+
+atomic fair action StopperReturns:
+    require stopper == Stopper.WAITING and pos == Pos.DONE
+    stopper = Stopper.RETURNED
+
+atomic action Input:
+    require not data
+    data = True
+
+atomic action Drain:
+    require chan_full
+    chan_full = False
+
+atomic action NoOp:
+    pass
+
+always eventually assertion StopReturns:     # R1
+    return stopper != Stopper.WAITING
+
+always assertion NoExitBeforeStop:           # R2
+    return pos != Pos.DONE or stop
+
+transition assertion SendGivesWayToStop(before, after):  # R3
+    if before.pos != Pos.SEND or after.pos == Pos.SEND:
+        return True
+    if before.stop:
+        return after.pos == Pos.DONE
+    return True
+
+exists assertion StopWhileParked:
+    return stop and pos == Pos.WAIT
+
+exists assertion StopWhileBlockedSending:
+    return stop and pos == Pos.SEND and chan_full
+
+exists assertion StopWhileChecking:
+    return stop and pos == Pos.CHECK

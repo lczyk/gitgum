@@ -1,0 +1,132 @@
+---
+options:
+  crash_on_yield: false
+action_options:
+  Close:
+    max_actions: 1
+---
+
+# FizzBee model of the escape disambiguation in the input parser: after
+# ESC the parser waits up to escTimeout for more bytes, and a CSI sequence
+# must arrive contiguously. The timer, the next byte and the channel
+# closing race each other. The key mapping itself is a pure function with
+# table tests; this models only the waiting.
+#
+# Run: make fizz   (or: fizz src/litescreen/spec/esc.fizz)
+#
+# Bytes are abstracted to four classes: ESC, '[' (CSI introducer), a CSI
+# final byte, and a plain rune. Events to: esc, alt-rune, rune, csi key,
+# dropped (a cut sequence yields nil).
+#
+# R1:  THE SYSTEM SHALL NOT wait for a byte forever: WHEN the timer fires
+#      or the channel closes, THE SYSTEM SHALL return to the idle state.
+# R2:  THE SYSTEM SHALL account for every byte: each consumed byte is part
+#      of exactly one emitted event or of one dropped sequence.
+# R3:  WHILE waiting after ESC, WHEN the timer fires, THE SYSTEM SHALL
+#      emit a bare esc and treat the following bytes afresh.
+# R4:  WHILE inside a CSI sequence, WHEN the timer fires or the channel
+#      closes, THE SYSTEM SHALL drop the sequence (no event).
+# R5:  WHEN the channel has closed, THE SYSTEM SHALL NOT consume bytes.
+
+Byte = enum('ESC', 'BRACKET', 'FINAL', 'RUNE')
+State = enum('IDLE', 'AFTER_ESC', 'CSI', 'CLOSED')
+Ev = enum('ESC', 'ALT_RUNE', 'RUNE', 'CSI_KEY', 'DROPPED')
+
+MAX_BYTES = 4
+
+action Init:
+    state = State.IDLE
+    alt = False
+    pending = 0         # bytes consumed into the current sequence
+    consumed = 0
+    accounted = 0       # bytes covered by emitted events or drops
+    events = []
+    splits = 0          # sequences cut by the timer or the close
+    closed = False
+
+atomic func emit(ev, n):
+    events = events + [ev]
+    accounted += n
+    pending = 0
+    alt = False
+    state = State.IDLE
+
+atomic action Byte:
+    require state != State.CLOSED and consumed < MAX_BYTES
+    b = oneof [Byte.ESC, Byte.BRACKET, Byte.FINAL, Byte.RUNE]
+    consumed += 1
+    if state == State.IDLE:
+        if b == Byte.ESC:
+            pending = 1
+            state = State.AFTER_ESC
+        else:
+            emit(Ev.RUNE, 1)
+    elif state == State.AFTER_ESC:
+        pending += 1
+        if b == Byte.ESC:
+            # ESC ESC: the second ESC starts a sequence with Alt held.
+            alt = True
+        elif b == Byte.BRACKET:
+            state = State.CSI
+        else:
+            emit(Ev.ALT_RUNE, pending)
+    elif state == State.CSI:
+        pending += 1
+        if b == Byte.ESC:
+            pass            # a parameter byte; the sequence continues
+        else:
+            emit(Ev.CSI_KEY, pending)
+
+# escTimeout fires while the parser waits for the next byte.
+atomic fair action Timer:
+    require state == State.AFTER_ESC or state == State.CSI
+    splits += 1
+    if state == State.AFTER_ESC:
+        emit(Ev.ESC, pending)
+    else:
+        emit(Ev.DROPPED, pending)
+
+# The byte channel closes: readLoop hit EOF or Fini.
+atomic action Close:
+    require not closed
+    closed = True
+    if state == State.AFTER_ESC:
+        emit(Ev.ESC, pending)
+    elif state == State.CSI:
+        emit(Ev.DROPPED, pending)
+    state = State.CLOSED
+
+atomic action NoOp:
+    pass
+
+always eventually assertion ReturnsToIdle:      # R1
+    return state == State.IDLE or state == State.CLOSED
+
+always assertion EveryByteAccounted:            # R2
+    return consumed == accounted + pending
+
+always assertion NothingAfterClose:             # R5
+    return not closed or state == State.CLOSED
+
+transition assertion TimerAfterEscIsBareEsc(before, after):  # R3
+    if before.state != State.AFTER_ESC or after.splits == before.splits:
+        return True
+    return after.events[-1] == Ev.ESC and after.state == State.IDLE
+
+transition assertion CutCSIDropped(before, after):           # R4
+    if before.state != State.CSI or after.state == State.CSI:
+        return True
+    if len(after.events) == len(before.events):
+        return True
+    if after.splits > before.splits or after.state == State.CLOSED:
+        return after.events[-1] == Ev.DROPPED
+    return True
+
+exists assertion SplitSequenceGivesTwoEvents:
+    return splits > 0 and len(events) >= 2 and events[0] == Ev.ESC
+
+exists assertion ClosedMidCSI:
+    return state == State.CLOSED and len(events) > 0 and events[-1] == Ev.DROPPED
+
+exists assertion AltCSIKey:
+    return len(events) > 0 and events[-1] == Ev.CSI_KEY and accounted >= 4
