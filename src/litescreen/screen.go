@@ -490,11 +490,14 @@ func (f *framebuf) flushTo(buf *bytes.Buffer, yOrigin, cx, cy int, cursorVisible
 			if r == 0 {
 				r = ' '
 			}
-			// Sanitise control runes (C0 + DEL): emitted raw they desync the
-			// terminal (a stray ESC starts an escape sequence, TAB/CR move the
-			// cursor) and break the cell-grid model. Item strings can carry
-			// them -- filenames from find, a trailing bare ESC in ansi input.
-			if r < 0x20 || r == 0x7f {
+			// Sanitise control runes (C0 + DEL) and zero-width runes
+			// (combining marks, zero-width space, joiners). Emitted raw the
+			// former desync the terminal (a stray ESC starts an escape
+			// sequence, TAB/CR move the cursor) and the latter merge into the
+			// glyph to the left without filling their own column; either way
+			// the cell-grid model breaks. Content strings can carry them --
+			// filenames from find, a trailing bare ESC in ansi input.
+			if r < 0x20 || r == 0x7f || runewidth.RuneWidth(r) == 0 {
 				r = ' '
 			}
 			// A 2-column rune in the last column has no room for its second
