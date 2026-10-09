@@ -716,6 +716,11 @@ func splitCPR(b []byte) (row int, rest []byte) {
 	return row, rest
 }
 
+// cprMaxDigits bounds a coordinate in a cursor-position report. No terminal
+// has five-digit dimensions; a longer run of digits is not a report, and
+// parsing it would overflow int.
+const cprMaxDigits = 5
+
 // matchCPR reports whether b starts with a cursor-position report
 // (\e[<row>;<col>R) and, if so, the row and the byte length consumed. It
 // deliberately rejects anything else (bare ESC, arrow keys \e[A, an unfinished
@@ -729,7 +734,7 @@ func matchCPR(b []byte) (row, n int, ok bool) {
 	for i < len(b) && b[i] >= '0' && b[i] <= '9' {
 		i++
 	}
-	if i == rowStart || i >= len(b) || b[i] != ';' {
+	if i == rowStart || i-rowStart > cprMaxDigits || i >= len(b) || b[i] != ';' {
 		return 0, 0, false
 	}
 	for _, c := range b[rowStart:i] {
@@ -740,7 +745,7 @@ func matchCPR(b []byte) (row, n int, ok bool) {
 	for i < len(b) && b[i] >= '0' && b[i] <= '9' {
 		i++
 	}
-	if i == colStart || i >= len(b) || b[i] != 'R' {
+	if i == colStart || i-colStart > cprMaxDigits || i >= len(b) || b[i] != 'R' {
 		return 0, 0, false
 	}
 	return row, i + 1, true // +1 for 'R'
