@@ -289,6 +289,7 @@ atomic action DisablePaste:
 # handler may keep the process alive; Fini must still release resources.
 atomic action Signal:
     require alive and sig_reg
+    signal_seen = True
     cleanup()
     sig_reg = False
     if t_raw or t_region or t_paste:
