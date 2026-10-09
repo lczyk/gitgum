@@ -150,7 +150,8 @@ func worktreeHeadRows(r git.Repo, color bool) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("getting head of %s: %w", r.Dir, err)
 	}
-	return headRows(r, branch, locals, color), nil
+	op, _ := r.Operation()
+	return headRows(r, branch, locals, op, color), nil
 }
 
 func (w *WorktreeSwitchCommand) Execute(args []string) error {

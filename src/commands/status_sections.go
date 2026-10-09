@@ -240,27 +240,37 @@ func (s *StatusCommand) renderChanges(out io.Writer, header func()) error {
 // renderHead prints the branch summary line, with the tracking branch
 // rendered switch-style, e.g. "## (origin/)main [ahead 7]". A detached HEAD
 // gets the refs that contain it instead of git's bare "## HEAD (no branch)".
+// An operation in progress -- a rebase, merge, cherry-pick, revert or bisect
+// -- is printed under that line. A stopped rebase with a clean tree would
+// otherwise vanish: CHANGES suppresses itself, and the branch line does not
+// say that HEAD is mid-rebase.
 func (s *StatusCommand) renderHead(out io.Writer, header func()) error {
 	branch, locals, err := s.reads.headLine()
 	if err != nil {
 		return err
 	}
 	header()
-	for _, row := range headRows(s.repo(), branch, locals, colorEnabled()) {
+	op, _ := s.reads.operation()
+	for _, row := range headRows(s.repo(), branch, locals, op, colorEnabled()) {
 		fmt.Fprintln(out, row)
 	}
 	return nil
 }
 
 // headRows is the HEAD section's body for what r.HeadLine() returned: one row,
-// or one per containing ref under a detached HEAD.
-func headRows(r git.Repo, branch string, locals []git.LocalBranch, color bool) []string {
+// or one per containing ref under a detached HEAD, then the in-progress
+// operation when there is one.
+func headRows(r git.Repo, branch string, locals []git.LocalBranch, op git.Operation, color bool) []string {
+	var rows []string
 	if branch == detachedHeadLine {
-		if rows, ok := detachedHeadRows(r, locals, color); ok {
-			return rows
+		if det, ok := detachedHeadRows(r, locals, color); ok {
+			rows = det
 		}
 	}
-	return []string{formatHeadLine(branch, headHash(locals), color)}
+	if rows == nil {
+		rows = []string{formatHeadLine(branch, headHash(locals), color)}
+	}
+	return append(rows, operationRows(op, color)...)
 }
 
 // headHash is the short sha of the checked-out branch, taken from the listing
@@ -364,6 +374,13 @@ type statusReads struct {
 	locals   []git.LocalBranch
 	headErr  error
 
+	// opDone carries the in-progress operation the HEAD line is annotated
+	// with. It is a git-dir stat, not a working-tree scan, so a head-only
+	// status still does not walk the tree.
+	opDone chan struct{}
+	op     git.Operation
+	opYes  bool
+
 	statsDone chan struct{}
 	stats     map[string]numstat
 }
@@ -384,6 +401,11 @@ func (r *statusReads) headLine() (string, []git.LocalBranch, error) {
 	return r.head, r.locals, r.headErr
 }
 
+func (r *statusReads) operation() (git.Operation, bool) {
+	<-r.opDone
+	return r.op, r.opYes
+}
+
 func (r *statusReads) numstats() map[string]numstat {
 	<-r.statsDone
 	return r.stats
@@ -396,6 +418,7 @@ func (r *statusReads) numstats() map[string]numstat {
 func (r *statusReads) wait() {
 	<-r.scanDone
 	<-r.headDone
+	<-r.opDone
 	<-r.statsDone
 }
 
@@ -412,6 +435,7 @@ func (s *StatusCommand) startReads(sections []statusSection) *statusReads {
 	r := &statusReads{
 		scanDone:  make(chan struct{}),
 		headDone:  make(chan struct{}),
+		opDone:    make(chan struct{}),
 		statsDone: make(chan struct{}),
 	}
 	var wantScan, wantHead, wantStats bool
@@ -448,8 +472,16 @@ func (s *StatusCommand) startReads(sections []statusSection) *statusReads {
 			}
 			r.head, r.locals = head, locals
 		}()
+		// Beside the branch line, not after it: the git-dir read is
+		// independent of the ref listing, and on a large repo the listing
+		// is the slow one.
+		go func() {
+			defer close(r.opDone)
+			r.op, r.opYes = repo.Operation()
+		}()
 	} else {
 		close(r.headDone)
+		close(r.opDone)
 	}
 	if wantStats {
 		go func() {

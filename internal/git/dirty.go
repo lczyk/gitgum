@@ -31,7 +31,9 @@ func (r Repo) DirtyTracked() ([]Entry, error) {
 // underway, in the order git's own prompt script checks them: a paused rebase
 // looks like several of these at once, and the more specific answer is the
 // useful one. sequencer/todo catches a multi-step cherry-pick or revert whose
-// per-commit marker was already cleared by an intermediate commit.
+// per-commit marker was already cleared by an intermediate commit. Operation
+// walks the same paths and reads them; this list only names them, which is
+// all a discard needs in order to refuse.
 var inProgressMarkers = []struct{ path, operation string }{
 	{"rebase-merge", "an interactive rebase"},
 	{"rebase-apply", "a rebase"},
