@@ -1,6 +1,7 @@
 package litescreen
 
 import (
+	"errors"
 	"os"
 	"os/signal"
 	"strings"
@@ -103,4 +104,52 @@ func TestRealHooks_ReraiseReachesOtherHandlers(t *testing.T) {
 		t.Fatalf("stopped channel must not receive, got %v", sig)
 	case <-time.After(50 * time.Millisecond):
 	}
+}
+
+// The handler must be registered before raw mode is entered: a signal
+// between enterRaw and the registration takes the default action and ends
+// the process with the terminal still raw, half way through the layout.
+// The cursor query is the long part of that window (up to 200ms on a
+// terminal that does not answer), so the probe sits there. With the handler
+// in place the signal is handled after Init returns, with the terminal
+// handed back before the re-raise.
+func TestScreen_SignalRegisteredBeforeRawMode(t *testing.T) {
+	s, _, _ := newTestScreen(5, 80, 24, strings.NewReader(""))
+	tr := &rawTracker{}
+	s.enterRaw = tr.enterRaw
+	s.input = &gatedInput{}
+	registered := false
+	s.notifySig = func(chan<- os.Signal) { registered = true }
+	rawAtRaise := make(chan bool, 1)
+	s.raiseSignal = func(os.Signal) { rawAtRaise <- tr.raw }
+	s.queryRow = func() (int, []byte) {
+		assert.That(t, registered, "signal handler must be registered before the cursor query")
+		select {
+		case s.sigCh <- syscall.SIGINT:
+		default:
+			t.Error("no signal channel to deliver to during Init")
+		}
+		return 0, nil
+	}
+	require.NoError(t, s.Init())
+	defer s.Fini()
+	select {
+	case raw := <-rawAtRaise:
+		assert.That(t, !raw, "re-raised with the terminal still in raw mode")
+	case <-time.After(2 * time.Second):
+		t.Fatal("signal was never re-raised")
+	}
+}
+
+// A failed Init withdraws the registration it made, so the process is back
+// to the default disposition rather than a handler for a dead screen.
+func TestScreen_InitRawFailureWithdrawsSignal(t *testing.T) {
+	s, _, _ := newTestScreen(5, 80, 24, strings.NewReader(""))
+	s.enterRaw = func() (func(), error) { return nil, errors.New("no tty") }
+	var registered, stopped chan<- os.Signal
+	s.notifySig = func(ch chan<- os.Signal) { registered = ch }
+	s.stopSignal = func(ch chan<- os.Signal) { stopped = ch }
+	assert.Error(t, s.Init(), assert.AnyError)
+	assert.That(t, registered != nil, "Init registers before entering raw mode")
+	assert.That(t, stopped == registered, "the failed Init withdraws its own registration")
 }
