@@ -1213,16 +1213,17 @@ func (s *Screen) parseEvent(b byte, ch <-chan byte) tcell.Event {
 	}
 }
 
-// controlByteEvent maps an ASCII control byte (0x00-0x1F) to a tcell event.
-// Naming gotcha: tcell's KeyCtrlA..KeyCtrlZ live at values 65..90, NOT at
-// the byte values 1..26 — those byte ranges are KeyNUL..KeySUB (KeyETX, etc).
-// The finder switches on KeyCtrlC, so byte 0x03 must produce that constant,
-// not Key(3). The "directly typeable" specials (Backspace, Tab, Enter, Esc)
-// retain their byte-valued aliases since the finder switches on those names.
+// controlByteEvent maps an ASCII control byte (0x00-0x1F) to a tcell event,
+// the way tcell's own input layer does. Naming gotcha: tcell's KeyCtrlSpace,
+// KeyCtrlA..KeyCtrlZ, KeyCtrlBackslash, KeyCtrlRightSq, KeyCtrlCarat and
+// KeyCtrlUnderscore live at 64 plus the byte value, NOT at the byte values
+// themselves -- those are KeyNUL..KeyUS (KeyETX, KeyFS, etc), which tcell never
+// reports. Consumers switch on KeyCtrlC, so byte 0x03 must produce that
+// constant, not Key(3). The "directly typeable" specials (Backspace, Tab,
+// Enter, Esc) keep their byte-valued aliases since consumers switch on those
+// names.
 func controlByteEvent(b byte) tcell.Event {
 	switch b {
-	case 0x00:
-		return tcell.NewEventKey(tcell.KeyCtrlSpace, ' ', tcell.ModCtrl)
 	case 0x08:
 		return tcell.NewEventKey(tcell.KeyBackspace, 0, tcell.ModNone)
 	case 0x09:
@@ -1232,14 +1233,9 @@ func controlByteEvent(b byte) tcell.Event {
 	case 0x1b:
 		return tcell.NewEventKey(tcell.KeyEsc, 0, tcell.ModNone)
 	}
-	if b >= 0x01 && b <= 0x1A {
-		// Map to KeyCtrlA..KeyCtrlZ, with rune set to the lowercase letter
-		// the user pressed (matches tcell's input layer).
-		return tcell.NewEventKey(tcell.KeyCtrlA+tcell.Key(b-1), rune(b)+'`', tcell.ModCtrl)
-	}
-	// Other rare control bytes (0x1c-0x1f). Pass the raw value through;
-	// not used by the finder.
-	return tcell.NewEventKey(tcell.Key(b), 0, tcell.ModCtrl)
+	// NewEventKey fills in the lowercase letter as the rune for
+	// KeyCtrlA..KeyCtrlZ; Ctrl-Space and the 0x1c-0x1f keys carry none.
+	return tcell.NewEventKey(tcell.KeyCtrlSpace+tcell.Key(b), 0, tcell.ModCtrl)
 }
 
 func parseEscape(ch <-chan byte) tcell.Event {
