@@ -39,7 +39,7 @@ func TestOperationRows_Rebase(t *testing.T) {
 	}, "\n"))
 }
 
-func TestOperationRows_MergeCherryPickBisectConflict(t *testing.T) {
+func TestOperationRows_MergeCherryPickBisect(t *testing.T) {
 	t.Parallel()
 	merge := strings.Join(operationRows(git.Operation{
 		Name: git.OpMerge, Stop: git.OpStopConflicts, Subject: "Merge branch 'side'",
@@ -53,9 +53,6 @@ func TestOperationRows_MergeCherryPickBisectConflict(t *testing.T) {
 
 	bisect := strings.Join(operationRows(git.Operation{Name: git.OpBisect, Branch: "main"}, false), "\n")
 	assert.Equal(t, bisect, "  bisecting, from main")
-
-	conflict := strings.Join(operationRows(git.Operation{Name: git.OpConflict}, false), "\n")
-	assert.Equal(t, conflict, "  unresolved conflict")
 
 	assert.Equal(t, len(operationRows(git.Operation{}, false)), 0)
 }

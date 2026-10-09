@@ -18,7 +18,6 @@ const (
 	OpRevert     = "revert"
 	OpBisect     = "bisect"
 	OpSequence   = "sequence"
-	OpConflict   = "conflict"
 )
 
 // Why an operation is sitting still, when that is known. Empty when the files
@@ -105,7 +104,7 @@ func (r Repo) Operation() (Operation, bool) {
 // tree is ready to continue.
 func (r Repo) applyStop(op Operation, editing bool) Operation {
 	switch op.Name {
-	case OpBisect, OpConflict, "":
+	case OpBisect, "":
 		return op
 	}
 	unmerged, known := r.hasUnmerged()

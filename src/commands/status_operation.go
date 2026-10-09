@@ -45,11 +45,7 @@ func operationRows(op git.Operation, color bool) []string {
 
 func formatOpSummary(op git.Operation, color bool) string {
 	var b strings.Builder
-	code := ansiBoldYellow
-	if op.Name == git.OpConflict {
-		code = ansiBoldRed
-	}
-	b.WriteString(paintIf(opGerund(op.Name), code, color))
+	b.WriteString(paintIf(opGerund(op.Name), ansiBoldYellow, color))
 	switch op.Name {
 	case git.OpRebase:
 		if op.Branch != "" {
@@ -96,8 +92,6 @@ func opGerund(name string) string {
 		return "bisecting"
 	case git.OpSequence:
 		return "cherry-pick or revert"
-	case git.OpConflict:
-		return "unresolved conflict"
 	default:
 		return name
 	}
