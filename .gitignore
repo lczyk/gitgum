@@ -18,3 +18,7 @@ cover.html
 
 # go test binaries from `go test -c` / cpuprofile runs
 *.test
+
+# fizzbee model checker output, written next to the spec it ran
+src/litescreen/spec/out/
+src/litescreen/spec/*.json

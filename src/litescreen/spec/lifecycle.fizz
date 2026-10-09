@@ -1,0 +1,375 @@
+---
+# The environment is bounded here; the api calls are bounded too because
+# every one of them is a caller's decision, not a reaction.
+options:
+  crash_on_yield: false
+action_options:
+  Signal:
+    max_actions: 1
+  Winch:
+    max_actions: 2
+  Show:
+    max_actions: 2
+  EnablePaste:
+    max_actions: 1
+  DisablePaste:
+    max_actions: 1
+  InputEOF:
+    max_actions: 1
+  InputByte:
+    max_actions: 2
+  Suspend:
+    max_actions: 2
+  Resume:
+    max_actions: 2
+---
+
+# FizzBee model of the litescreen Screen lifecycle: who owns the terminal
+# at every point between New and Fini, with Suspend/Resume, the signal
+# goroutine, SIGWINCH, the reader goroutine and input EOF interleaving with
+# the caller's api calls.
+#
+# Run: make fizz   (or: fizz src/litescreen/spec/lifecycle.fizz)
+#
+# What is modelled: Init, Suspend, Resume, Fini as the sequences of mutex
+# sections the code actually has (each `atomic:` block is one mu section or
+# one lock-free step); signalLoop, handleResize, Show, EnablePaste,
+# DisablePaste, readLoop start/stop/EOF as single steps. Output bytes are
+# abstracted to "a write happened while the terminal was / was not ours".
+# Api calls are serialised (one in flight at a time): concurrent api calls
+# from several goroutines are not a supported use. The signal goroutine and
+# the reader are the concurrency.
+#
+# Not modelled: the contents of the grid and the diff, the DSR cursor query,
+# type-ahead ordering, ChannelEvents' parser, the darwin stranded-read
+# problem Fini's wait exists for (the wait is taken as given), SIGHUP.
+#
+# Requirements (R-numbers are referenced from the assertions):
+#
+# R1:  THE SYSTEM SHALL write to the terminal only while it holds it: raw
+#      mode entered and the region laid out (or being laid out / torn down
+#      by the same call that entered / leaves raw mode).
+# R2:  WHEN a caught signal is re-raised, THE SYSTEM SHALL have handed the
+#      terminal back first: raw mode restored, region cleared, bracketed
+#      paste off.
+# R3:  WHEN Fini returns, THE SYSTEM SHALL have handed the terminal back,
+#      stopped the reader, closed the byte channel, withdrawn its signal
+#      registrations and released the tty fds.
+# R4:  THE SYSTEM SHALL NOT enter raw mode twice without restoring in
+#      between (a leaked restore leaves the terminal raw).
+# R5:  THE SYSTEM SHALL NOT run two readers at once, run a reader after the
+#      fds are released, send on the closed byte channel or close it twice.
+# R6:  WHILE suspended and no api call is in flight, THE SYSTEM SHALL hold
+#      nothing: no raw mode, no region, no paste, no reader.
+# R7:  WHILE suspended or done, WHEN SIGWINCH arrives or Show is called,
+#      THE SYSTEM SHALL NOT write.
+# R8:  IF entering raw mode fails in Init, THEN THE SYSTEM SHALL release
+#      the fds and refuse further calls; IF it fails in Resume, THEN THE
+#      SYSTEM SHALL stay suspended.
+# R9:  Bracketed paste on the terminal SHALL follow the wanted setting
+#      whenever the region is held, and be off whenever it is not.
+# R10: WHILE running, not suspended and the input has not hit EOF, THE
+#      SYSTEM SHALL have the reader running (input never silently stops).
+#
+# Decisions the model forced: see the "findings" section of the commit
+# that introduced it; the properties below are the agreed ones.
+
+Phase = enum('NEW', 'RUNNING', 'FINISHED')
+Api = enum('NONE', 'INIT', 'SUSPEND', 'RESUME', 'FINI')
+
+action Init:
+    phase = Phase.NEW
+    api = Api.NONE
+    alive = True        # False once a signal was re-raised: the process is gone
+    done = False        # cleanup ran
+    suspended = False
+    fb = False          # a grid exists (takeOver ran at least once)
+    want_paste = False  # s.paste
+    # The terminal's own state, as the shell would see it.
+    t_raw = False
+    t_region = False    # alt screen entered or inline region laid out
+    t_paste = False
+    # Goroutines and channels.
+    reader = False      # readLoop running
+    resumes = 0         # Resumes that took the terminal again
+    eof = False         # inputEOF
+    bytes_open = False
+    sig_reg = False     # sigCh registered with signal.Notify
+    winch_open = False  # winch channel exists and is not closed
+    fds_open = True     # opened at construction
+    # Fault flags; each has an assertion.
+    bad_write = False       # R1
+    raw_twice = False       # R4
+    reader_dup = False      # R5
+    send_closed = False     # R5
+    close_twice = False     # R5
+    raised_dirty = False    # R2, latched at the moment of the re-raise
+
+# write models one Write to out: anything while the terminal is not in raw
+# mode with our region on it lands on the shell's screen.
+atomic func write():
+    if not (t_raw and t_region):
+        bad_write = True
+
+atomic func enter_raw():
+    if t_raw:
+        raw_twice = True
+    t_raw = True
+
+# hand_back is handBack: caller holds mu.
+atomic func hand_back():
+    if want_paste:
+        write()
+        t_paste = False
+    write()
+    t_region = False
+    t_raw = False
+
+# take_over is takeOver: caller holds mu, raw mode already entered.
+atomic func take_over():
+    t_region = True
+    fb = True
+    if want_paste:
+        write()
+        t_paste = True
+
+# cleanup is the body of cleanupOnce: done is the "ran" flag.
+atomic func cleanup():
+    if done:
+        return
+    done = True
+    if suspended:
+        return
+    hand_back()
+
+atomic func start_reader():
+    if eof:
+        return
+    if reader:
+        reader_dup = True
+    reader = True
+
+atomic func stop_reader():
+    reader = False
+
+# ---- api calls (serialised through `api`) --------------------------------
+
+action InitScreen:
+    require alive and api == Api.NONE and phase == Phase.NEW
+    atomic:
+        api = Api.INIT
+        phase = Phase.RUNNING
+    # enterRaw, outside mu.
+    atomic:
+        raw_ok = oneof [True, False]
+        if not raw_ok:
+            fds_open = False
+            phase = Phase.FINISHED
+            api = Api.NONE
+        else:
+            enter_raw()
+    if not raw_ok:
+        return
+    # getSize + queryRow: no screen state. Then takeOver under mu.
+    atomic:
+        require alive
+        take_over()
+    atomic:
+        require alive
+        bytes_open = True
+        start_reader()
+    atomic:
+        require alive
+        winch_open = True
+        sig_reg = True
+        api = Api.NONE
+
+action Suspend:
+    require alive and api == Api.NONE and phase != Phase.NEW
+    # One mu section: guard, stopReader, handBack. The reader never takes
+    # mu, so waiting for it under the lock is safe, and cleanup cannot slip
+    # in between the guard and the hand-back.
+    atomic:
+        api = Api.SUSPEND
+        ok = phase == Phase.RUNNING and not done and not suspended
+        if ok:
+            suspended = True
+            stop_reader()
+            hand_back()
+        api = Api.NONE
+
+action Resume:
+    require alive and api == Api.NONE and phase != Phase.NEW
+    # One mu section: guard, enterRaw, getSize, queryRow, takeOver,
+    # startReader. cleanup runs either before the guard or after the
+    # terminal is held again, never in between.
+    atomic:
+        api = Api.RESUME
+        ok = suspended and not done
+        raw_ok = oneof [True, False]
+        if ok and raw_ok:
+            enter_raw()
+            take_over()
+            suspended = False
+            start_reader()
+            resumes += 1
+        else:
+            api = Api.NONE
+    if not (ok and raw_ok):
+        return
+    # The resize notification goes through the winch channel outside mu;
+    # it only writes once ChannelEvents picks it up (Winch below).
+    atomic:
+        require alive
+        api = Api.NONE
+
+action Fini:
+    require alive and api == Api.NONE and phase != Phase.FINISHED
+    atomic:
+        api = Api.FINI
+        prev = phase
+        phase = Phase.FINISHED
+    if prev == Phase.NEW:
+        atomic:
+            require alive
+            fds_open = False
+            api = Api.NONE
+        return
+    atomic:
+        require alive
+        cleanup()
+    atomic:
+        require alive
+        winch_open = False
+        sig_reg = False
+    atomic:
+        require alive
+        stop_reader()
+    atomic:
+        require alive
+        if not eof:
+            if not bytes_open:
+                close_twice = True
+            bytes_open = False
+    atomic:
+        require alive
+        fds_open = False
+        api = Api.NONE
+
+atomic action Show:
+    require alive and fb
+    if done or suspended:
+        pass
+    else:
+        write()
+
+atomic action EnablePaste:
+    require alive
+    want_paste = True
+    if fb and not done and not suspended:
+        write()
+        t_paste = True
+
+atomic action DisablePaste:
+    require alive
+    want_paste = False
+    if fb and not done and not suspended:
+        write()
+        t_paste = False
+
+# ---- environment -----------------------------------------------------------
+
+# signalLoop: cleanup under mu, signal.Stop, re-raise. One step: the mu
+# section is the only part that touches screen state, and the process is
+# gone after the re-raise.
+atomic action Signal:
+    require alive and sig_reg
+    cleanup()
+    sig_reg = False
+    alive = False
+    if t_raw or t_region or t_paste:
+        raised_dirty = True
+
+# handleResize, driven by ChannelEvents.
+atomic action Winch:
+    require alive and winch_open and fb
+    if done or suspended:
+        pass
+    else:
+        write()
+
+atomic action InputEOF:
+    require alive and reader
+    reader = False
+    eof = True
+    bytes_open = False
+
+atomic action InputByte:
+    require alive and reader
+    if not bytes_open:
+        send_closed = True
+
+atomic action NoOp:
+    pass
+
+# ---- properties ------------------------------------------------------------
+
+always assertion WritesOnlyWhileHeld:       # R1, R7
+    return not bad_write
+
+always assertion ReraiseAfterHandBack:      # R2
+    return not raised_dirty
+
+always assertion FiniReleasesEverything:    # R3
+    if not (phase == Phase.FINISHED and api == Api.NONE and alive):
+        return True
+    return (not fds_open and not reader and not bytes_open and not sig_reg
+            and not winch_open and not t_raw and not t_region and not t_paste)
+
+always assertion RawModeNotNested:          # R4
+    return not raw_twice
+
+always assertion GoroutinesAndChannels:     # R5
+    if reader and not fds_open:
+        return False
+    return not (reader_dup or send_closed or close_twice)
+
+always assertion SuspendedHoldsNothing:     # R6
+    if not (suspended and api == Api.NONE and alive):
+        return True
+    return not t_raw and not t_region and not t_paste and not reader
+
+always assertion ReaderWhileRunning:        # R10
+    if not (phase == Phase.RUNNING and not suspended and not done and not eof and api == Api.NONE and alive):
+        return True
+    return reader
+
+always assertion PasteFollowsRegion:        # R9
+    if api != Api.NONE or not alive:
+        return True
+    if t_region:
+        return t_paste == want_paste
+    return not t_paste
+
+# ---- coverage --------------------------------------------------------------
+
+exists assertion ReachesSuspended:
+    return suspended and api == Api.NONE
+
+exists assertion ResumesWithReader:
+    return resumes > 0 and not suspended and reader and api == Api.NONE
+
+exists assertion SignalWhileSuspended:
+    return not alive and suspended
+
+exists assertion InitRawFails:
+    return phase == Phase.FINISHED and not fb
+
+exists assertion ResumeRawFails:
+    return suspended and api == Api.NONE and done == False and not t_raw and fb and resumes == 0
+
+exists assertion EOFThenFini:
+    return eof and phase == Phase.FINISHED and api == Api.NONE
+
+exists assertion FiniWhileSuspended:
+    return suspended and phase == Phase.FINISHED and api == Api.NONE
