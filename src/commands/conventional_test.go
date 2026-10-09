@@ -17,7 +17,7 @@ func TestColorCommitSubject_Types(t *testing.T) {
 		{"fix", ansiBoldRed},
 		{"revert", ansiRed},
 		{"perf", ansiYellow},
-		{"refactor", ansiPurple},
+		{"refactor", ansiMagenta},
 		{"bench", ansiYellow},
 		{"docs", ansiCyan},
 		{"test", ansiGreen},
@@ -62,8 +62,8 @@ func TestColorCommitSubject_QuestionSuffix(t *testing.T) {
 func TestColorCommitSubject_ScopeAndBang(t *testing.T) {
 	t.Setenv("FORCE_COLOR", "1")
 	got := colorCommitSubject("refactor(api)!: drop old method", nil)
-	assert.ContainsString(t, got, ansiBoldPurple+"refactor"+ansiReset)
-	assert.ContainsString(t, got, ansiBoldPurple+"("+ansiReset)
+	assert.ContainsString(t, got, ansiBoldMagenta+"refactor"+ansiReset)
+	assert.ContainsString(t, got, ansiBoldMagenta+"("+ansiReset)
 	assert.ContainsString(t, got, ansiDim+ansiItalic+"api"+ansiReset)
 	assert.ContainsString(t, got, ansiBoldRed+"!"+ansiReset)
 	assert.Equal(t, stripAnsi(got), "refactor(api)!: drop old method")
@@ -86,21 +86,21 @@ func TestColorCommitSubject_NonConventional(t *testing.T) {
 func TestColorCommitSubject_UnknownType(t *testing.T) {
 	t.Setenv("FORCE_COLOR", "1")
 	got := colorCommitSubject("deps: bump something", nil)
-	assert.ContainsString(t, got, ansiPink+"deps"+ansiReset)
-	assert.ContainsString(t, got, ansiPink+": "+ansiReset)
+	assert.ContainsString(t, got, ansiBrightMagenta+"deps"+ansiReset)
+	assert.ContainsString(t, got, ansiBrightMagenta+": "+ansiReset)
 }
 
 func TestColorCommitSubject_UnknownTypeWithScope(t *testing.T) {
 	t.Setenv("FORCE_COLOR", "1")
 	got := colorCommitSubject("deps(core): bump something", nil)
-	assert.ContainsString(t, got, ansiPink+"deps"+ansiReset)
-	assert.ContainsString(t, got, ansiPink+"("+ansiReset)
+	assert.ContainsString(t, got, ansiBrightMagenta+"deps"+ansiReset)
+	assert.ContainsString(t, got, ansiBrightMagenta+"("+ansiReset)
 }
 
 func TestColorCommitSubject_UnknownTypeBang(t *testing.T) {
 	t.Setenv("FORCE_COLOR", "1")
 	got := colorCommitSubject("deps!: breaking change", nil)
-	assert.ContainsString(t, got, ansiBoldPink+"deps"+ansiReset)
+	assert.ContainsString(t, got, ansiBoldBrightMagenta+"deps"+ansiReset)
 }
 
 func TestColorCommitSubject_LeadingWhitespace(t *testing.T) {

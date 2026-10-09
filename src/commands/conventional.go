@@ -32,7 +32,7 @@ var typeColor = map[string]string{
 	"fix":      ansiBoldRed,
 	"revert":   ansiRed,
 	"perf":     ansiYellow,
-	"refactor": ansiPurple,
+	"refactor": ansiMagenta,
 	"bench":    ansiYellow,
 	"docs":     ansiCyan,
 	"test":     ansiGreen,
@@ -46,7 +46,7 @@ var typeBoldColor = map[string]string{
 	"fix":      ansiBoldRed,
 	"revert":   ansiBoldRed,
 	"perf":     ansiBoldYellow,
-	"refactor": ansiBoldPurple,
+	"refactor": ansiBoldMagenta,
 	"bench":    ansiBoldYellow,
 	"docs":     ansiBoldCyan,
 	"test":     ansiBoldGreen,
@@ -81,9 +81,9 @@ func colorCommitSubject(s string, tags []string) string {
 
 	var col string
 	if unknown {
-		col = ansiPink
+		col = ansiBrightMagenta
 		if suffix == "!" || suffix == "?" {
-			col = ansiBoldPink
+			col = ansiBoldBrightMagenta
 		}
 	} else {
 		col = typeColor[typ]

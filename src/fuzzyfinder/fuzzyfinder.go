@@ -451,7 +451,7 @@ func (f *finder) _draw() {
 	pw := len(fmt.Sprintf("%d", maxPages))
 
 	yellow := tcell.StyleDefault.Foreground(tcell.ColorYellow).Background(tcell.ColorDefault)
-	grey := tcell.StyleDefault.Foreground(tcell.ColorDarkGray).Background(tcell.ColorDefault)
+	grey := tcell.StyleDefault.Foreground(tcell.ColorGray).Background(tcell.ColorDefault)
 	col := 0
 	emit := func(s string, st tcell.Style) {
 		for _, r := range s {
@@ -575,7 +575,7 @@ func (f *finder) _draw() {
 			}
 			if i == f.state.cursorY {
 				if hasHighlighted {
-					style = tcell.StyleDefault.Foreground(tcell.ColorDarkCyan).Bold(true).Background(tcell.ColorBlack)
+					style = tcell.StyleDefault.Foreground(tcell.ColorTeal).Bold(true).Background(tcell.ColorBlack)
 				} else {
 					style = tcell.StyleDefault.Foreground(tcell.ColorYellow).Bold(true).Background(tcell.ColorBlack)
 				}
@@ -612,7 +612,7 @@ func (f *finder) _draw() {
 		}
 		thumbOff = min(maxOffset, max(0, thumbOff))
 
-		trackStyle := tcell.StyleDefault.Foreground(tcell.ColorDarkGray).Background(tcell.ColorDefault)
+		trackStyle := tcell.StyleDefault.Foreground(tcell.ColorGray).Background(tcell.ColorDefault)
 		thumbStyle := tcell.StyleDefault.Foreground(tcell.ColorYellow).Background(tcell.ColorDefault)
 		col := maxWidth - 1
 		for row := range trackHeight {

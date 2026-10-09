@@ -61,8 +61,8 @@ const (
 	ansiBlue    = "\033[34m"
 	ansiMagenta = "\033[35m"
 	ansiCyan    = "\033[36m"
-	ansiPurple  = "\033[38;5;97m"
-	ansiPink    = "\033[38;5;205m"
+	// Bright magenta is the closest the 16-colour palette has to pink.
+	ansiBrightMagenta = "\033[95m"
 )
 
 func dim(s string) string { return paint(ansiDim, s) }
