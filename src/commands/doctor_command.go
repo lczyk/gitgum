@@ -29,7 +29,7 @@ func (d *DoctorCommand) Execute(args []string) error {
 }
 
 // renderFindings prints findings grouped fixable-first, each with its check id,
-// message, and (for fixables) an indented suggested command. A clean repo prints
+// message, and an indented line per suggested command. A clean repo prints
 // a single confirmation line.
 func renderFindings(out io.Writer, findings []doctor.Finding) {
 	if len(findings) == 0 {
@@ -52,8 +52,8 @@ func renderFindings(out io.Writer, findings []doctor.Finding) {
 			nFix++
 		}
 		fmt.Fprintf(out, "%s [%s] %s\n", paint(code, label), f.Check, f.Message)
-		if f.Severity == doctor.SevFixable && f.Fix != "" {
-			fmt.Fprintf(out, "    %s %s\n", paint(ansiDim, "fix:"), f.Fix)
+		for _, fix := range f.Fixes {
+			fmt.Fprintf(out, "    %s %s\n", paint(ansiDim, "fix:"), fix)
 		}
 	}
 

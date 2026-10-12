@@ -23,7 +23,8 @@ import (
 //   - Fixable: a known, deterministic inconsistency with a suggested remediation
 //     (e.g. a misnamed github remote). doctor prints the fix; it does not run it.
 //   - Warning: something doctor can't reason about (custom remote url, divergent
-//     upstreams). informational only; never blocks gg.
+//     upstreams). informational only; never blocks gg. may still suggest fixes,
+//     as alternatives for the user to pick between.
 type Severity int
 
 const (
@@ -36,7 +37,7 @@ type Finding struct {
 	Check    string   // check id, e.g. "remote-naming"
 	Severity Severity // Fixable | Warning
 	Message  string   // human description of what's wrong
-	Fix      string   // suggested remediation command; only meaningful for SevFixable
+	Fixes    []string // suggested remediation commands
 }
 
 // facts is the git state the checks read, taken once per run and shared.
@@ -144,7 +145,7 @@ func checkRemoteNaming(f *facts) []Finding {
 		if name != ref.Owner() {
 			out = append(out, Finding{Check: "remote-naming", Severity: SevFixable,
 				Message: fmt.Sprintf("remote %q points at %s user %q but is not named after it", name, ref.Forge, ref.Owner()),
-				Fix:     fmt.Sprintf("git remote rename %s %s", name, ref.Owner())})
+				Fixes:   []string{fmt.Sprintf("git remote rename %s %s", name, ref.Owner())}})
 		}
 	}
 	return out
@@ -208,7 +209,7 @@ func checkLayout(f *facts) []Finding {
 		if nameOK && !MatchesRepoDir(filepath.Base(clean), repoName) {
 			out = append(out, Finding{Check: "dir-naming", Severity: SevFixable,
 				Message: fmt.Sprintf("worktree dir %q does not match the %q / %q-N pattern", clean, repoName, repoName),
-				Fix:     fmt.Sprintf("mv %s %s", clean, filepath.Join(parent, repoName))})
+				Fixes:   []string{fmt.Sprintf("mv %s %s", clean, filepath.Join(parent, repoName))}})
 		}
 	}
 
@@ -346,7 +347,7 @@ func checkPRBranchNaming(f *facts) []Finding {
 			newName := pr.BranchName(remote, numbers[i])
 			out = append(out, Finding{Check: "pr-branch-naming", Severity: SevFixable,
 				Message: fmt.Sprintf("branch %q uses the old pr-N naming; gg now names PR branches pr/<remote>/<number>", b),
-				Fix:     fmt.Sprintf("git branch -m %s %s", b, newName)})
+				Fixes:   []string{fmt.Sprintf("git branch -m %s %s", b, newName)}})
 		} else {
 			out = append(out, Finding{Check: "pr-branch-naming", Severity: SevWarning,
 				Message: fmt.Sprintf("branch %q uses the old pr-N naming; rename to pr/<remote>/%d (which remote is ambiguous -- several configured)", b, numbers[i])})
@@ -413,12 +414,13 @@ func checkPrunableWorktrees(f *facts) []Finding {
 	sort.Strings(stale)
 	return []Finding{{Check: "prunable-worktree", Severity: SevFixable,
 		Message: fmt.Sprintf("registered worktree(s) no longer on disk: %s", strings.Join(stale, ", ")),
-		Fix:     "git worktree prune"}}
+		Fixes:   []string{"git worktree prune"}}}
 }
 
 // checkGoneUpstreams warns about branches whose upstream was deleted on the
 // remote. Whether to unset tracking or delete the branch is intent gg can't
-// guess, so it's unfixable.
+// guess, so it's a warning offering both. -d rather than -D so an unmerged
+// branch (e.g. after a squash merge) stops at git's own check.
 func checkGoneUpstreams(f *facts) []Finding {
 	if f.branchesErr != nil {
 		return nil // checkUpstreams surfaces branch-listing failures
@@ -429,7 +431,8 @@ func checkGoneUpstreams(f *facts) []Finding {
 			continue
 		}
 		out = append(out, Finding{Check: "gone-upstream", Severity: SevWarning,
-			Message: fmt.Sprintf("branch %q tracks an upstream that no longer exists on the remote; unset it (git branch --unset-upstream %s) or delete the branch", b.Name, b.Name)})
+			Message: fmt.Sprintf("branch %q tracks an upstream that no longer exists on the remote", b.Name),
+			Fixes:   []string{"git branch --unset-upstream " + b.Name, "git branch -d " + b.Name}})
 	}
 	return out
 }

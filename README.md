@@ -251,7 +251,7 @@ Diagnose known inconsistencies in the repo's remote / worktree layout and branch
 - `dir-naming` / `worktree-parent` / `adjacent-worktree` -- worktree dirs should match `<repo>` / `<repo>-N`, sit next to the main worktree, and sibling dirs matching that pattern that aren't worktrees of this repo are flagged as likely stray clones.
 - `pr-branch-naming` -- a branch from the old `pr-N` scheme should be renamed to `pr/<remote>/<number>` (see [`checkout-pr`](#gitgum-checkout-pr)); fixable when the remote is unambiguous (a sole remote, or a sole forge remote), a warning otherwise.
 - `prunable-worktree` -- a registered worktree whose directory is gone (fixable by pruning).
-- `gone-upstream` -- a branch whose upstream was deleted on the remote (warning).
+- `gone-upstream` -- a branch whose upstream was deleted on the remote (warning; suggests either unsetting the upstream or deleting the branch).
 - `duplicate-remote` -- two remotes pointing at the same url (warning).
 - `cd-wrapper` -- the [shell function](#the-cd-wrapper) behind `gg w` is not installed in the calling shell (fixable; the fix names your `$SHELL`). Detected via a marker the function sets, so this is about the shell you ran doctor from, not the repo.
 

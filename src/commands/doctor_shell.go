@@ -31,5 +31,5 @@ func checkCdWrapper(getenv func(string) string) []doctor.Finding {
 	}
 	return []doctor.Finding{{Check: "cd-wrapper", Severity: doctor.SevFixable,
 		Message: "the shell function that lets `gg worktree-switch` / `gg w` change directory is not installed in this shell",
-		Fix:     fix}}
+		Fixes:   []string{fix}}}
 }

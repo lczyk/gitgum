@@ -83,7 +83,7 @@ func TestCheckRemoteNaming(t *testing.T) {
 	}
 	require.Equal(t, len(fixable), 1, "one fixable (origin)")
 	assert.ContainsString(t, fixable[0].Message, `remote "origin"`)
-	assert.Equal(t, fixable[0].Fix, "git remote rename origin lczyk")
+	assert.EqualArrays(t, fixable[0].Fixes, []string{"git remote rename origin lczyk"})
 
 	require.Equal(t, len(warning), 1, "one warning (custom url)")
 	assert.ContainsString(t, warning[0].Message, `remote "custom"`)
@@ -169,7 +169,7 @@ func TestCheckLayout_DirNaming(t *testing.T) {
 	}
 	require.Equal(t, len(naming), 1, "dir named wrongname flagged")
 	assert.Equal(t, naming[0].Severity, SevFixable)
-	assert.ContainsString(t, naming[0].Fix, "gitgum")
+	assert.ContainsString(t, naming[0].Fixes[0], "gitgum")
 }
 
 func TestCheckLayout_CleanNoGithubRemote(t *testing.T) {
@@ -193,7 +193,7 @@ func TestCheckPRBranchNaming_SingleRemoteFixable(t *testing.T) {
 	require.Equal(t, len(findings), 1, "one old pr-N branch")
 	assert.Equal(t, findings[0].Check, "pr-branch-naming")
 	assert.Equal(t, findings[0].Severity, SevFixable)
-	assert.Equal(t, findings[0].Fix, "git branch -m pr-51 pr/origin/51")
+	assert.EqualArrays(t, findings[0].Fixes, []string{"git branch -m pr-51 pr/origin/51"})
 }
 
 func TestCheckPRBranchNaming_AmbiguousRemoteWarns(t *testing.T) {
@@ -206,7 +206,7 @@ func TestCheckPRBranchNaming_AmbiguousRemoteWarns(t *testing.T) {
 	findings := checkPRBranchNaming(newFacts(git.Repo{Dir: dir}))
 	require.Equal(t, len(findings), 1, "one old pr-N branch")
 	assert.Equal(t, findings[0].Severity, SevWarning)
-	assert.Equal(t, findings[0].Fix, "")
+	assert.Len(t, findings[0].Fixes, 0)
 }
 
 func TestCheckPRBranchNaming_NewSchemeIgnored(t *testing.T) {
@@ -232,7 +232,7 @@ func TestCheckPrunableWorktrees(t *testing.T) {
 	require.Equal(t, len(findings), 1, "the removed worktree is prunable")
 	assert.Equal(t, findings[0].Check, "prunable-worktree")
 	assert.Equal(t, findings[0].Severity, SevFixable)
-	assert.Equal(t, findings[0].Fix, "git worktree prune")
+	assert.EqualArrays(t, findings[0].Fixes, []string{"git worktree prune"})
 }
 
 func TestCheckGoneUpstreams(t *testing.T) {
@@ -248,6 +248,7 @@ func TestCheckGoneUpstreams(t *testing.T) {
 	assert.Equal(t, findings[0].Check, "gone-upstream")
 	assert.Equal(t, findings[0].Severity, SevWarning)
 	assert.ContainsString(t, findings[0].Message, "main")
+	assert.EqualArrays(t, findings[0].Fixes, []string{"git branch --unset-upstream main", "git branch -d main"})
 }
 
 func TestCheckDuplicateRemotes(t *testing.T) {

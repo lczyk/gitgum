@@ -23,7 +23,8 @@ func TestRenderFindings_Grouped(t *testing.T) {
 	var buf bytes.Buffer
 	renderFindings(&buf, []doctor.Finding{
 		{Check: "upstream-consistency", Severity: doctor.SevWarning, Message: "two remotes"},
-		{Check: "remote-naming", Severity: doctor.SevFixable, Message: "misnamed", Fix: "git remote rename a b"},
+		{Check: "remote-naming", Severity: doctor.SevFixable, Message: "misnamed", Fixes: []string{"git remote rename a b"}},
+		{Check: "gone-upstream", Severity: doctor.SevWarning, Message: "gone", Fixes: []string{"git branch --unset-upstream x", "git branch -d x"}},
 	})
 	got := buf.String()
 	// fixable sorts before warning regardless of input order.
@@ -31,8 +32,11 @@ func TestRenderFindings_Grouped(t *testing.T) {
 		"fixable [remote-naming] misnamed",
 		"    fix: git remote rename a b",
 		"warning [upstream-consistency] two remotes",
+		"warning [gone-upstream] gone",
+		"    fix: git branch --unset-upstream x",
+		"    fix: git branch -d x",
 		"",
-		"1 fixable, 1 warning(s).",
+		"1 fixable, 2 warning(s).",
 		"",
 	}, "\n")
 	assert.Equal(t, got, want)

@@ -29,6 +29,6 @@ func TestCheckCdWrapper(t *testing.T) {
 		require.Equal(t, len(got), 1, shell)
 		assert.Equal(t, got[0].Check, "cd-wrapper")
 		assert.Equal(t, got[0].Severity, doctor.SevFixable)
-		assert.ContainsString(t, got[0].Fix, wantFix)
+		assert.ContainsString(t, got[0].Fixes[0], wantFix)
 	}
 }
