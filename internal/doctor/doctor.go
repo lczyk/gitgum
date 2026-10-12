@@ -106,6 +106,7 @@ var doctorChecks = []func(*facts) []Finding{
 	checkPrunableWorktrees,
 	checkGoneUpstreams,
 	checkDuplicateRemotes,
+	checkReservedRemoteNames,
 }
 
 // Diagnose runs every doctor check against r and returns the combined findings
@@ -435,6 +436,32 @@ func checkGoneUpstreams(f *facts) []Finding {
 			Fixes:   []string{"git branch --unset-upstream " + b.Name, "git branch -d " + b.Name}})
 	}
 	return out
+}
+
+// checkReservedRemoteNames flags a remote named "local". gg names local
+// branches local/<branch> in its messages, as if "local" were a remote, so a
+// real remote of that name makes every such message ambiguous. The fix is a
+// rename; to the forge owner when the url names one (remote-naming's rule), to
+// a placeholder otherwise.
+func checkReservedRemoteNames(f *facts) []Finding {
+	if f.remotesErr != nil {
+		return nil // remote-naming surfaces remote-listing failures
+	}
+	for _, name := range f.remotes {
+		if name != "local" {
+			continue
+		}
+		target := "<name>"
+		if url, err := f.remoteURL(name); err == nil {
+			if ref, ok := git.ParseRepoRef(url); ok && ref.Forge != git.ForgeUnknown {
+				target = ref.Owner()
+			}
+		}
+		return []Finding{{Check: "reserved-remote-name", Severity: SevWarning,
+			Message: `remote "local" collides with how gg names local branches (local/<branch>)`,
+			Fixes:   []string{"git remote rename local " + target}}}
+	}
+	return nil
 }
 
 // checkDuplicateRemotes warns when two remotes point at the same url -- usually
