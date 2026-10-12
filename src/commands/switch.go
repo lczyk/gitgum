@@ -246,13 +246,17 @@ func (s *SwitchCommand) Execute(args []string) error {
 		return err
 	}
 
+	// Caught from the stash on, not from the landing: a Ctrl-C between the two
+	// would otherwise kill gg with the stash made and its pop never run.
+	intr := catchInterrupts()
+	defer intr.stop()
 	cleanup, err := applyDirty()
 	if err != nil {
-		return err
+		return intr.or(err)
 	}
 	defer cleanup()
 
-	return act()
+	return intr.or(act())
 }
 
 // planSelection resolves what the picked entry means and returns the action

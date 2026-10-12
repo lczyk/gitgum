@@ -104,10 +104,15 @@ func (c *CloneCommand) Execute(args []string) error {
 		fmt.Fprintln(c.err(), plan.note)
 	}
 
+	// Caught from here so a Ctrl-C in the route step after the clone still
+	// reaches undoPRCheckout, and one during the clone reports as a cancel.
+	intr := catchInterrupts()
+	defer intr.stop()
+
 	// clone streams progress live and preserves the user's git config
 	// (credential helpers etc) so private repos authenticate.
 	if err := c.repo().RunWriteStream(plan.args...); err != nil {
-		return fmt.Errorf("git clone failed: %w", err)
+		return intr.or(fmt.Errorf("git clone failed: %w", err))
 	}
 
 	// Show the whole tree's compact diffstat -- every file as an addition,
@@ -128,7 +133,7 @@ func (c *CloneCommand) Execute(args []string) error {
 			paint(ansiBoldGreen, plan.dir), paint(ansiBoldCyan, plan.remote))
 	}
 
-	return c.applyRoute(plan, rp)
+	return intr.or(c.applyRoute(plan, rp))
 }
 
 // applyRoute finishes what the url asked for once the repo is on disk. A

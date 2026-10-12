@@ -118,7 +118,15 @@ func (c *CheckoutPRCommand) getPRRefs(remote string) ([]pr.Ref, error) {
 	return pr.ParseRefs(pr.ForgeOf(c.repo(), remote), stdout), nil
 }
 
+// checkoutPR lands on the PR's branch. Ctrl-C is caught for the whole of it so
+// a stash made on the way is popped again rather than left behind.
 func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType string) error {
+	intr := catchInterrupts()
+	defer intr.stop()
+	return intr.or(c.landOnPR(remote, prNumber, prType))
+}
+
+func (c *CheckoutPRCommand) landOnPR(remote string, prNumber int, prType string) error {
 	meta := pr.Meta{Remote: remote, Number: prNumber, Type: prType}
 	branchName := pr.BranchName(remote, prNumber)
 	prRef := meta.FetchRef(pr.ForgeOf(c.repo(), remote))

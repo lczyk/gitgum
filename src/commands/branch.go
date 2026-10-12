@@ -102,9 +102,11 @@ func (b *BranchCommand) Execute(args []string) error {
 		return fmt.Errorf("'%s' already exists; use `gg switch` to switch to it", localRef(name))
 	}
 
+	intr := catchInterrupts()
+	defer intr.stop()
 	cleanup, err := applyDirty()
 	if err != nil {
-		return err
+		return intr.or(err)
 	}
 	defer cleanup()
 
@@ -113,7 +115,7 @@ func (b *BranchCommand) Execute(args []string) error {
 		create = r.CheckoutNewBranchNoTrack
 	}
 	if err := create(name, sp.ref); err != nil {
-		return fmt.Errorf("creating '%s': %w", localRef(name), err)
+		return intr.or(fmt.Errorf("creating '%s': %w", localRef(name), err))
 	}
 
 	fmt.Fprintf(b.out(), "Created and switched to '%s' off '%s'.\n", localRef(name), sp.ref)

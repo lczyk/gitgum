@@ -90,6 +90,12 @@ func (d *DeleteCommand) applyDeletion(selected string) error {
 		return err
 	}
 
+	intr := catchInterrupts()
+	defer intr.stop()
+	return intr.or(d.deleteEntry(typ, name))
+}
+
+func (d *DeleteCommand) deleteEntry(typ, name string) error {
 	switch typ {
 	case "local":
 		return d.deleteLocal(name)

@@ -54,14 +54,16 @@ func (e *EmptyCommand) Execute(args []string) error {
 		}
 	}
 
+	intr := catchInterrupts()
+	defer intr.stop()
 	cleanup, err := applyDirty()
 	if err != nil {
-		return err
+		return intr.or(err)
 	}
 	defer cleanup()
 
 	if err := r.CommitEmpty("chore: empty commit"); err != nil {
-		return fmt.Errorf("creating empty commit: %w", err)
+		return intr.or(fmt.Errorf("creating empty commit: %w", err))
 	}
 	fmt.Fprintf(e.out(), "Created empty commit on '%s'.\n", localRef(currentBranch))
 
@@ -72,7 +74,7 @@ func (e *EmptyCommand) Execute(args []string) error {
 		return nil
 	}
 	if err := r.Push(); err != nil {
-		return fmt.Errorf("pushing: %w", err)
+		return intr.or(fmt.Errorf("pushing: %w", err))
 	}
 	fmt.Fprintln(e.out(), "Pushed to remote.")
 	return nil

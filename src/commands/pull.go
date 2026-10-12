@@ -127,16 +127,17 @@ func (p *PullCommand) pullBranch(currentBranch string) error {
 		}
 	}
 
+	// Caught before the stash is made, so a Ctrl-C anywhere from here reaches
+	// the undo below as a cancel -- and the deferred pop -- rather than
+	// killing gg with the operation half done.
+	intr := catchInterrupts()
+	defer intr.stop()
 	cleanup, err := handleDirtyTree(&p.cmdIO, "pull")
 	if err != nil {
-		return err
+		return intr.or(err)
 	}
 	defer cleanup()
 
-	// Caught so a Ctrl-C mid-git reaches the undo below as a cancel rather
-	// than killing gg with the operation half done.
-	intr := catchInterrupts()
-	defer intr.stop()
 	if err := p.repo().Integrate(mode, upstream); err != nil {
 		return p.undoIntegrate(currentBranch, mode, localCommit, intr.or(err))
 	}

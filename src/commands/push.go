@@ -2,11 +2,8 @@ package commands
 
 import (
 	"fmt"
-	"os"
-	"os/signal"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/lczyk/gitgum/internal/git"
 	"github.com/lczyk/gitgum/internal/ui"
@@ -64,7 +61,10 @@ func (p *PushCommand) Execute(args []string) error {
 		// Ask the remote where the upstream is now: the remote-tracking ref is a
 		// local cache, and pushing against a stale one is exactly what produces
 		// the surprise non-fast-forward rejection this flow exists to catch. A
-		// local upstream (no remote in the name) has no one to ask.
+		// local upstream (no remote in the name) has no one to ask. The probe
+		// also refreshes the remote-tracking ref (SyncTrackingRef): the one
+		// write gg allows itself before its questions are done, since it
+		// touches nothing of the user's.
 		var remoteCommit string
 		if remote, branch, ok := strings.Cut(remoteBranch, "/"); ok {
 			tip, exists, err := p.probeBranch(remote, branch)
@@ -495,51 +495,4 @@ func (p *PushCommand) undoInterrupted(currentBranch, before, step string) error 
 	}
 	fmt.Fprintf(p.err(), "Interrupted: undid the %s, so '%s' is back where it was.\n", step, localRef(currentBranch))
 	return ui.ErrCancelled
-}
-
-// interrupts catches Ctrl-C while push is changing things, so gg lives to undo
-// what it has done instead of dying part-way; git, sent the same signal, still
-// stops.
-type interrupts struct {
-	ch  chan os.Signal
-	hit bool
-}
-
-func catchInterrupts() *interrupts {
-	i := &interrupts{ch: make(chan os.Signal, 1)}
-	signal.Notify(i.ch, os.Interrupt)
-	return i
-}
-
-func (i *interrupts) stop() { signal.Stop(i.ch) }
-
-// seen reports whether a Ctrl-C has arrived since catching began.
-func (i *interrupts) seen() bool {
-	if !i.hit {
-		select {
-		case <-i.ch:
-			i.hit = true
-		default:
-		}
-	}
-	return i.hit
-}
-
-// or turns a failure into a cancel when a Ctrl-C caused it. The signal can
-// trail the failure it caused by a moment, so it is given one.
-func (i *interrupts) or(err error) error {
-	if err == nil {
-		return nil
-	}
-	if !i.hit {
-		select {
-		case <-i.ch:
-			i.hit = true
-		case <-time.After(100 * time.Millisecond):
-		}
-	}
-	if i.hit {
-		return ui.ErrCancelled
-	}
-	return err
 }

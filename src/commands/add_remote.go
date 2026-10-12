@@ -1,10 +1,12 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/lczyk/gitgum/internal/git"
+	"github.com/lczyk/gitgum/internal/ui"
 )
 
 // AddRemoteCommand adds a git remote using gg's naming rules: the remote is
@@ -80,17 +82,25 @@ func (c *AddRemoteCommand) Execute(args []string) error {
 			"use `git remote set-url %s %s` to repoint it", name, existing, name, url)
 	}
 
+	// Caught so a Ctrl-C during the fetch still reaches the rollback below.
+	intr := catchInterrupts()
+	defer intr.stop()
 	if err := c.repo().AddRemote(name, url); err != nil {
-		return fmt.Errorf("adding remote: %w", err)
+		return intr.or(fmt.Errorf("adding remote: %w", err))
 	}
 	fmt.Fprintf(c.out(), "added remote %s -> %s\n", paint(ansiBoldCyan, name), url)
 
 	// Transactional fetch: roll the remote back if the fetch fails, so an
 	// unreachable/misspelled repo doesn't leave a dangling remote.
 	if err := c.repo().Fetch(name, ""); err != nil {
+		err = intr.or(err)
 		if rmErr := c.repo().RemoveRemote(name); rmErr != nil {
 			return fmt.Errorf("fetch from new remote %q failed (%w); "+
 				"rolling it back also failed: %v", name, err, rmErr)
+		}
+		if errors.Is(err, ui.ErrCancelled) {
+			fmt.Fprintf(c.err(), "Interrupted: removed remote %s again.\n", name)
+			return err
 		}
 		return fmt.Errorf("fetch from new remote %q failed, removed it again: %w", name, err)
 	}
