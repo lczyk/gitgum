@@ -88,12 +88,9 @@ func (r *ReleaseCommand) Execute(args []string) error {
 		return nil
 	}
 
-	cleanup, err := handleDirtyTree(&r.cmdIO, "release")
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
+	// Everything that can refuse cheaply -- an unparseable version, a bump
+	// git already has a tag for -- is read before the working tree is touched,
+	// so a refusal costs the user nothing.
 	var (
 		header, prefixes []string
 		current, next    string
@@ -126,6 +123,14 @@ func (r *ReleaseCommand) Execute(args []string) error {
 			return fmt.Errorf("tag %s already exists", t)
 		}
 	}
+
+	intr := catchInterrupts()
+	defer intr.stop()
+	cleanup, err := handleDirtyTree(&r.cmdIO, "release")
+	if err != nil {
+		return intr.or(err)
+	}
+	defer cleanup()
 
 	fmt.Fprintf(r.out(), "Bumping %s -> %s\n", current, next)
 
