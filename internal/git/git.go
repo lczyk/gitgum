@@ -279,19 +279,27 @@ func (r Repo) RemoteBranches() (map[string][]string, error) {
 // Returns ("", "", nil) if the branch has no upstream configured. Uses for-each-ref
 // rather than rev-parse @{u} so a "gone" upstream (config still set, remote ref pruned)
 // returns the configured names instead of erroring.
+//
+// A branch tracking another local branch has the remote ".", and its upstream
+// short name is then the bare branch -- no "<remote>/" to cut on -- so the
+// remote is read from its own field rather than split off the short name.
 func (r Repo) GetBranchUpstream(branch string) (remote string, remoteBranch string, err error) {
-	stdout, _, err := r.run("for-each-ref", "--format=%(upstream:short)", "refs/heads/"+branch)
+	stdout, _, err := r.run("for-each-ref", "--format=%(upstream:remotename)\t%(upstream:short)", "refs/heads/"+branch)
 	if err != nil {
 		return "", "", err
 	}
-	if stdout == "" {
+	remote, short, _ := strings.Cut(stdout, "\t")
+	if short == "" {
 		return "", "", nil
 	}
-	parts := strings.SplitN(stdout, "/", 2)
-	if len(parts) != 2 {
+	if remote == "." {
+		return remote, short, nil
+	}
+	remoteBranch, ok := strings.CutPrefix(short, remote+"/")
+	if remote == "" || !ok {
 		return "", "", fmt.Errorf("unexpected upstream format: %s", stdout)
 	}
-	return parts[0], parts[1], nil
+	return remote, remoteBranch, nil
 }
 
 // GetBranchTrackingRemote returns the remote that a local branch tracks, or "" if none.
