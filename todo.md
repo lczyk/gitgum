@@ -55,9 +55,12 @@ code other commands share.
     delete doesn't restore it.
   - checkout-pr: WriteMeta runs after ResetHard, with no undo or hint if
     it fails.
-  - release: the version-mention picker runs after the auto-stash.
-  - switch / branch: pull's prompts run after the checkout, so cancelling
-    them leaves you switched.
+  - release: the version-mention picker runs after the auto-stash. the
+    scan reads the working tree, so moving it ahead of the stash means
+    scanning HEAD's content instead (git show HEAD:<path>), or the edits
+    land on lines the stash moved.
+  - branch: a failed create leaves nothing behind, so it has no landing
+    journal; it is the one landing without a pull.
   - empty / release: decide whether the commit is undone when the push /
     tag after it fails (today it's kept; release prints an undo).
 - a Ctrl-C landing just as a step in push succeeds can be missed:
