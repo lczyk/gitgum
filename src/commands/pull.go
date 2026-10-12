@@ -13,10 +13,16 @@ type PullCommand struct {
 	cmdIO
 }
 
-// pullModes lists the integration strategies offered in the picker, in
-// display order. ff-only leads: it's the safe default that refuses to create
-// a merge commit or rewrite history behind your back.
-var pullModes = []git.PullMode{git.PullFFOnly, git.PullRebase, git.PullMerge}
+// pullModes lists the integration strategies the picker offers once local and
+// upstream have diverged, in display order. A fast-forward is not among them:
+// it cannot succeed on a diverged branch, and that is the only case the picker
+// is shown for. Rebase leads as the one that keeps history linear without
+// discarding anything.
+var pullModes = []git.PullMode{git.PullRebase, git.PullMerge, git.PullReset}
+
+// pullLeaveLabel is the picker's way out that is not a cancel: the branch is
+// left as it is and the command ends having done nothing, exit 0.
+const pullLeaveLabel = "leave as is"
 
 // errNoUpstream is the sentinel pullBranch returns when a non-PR branch has no
 // upstream. The `gg pull` command turns it into a user-facing error; `gg switch`
@@ -36,7 +42,7 @@ func (p *PullCommand) Execute(args []string) error {
 
 	err = p.pullBranch(currentBranch)
 	if errors.Is(err, errNoUpstream) {
-		return fmt.Errorf("no upstream configured for branch '%s'", currentBranch)
+		return fmt.Errorf("no upstream configured for '%s'", localRef(currentBranch))
 	}
 	return err
 }
@@ -86,7 +92,7 @@ func (p *PullCommand) pullBranch(currentBranch string) error {
 		return fmt.Errorf("getting upstream commit: %w", err)
 	}
 	if localCommit == remoteCommit {
-		fmt.Fprintf(p.out(), "Already up to date. Local branch '%s' matches '%s'.\n", currentBranch, upstream)
+		fmt.Fprintf(p.out(), "Already up to date. '%s' matches '%s'.\n", localRef(currentBranch), upstream)
 		return nil
 	}
 
@@ -104,15 +110,20 @@ func (p *PullCommand) pullBranch(currentBranch string) error {
 	}
 	localAhead, upstreamAhead := ahead > 0, behind > 0
 	if localAhead && !upstreamAhead {
-		fmt.Fprintf(p.out(), "Nothing to pull. Local branch '%s' is ahead of '%s'.\n", currentBranch, upstream)
+		fmt.Fprintf(p.out(), "Nothing to pull. '%s' is ahead of '%s'.\n", localRef(currentBranch), upstream)
 		return nil
 	}
 
 	mode := git.PullFFOnly // strictly behind: every mode fast-forwards.
 	if localAhead {        // diverged: let the user pick how to reconcile.
-		mode, err = p.selectMode(currentBranch, upstream)
+		mode, err = p.selectMode(currentBranch, upstream, ahead, behind)
 		if err != nil {
 			return err
+		}
+		if mode == pullLeave {
+			fmt.Fprintf(p.out(), "Left '%s' as it is: ahead %d, behind %d of '%s'.\n",
+				localRef(currentBranch), ahead, behind, upstream)
+			return nil
 		}
 	}
 
@@ -122,8 +133,12 @@ func (p *PullCommand) pullBranch(currentBranch string) error {
 	}
 	defer cleanup()
 
+	// Caught so a Ctrl-C mid-git reaches the undo below as a cancel rather
+	// than killing gg with the operation half done.
+	intr := catchInterrupts()
+	defer intr.stop()
 	if err := p.repo().Integrate(mode, upstream); err != nil {
-		return err
+		return p.undoIntegrate(currentBranch, mode, localCommit, intr.or(err))
 	}
 
 	// Render what landed in the same style as `gg diff` (coloured
@@ -136,7 +151,7 @@ func (p *PullCommand) pullBranch(currentBranch string) error {
 		}
 	}
 
-	fmt.Fprintf(p.out(), "Pulled '%s' into '%s' (%s).\n", upstream, currentBranch, mode)
+	fmt.Fprintf(p.out(), "Pulled '%s' into '%s' (%s).\n", upstream, localRef(currentBranch), mode)
 	return nil
 }
 
@@ -203,7 +218,7 @@ func (p *PullCommand) pullPR(branch string, m pr.Meta) error {
 		return fmt.Errorf("getting fetched PR commit: %w", err)
 	}
 	if local == fetched {
-		fmt.Fprintf(p.out(), "Already up to date. Branch '%s' matches PR #%d (%s).\n", branch, m.Number, m.Type)
+		fmt.Fprintf(p.out(), "Already up to date. '%s' matches PR #%d (%s).\n", localRef(branch), m.Number, m.Type)
 		return nil
 	}
 
@@ -215,7 +230,7 @@ func (p *PullCommand) pullPR(branch string, m pr.Meta) error {
 	}
 	if localAhead {
 		confirmed, err := p.sel().Confirm(
-			fmt.Sprintf("Branch '%s' has diverged from PR #%d (force-push or local commits). Reset it to the PR head, discarding local commits?", branch, m.Number),
+			fmt.Sprintf("'%s' has diverged from PR #%d (force-push or local commits). Reset it to the PR head, discarding local commits?", localRef(branch), m.Number),
 			false,
 		)
 		if err != nil {
@@ -240,23 +255,36 @@ func (p *PullCommand) pullPR(branch string, m pr.Meta) error {
 	if summary, derr := diffSummary(p.repo(), 0, local+".."+fetched); derr == nil && summary != "" {
 		fmt.Fprintln(p.out(), summary)
 	}
-	fmt.Fprintf(p.out(), "Updated '%s' to PR #%d (%s).\n", branch, m.Number, m.Type)
+	fmt.Fprintf(p.out(), "Updated '%s' to PR #%d (%s).\n", localRef(branch), m.Number, m.Type)
 	return nil
 }
 
+// pullLeave is the mode selectMode hands back for the "leave as is" row. It is
+// not a git.PullMode Integrate knows, so a caller that forgets to check for it
+// gets an "unknown pull mode" error rather than a silent no-op.
+const pullLeave git.PullMode = -1
+
 // selectMode prompts for an integration strategy and maps the chosen label
-// back to its PullMode. Labels come straight from PullMode.String(), so the
-// picker and the mode stay in sync.
-func (p *PullCommand) selectMode(currentBranch, upstream string) (git.PullMode, error) {
-	labels := make([]string, len(pullModes))
-	byLabel := make(map[string]git.PullMode, len(pullModes))
-	for i, m := range pullModes {
-		labels[i] = m.String()
-		byLabel[m.String()] = m
+// back to its PullMode. Labels come from PullMode.String(), so the picker and
+// the mode stay in sync; the reset row names what it resets to and how much it
+// drops, and is confirmed (default no) since it is the one choice that loses
+// commits. Declining that confirmation is the same as picking "leave as is".
+func (p *PullCommand) selectMode(currentBranch, upstream string, ahead, behind int) (git.PullMode, error) {
+	labels := make([]string, 0, len(pullModes)+1)
+	byLabel := make(map[string]git.PullMode, len(pullModes)+1)
+	for _, m := range pullModes {
+		label := m.String()
+		if m == git.PullReset {
+			label = fmt.Sprintf("reset to '%s' (drop %s)", upstream, localCommits(ahead))
+		}
+		labels = append(labels, label)
+		byLabel[label] = m
 	}
+	labels = append(labels, pullLeaveLabel)
+	byLabel[pullLeaveLabel] = pullLeave
 
 	choice, err := p.sel().Select(
-		fmt.Sprintf("Integrate '%s' into '%s' via", upstream, currentBranch), labels)
+		fmt.Sprintf("Integrate '%s' into '%s' via", upstream, localRef(currentBranch)), labels)
 	if err != nil {
 		return 0, err
 	}
@@ -264,5 +292,52 @@ func (p *PullCommand) selectMode(currentBranch, upstream string) (git.PullMode, 
 	if !ok {
 		return 0, fmt.Errorf("unknown integration mode: %s", choice)
 	}
+	if mode == git.PullReset {
+		confirmed, err := p.sel().Confirm(
+			fmt.Sprintf("Reset '%s' to '%s', dropping %s?", localRef(currentBranch), upstream, localCommits(ahead)), false)
+		if err != nil {
+			return 0, err
+		}
+		if !confirmed {
+			return pullLeave, nil
+		}
+	}
 	return mode, nil
+}
+
+// undoIntegrate puts the branch back after an integration that failed or was
+// interrupted part-way, so a pull never leaves a half-done merge or rebase
+// behind. What "back" takes depends on how far git got: an operation still in
+// progress is aborted, which restores everything itself; otherwise a moved HEAD
+// is reset (--keep, the user's changes were stashed before and are not git's to
+// discard) and an unmoved one is left alone, as a refused fast-forward leaves
+// it. The error that prompted the undo is handed through, annotated when the
+// undo itself fails.
+func (p *PullCommand) undoIntegrate(currentBranch string, mode git.PullMode, before string, cause error) error {
+	if op, yes := p.repo().InProgress(); yes {
+		var aerr error
+		switch {
+		case strings.Contains(op, "rebase"):
+			aerr = p.repo().RebaseAbort()
+		case strings.Contains(op, "merge"):
+			aerr = p.repo().MergeAbort()
+		default:
+			return fmt.Errorf("%w; %s is in progress, finish or abort it by hand", cause, op)
+		}
+		if aerr != nil {
+			return fmt.Errorf("%w; aborting the %s failed too (%v): finish or abort it by hand", cause, mode, aerr)
+		}
+		fmt.Fprintf(p.err(), "The %s stopped part-way; aborted it, so '%s' is as it was.\n", mode, localRef(currentBranch))
+		return cause
+	}
+	now, err := p.repo().GetCommitHash(currentBranch)
+	if err != nil || now == before {
+		return cause
+	}
+	if err := p.repo().ResetKeep(before); err != nil {
+		return fmt.Errorf("%w; putting '%s' back failed too (%v): restore it by hand with git reset --keep %s",
+			cause, localRef(currentBranch), err, before)
+	}
+	fmt.Fprintf(p.err(), "The %s stopped part-way; put '%s' back as it was.\n", mode, localRef(currentBranch))
+	return cause
 }

@@ -60,7 +60,7 @@ func TestPullCommand_PRBranchFastForward(t *testing.T) {
 	pull := &PullCommand{cmdIO: cmdIO{Out: &buf, UI: &stubSelector{}, Repo: git.Repo{Dir: dir}}}
 	require.NoError(t, pull.Execute(nil))
 
-	assert.ContainsString(t, buf.String(), "Updated 'pr/origin/1' to PR #1")
+	assert.ContainsString(t, buf.String(), "Updated 'local/pr/origin/1' to PR #1")
 	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "HEAD")), newSHA)
 	assert.Equal(t, currentBranchIn(t, dir), "pr/origin/1")
 }

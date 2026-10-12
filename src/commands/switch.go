@@ -36,7 +36,11 @@ func resolveCurrentBranchContext(r git.Repo) (currentBranch, trackingRemote, sta
 	}
 
 	branchDisplay := currentBranch
-	if trackingRemote != "" {
+	switch trackingRemote {
+	case "":
+	case ".": // tracks another local branch: "local" is the remote gg would name
+		branchDisplay = fmt.Sprintf("(local/)%s", currentBranch)
+	default:
 		branchDisplay = fmt.Sprintf("(%s/)%s", trackingRemote, currentBranch)
 	}
 	return currentBranch, trackingRemote, "Current branch is: " + branchDisplay, nil
@@ -58,7 +62,114 @@ func detachedShortSHA(r git.Repo, currentBranch string) string {
 
 func (s *SwitchCommand) checkoutBranch(branch string) error {
 	if err := s.repo().Checkout(branch); err != nil {
-		return fmt.Errorf("could not switch to branch '%s': %w", branch, err)
+		return fmt.Errorf("could not switch to '%s': %w", localRef(branch), err)
+	}
+	return nil
+}
+
+// landingStep is one change a landing makes between the checkout and the
+// pull, paired with the undo that takes it back. undo receives the error that
+// prompted it and returns what the caller should report -- usually that same
+// error, annotated when the undo itself failed. A nil undo has nothing to take
+// back.
+type landingStep struct {
+	do   func() error
+	undo func(cause error) error
+}
+
+// checkoutStep lands on an existing branch. Nothing to undo beyond going back,
+// which landOn does itself.
+func (s *SwitchCommand) checkoutStep(branch string) landingStep {
+	return landingStep{do: func() error { return s.checkoutBranch(branch) }}
+}
+
+// createStep lands on a new branch cut from a remote one, tracking it. Its undo
+// deletes the branch again -- but only while it still sits on the remote tip
+// it was cut from, so nothing a failed pull may have left on it is lost.
+func (s *SwitchCommand) createStep(branch, remote string) landingStep {
+	start := remote + "/" + branch
+	return landingStep{
+		do: func() error {
+			if err := s.repo().CheckoutNewBranch(branch, start); err != nil {
+				return fmt.Errorf("creating tracking branch: %w", err)
+			}
+			return nil
+		},
+		undo: func(cause error) error {
+			tip, err := s.repo().GetCommitHash(branch)
+			if err != nil {
+				return cause
+			}
+			if startTip, err := s.repo().GetCommitHash(start); err != nil || tip != startTip {
+				return cause
+			}
+			if _, stderr, err := s.repo().RunWrite("branch", "-D", branch); err != nil {
+				return fmt.Errorf("%w; deleting '%s' again failed too (%v): %s", cause, localRef(branch), err, strings.TrimSpace(stderr))
+			}
+			fmt.Fprintf(s.err(), "Deleted '%s' again.\n", localRef(branch))
+			return cause
+		},
+	}
+}
+
+// landOn is how every switch selection lands: check the branch out, apply the
+// steps, say so, pull. Anything that fails or is cancelled from the checkout on
+// is taken back in reverse -- the steps' undos, then the checkout (back to the
+// branch, or the commit, you were on), then the checkout step's own undo -- so a
+// switch that did not reach its goal leaves you where you started, with the
+// failure or cancel reported as such. A Ctrl-C mid-git is caught for the same
+// reason: gg lives to take its steps back, and reports a cancel.
+//
+// Only the pull's own decline (nothing to pull, or "leave as is") is not a
+// failure here: the branch is reached, and that was the goal.
+func (s *SwitchCommand) landOn(branch string, checkout landingStep, switched string, steps ...landingStep) error {
+	from, err := s.repo().GetCurrentBranch()
+	if err != nil {
+		return fmt.Errorf("getting current branch: %w", err)
+	}
+	fromName := localRef(from)
+	if from == "HEAD" { // detached: go back to the commit, not to a branch named HEAD
+		fromName = detachedShortSHA(s.repo(), "")
+		if from, err = s.repo().GetCommitHash("HEAD"); err != nil {
+			return fmt.Errorf("getting current commit: %w", err)
+		}
+	}
+
+	intr := catchInterrupts()
+	defer intr.stop()
+
+	if err := checkout.do(); err != nil {
+		return intr.or(err)
+	}
+	var undos []func(error) error
+	back := func(cause error) error {
+		cause = intr.or(cause)
+		for i := len(undos) - 1; i >= 0; i-- {
+			cause = undos[i](cause)
+		}
+		if from != branch {
+			if cerr := s.repo().Checkout(from); cerr != nil {
+				return fmt.Errorf("%w; going back to '%s' failed too (%v)", cause, fromName, cerr)
+			}
+			fmt.Fprintf(s.err(), "Back on '%s'.\n", fromName)
+		}
+		if checkout.undo != nil {
+			cause = checkout.undo(cause)
+		}
+		return cause
+	}
+
+	for _, step := range steps {
+		if err := step.do(); err != nil {
+			return back(err)
+		}
+		if step.undo != nil {
+			undos = append(undos, step.undo)
+		}
+	}
+	fmt.Fprintln(s.out(), switched)
+	if err := s.pullCurrent(); err != nil {
+		return back(err)
 	}
 	return nil
 }
@@ -185,11 +296,7 @@ func (s *SwitchCommand) planSelection(selected string) (func() error, error) {
 
 func (s *SwitchCommand) planCheckout(branch string) func() error {
 	return func() error {
-		if err := s.checkoutBranch(branch); err != nil {
-			return err
-		}
-		fmt.Fprintf(s.out(), "Switched to branch '%s'.\n", branch)
-		return s.pullCurrent()
+		return s.landOn(branch, s.checkoutStep(branch), fmt.Sprintf("Switched to '%s'.", localRef(branch)))
 	}
 }
 
@@ -215,7 +322,7 @@ func (s *SwitchCommand) pullCurrent() error {
 	pull := &PullCommand{cmdIO: s.cmdIO}
 	if err := pull.pullBranch(branch); err != nil {
 		if errors.Is(err, errNoUpstream) {
-			fmt.Fprintf(s.out(), "Branch '%s' has no upstream; nothing to pull.\n", branch)
+			fmt.Fprintf(s.out(), "'%s' has no upstream; nothing to pull.\n", localRef(branch))
 			return nil
 		}
 		return err

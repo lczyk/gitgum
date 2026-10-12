@@ -46,7 +46,7 @@ func TestApplySelection_Local(t *testing.T) {
 	err := s.applySelection("local: feature")
 	require.NoError(t, err)
 	assert.Equal(t, currentBranchIn(t, dir), "feature")
-	assert.ContainsString(t, buf.String(), "Switched to branch 'feature'.")
+	assert.ContainsString(t, buf.String(), "Switched to 'local/feature'.")
 }
 
 // Selecting the branch you're already on (the HEAD row) pulls it: a branch
@@ -76,7 +76,7 @@ func TestApplySelection_LocalNoUpstreamBenign(t *testing.T) {
 	err := s.applySelection("local: feature")
 	require.NoError(t, err)
 	assert.Equal(t, currentBranchIn(t, dir), "feature")
-	assert.ContainsString(t, buf.String(), "Switched to branch 'feature'.")
+	assert.ContainsString(t, buf.String(), "Switched to 'local/feature'.")
 	assert.ContainsString(t, buf.String(), "nothing to pull")
 }
 
@@ -177,7 +177,7 @@ func TestSwitchCommand_Execute_PicksLocalBranch(t *testing.T) {
 	err := cmd.Execute(nil)
 	require.NoError(t, err)
 	assert.Equal(t, currentBranchIn(t, dir), "feature")
-	assert.ContainsString(t, buf.String(), "Switched to branch 'feature'.")
+	assert.ContainsString(t, buf.String(), "Switched to 'local/feature'.")
 	assert.Equal(t, len(stub.selectCalls), 1)
 	assert.Equal(t, stub.selectCalls[0].Stream, true)
 }

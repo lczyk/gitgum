@@ -16,6 +16,7 @@ const (
 	PullFFOnly PullMode = iota // git merge --ff-only: refuse a merge commit
 	PullRebase                 // git rebase: replay local commits onto upstream
 	PullMerge                  // git merge: merge commit when the branches diverged
+	PullReset                  // git reset --keep: drop the local commits, land on upstream
 )
 
 // Integrate applies upstream into the current branch using the chosen mode.
@@ -34,6 +35,10 @@ func (r Repo) Integrate(mode PullMode, upstream string) error {
 		args = []string{"rebase", upstream}
 	case PullMerge:
 		args = []string{"merge", "--no-stat", upstream}
+	case PullReset:
+		// --keep rather than --hard: it carries uncommitted changes across and
+		// refuses, changing nothing, when one of them would be overwritten.
+		args = []string{"reset", "--keep", upstream}
 	default:
 		return fmt.Errorf("unknown pull mode %d", mode)
 	}
@@ -48,6 +53,15 @@ func (r Repo) Integrate(mode PullMode, upstream string) error {
 func (r Repo) RebaseAbort() error {
 	if _, stderr, err := r.runWrite(context.Background(), "rebase", "--abort"); err != nil {
 		return fmt.Errorf("git rebase --abort: %w: %s", err, strings.TrimSpace(stderr))
+	}
+	return nil
+}
+
+// MergeAbort abandons the merge in progress, putting the branch, index and
+// working tree back as they were before it started.
+func (r Repo) MergeAbort() error {
+	if _, stderr, err := r.runWrite(context.Background(), "merge", "--abort"); err != nil {
+		return fmt.Errorf("git merge --abort: %w: %s", err, strings.TrimSpace(stderr))
 	}
 	return nil
 }
@@ -90,6 +104,8 @@ func (mode PullMode) String() string {
 		return "rebase"
 	case PullMerge:
 		return "merge"
+	case PullReset:
+		return "reset to upstream"
 	default:
 		return fmt.Sprintf("PullMode(%d)", int(mode))
 	}
