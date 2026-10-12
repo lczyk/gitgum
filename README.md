@@ -105,7 +105,9 @@ Pick a branch to switch to. Local and remote branches stream into the picker liv
 Every selection lands the same way: end up on the branch, then bring it up to date via the [`pull`](#gitgum-pull) flow (fetch + integrate, ff-only by default, PR-aware). So:
 
 - a local branch -> checkout, then pull
-- a remote-only branch -> create a tracking branch (or switch to the existing local counterpart, re-pointing its tracking at this remote), then pull
+- a remote-only branch -> create a tracking branch (or switch to the existing local counterpart, re-pointing its tracking at this remote -- asked first when the two have diverged), then pull
+
+a switch that does not reach its goal -- the pull declined, refused by git, or interrupted -- is taken back: tracking restored, and the checkout undone, so you end where you started.
 - the branch you're already on (the `HEAD` row, selectable) -> a no-op checkout, then pull -- "update where I am" with no separate command
 
 A branch with no upstream (a purely local branch) just reports there's nothing to pull; a detached HEAD stays unselectable (no branch to update).
@@ -182,7 +184,7 @@ When the branch pushes to its upstream, push first asks the remote where that br
 
 ### `gitgum pull`
 
-Fetch the current branch's upstream and integrate it. Reports "already up to date" when there's nothing new; otherwise picks the strategy interactively -- fast-forward only (the default, refuses a merge commit), rebase, or merge. Uncommitted tracked changes are stashed before the pull and popped after, matching the other commands. A shallow clone stays shallow: only new commits are fetched, old history is not backfilled. Errors if the branch has no upstream configured.
+Fetch the current branch's upstream and integrate it. Reports "already up to date" when there's nothing new, fast-forwards when the branch is simply behind, and otherwise -- when the two have diverged -- picks the strategy interactively: rebase, merge, reset to the upstream (dropping the local commits, confirmed first), or leave as is. A merge or rebase that stops on a conflict is aborted, so the branch is left as it was. Uncommitted tracked changes are stashed before the pull and popped after, matching the other commands. A shallow clone stays shallow: only new commits are fetched, old history is not backfilled. Errors if the branch has no upstream configured.
 
 On a `checkout-pr` branch (which has no upstream, see [`checkout-pr`](#gitgum-checkout-pr)) pull instead re-fetches the PR head: fast-forwards if the branch is behind, and on a diverged PR (force-push, or local commits) asks before resetting the branch to the PR head.
 
