@@ -11,7 +11,7 @@ SRCS := $(shell find ./cmd ./internal ./src -name '*.go' ! -name 'version.go')
 # import. v0.8 covers 1.27 and needs 1.26 to build, which is the workflow's
 # go-version.
 STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.1
-DEADCODE    := golang.org/x/tools/cmd/deadcode@v0.48.0
+DEADCODE    := golang.org/x/tools/cmd/deadcode@v0.52.0
 
 help:  ## Show this help
 	@echo "Available targets:"
