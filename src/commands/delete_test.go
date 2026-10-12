@@ -49,7 +49,7 @@ func TestDeleteCommand_DeletesPickedBranch(t *testing.T) {
 
 	branches := temp_repo.RunGit(t, dir, "branch", "--list", "feature")
 	assert.Equal(t, strings.TrimSpace(branches), "")
-	assert.ContainsString(t, buf.String(), "Deleted local branch 'feature'.")
+	assert.ContainsString(t, buf.String(), "Deleted 'local/feature'.")
 	assert.Equal(t, len(stub.confirmCalls), 0)
 }
 

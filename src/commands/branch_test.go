@@ -59,7 +59,7 @@ func TestBranchCommand_CreatesOffPickedLocalBranch(t *testing.T) {
 
 	require.NoError(t, cmd.Execute(nil))
 	assert.Equal(t, currentBranchIn(t, dir), "feat/new")
-	assert.ContainsString(t, buf.String(), "Created and switched to branch 'feat/new' off 'feature'.")
+	assert.ContainsString(t, buf.String(), "Created and switched to 'local/feat/new' off 'feature'.")
 
 	// The new branch starts where the picked one did, not where HEAD was.
 	head := strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "feat/new"))
@@ -88,7 +88,7 @@ func TestBranchCommand_CreatesOffDetachedHEAD(t *testing.T) {
 
 	require.NoError(t, cmd.Execute(nil))
 	assert.Equal(t, currentBranchIn(t, dir), "feat/rescued")
-	assert.ContainsString(t, buf.String(), "Created and switched to branch 'feat/rescued' off '"+short+"'.")
+	assert.ContainsString(t, buf.String(), "Created and switched to 'local/feat/rescued' off '"+short+"'.")
 
 	// the branch carries the once-orphaned commit
 	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "feat/rescued")), detached)

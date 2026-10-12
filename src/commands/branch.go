@@ -99,7 +99,7 @@ func (b *BranchCommand) Execute(args []string) error {
 	}
 
 	if r.BranchExists(name) {
-		return fmt.Errorf("branch '%s' already exists; use `gg switch` to switch to it", name)
+		return fmt.Errorf("'%s' already exists; use `gg switch` to switch to it", localRef(name))
 	}
 
 	cleanup, err := applyDirty()
@@ -113,10 +113,10 @@ func (b *BranchCommand) Execute(args []string) error {
 		create = r.CheckoutNewBranchNoTrack
 	}
 	if err := create(name, sp.ref); err != nil {
-		return fmt.Errorf("creating branch '%s': %w", name, err)
+		return fmt.Errorf("creating '%s': %w", localRef(name), err)
 	}
 
-	fmt.Fprintf(b.out(), "Created and switched to branch '%s' off '%s'.\n", name, sp.ref)
+	fmt.Fprintf(b.out(), "Created and switched to '%s' off '%s'.\n", localRef(name), sp.ref)
 	return nil
 }
 

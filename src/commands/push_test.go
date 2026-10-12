@@ -1313,7 +1313,7 @@ func TestPushCommand_Behind_FailedMergeRestoresTree(t *testing.T) {
 
 	err := cmd.Execute(nil)
 	assert.Error(t, err, assert.AnyError, "the fast-forward failed")
-	assert.ContainsString(t, errBuf.String(), "put '"+branch+"' back")
+	assert.ContainsString(t, errBuf.String(), "put 'local/"+branch+"' back")
 	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", branch)), before)
 	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, dir, "status", "--porcelain")), "")
 }

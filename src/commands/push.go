@@ -54,7 +54,7 @@ func (p *PushCommand) Execute(args []string) error {
 			return fmt.Errorf("getting push target: %w", err)
 		}
 		if target == "" {
-			fmt.Fprintf(p.out(), "Branch '%s' tracks '%s', but git has no push destination for it.\n",
+			fmt.Fprintf(p.out(), "'%s' tracks '%s', but git has no push destination for it.\n",
 				currentBranch, remoteBranch)
 			remoteBranch = ""
 		}
@@ -84,7 +84,7 @@ func (p *PushCommand) Execute(args []string) error {
 			return fmt.Errorf("getting local commit: %w", err)
 		}
 		if localCommit == remoteCommit {
-			fmt.Fprintf(p.out(), "No changes to push. Local branch '%s' is up to date with '%s'.\n",
+			fmt.Fprintf(p.out(), "No changes to push. '%s' is up to date with '%s'.\n",
 				currentBranch, remoteBranch)
 			return nil
 		}
@@ -143,7 +143,7 @@ func (p *PushCommand) selectRemote(currentBranch, name string) (string, error) {
 	if name != "" {
 		query = []string{name}
 	}
-	remote, err := p.sel().Select(fmt.Sprintf("Push '%s' to", currentBranch), p.rankRemotes(remotes), query...)
+	remote, err := p.sel().Select(fmt.Sprintf("Push '%s' to", localRef(currentBranch)), p.rankRemotes(remotes), query...)
 	if err != nil {
 		return "", fmt.Errorf("selecting remote: %w", err)
 	}
@@ -198,7 +198,7 @@ func (p *PushCommand) pushToRemote(selectedRemote, currentBranch string, ruledOu
 	}
 
 	if localCommit == remoteCommit {
-		fmt.Fprintf(p.out(), "No changes to push. Local branch '%s' is up to date with remote branch '%s'.\n",
+		fmt.Fprintf(p.out(), "No changes to push. '%s' is up to date with '%s'.\n",
 			currentBranch, expectedRemoteBranchName)
 		// set upstream since we're targeting this remote
 		if _, _, err := p.repo().RunWrite("branch", "--set-upstream-to="+expectedRemoteBranchName, currentBranch); err != nil {
@@ -252,7 +252,7 @@ func (p *PushCommand) offerOtherRemotes(currentBranch string, ruledOut []string,
 		fmt.Fprintf(p.err(), "%s %v.\n", paint(ansiBoldYellow, "note:"), stuck)
 	}
 
-	remote, err := p.sel().Select(fmt.Sprintf("Push '%s' to", currentBranch), p.rankRemotes(others))
+	remote, err := p.sel().Select(fmt.Sprintf("Push '%s' to", localRef(currentBranch)), p.rankRemotes(others))
 	if err != nil {
 		return fmt.Errorf("selecting remote: %w", err)
 	}
@@ -332,10 +332,10 @@ func (p *PushCommand) reconcileDiverged(currentBranch, upstream, remoteTip strin
 	}
 
 	if !localAhead {
-		fmt.Fprintf(p.out(), "Local branch '%s' is behind '%s'; nothing to push until you catch up.\n",
-			currentBranch, upstream)
+		fmt.Fprintf(p.out(), "'%s' is behind '%s'; nothing to push until you catch up.\n",
+			localRef(currentBranch), upstream)
 		confirmed, err := p.sel().Confirm(
-			fmt.Sprintf("Pull --rebase to fast-forward '%s' onto '%s'?", currentBranch, upstream), true)
+			fmt.Sprintf("Pull --rebase to fast-forward '%s' onto '%s'?", localRef(currentBranch), upstream), true)
 		if err != nil {
 			return fmt.Errorf("confirming rebase: %w", err)
 		}
@@ -363,7 +363,7 @@ func (p *PushCommand) reconcileDiverged(currentBranch, upstream, remoteTip strin
 		if intr.seen() {
 			return p.undoInterrupted(currentBranch, before, "fast-forward")
 		}
-		fmt.Fprintf(p.out(), "Fast-forwarded '%s' to '%s'. Nothing to push.\n", currentBranch, upstream)
+		fmt.Fprintf(p.out(), "Fast-forwarded '%s' to '%s'. Nothing to push.\n", localRef(currentBranch), upstream)
 		return nil
 	}
 
@@ -383,7 +383,7 @@ func (p *PushCommand) reconcileDiverged(currentBranch, upstream, remoteTip strin
 	}
 
 	confirmed, err := p.sel().Confirm(
-		fmt.Sprintf("Remote '%s' has diverged from local '%s'. Pull --rebase before pushing?", upstream, currentBranch), true)
+		fmt.Sprintf("'%s' has diverged from '%s'. Pull --rebase before pushing?", upstream, localRef(currentBranch)), true)
 	if err != nil {
 		return fmt.Errorf("confirming rebase: %w", err)
 	}
@@ -418,7 +418,7 @@ func (p *PushCommand) reconcileDiverged(currentBranch, upstream, remoteTip strin
 	if err := p.repo().Push(); err != nil {
 		return intr.or(p.undoRebase(currentBranch, upstream, before, remoteTip, err))
 	}
-	fmt.Fprintf(p.out(), "Rebased '%s' onto '%s' and pushed.\n", currentBranch, upstream)
+	fmt.Fprintf(p.out(), "Rebased '%s' onto '%s' and pushed.\n", localRef(currentBranch), upstream)
 	return nil
 }
 
@@ -432,7 +432,7 @@ func (p *PushCommand) abortRebase(currentBranch string, rebaseErr error) error {
 	if err := p.repo().RebaseAbort(); err != nil {
 		return fmt.Errorf("%w; aborting the rebase failed too (%v): finish or abort it by hand", rebaseErr, err)
 	}
-	fmt.Fprintf(p.err(), "The rebase stopped part-way; aborted it, so '%s' is as it was.\n", currentBranch)
+	fmt.Fprintf(p.err(), "The rebase stopped part-way; aborted it, so '%s' is as it was.\n", localRef(currentBranch))
 	return rebaseErr
 }
 
@@ -449,7 +449,7 @@ func (p *PushCommand) restoreFailedMerge(currentBranch, before string, mergeErr 
 		return fmt.Errorf("%w; restoring the tree failed too (%v): restore it by hand with git reset --hard %s",
 			mergeErr, err, before)
 	}
-	fmt.Fprintf(p.err(), "The fast-forward stopped part-way; put '%s' back as it was.\n", currentBranch)
+	fmt.Fprintf(p.err(), "The fast-forward stopped part-way; put '%s' back as it was.\n", localRef(currentBranch))
 	return mergeErr
 }
 
@@ -470,14 +470,14 @@ func (p *PushCommand) undoRebase(currentBranch, upstream, before, remoteTip stri
 	switch tip {
 	case pushed:
 		fmt.Fprintf(p.out(), "Rebased '%s' onto '%s' and pushed; git reported an error, but the remote has it.\n",
-			currentBranch, upstream)
+			localRef(currentBranch), upstream)
 		return nil
 	case remoteTip:
 		if err := p.repo().ResetKeep(before); err != nil {
 			return fmt.Errorf("%w; undoing the rebase failed too (%v): undo it by hand with git reset --keep %s",
 				pushErr, err, before)
 		}
-		fmt.Fprintf(p.err(), "Undid the rebase: '%s' is back where it was.\n", currentBranch)
+		fmt.Fprintf(p.err(), "Undid the rebase: '%s' is back where it was.\n", localRef(currentBranch))
 		return pushErr
 	default:
 		fmt.Fprintf(p.err(), "Couldn't tell whether the push reached '%s', so the rebase stays; to undo it: git reset --keep %s\n",
@@ -493,7 +493,7 @@ func (p *PushCommand) undoInterrupted(currentBranch, before, step string) error 
 		return fmt.Errorf("interrupted, and undoing the %s failed too (%v): undo it by hand with git reset --keep %s",
 			step, err, before)
 	}
-	fmt.Fprintf(p.err(), "Interrupted: undid the %s, so '%s' is back where it was.\n", step, currentBranch)
+	fmt.Fprintf(p.err(), "Interrupted: undid the %s, so '%s' is back where it was.\n", step, localRef(currentBranch))
 	return ui.ErrCancelled
 }
 

@@ -26,7 +26,7 @@ func (e *EmptyCommand) Execute(args []string) error {
 
 	hasUpstream := upstream != ""
 	if !hasUpstream {
-		fmt.Fprintf(e.out(), "Current branch '%s' has no upstream tracking branch.\n", currentBranch)
+		fmt.Fprintf(e.out(), "Current branch '%s' has no upstream tracking branch.\n", localRef(currentBranch))
 	}
 
 	if hasUpstream {
@@ -35,7 +35,7 @@ func (e *EmptyCommand) Execute(args []string) error {
 			return fmt.Errorf("checking if branch is ahead of remote: %w", err)
 		}
 		if ahead {
-			return fmt.Errorf("refusing to create empty commit: branch '%s' is ahead of remote '%s'", currentBranch, upstream)
+			return fmt.Errorf("refusing to create empty commit: '%s' is ahead of '%s'", localRef(currentBranch), upstream)
 		}
 	}
 
@@ -63,7 +63,7 @@ func (e *EmptyCommand) Execute(args []string) error {
 	if err := r.CommitEmpty("chore: empty commit"); err != nil {
 		return fmt.Errorf("creating empty commit: %w", err)
 	}
-	fmt.Fprintf(e.out(), "Created empty commit on branch '%s'.\n", currentBranch)
+	fmt.Fprintf(e.out(), "Created empty commit on '%s'.\n", localRef(currentBranch))
 
 	if !push {
 		if hasUpstream {

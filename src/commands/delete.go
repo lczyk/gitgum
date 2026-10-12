@@ -114,7 +114,7 @@ func (d *DeleteCommand) deleteLocal(branch string) error {
 	// main/master deletion is dangerous enough to warrant a confirmation
 	if branch == "main" || branch == "master" {
 		confirmed, err := d.sel().Confirm(
-			fmt.Sprintf("You are about to delete the '%s' branch. This is usually the main branch of the repository. Are you sure you want to proceed?", branch),
+			fmt.Sprintf("You are about to delete '%s'. This is usually the main branch of the repository. Are you sure you want to proceed?", localRef(branch)),
 			false,
 		)
 		if err != nil {
@@ -133,7 +133,7 @@ func (d *DeleteCommand) deleteLocal(branch string) error {
 
 	if remoteName != "" && remoteBranchName != "" {
 		confirmed, err := d.sel().Confirm(
-			fmt.Sprintf("Branch '%s' is tracking remote branch '%s/%s'. Do you want to delete the remote branch as well?", branch, remoteName, remoteBranchName),
+			fmt.Sprintf("'%s' is tracking '%s/%s'. Do you want to delete the remote branch as well?", localRef(branch), remoteName, remoteBranchName),
 			false,
 		)
 		if err != nil {
@@ -153,7 +153,7 @@ func (d *DeleteCommand) deleteLocal(branch string) error {
 			what = "the local branch and the remote branch"
 		}
 		confirmed, err := d.sel().Confirm(
-			fmt.Sprintf("Branch '%s' is not fully merged. Do you want to force delete %s?", branch, what), false)
+			fmt.Sprintf("'%s' is not fully merged. Do you want to force delete %s?", localRef(branch), what), false)
 		if err != nil {
 			return err
 		}
@@ -168,12 +168,12 @@ func (d *DeleteCommand) deleteLocal(branch string) error {
 		flag = "-D"
 	}
 	if _, stderr, err := d.repo().RunWrite("branch", flag, branch); err != nil {
-		return fmt.Errorf("deleting branch '%s': %w: %s", branch, err, strings.TrimSpace(stderr))
+		return fmt.Errorf("deleting '%s': %w: %s", localRef(branch), err, strings.TrimSpace(stderr))
 	}
 	if force {
-		fmt.Fprintf(d.out(), "Force deleted local branch '%s'.\n", branch)
+		fmt.Fprintf(d.out(), "Force deleted '%s'.\n", localRef(branch))
 	} else {
-		fmt.Fprintf(d.out(), "Deleted local branch '%s'.\n", branch)
+		fmt.Fprintf(d.out(), "Deleted '%s'.\n", localRef(branch))
 	}
 
 	if needsToDeleteRemote {

@@ -125,7 +125,7 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 
 	if c.repo().BranchExists(branchName) {
 		confirmed, err := c.sel().Confirm(
-			fmt.Sprintf("Branch '%s' already exists. Reset it to the latest PR state?", branchName),
+			fmt.Sprintf("'%s' already exists. Reset it to the latest PR state?", localRef(branchName)),
 			false,
 		)
 		if err != nil {
@@ -142,14 +142,14 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 			defer cleanup()
 
 			if err := c.repo().Checkout(branchName); err != nil {
-				return fmt.Errorf("checking out existing branch '%s': %w", branchName, err)
+				return fmt.Errorf("checking out existing '%s': %w", localRef(branchName), err)
 			}
 			// Backfill metadata in case the branch predates it, so a later
 			// `gg pull` can still update the PR.
 			if err := pr.WriteMeta(c.repo(), branchName, meta); err != nil {
 				return fmt.Errorf("recording PR metadata: %w", err)
 			}
-			fmt.Fprintf(c.out(), "Switched to existing branch '%s'.\n", branchName)
+			fmt.Fprintf(c.out(), "Switched to existing '%s'.\n", localRef(branchName))
 			return nil
 		}
 
@@ -166,7 +166,7 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 		}
 
 		if err := c.repo().Checkout(branchName); err != nil {
-			return fmt.Errorf("checking out branch '%s': %w", branchName, err)
+			return fmt.Errorf("checking out '%s': %w", localRef(branchName), err)
 		}
 
 		if err := c.repo().ResetHard("FETCH_HEAD"); err != nil {
@@ -177,7 +177,7 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 			return fmt.Errorf("recording PR metadata: %w", err)
 		}
 
-		fmt.Fprintf(c.out(), "Reset branch '%s' to PR #%d (%s).\n", branchName, prNumber, prType)
+		fmt.Fprintf(c.out(), "Reset '%s' to PR #%d (%s).\n", localRef(branchName), prNumber, prType)
 		return nil
 	}
 
@@ -200,6 +200,6 @@ func (c *CheckoutPRCommand) checkoutPR(remote string, prNumber int, prType strin
 		return fmt.Errorf("recording PR metadata: %w", err)
 	}
 
-	fmt.Fprintf(c.out(), "Checked out PR #%d (%s) as branch '%s'.\n", prNumber, prType, branchName)
+	fmt.Fprintf(c.out(), "Checked out PR #%d (%s) as '%s'.\n", prNumber, prType, localRef(branchName))
 	return nil
 }
