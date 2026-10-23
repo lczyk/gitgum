@@ -78,10 +78,10 @@ messages now name local branches `local/<branch>`; the compact notations
 do not yet:
 
 - picker rows (`local: x`, `local/remote: origin/x`, `remote: origin/x`)
-  double as the payload parseBranchEntry reads, so the tags cannot change
-  without splitting payload from display first. `local/x` rows would
-  then collide with `remote: local/x` for a remote named local, which
-  doctor now flags.
+  still use the old tags. the commands act on a typed pick looked up by
+  feed id, so the tags are display only now and free to change. `local/x`
+  rows would collide visually with `remote: local/x` for a remote named
+  local, which doctor flags.
 - the `(origin/)main` head line in `gg switch` and `gg s` encodes both
   sides in one token; a `.` upstream shows as `(local/)x` there, nothing
   else changed.
