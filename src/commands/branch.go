@@ -57,14 +57,14 @@ func (b *BranchCommand) Execute(args []string) error {
 	defer cancel()
 
 	// includeCurrent: branching off the branch you're on is the common case.
-	// markCheckedOut: off, and no unselectable predicate -- unlike switch and
-	// delete, a branch checked out in another worktree is a fine start point.
+	// markCheckedOut: off, so nothing is blocked -- unlike switch and delete, a
+	// branch checked out in another worktree is a fine start point.
 	// detachedAt: likewise a fine start point, and the only way to keep the
 	// commits made on a detached HEAD.
 	src := streamBranches(ctx, r, b.err(), currentBranch, trackingRemote, remotes,
 		branchStreamOpts{includeCurrent: true, detachedAt: detachedShortSHA(r, currentBranch)})
 
-	selected, err := b.sel().SelectStream(ctx, "Select a branch to branch off", src, nil)
+	id, err := b.sel().SelectStream(ctx, "Select a branch to branch off", src.Feed)
 	cancel()
 	if err != nil {
 		if errors.Is(err, ui.ErrCancelled) {
@@ -73,11 +73,11 @@ func (b *BranchCommand) Execute(args []string) error {
 		}
 		return err
 	}
-
-	sp, err := startPointFor(selected)
+	picked, err := src.pick(id)
 	if err != nil {
 		return err
 	}
+	sp := startPointFor(picked)
 
 	// Same as switch: a remote-tracking ref is only as fresh as the last fetch,
 	// so refresh it before branching. Done before the name prompt so a fetch
@@ -134,33 +134,17 @@ type startPoint struct {
 	branch string
 }
 
-// startPointFor turns a picker payload into the branch's start point.
-func startPointFor(selected string) (startPoint, error) {
-	typ, name, err := parseBranchEntry(selected)
-	if err != nil {
-		return startPoint{}, err
+// startPointFor turns a picked row into the branch's start point. A detached
+// HEAD is not a branch, but its commit is a start point -- and cutting a branch
+// off it is how those commits stop being orphans.
+func startPointFor(p branchPick) startPoint {
+	if p.remote == "" {
+		return startPoint{ref: p.branch}
 	}
-	switch typ {
-	case "local":
-		// a detached HEAD is not a branch, but its commit is a start point --
-		// and cutting a branch off it is how those commits stop being orphans.
-		if short, ok := detachedEntrySHA(name); ok {
-			return startPoint{ref: short}, nil
-		}
-		return startPoint{ref: name}, nil
-	case "local/remote", "remote":
-		// Both cut from the remote-tracking ref: a local branch with an upstream
-		// is only as current as its last pull, and the remote tip is what you
-		// mean by "branch off main". Cut on the first '/' -- see
-		// localRemoteBranch for why that is the remote/branch boundary.
-		remote, branch, ok := strings.Cut(name, "/")
-		if !ok {
-			return startPoint{}, fmt.Errorf("invalid %s branch format: %s", typ, name)
-		}
-		return startPoint{ref: name, remote: remote, branch: branch}, nil
-	default:
-		return startPoint{}, fmt.Errorf("unknown branch type: %s", typ)
-	}
+	// Tracked and remote rows both cut from the remote-tracking ref: a local
+	// branch with an upstream is only as current as its last pull, and the
+	// remote tip is what you mean by "branch off main".
+	return startPoint{ref: p.ref(), remote: p.remote, branch: p.branch}
 }
 
 // promptName reads the new branch name. The prompt hands back whatever was

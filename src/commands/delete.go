@@ -68,7 +68,7 @@ func (d *DeleteCommand) Execute(args []string) error {
 	src := streamBranches(ctx, r, d.err(), currentBranch, trackingRemote, remotes,
 		branchStreamOpts{includeCurrent: true, markCheckedOut: true, locals: locals})
 
-	selected, err := d.sel().SelectStream(ctx, "Select a branch to delete", src, isUnselectable)
+	id, err := d.sel().SelectStream(ctx, "Select a branch to delete", src.Feed)
 	cancel()
 	if err != nil {
 		if errors.Is(err, ui.ErrCancelled) {
@@ -77,42 +77,31 @@ func (d *DeleteCommand) Execute(args []string) error {
 		}
 		return err
 	}
-
-	return d.applyDeletion(selected)
-}
-
-// applyDeletion parses the typed picker entry (mirrors switch's applySelection)
-// and dispatches: local branches go through the safe->force local flow, remote
-// entries are deleted straight off the remote.
-func (d *DeleteCommand) applyDeletion(selected string) error {
-	typ, name, err := parseBranchEntry(selected)
+	picked, err := src.pick(id)
 	if err != nil {
 		return err
 	}
 
-	intr := catchInterrupts()
-	defer intr.stop()
-	return intr.or(d.deleteEntry(typ, name))
+	return d.applyDeletion(picked)
 }
 
-func (d *DeleteCommand) deleteEntry(typ, name string) error {
-	switch typ {
-	case "local":
-		return d.deleteLocal(name)
-	case "local/remote":
-		branch, ok := localRemoteBranch(name)
-		if !ok {
-			return fmt.Errorf("invalid local/remote branch format: %s", name)
-		}
-		return d.deleteLocal(branch)
-	case "remote":
-		remoteParts := strings.SplitN(name, "/", 2)
-		if len(remoteParts) != 2 {
-			return fmt.Errorf("invalid remote branch format: %s", name)
-		}
-		return d.deleteRemoteOnly(remoteParts[0], remoteParts[1])
+// applyDeletion dispatches the picked row (mirrors switch's applySelection):
+// local branches go through the safe->force local flow, remote entries are
+// deleted straight off the remote.
+func (d *DeleteCommand) applyDeletion(p branchPick) error {
+	intr := catchInterrupts()
+	defer intr.stop()
+	return intr.or(d.deleteEntry(p))
+}
+
+func (d *DeleteCommand) deleteEntry(p branchPick) error {
+	switch p.kind {
+	case localBranch, trackedBranch:
+		return d.deleteLocal(p.branch)
+	case remoteBranch:
+		return d.deleteRemoteOnly(p.remote, p.branch)
 	default:
-		return fmt.Errorf("unknown branch type: %s", typ)
+		return fmt.Errorf("cannot delete %s: not a branch", p.ref())
 	}
 }
 

@@ -199,3 +199,44 @@ func TestFind_SelectOneHonoursCancel(t *testing.T) {
 	_, err := ff.Find(ctx, ff.NewFeed(), ff.Opt{SelectOne: true})
 	assert.Error(t, err, context.Canceled)
 }
+
+const spinnerRunes = "\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f"
+
+func (s *frameScreen) spinning() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return strings.ContainsAny(s.frame, spinnerRunes)
+}
+
+// An open feed shows a spinner by the prompt; closing it stops the spinner.
+func TestFind_SpinnerUntilClose(t *testing.T) {
+	t.Parallel()
+
+	scr := newFrameScreen(t)
+	feed := ff.NewFeed()
+	feed.Add("alpha")
+	done := startFind(feed, ff.Opt{Screen: scr})
+
+	eventually(t, scr.spinning, "an open feed should show the spinner")
+	feed.Close()
+	eventually(t, func() bool { return scr.shows("alpha") && !scr.spinning() }, "closing should stop the spinner")
+
+	scr.press(tcell.KeyEnter)
+	r := <-done
+	require.NoError(t, r.err)
+}
+
+// A closed feed never shows the spinner.
+func TestFind_NoSpinnerForClosedFeed(t *testing.T) {
+	t.Parallel()
+
+	scr := newFrameScreen(t)
+	done := startFind(ff.NewFeedFrom([]string{"alpha"}), ff.Opt{Screen: scr})
+
+	eventually(t, func() bool { return scr.shows("alpha") }, "first frame")
+	assert.That(t, !scr.spinning(), "closed feed should not spin")
+
+	scr.press(tcell.KeyEnter)
+	r := <-done
+	require.NoError(t, r.err)
+}

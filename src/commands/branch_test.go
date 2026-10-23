@@ -103,7 +103,7 @@ func TestBranchCommand_CreatesOffCurrentBranch(t *testing.T) {
 
 	var buf strings.Builder
 	stub := &stubSelector{
-		selectAnswers: []string{"local: " + current},
+		selectAnswers: []string{"local: " + current + currentBranchMarker},
 		promptAnswers: []string{"wip"},
 	}
 	cmd := &BranchCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: dir}}}
@@ -135,7 +135,7 @@ func TestBranchCommand_RejectsExistingName(t *testing.T) {
 	current := currentBranchIn(t, dir)
 
 	stub := &stubSelector{
-		selectAnswers: []string{"local: " + current},
+		selectAnswers: []string{"local: " + current + currentBranchMarker},
 		promptAnswers: []string{"feature"},
 	}
 	cmd := &BranchCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
@@ -158,7 +158,7 @@ func TestBranchCommand_RejectsEmptyName(t *testing.T) {
 			current := currentBranchIn(t, dir)
 
 			stub := &stubSelector{
-				selectAnswers: []string{"local: " + current},
+				selectAnswers: []string{"local: " + current + currentBranchMarker},
 				promptAnswers: []string{answer},
 			}
 			cmd := &BranchCommand{cmdIO: cmdIO{Out: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: dir}}}
@@ -180,7 +180,7 @@ func TestBranchCommand_RemoteStartPointDoesNotTrack(t *testing.T) {
 
 	var buf strings.Builder
 	stub := &stubSelector{
-		selectAnswers: []string{"remote: origin/main"},
+		selectAnswers: []string{"local/remote: origin/main" + currentBranchMarker},
 		promptAnswers: []string{"feat/off-remote"},
 	}
 	cmd := &BranchCommand{cmdIO: cmdIO{Out: &buf, UI: stub, Repo: git.Repo{Dir: local}}}
@@ -215,7 +215,7 @@ func TestBranchCommand_RemoteStartPointIsFetchedFirst(t *testing.T) {
 
 	var buf strings.Builder
 	stub := &stubSelector{
-		selectAnswers: []string{"remote: origin/main"},
+		selectAnswers: []string{"local/remote: origin/main" + currentBranchMarker},
 		promptAnswers: []string{"feat/fresh"},
 	}
 	cmd := &BranchCommand{cmdIO: cmdIO{Out: &buf, Err: &strings.Builder{}, UI: stub, Repo: git.Repo{Dir: local}}}
@@ -252,44 +252,30 @@ func TestStartPointFor(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct {
-		selected string
-		want     startPoint
-		wantErr  bool
+		pick branchPick
+		want startPoint
 	}{
-		"local":            {selected: "local: feature", want: startPoint{ref: "feature"}},
-		"local with slash": {selected: "local: feat/login", want: startPoint{ref: "feat/login"}},
-		"detached head":    {selected: "local: HEAD (detached at cf10b5f)", want: startPoint{ref: "cf10b5f"}},
-		// current branch carries the HEAD marker for search; it strips back off.
-		"current local": {selected: "local: main (checked out here. HEAD)", want: startPoint{ref: "main"}},
+		"local":            {pick: branchPick{kind: localBranch, branch: "feature"}, want: startPoint{ref: "feature"}},
+		"local with slash": {pick: branchPick{kind: localBranch, branch: "feat/login"}, want: startPoint{ref: "feat/login"}},
+		"detached head":    {pick: branchPick{kind: detachedHead, branch: "cf10b5f"}, want: startPoint{ref: "cf10b5f"}},
+		"current local":    {pick: branchPick{kind: localBranch, branch: "main", current: true}, want: startPoint{ref: "main"}},
 		// a tracked local branch cuts from its remote-tracking ref, not the
 		// possibly-stale local one -- same as a bare remote row.
-		"current local/remote": {selected: "local/remote: origin/main (checked out here. HEAD)", want: startPoint{
+		"current tracked": {pick: branchPick{kind: trackedBranch, remote: "origin", branch: "main", current: true}, want: startPoint{
 			ref: "origin/main", remote: "origin", branch: "main",
 		}},
-		"local/remote": {selected: "local/remote: origin/feat/login", want: startPoint{
+		"tracked": {pick: branchPick{kind: trackedBranch, remote: "origin", branch: "feat/login"}, want: startPoint{
 			ref: "origin/feat/login", remote: "origin", branch: "feat/login",
 		}},
-		"remote": {selected: "remote: origin/feat/login", want: startPoint{
+		"remote": {pick: branchPick{kind: remoteBranch, remote: "origin", branch: "feat/login"}, want: startPoint{
 			ref: "origin/feat/login", remote: "origin", branch: "feat/login",
 		}},
-		"remote without slash": {selected: "remote: mangled", wantErr: true},
-		"local/remote bare":    {selected: "local/remote: mangled", wantErr: true},
-		"unknown type":         {selected: "tag: v1.0.0", wantErr: true},
-		"no type tag":          {selected: "feature", wantErr: true},
 	}
 
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			got, err := startPointFor(c.selected)
-			if c.wantErr {
-				assert.Error(t, err, assert.AnyError)
-				return
-			}
-			require.NoError(t, err)
-			assert.Equal(t, got.ref, c.want.ref)
-			assert.Equal(t, got.remote, c.want.remote)
-			assert.Equal(t, got.branch, c.want.branch)
+			assert.Equal(t, startPointFor(c.pick), c.want)
 		})
 	}
 }

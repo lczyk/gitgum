@@ -1,11 +1,27 @@
 package fuzzyfinder
 
-import "sync"
+import (
+	"iter"
+	"sync"
+)
 
 // ID is a stable handle for one item in a Feed. IDs are assigned from 0 in the
 // order items are added and never reused, so for a feed built by NewFeedFrom
 // the ID of an item is its index in the input slice.
 type ID uint64
+
+// Flags tune how the picker treats one item. The zero value is a plain,
+// selectable item.
+type Flags uint8
+
+const (
+	// Unselectable marks an item display-only: it still appears, matches the
+	// query and can hold the cursor, but Tab won't toggle it and Enter won't
+	// confirm it, and it is drawn dimmed to say so. If the query matches no
+	// selectable item at all, Enter ends the picker with an empty selection
+	// rather than being swallowed (see Result).
+	Unselectable Flags = 1 << iota
+)
 
 // Feed is the goroutine-safe item list the picker consumes. Any number of
 // producers may Add, Update and Remove concurrently, before or while a picker
@@ -37,8 +53,9 @@ type Feed struct {
 }
 
 type slot struct {
-	text string
-	live bool
+	text  string
+	flags Flags
+	live  bool
 }
 
 // NewFeed returns an empty, open Feed.
@@ -61,9 +78,12 @@ func NewFeedFrom(items []string) *Feed {
 }
 
 // Add appends item and returns its ID. Add panics if the feed is closed.
-func (f *Feed) Add(item string) ID {
+func (f *Feed) Add(item string) ID { return f.AddWith(item, 0) }
+
+// AddWith is Add for an item with flags.
+func (f *Feed) AddWith(item string, flags Flags) ID {
 	f.mu.Lock()
-	id := f.addLocked(item)
+	id := f.addLocked(item, flags)
 	f.mu.Unlock()
 	f.wake()
 	return id
@@ -77,31 +97,41 @@ func (f *Feed) AddAll(items ...string) {
 	}
 	f.mu.Lock()
 	for _, it := range items {
-		f.addLocked(it)
+		f.addLocked(it, 0)
 	}
 	f.mu.Unlock()
 	f.wake()
 }
 
-func (f *Feed) addLocked(item string) ID {
+func (f *Feed) addLocked(item string, flags Flags) ID {
 	if f.closed {
 		panic("fuzzyfinder: Add on closed Feed")
 	}
 	id := ID(len(f.slots))
-	f.slots = append(f.slots, slot{text: item, live: true})
+	f.slots = append(f.slots, slot{text: item, flags: flags, live: true})
 	f.live++
 	return id
 }
 
-// Update replaces the text of item id. It reports false if id was never added
-// or has been removed.
+// Update replaces the text of item id, keeping its flags. It reports false if
+// id was never added or has been removed.
 func (f *Feed) Update(id ID, item string) bool {
+	return f.edit(id, func(s *slot) { s.text = item })
+}
+
+// SetFlags replaces the flags of item id. It reports false if id was never
+// added or has been removed.
+func (f *Feed) SetFlags(id ID, flags Flags) bool {
+	return f.edit(id, func(s *slot) { s.flags = flags })
+}
+
+func (f *Feed) edit(id ID, change func(*slot)) bool {
 	f.mu.Lock()
 	if !f.liveLocked(id) {
 		f.mu.Unlock()
 		return false
 	}
-	f.slots[id].text = item
+	change(&f.slots[id])
 	if id < f.drained {
 		f.updated[id] = struct{}{}
 	}
@@ -138,6 +168,29 @@ func (f *Feed) Get(id ID) (string, bool) {
 		return "", false
 	}
 	return f.slots[id].text, true
+}
+
+// Flags returns the flags of item id, and false if id was never added or has
+// been removed.
+func (f *Feed) Flags(id ID) (Flags, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.liveLocked(id) {
+		return 0, false
+	}
+	return f.slots[id].flags, true
+}
+
+// All iterates a snapshot of the live items, in feed order.
+func (f *Feed) All() iter.Seq2[ID, string] {
+	entries := f.entries()
+	return func(yield func(ID, string) bool) {
+		for _, e := range entries {
+			if !yield(e.id, e.text) {
+				return
+			}
+		}
+	}
 }
 
 // Items returns the text of every live item, in feed order.
@@ -191,8 +244,9 @@ func (f *Feed) wake() {
 
 // entry is one item as handed to the picker.
 type entry struct {
-	id   ID
-	text string
+	id    ID
+	text  string
+	flags Flags
 }
 
 // delta is everything that changed since the picker last drained.
@@ -233,7 +287,7 @@ func (f *Feed) liveEntriesLocked(from ID) []entry {
 	out := make([]entry, 0, len(f.slots)-int(from))
 	for i := from; i < ID(len(f.slots)); i++ {
 		if s := f.slots[i]; s.live {
-			out = append(out, entry{id: i, text: s.text})
+			out = append(out, entry{id: i, text: s.text, flags: s.flags})
 		}
 	}
 	return out
@@ -254,7 +308,8 @@ func (f *Feed) drain() delta {
 	if len(f.updated) > 0 {
 		d.updated = make([]entry, 0, len(f.updated))
 		for id := range f.updated {
-			d.updated = append(d.updated, entry{id: id, text: f.slots[id].text})
+			s := f.slots[id]
+			d.updated = append(d.updated, entry{id: id, text: s.text, flags: s.flags})
 		}
 		clear(f.updated)
 	}

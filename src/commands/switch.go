@@ -218,15 +218,14 @@ func (s *SwitchCommand) Execute(args []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// includeCurrent: the current branch shows in the list but is unselectable
-	// -- it carries the checked-out marker for this worktree, so
-	// isUnselectable blocks it. Keeping it visible means the list isn't
-	// missing the branch you're staring at in the status line above. A detached
-	// HEAD has no such branch, so detachedAt stands in for it.
+	// includeCurrent + pickCurrent: the current branch shows in the list and
+	// picking it pulls it. Keeping it visible means the list isn't missing the
+	// branch you're staring at in the status line above. A detached HEAD has
+	// no such branch, so detachedAt stands in for it.
 	src := streamBranches(ctx, r, s.err(), currentBranch, trackingRemote, remotes,
-		branchStreamOpts{includeCurrent: true, markCheckedOut: true, detachedAt: detachedShortSHA(r, currentBranch)})
+		branchStreamOpts{includeCurrent: true, markCheckedOut: true, pickCurrent: true, detachedAt: detachedShortSHA(r, currentBranch)})
 
-	selected, err := s.sel().SelectStream(ctx, "Select a branch to switch to", src, switchUnselectable)
+	id, err := s.sel().SelectStream(ctx, "Select a branch to switch to", src.Feed)
 	cancel()
 	if err != nil {
 		// Only a cancel is "nothing selected"; a picker that actually failed
@@ -237,11 +236,15 @@ func (s *SwitchCommand) Execute(args []string) error {
 		}
 		return err
 	}
+	picked, err := src.pick(id)
+	if err != nil {
+		return err
+	}
 
 	// Planned before the dirty answer is spent: a remote branch with no local
 	// counterpart still has a question to ask, and declining it cancels the
 	// switch.
-	act, err := s.planSelection(selected)
+	act, err := s.planSelection(picked)
 	if err != nil {
 		return err
 	}
@@ -268,33 +271,18 @@ func (s *SwitchCommand) Execute(args []string) error {
 // via the shared pull flow (fetch + offer to integrate, PR-aware). The HEAD row
 // is just the case where the checkout is a no-op -- you're already there -- so
 // it goes straight to the update.
-func (s *SwitchCommand) planSelection(selected string) (func() error, error) {
-	if strings.Contains(selected, currentBranchMarker) {
+func (s *SwitchCommand) planSelection(p branchPick) (func() error, error) {
+	if p.current {
 		return s.pullCurrent, nil
 	}
 
-	typ, name, err := parseBranchEntry(selected)
-	if err != nil {
-		return nil, err
-	}
-
-	switch typ {
-	case "local":
-		return s.planCheckout(name), nil
-	case "local/remote":
-		branch, ok := localRemoteBranch(name)
-		if !ok {
-			return nil, fmt.Errorf("invalid local/remote branch format: %s", name)
-		}
-		return s.planCheckout(branch), nil
-	case "remote":
-		remoteParts := strings.SplitN(name, "/", 2)
-		if len(remoteParts) != 2 {
-			return nil, fmt.Errorf("invalid remote branch format: %s", name)
-		}
-		return s.planRemoteSelection(remoteParts[0], remoteParts[1])
+	switch p.kind {
+	case localBranch, trackedBranch:
+		return s.planCheckout(p.branch), nil
+	case remoteBranch:
+		return s.planRemoteSelection(p.remote, p.branch)
 	default:
-		return nil, fmt.Errorf("unknown branch type: %s", typ)
+		return nil, fmt.Errorf("cannot switch to %s: not a branch", p.ref())
 	}
 }
 
@@ -305,8 +293,8 @@ func (s *SwitchCommand) planCheckout(branch string) func() error {
 }
 
 // applySelection plans and acts in one step, for callers holding nothing back.
-func (s *SwitchCommand) applySelection(selected string) error {
-	act, err := s.planSelection(selected)
+func (s *SwitchCommand) applySelection(p branchPick) error {
+	act, err := s.planSelection(p)
 	if err != nil {
 		return err
 	}

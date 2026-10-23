@@ -52,6 +52,39 @@ func TestFeed_UpdateRemoveGet(t *testing.T) {
 	assert.That(t, !f.Update(9, "x"), "update of unknown id reports false")
 }
 
+func TestFeed_Flags(t *testing.T) {
+	f := NewFeed()
+	a := f.AddWith("a", Unselectable)
+	b := f.Add("b")
+	f.attach()
+
+	got, ok := f.Flags(a)
+	assert.That(t, ok && got == Unselectable, "AddWith flags should stick")
+	assert.That(t, f.SetFlags(b, Unselectable), "SetFlags on live id")
+	assert.That(t, f.Update(b, "B"), "Update keeps flags")
+	got, _ = f.Flags(b)
+	assert.Equal(t, got, Unselectable)
+	assert.EqualArrays(t, f.drain().updated, []entry{{id: b, text: "B", flags: Unselectable}})
+
+	f.Remove(a)
+	_, ok = f.Flags(a)
+	assert.That(t, !ok, "removed id has no flags")
+	assert.That(t, !f.SetFlags(a, 0), "SetFlags on removed id reports false")
+}
+
+func TestFeed_All(t *testing.T) {
+	f := NewFeedFrom([]string{"a", "b", "c"})
+	f.Remove(1)
+	var ids []ID
+	var texts []string
+	for id, text := range f.All() {
+		ids = append(ids, id)
+		texts = append(texts, text)
+	}
+	assert.EqualArrays(t, ids, []ID{0, 2})
+	assert.EqualArrays(t, texts, []string{"a", "c"})
+}
+
 func TestFeed_AddAfterClosePanics(t *testing.T) {
 	f := NewFeed()
 	f.Close()

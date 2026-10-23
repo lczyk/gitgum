@@ -37,7 +37,7 @@ var (
 //
 // A confirmed selection yields a non-empty IDs/Items. Pressing Enter when
 // no matched item is selectable -- no matches at all, or every match ruled out
-// by Opt.Unselectable -- ends the picker with both empty and a nil error: the
+// by the Unselectable flag -- ends the picker with both empty and a nil error: the
 // picker cannot produce a selection, so it doesn't pretend to, and the caller
 // decides what the bare Query means. Cancelling returns ErrAbort alongside a
 // Result whose Query is still populated (the selection is empty).
@@ -55,6 +55,7 @@ type state struct {
 	itemsLower  []string           // Lowercased view of items for matching's hot path.
 	itemsStyled [][]ansi.StyleSpan // Per-item style runs; non-nil only when Opt.Ansi.
 	ids         []ID               // Feed handle of each item.
+	flags       []Flags            // Feed flags of each item.
 	pos         map[ID]int         // Inverse of ids.
 	matched     []int              // Positions matching the input, ascending.
 
@@ -72,6 +73,9 @@ type state struct {
 	cursorY int
 	// pageSize is the item-row count of the last frame, 0 before the first.
 	pageSize int
+	// loading is set while the feed is still open; spin is the spinner frame.
+	loading bool
+	spin    int
 
 	input []rune
 
@@ -207,10 +211,12 @@ func (f *finder) initFinder(entries []entry, opt Opt) error {
 
 	items := make([]string, len(entries))
 	f.state.ids = make([]ID, len(entries))
+	f.state.flags = make([]Flags, len(entries))
 	f.state.pos = make(map[ID]int, len(entries))
 	for i, e := range entries {
 		items[i] = e.text
 		f.state.ids[i] = e.id
+		f.state.flags[i] = e.flags
 		f.state.pos[e.id] = i
 	}
 	if opt.Ansi {
@@ -308,13 +314,14 @@ func (f *finder) removeLocked(ids []ID, cur int) int {
 				s.itemsStyled[w] = s.itemsStyled[i]
 			}
 			s.ids[w] = s.ids[i]
+			s.flags[w] = s.flags[i]
 			s.pos[s.ids[w]] = w
 		}
 		w++
 	}
 	clear(s.items[w:])
 	clear(s.itemsLower[w:])
-	s.items, s.itemsLower, s.ids = s.items[:w], s.itemsLower[:w], s.ids[:w]
+	s.items, s.itemsLower, s.ids, s.flags = s.items[:w], s.itemsLower[:w], s.ids[:w], s.flags[:w]
 	if s.itemsStyled != nil {
 		clear(s.itemsStyled[w:])
 		s.itemsStyled = s.itemsStyled[:w]
@@ -329,8 +336,8 @@ func (f *finder) removeLocked(ids []ID, cur int) int {
 	return newCur
 }
 
-// updateLocked replaces one item's text in place and moves it into or out of
-// matched as the query now dictates.
+// updateLocked replaces one item's text and flags in place and moves it into
+// or out of matched as the query now dictates.
 // Caller must hold f.stateMu.
 func (f *finder) updateLocked(e entry) {
 	s := &f.state
@@ -339,6 +346,7 @@ func (f *finder) updateLocked(e entry) {
 		return
 	}
 	text, styled := f.parseItem(e.text)
+	s.flags[p] = e.flags
 	s.items[p] = text
 	s.itemsLower[p] = strings.ToLower(text)
 	if s.itemsStyled != nil {
@@ -370,6 +378,7 @@ func (f *finder) appendLocked(entries []entry) {
 			s.itemsStyled = append(s.itemsStyled, styled)
 		}
 		s.ids = append(s.ids, e.id)
+		s.flags = append(s.flags, e.flags)
 		s.pos[e.id] = start + i
 	}
 	for _, k := range f.matchLowerLocked(s.itemsLower[start:]) {
@@ -527,7 +536,11 @@ func (f *finder) _draw() {
 	emit("/", yellow)
 	emitPadded(totalPages, pw)
 
+	// The spinner sits in the gap, so the prompt doesn't move when it stops.
 	const numberPromptGap = 2
+	if f.state.loading {
+		f.term.SetContent(col, promptRow, spinner[f.state.spin%len(spinner)], nil, grey)
+	}
 	promptCol := col + numberPromptGap
 	for _, r := range f.opt.Prompt {
 		style := tcell.StyleDefault.Foreground(tcell.ColorBlue).Background(tcell.ColorDefault)
@@ -1068,7 +1081,11 @@ const (
 	// frame rate keeps the cursor hidden for a visible slice of every frame.
 	// This is the ceiling on how long tearing can stay on screen.
 	repaintInterval = 250 * time.Millisecond
+	// spinInterval paces the loading spinner shown until the feed is closed.
+	spinInterval = 100 * time.Millisecond
 )
+
+var spinner = []rune("\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f")
 
 // find runs the picker against a Feed. The picker takes the feed's current
 // contents, then folds in each change as the feed reports it.
@@ -1151,7 +1168,7 @@ func soleMatch(entries []entry, opt Opt) (entry, bool) {
 		return entry{}, false
 	}
 	e := entries[hits[0]]
-	if opt.Unselectable != nil && opt.Unselectable(e.text) {
+	if e.flags&Unselectable != 0 {
 		return entry{}, false
 	}
 	return e, true
@@ -1186,6 +1203,19 @@ func (f *finder) runLoop(ctx context.Context, feed *Feed) ([]ID, error) {
 	// This goroutine is the only writer of the item view: feed deltas and
 	// query re-filters are serialised here, so a filter can never install a
 	// match computed against items a delta has since replaced.
+	var spin <-chan time.Time
+	done := feed.Done()
+	select {
+	case <-done:
+		done = nil
+	default:
+		f.stateMu.Lock()
+		f.state.loading = true
+		f.stateMu.Unlock()
+		ticker := time.NewTicker(spinInterval)
+		defer ticker.Stop()
+		spin = ticker.C
+	}
 	go func() {
 		wake := feed.notify
 		var throttle <-chan time.Time
@@ -1195,6 +1225,18 @@ func (f *finder) runLoop(ctx context.Context, feed *Feed) ([]ID, error) {
 				return
 			case <-f.eventCh:
 				f.filter()
+			case <-spin:
+				f.stateMu.Lock()
+				f.state.spin++
+				f.stateMu.Unlock()
+			case <-done:
+				// The stream is complete: take its tail now rather than
+				// after the throttle, so the spinner never stops early.
+				f.applyDelta(feed.drain())
+				f.stateMu.Lock()
+				f.state.loading = false
+				f.stateMu.Unlock()
+				done, spin = nil, nil
 			case <-wake:
 				d := feed.drain()
 				if d.empty() {
@@ -1352,20 +1394,17 @@ func negRuneMask(input []rune, negate bool) []bool {
 	return mask
 }
 
-// unselectableLocked reports whether the item at idx is display-only per
-// Opt.Unselectable. Caller must hold f.stateMu (read or write).
+// unselectableLocked reports whether the item at idx carries the Unselectable
+// flag. Caller must hold f.stateMu (read or write).
 func (f *finder) unselectableLocked(idx int) bool {
-	if f.opt == nil || f.opt.Unselectable == nil {
+	if idx < 0 || idx >= len(f.state.flags) {
 		return false
 	}
-	if idx < 0 || idx >= len(f.state.items) {
-		return false
-	}
-	return f.opt.Unselectable(f.state.items[idx])
+	return f.state.flags[idx]&Unselectable != 0
 }
 
 // anySelectableLocked reports whether any currently matched item can be
-// confirmed. False when nothing matches, or when Opt.Unselectable rules out
+// confirmed. False when nothing matches, or when the Unselectable flag rules out
 // every match. Caller must hold f.stateMu (read or write).
 func (f *finder) anySelectableLocked() bool {
 	for _, idx := range f.state.matched {

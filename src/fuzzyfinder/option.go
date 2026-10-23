@@ -45,18 +45,6 @@ type Opt struct {
 	// (and win) over the per-rune ansi style. When false (default), items
 	// are drawn as plain text and any escapes render as literal cells.
 	Ansi bool
-	// Unselectable, when non-nil, is called with an item string (ANSI-stripped
-	// when Opt.Ansi) and reports whether that item is display-only. Such items
-	// still appear, match the query, and can hold the cursor, but Tab won't
-	// toggle them and Enter won't confirm them -- they're drawn dimmed to signal
-	// it. A nil predicate (default) makes every item selectable.
-	//
-	// If the query matches no selectable item at all, Enter ends the picker with
-	// an empty selection rather than being swallowed (see Result).
-	//
-	// NOTE: the predicate keys on the item string, so duplicate item strings
-	// share a selectability. Fine unless you need two same-text items to differ.
-	Unselectable func(item string) bool
 	// Negate enables fzf-style negative needles: a query term prefixed with
 	// '!' (e.g. "!foo") matches items that do NOT contain the rest of the
 	// term. A bare "!" is ignored. When false (default), '!' is treated as a

@@ -45,26 +45,27 @@ func selectWith(finder func(context.Context, *ff.Feed, ff.Opt) (ff.Result, error
 	return options[res.IDs[0]], nil
 }
 
-// SelectStream is like Select but reads candidates from a Feed that
-// may grow (or shrink) concurrently — used by callers that stream entries
-// from background goroutines (e.g. switch). ctx is cancelled when the
-// consumer is done; that also tells producers to stop.
-func SelectStream(ctx context.Context, prompt string, src *ff.Feed, unselectable func(string) bool) (string, error) {
-	opt := ff.Opt{Prompt: prompt + ": ", Height: 10, Reverse: true, Unselectable: unselectable}
+// SelectStream is like Select but reads candidates from a Feed that may
+// change concurrently -- used by callers that stream entries from background
+// goroutines (e.g. switch). It returns the picked entry's ID; the caller maps
+// that back to whatever the row stands for. ctx is cancelled when the consumer
+// is done; that also tells producers to stop.
+func SelectStream(ctx context.Context, prompt string, src *ff.Feed) (ff.ID, error) {
+	opt := ff.Opt{Prompt: prompt + ": ", Height: 10, Reverse: true}
 	res, err := ff.Find(ctx, src, opt)
 	if err != nil {
 		if errors.Is(err, ff.ErrAbort) {
-			return "", ErrCancelled
+			return 0, ErrCancelled
 		}
-		return "", fmt.Errorf("running picker: %w", err)
+		return 0, fmt.Errorf("running picker: %w", err)
 	}
 	// Enter with nothing selectable under the query (e.g. every branch is
 	// checked out in another worktree). Nothing to hand back, so it reads as
 	// a cancellation -- callers already print their own "nothing selected".
-	if len(res.Items) == 0 {
-		return "", ErrCancelled
+	if len(res.IDs) == 0 {
+		return 0, ErrCancelled
 	}
-	return res.Items[0], nil
+	return res.IDs[0], nil
 }
 
 // Prompt reads a line of free text via the picker. The item list is empty, so
@@ -108,7 +109,7 @@ func Confirm(prompt string, defaultYes bool) (bool, error) {
 // RealSelector (the zero value), which delegates to the package-level functions.
 type Selector interface {
 	Select(prompt string, options []string, initialQuery ...string) (string, error)
-	SelectStream(ctx context.Context, prompt string, src *ff.Feed, unselectable func(string) bool) (string, error)
+	SelectStream(ctx context.Context, prompt string, src *ff.Feed) (ff.ID, error)
 	MultiSelect(prompt string, options []string) ([]string, error)
 	Prompt(question string) (string, error)
 	Confirm(prompt string, defaultYes bool) (bool, error)
@@ -149,8 +150,8 @@ func (RealSelector) Select(prompt string, options []string, initialQuery ...stri
 	return Select(prompt, options, initialQuery...)
 }
 
-func (RealSelector) SelectStream(ctx context.Context, prompt string, src *ff.Feed, unselectable func(string) bool) (string, error) {
-	return SelectStream(ctx, prompt, src, unselectable)
+func (RealSelector) SelectStream(ctx context.Context, prompt string, src *ff.Feed) (ff.ID, error) {
+	return SelectStream(ctx, prompt, src)
 }
 
 func (RealSelector) MultiSelect(prompt string, options []string) ([]string, error) {

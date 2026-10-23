@@ -179,6 +179,17 @@ func TestApplyDelta_MovedCursorStaysPageAligned(t *testing.T) {
 	assert.Equal(t, f.state.cursorY, 8)
 }
 
+func TestApplyDelta_UpdateCarriesFlags(t *testing.T) {
+	f := newDeltaFinder(t, []string{"a", "b"}, false)
+	assert.That(t, !f.unselectableLocked(1), "starts selectable")
+
+	f.applyDelta(delta{updated: []entry{{id: 1, text: "b", flags: Unselectable}}})
+	assert.That(t, f.unselectableLocked(1), "flag should land")
+
+	f.applyDelta(delta{removed: []ID{0}})
+	assert.That(t, f.unselectableLocked(0), "flag should move with its item on compaction")
+}
+
 func TestApplyDelta_EmptyIsNoop(t *testing.T) {
 	f := newDeltaFinder(t, []string{"a"}, false)
 	f.applyDelta(delta{})

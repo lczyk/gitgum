@@ -8,18 +8,6 @@ import (
 	"github.com/lczyk/gitgum/internal/pr"
 )
 
-func TestSwitchUnselectable(t *testing.T) {
-	t.Parallel()
-	// current branch (HEAD row): selectable now (picking it pulls).
-	assert.That(t, !switchUnselectable("local: main"+currentBranchMarker), "current branch should be selectable")
-	// branch checked out in another worktree: still blocked.
-	assert.That(t, switchUnselectable("local: feat"+checkedOutSuffix("/wt/feat-2")), "other-worktree checkout stays blocked")
-	// detached HEAD row: still blocked.
-	assert.That(t, switchUnselectable(detachedEntry("cf10b5f")), "detached HEAD stays blocked")
-	// a plain branch: selectable.
-	assert.That(t, !switchUnselectable("local: other"), "plain branch selectable")
-}
-
 func TestFormatPROptions(t *testing.T) {
 	cases := map[string]struct {
 		prRefs   []pr.Ref

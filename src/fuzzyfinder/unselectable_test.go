@@ -10,7 +10,7 @@ import (
 	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
 )
 
-// Opt.Unselectable items can't be confirmed (Enter) or toggled (Tab); a
+// Unselectable items can't be confirmed (Enter) or toggled (Tab); a
 // selectable item still confirms normally.
 func TestUnselectable(t *testing.T) {
 	t.Parallel()
@@ -28,7 +28,7 @@ func TestUnselectable(t *testing.T) {
 		term.SetEvents(append(runes("apple"), enter)...)
 
 		it := items
-		res, err := f.Find(context.Background(), ff.NewFeedFrom(it), ff.Opt{Unselectable: unsel})
+		res, err := f.Find(context.Background(), feedOf(it, unsel), ff.Opt{})
 		require.NoError(t, err)
 		assert.Equal(t, ff.ID(1), res.IDs[0])
 	})
@@ -41,7 +41,7 @@ func TestUnselectable(t *testing.T) {
 		term.SetEvents(enter, esc)
 
 		it := items
-		_, err := f.Find(context.Background(), ff.NewFeedFrom(it), ff.Opt{Unselectable: unsel})
+		_, err := f.Find(context.Background(), feedOf(it, unsel), ff.Opt{})
 		assert.ErrorIs(t, err, ff.ErrAbort)
 	})
 
@@ -53,7 +53,7 @@ func TestUnselectable(t *testing.T) {
 		term.SetEvents(append(runes("header"), enter)...)
 
 		it := items
-		res, err := f.Find(context.Background(), ff.NewFeedFrom(it), ff.Opt{Unselectable: unsel})
+		res, err := f.Find(context.Background(), feedOf(it, unsel), ff.Opt{})
 		require.NoError(t, err)
 		assert.Equal(t, 0, len(res.IDs))
 		assert.Equal(t, "header", res.Query)
@@ -65,7 +65,7 @@ func TestUnselectable(t *testing.T) {
 		term.SetEvents(append(runes("zzz"), enter)...)
 
 		it := items
-		res, err := f.Find(context.Background(), ff.NewFeedFrom(it), ff.Opt{Unselectable: unsel})
+		res, err := f.Find(context.Background(), feedOf(it, unsel), ff.Opt{})
 		require.NoError(t, err)
 		assert.Equal(t, 0, len(res.IDs))
 		assert.Equal(t, "zzz", res.Query)
@@ -79,9 +79,7 @@ func TestUnselectable(t *testing.T) {
 		term.SetEvents(append(runes("appl"), enter)...)
 
 		it := items
-		res, err := f.Find(context.Background(), ff.NewFeedFrom(it), ff.Opt{
-			Unselectable: func(string) bool { return true },
-		})
+		res, err := f.Find(context.Background(), feedOf(it, func(string) bool { return true }), ff.Opt{})
 		require.NoError(t, err)
 		assert.Equal(t, 0, len(res.IDs))
 		assert.Equal(t, "appl", res.Query)
@@ -95,8 +93,22 @@ func TestUnselectable(t *testing.T) {
 		term.SetEvents(tab, tab, enter)
 
 		it := items
-		res, err := f.Find(context.Background(), ff.NewFeedFrom(it), ff.Opt{Multi: true, Unselectable: unsel})
+		res, err := f.Find(context.Background(), feedOf(it, unsel), ff.Opt{Multi: true})
 		require.NoError(t, err)
 		assert.EqualArrays(t, []ff.ID{1}, res.IDs)
 	})
+}
+
+// feedOf builds a closed feed over items, flagging those unsel picks.
+func feedOf(items []string, unsel func(string) bool) *ff.Feed {
+	feed := ff.NewFeed()
+	for _, it := range items {
+		var flags ff.Flags
+		if unsel(it) {
+			flags = ff.Unselectable
+		}
+		feed.AddWith(it, flags)
+	}
+	feed.Close()
+	return feed
 }

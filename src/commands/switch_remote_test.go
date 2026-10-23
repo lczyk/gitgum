@@ -63,7 +63,7 @@ func TestApplySelection_RemoteRetargetConfirmedKeptOnSuccess(t *testing.T) {
 
 	stub := &stubSelector{confirmAnswers: []bool{true}, selectAnswers: []string{git.PullMerge.String()}}
 	s, out, errb := newSwitch(local, stub)
-	require.NoError(t, s.applySelection("remote: playground/main"))
+	require.NoError(t, s.applySelection(remotePick("playground", "main")))
 
 	require.Equal(t, len(stub.confirmCalls), 1)
 	assert.ContainsString(t, stub.confirmCalls[0].Prompt, "Retarget tracking of 'local/main' to 'playground/main'?")
@@ -83,7 +83,7 @@ func TestApplySelection_RemoteRetargetDeclinedLeavesTracking(t *testing.T) {
 
 	stub := &stubSelector{confirmAnswers: []bool{false}}
 	s, out, _ := newSwitch(local, stub)
-	require.NoError(t, s.applySelection("remote: playground/main"))
+	require.NoError(t, s.applySelection(remotePick("playground", "main")))
 
 	assert.Equal(t, upstreamOf(t, local, "main"), "origin/main")
 	assert.Equal(t, currentBranchIn(t, local), "main")
@@ -101,7 +101,7 @@ func TestApplySelection_RemoteRetargetWithoutAskingWhenNotDiverged(t *testing.T)
 
 	stub := &stubSelector{}
 	s, out, _ := newSwitch(local, stub)
-	require.NoError(t, s.applySelection("remote: playground/main"))
+	require.NoError(t, s.applySelection(remotePick("playground", "main")))
 
 	assert.Equal(t, len(stub.confirmCalls), 0)
 	assert.Equal(t, upstreamOf(t, local, "main"), "playground/main")
@@ -118,7 +118,7 @@ func TestApplySelection_RemoteRetargetUndoneOnCancel(t *testing.T) {
 
 	stub := &stubSelector{confirmAnswers: []bool{true}, selectErrs: []error{ui.ErrCancelled}}
 	s, _, errb := newSwitch(local, stub)
-	err := s.applySelection("remote: playground/main")
+	err := s.applySelection(remotePick("playground", "main"))
 	assert.ErrorIs(t, err, ui.ErrCancelled)
 
 	assert.Equal(t, upstreamOf(t, local, "main"), "origin/main")
@@ -136,7 +136,7 @@ func TestApplySelection_RemoteRetargetUndoneOnIntegrateFailure(t *testing.T) {
 
 	stub := &stubSelector{confirmAnswers: []bool{true}, selectAnswers: []string{git.PullMerge.String()}}
 	s, _, errb := newSwitch(local, stub)
-	err := s.applySelection("remote: playground/main")
+	err := s.applySelection(remotePick("playground", "main"))
 	require.Error(t, err, assert.AnyError)
 	assert.ContainsString(t, err.Error(), "git merge")
 
@@ -157,7 +157,7 @@ func TestApplySelection_RemoteRetargetUndoneToNoUpstream(t *testing.T) {
 
 	stub := &stubSelector{confirmAnswers: []bool{true}, selectErrs: []error{ui.ErrCancelled}}
 	s, out, errb := newSwitch(local, stub)
-	err := s.applySelection("remote: playground/main")
+	err := s.applySelection(remotePick("playground", "main"))
 	assert.ErrorIs(t, err, ui.ErrCancelled)
 
 	assert.ContainsString(t, out.String(), "'local/main' tracks no upstream and has diverged")
@@ -175,7 +175,7 @@ func TestApplySelection_RemoteAlreadyTrackingNoRetarget(t *testing.T) {
 
 	stub := &stubSelector{selectErrs: []error{ui.ErrCancelled}}
 	s, out, errb := newSwitch(local, stub)
-	err := s.applySelection("remote: origin/main")
+	err := s.applySelection(remotePick("origin", "main"))
 	assert.ErrorIs(t, err, ui.ErrCancelled)
 
 	assert.Equal(t, len(stub.confirmCalls), 0)
@@ -193,7 +193,7 @@ func TestApplySelection_BackOnPreviousBranchOnCancel(t *testing.T) {
 
 	stub := &stubSelector{confirmAnswers: []bool{true}, selectErrs: []error{ui.ErrCancelled}}
 	s, out, errb := newSwitch(local, stub)
-	err := s.applySelection("remote: playground/main")
+	err := s.applySelection(remotePick("playground", "main"))
 	assert.ErrorIs(t, err, ui.ErrCancelled)
 
 	assert.ContainsString(t, out.String(), "Switched to 'local/main'.")
@@ -215,7 +215,7 @@ func TestApplySelection_BackOnDetachedCommitOnCancel(t *testing.T) {
 
 	stub := &stubSelector{confirmAnswers: []bool{true}, selectErrs: []error{ui.ErrCancelled}}
 	s, _, errb := newSwitch(local, stub)
-	err := s.applySelection("remote: playground/main")
+	err := s.applySelection(remotePick("playground", "main"))
 	assert.ErrorIs(t, err, ui.ErrCancelled)
 
 	assert.Equal(t, currentBranchIn(t, local), "HEAD")
@@ -233,7 +233,7 @@ func TestApplySelection_LocalBackOnCancel(t *testing.T) {
 
 	stub := &stubSelector{selectErrs: []error{ui.ErrCancelled}}
 	s, _, errb := newSwitch(local, stub)
-	err := s.applySelection("local/remote: origin/main")
+	err := s.applySelection(trackedPick("origin", "main"))
 	assert.ErrorIs(t, err, ui.ErrCancelled)
 
 	assert.Equal(t, currentBranchIn(t, local), "feature")
@@ -249,7 +249,7 @@ func TestApplySelection_RemoteCreateDeclined(t *testing.T) {
 
 	stub := &stubSelector{confirmAnswers: []bool{false}}
 	s, _, errb := newSwitch(local, stub)
-	err := s.applySelection("remote: origin/topic")
+	err := s.applySelection(remotePick("origin", "topic"))
 	assert.ErrorIs(t, err, ui.ErrCancelled)
 
 	assert.ContainsString(t, stub.confirmCalls[0].Prompt, "No 'local/topic' yet. Create it tracking 'origin/topic'?")
@@ -273,7 +273,7 @@ func TestApplySelection_RemoteCreateLands(t *testing.T) {
 
 	stub := &stubSelector{confirmAnswers: []bool{true}}
 	s, out, _ := newSwitch(local, stub)
-	require.NoError(t, s.applySelection("remote: origin/topic"))
+	require.NoError(t, s.applySelection(remotePick("origin", "topic")))
 
 	assert.Equal(t, currentBranchIn(t, local), "topic")
 	assert.Equal(t, upstreamOf(t, local, "topic"), "origin/topic")

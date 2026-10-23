@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"time"
 
 	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
 )
@@ -56,21 +57,37 @@ func (s *stubSelector) Select(prompt string, options []string, initialQuery ...s
 	return answer, nil
 }
 
-func (s *stubSelector) SelectStream(ctx context.Context, prompt string, src *ff.Feed, unselectable func(string) bool) (string, error) {
+// SelectStream picks the row whose text is the next scripted answer. It waits
+// for the feed to close first, so the answer can name a row that is still
+// streaming in.
+func (s *stubSelector) SelectStream(ctx context.Context, prompt string, src *ff.Feed) (ff.ID, error) {
 	s.selectCalls = append(s.selectCalls, selectCall{Prompt: prompt, Stream: true})
 	if err := s.nextSelectErr(); err != nil {
-		return "", err
+		return 0, err
 	}
 	if len(s.selectAnswers) == 0 {
-		return "", fmt.Errorf("stubSelector: unexpected SelectStream call %q", prompt)
+		return 0, fmt.Errorf("stubSelector: unexpected SelectStream call %q", prompt)
 	}
 	answer := s.selectAnswers[0]
 	s.selectAnswers = s.selectAnswers[1:]
-	// mirror the real picker: an unselectable item can never be returned.
-	if unselectable != nil && unselectable(answer) {
-		return "", fmt.Errorf("stubSelector: answer %q is unselectable", answer)
+	select {
+	case <-src.Done():
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	case <-time.After(5 * time.Second):
+		return 0, fmt.Errorf("stubSelector: feed for %q never closed", prompt)
 	}
-	return answer, nil
+	for id, text := range src.All() {
+		if text != answer {
+			continue
+		}
+		// mirror the real picker: an unselectable item can never be returned.
+		if flags, _ := src.Flags(id); flags&ff.Unselectable != 0 {
+			return 0, fmt.Errorf("stubSelector: answer %q is unselectable", answer)
+		}
+		return id, nil
+	}
+	return 0, fmt.Errorf("stubSelector: answer %q not in the feed: %q", answer, src.Items())
 }
 
 // nextSelectErr pops the next scripted Select error, or nil when none is left.

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -26,38 +25,24 @@ const (
 // checkedOutMarker tags a branch already checked out in some worktree. The
 // switch flow always ends in `git checkout <name>` / reset, which git rejects
 // for a branch checked out anywhere (including the current worktree -- you're
-// already on it), so these entries are shown but made unselectable (see
-// switch.go). It's the shared prefix of both suffix variants ("in <wt>
-// worktree)" and "here. HEAD)"), so the emitter and the unselectable predicate
-// stay in sync via this const.
+// already on it), so switch and delete show these entries but flag them
+// unselectable. It's the shared prefix of both suffix variants ("in <wt>
+// worktree)" and "here. HEAD)").
 const checkedOutMarker = " (checked out "
 
 // currentBranchMarker tags the branch checked out in the current worktree --
 // the one you're on. The trailing "HEAD" is a search token: typing "HEAD" in
-// the picker surfaces the current branch (a `branch` start point, and just
-// visible in switch/delete). It shares checkedOutMarker's prefix, so switch and
-// delete still treat it as unselectable; `branch` leaves it selectable and
-// strips the marker back off in parseBranchEntry.
+// the picker surfaces the current branch (a `branch` start point, the pull
+// target in switch, and just visible in delete).
 const currentBranchMarker = checkedOutMarker + "here. HEAD)"
 
 // detachedMarker tags the entry standing in for a detached HEAD. It names
-// where HEAD sits but is not a branch, so it can't be switched to; like
-// checkedOutMarker, the emitter and the unselectable predicate both key on it.
+// where HEAD sits but is not a branch, so switch and delete can't act on it.
 const detachedMarker = "HEAD (detached at "
 
 // detachedEntry renders the picker row for a detached HEAD at short sha.
 func detachedEntry(short string) string {
 	return "local: " + detachedMarker + short + ")"
-}
-
-// detachedEntrySHA recovers the short sha from a detached-HEAD picker payload
-// ("HEAD (detached at cf10b5f)"), the name half of a detachedEntry row.
-func detachedEntrySHA(name string) (string, bool) {
-	rest, ok := strings.CutPrefix(name, detachedMarker)
-	if !ok {
-		return "", false
-	}
-	return strings.TrimSuffix(rest, ")"), true
 }
 
 // checkedOutSuffix renders the display suffix for a branch checked out in
@@ -67,72 +52,88 @@ func checkedOutSuffix(worktreePath string) string {
 	return checkedOutMarker + "in " + filepath.Base(worktreePath) + " worktree)"
 }
 
-// isUnselectable is the picker's Unselectable predicate: an entry carrying
-// either marker names something `git checkout` would refuse -- a branch checked
-// out in another worktree, or a detached HEAD, which is not a branch at all.
-func isUnselectable(item string) bool {
-	return strings.Contains(item, checkedOutMarker) || strings.Contains(item, detachedMarker)
+type branchKind int
+
+const (
+	localBranch   branchKind = iota // "local: <branch>", no upstream
+	trackedBranch                   // "local/remote: <remote>/<branch>"
+	remoteBranch                    // "remote: <remote>/<branch>", no local counterpart
+	detachedHead                    // detachedEntry; branch holds the short sha
+)
+
+// branchPick is what a picker row stands for. The display text is for the
+// user to read and search; the commands act on this.
+type branchPick struct {
+	kind   branchKind
+	branch string // local branch name, remote branch name, or detached sha
+	remote string // set for trackedBranch and remoteBranch
+	// current marks the branch checked out in this worktree.
+	current bool
 }
 
-// switchUnselectable is switch's predicate. It's isUnselectable with one
-// exception: the current branch (currentBranchMarker) is selectable -- picking
-// it means "pull the branch you're on" rather than a no-op re-checkout. Other
-// worktrees' checkouts and a detached HEAD stay blocked.
-func switchUnselectable(item string) bool {
-	if strings.Contains(item, currentBranchMarker) {
-		return false
+// ref names the pick as git would: the remote-tracking ref for tracked and
+// remote branches, the branch or commit otherwise.
+func (p branchPick) ref() string {
+	if p.remote != "" {
+		return p.remote + "/" + p.branch
 	}
-	return isUnselectable(item)
+	return p.branch
 }
 
-// parseBranchEntry splits a picker payload ("local: foo", "remote: origin/foo",
-// "local/remote: origin/foo") into its type tag and name. The name is whatever
-// followed the tag, suffixes included -- callers that enabled markCheckedOut
-// only ever see entries they made selectable, so no checked-out suffix reaches
-// here. A detachedEntry does: `branch` lets you cut a branch off HEAD, and
-// startPointFor unwraps the name via detachedEntrySHA.
-func parseBranchEntry(selected string) (typ, name string, err error) {
-	typ, name, ok := strings.Cut(selected, ": ")
+// branchFeed is the picker feed plus what each of its rows stands for.
+type branchFeed struct {
+	*ff.Feed
+	mu    sync.Mutex
+	picks map[ff.ID]branchPick
+}
+
+func newBranchFeed() *branchFeed {
+	return &branchFeed{Feed: ff.NewFeed(), picks: map[ff.ID]branchPick{}}
+}
+
+// add holds mu across the Add, so a row can't be confirmed before its pick is
+// recorded.
+func (b *branchFeed) add(display string, p branchPick, flags ff.Flags) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.picks[b.AddWith(display, flags)] = p
+}
+
+func (b *branchFeed) pick(id ff.ID) (branchPick, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	p, ok := b.picks[id]
 	if !ok {
-		return "", "", fmt.Errorf("invalid selection: %s", selected)
+		return branchPick{}, fmt.Errorf("picked entry %d not in the branch list", id)
 	}
-	// The current branch is selectable in `branch` (branch off HEAD) and carries
-	// currentBranchMarker for search; strip it so the name is the bare ref. Git
-	// branch names can't contain spaces, so the marker can't be part of one.
-	name = strings.TrimSuffix(name, currentBranchMarker)
-	return typ, name, nil
-}
-
-// localRemoteBranch recovers the local branch name from a "local/remote"
-// picker payload, which is "<remote>/<branch>" (see streamLocalBranches). A
-// git remote name never contains '/', so a single cut on the first '/' yields
-// the branch -- which may itself contain '/' (e.g. "feat/foo"). Returns false
-// if the payload has no '/'.
-func localRemoteBranch(name string) (string, bool) {
-	_, branch, ok := strings.Cut(name, "/")
-	return branch, ok
+	return p, nil
 }
 
 type branchEntry struct {
 	display  string
 	dedupKey string
+	pick     branchPick
+	flags    ff.Flags
 }
 
 // branchStreamOpts tunes streamBranches for its three consumers.
 type branchStreamOpts struct {
 	// includeCurrent emits the current branch. switch and delete keep it so it's
-	// visible but unselectable (the checked-out marker for this worktree blocks
-	// it); branch keeps it because branching off HEAD is the common case.
+	// visible; branch keeps it because branching off HEAD is the common case.
 	includeCurrent bool
 	// markCheckedOut appends checkedOutSuffix to branches checked out in another
-	// worktree, which isUnselectable then blocks. switch and delete want
-	// this -- git refuses both operations on such a branch. branch does not: a
-	// branch checked out elsewhere is a perfectly good start point, and the
-	// suffix would otherwise have to be stripped back off the picker payload.
+	// worktree and flags them, the current branch and a detached HEAD
+	// unselectable. switch and delete want this -- git refuses both operations
+	// on such a branch. branch does not: a branch checked out elsewhere is a
+	// perfectly good start point, and so is a detached HEAD.
 	markCheckedOut bool
+	// pickCurrent keeps the current branch selectable under markCheckedOut:
+	// in switch, picking it means "pull the branch you're on" rather than a
+	// no-op re-checkout.
+	pickCurrent bool
 	// detachedAt is the short sha HEAD is detached at, "" when HEAD is on a
-	// branch. Set, it prepends an unselectable row naming the commit, so the
-	// picker isn't silent about where you actually are.
+	// branch. Set, it prepends a row naming the commit, so the picker isn't
+	// silent about where you actually are.
 	detachedAt string
 	// locals is the local-branch listing when the caller already has one --
 	// delete reads it up front for its empty-repo guard. nil means read it
@@ -140,13 +141,21 @@ type branchStreamOpts struct {
 	locals []git.LocalBranch
 }
 
+// blocked returns the flags for a row that markCheckedOut would block.
+func (o branchStreamOpts) blocked() ff.Flags {
+	if o.markCheckedOut {
+		return ff.Unselectable
+	}
+	return 0
+}
+
 // streamBranches collects local and remote branches concurrently, deduplicating
-// and writing into a Feed the picker consumes. The feed is closed once every
+// and writing into a feed the picker consumes. The feed is closed once every
 // producer has finished. Caller cancels ctx when the consumer (fuzzyfinder) is
 // done; cancellation also stops producers. errOut receives non-fatal
 // diagnostic messages from the producers.
-func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBranch, trackingRemote string, remotes []string, opts branchStreamOpts) *ff.Feed {
-	src := ff.NewFeed()
+func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBranch, trackingRemote string, remotes []string, opts branchStreamOpts) *branchFeed {
+	src := newBranchFeed()
 	seen := make(map[string]struct{})
 	var seenMu sync.Mutex
 
@@ -171,7 +180,7 @@ func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBr
 				}
 				seen[entry.dedupKey] = struct{}{}
 				seenMu.Unlock()
-				src.Add(entry.display)
+				src.add(entry.display, entry.pick, entry.flags)
 			case <-ctx.Done():
 				return
 			}
@@ -186,7 +195,7 @@ func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBr
 	// "local/remote: ...", sending switch down the fetch/tracking-branch path
 	// for a branch that already exists locally.
 	if opts.detachedAt != "" {
-		src.Add(detachedEntry(opts.detachedAt))
+		src.add(detachedEntry(opts.detachedAt), branchPick{kind: detachedHead, branch: opts.detachedAt}, opts.blocked())
 	}
 
 	checkedOut := streamLocalBranches(ctx, r, errOut, queue, currentBranch, opts)
@@ -254,27 +263,32 @@ func streamLocalBranches(ctx context.Context, r git.Repo, errOut io.Writer, queu
 			// Include the tracking remote in the display so the row is
 			// searchable by remote name (typing "origin" surfaces every branch
 			// tracking origin), matching the "remote: <remote>/<branch>" rows.
-			// applySelection/applyDeletion strip the remote back off via
-			// localRemoteBranch to recover the local branch to check out/delete.
 			entry = branchEntry{
 				display:  "local/remote: " + tr + "/" + branch,
 				dedupKey: "remote:" + tr + "/" + branch,
+				pick:     branchPick{kind: trackedBranch, remote: tr, branch: branch},
 			}
 		} else {
 			entry = branchEntry{
 				display:  "local: " + branch,
 				dedupKey: "local:" + branch,
+				pick:     branchPick{kind: localBranch, branch: branch},
 			}
 		}
 		// The current branch always carries currentBranchMarker (the "HEAD"
 		// search token) -- it's this worktree's checkout, so no other worktree
 		// can also hold it. Any other branch checked out elsewhere gets the
-		// worktree suffix, which isUnselectable then blocks (switch/delete refuse
-		// it). dedupKey stays clean either way.
+		// worktree suffix and is blocked (switch/delete refuse it). dedupKey
+		// stays clean either way.
 		if branch == currentBranch {
 			entry.display += currentBranchMarker
+			entry.pick.current = true
+			if !opts.pickCurrent {
+				entry.flags = opts.blocked()
+			}
 		} else if wt, ok := checkedOut[branch]; ok {
 			entry.display += checkedOutSuffix(wt)
+			entry.flags = ff.Unselectable
 		}
 		select {
 		case queue <- entry:
@@ -293,12 +307,14 @@ func streamRemoteBranches(ctx context.Context, queue chan<- branchEntry, remote 
 		entry := branchEntry{
 			display:  "remote: " + remote + "/" + branch,
 			dedupKey: "remote:" + remote + "/" + branch,
+			pick:     branchPick{kind: remoteBranch, remote: remote, branch: branch},
 		}
 		// selecting a remote branch ends in `git checkout <branch>` on the
 		// local landing name; if that's checked out elsewhere it'd fail, so
 		// show but mark unselectable. skip the current branch (own ref).
 		if wt, ok := checkedOut[branch]; ok && branch != currentBranch {
 			entry.display += checkedOutSuffix(wt)
+			entry.flags = ff.Unselectable
 		}
 		select {
 		case queue <- entry:

@@ -3,6 +3,8 @@ package commands
 import (
 	"bytes"
 	"context"
+	ff "github.com/lczyk/gitgum/src/fuzzyfinder"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -20,20 +22,26 @@ func currentBranchIn(t *testing.T, dir string) string {
 	return strings.TrimSpace(temp_repo.RunGit(t, dir, "rev-parse", "--abbrev-ref", "HEAD"))
 }
 
-func TestApplySelection_InvalidFormat(t *testing.T) {
-	t.Parallel()
-	s := &SwitchCommand{}
-	err := s.applySelection("no-colon-separator")
-	assert.Error(t, err, assert.AnyError)
-	assert.ContainsString(t, err.Error(), "invalid selection")
+func localPick(branch string) branchPick {
+	return branchPick{kind: localBranch, branch: branch}
 }
 
-func TestApplySelection_UnknownType(t *testing.T) {
+func trackedPick(remote, branch string) branchPick {
+	return branchPick{kind: trackedBranch, remote: remote, branch: branch}
+}
+
+func remotePick(remote, branch string) branchPick {
+	return branchPick{kind: remoteBranch, remote: remote, branch: branch}
+}
+
+// A detached HEAD row names a commit, not a branch; switch refuses it rather
+// than landing on a name that isn't one.
+func TestApplySelection_DetachedRefused(t *testing.T) {
 	t.Parallel()
 	s := &SwitchCommand{}
-	err := s.applySelection("unknown: foo")
+	err := s.applySelection(branchPick{kind: detachedHead, branch: "cf10b5f"})
 	assert.Error(t, err, assert.AnyError)
-	assert.ContainsString(t, err.Error(), "unknown branch type")
+	assert.ContainsString(t, err.Error(), "not a branch")
 }
 
 func TestApplySelection_Local(t *testing.T) {
@@ -43,7 +51,7 @@ func TestApplySelection_Local(t *testing.T) {
 
 	var buf strings.Builder
 	s := &SwitchCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}}
-	err := s.applySelection("local: feature")
+	err := s.applySelection(localPick("feature"))
 	require.NoError(t, err)
 	assert.Equal(t, currentBranchIn(t, dir), "feature")
 	assert.ContainsString(t, buf.String(), "Switched to 'local/feature'.")
@@ -58,8 +66,8 @@ func TestApplySelection_HEADFastForwards(t *testing.T) {
 
 	var buf strings.Builder
 	s := &SwitchCommand{cmdIO: cmdIO{Out: &buf, UI: &stubSelector{}, Repo: git.Repo{Dir: local}}}
-	// any payload carrying the HEAD marker routes to the pull-current path.
-	err := s.applySelection("local/remote: origin/main" + currentBranchMarker)
+	// any current pick routes to the pull-current path.
+	err := s.applySelection(branchPick{kind: trackedBranch, remote: "origin", branch: "main", current: true})
 	require.NoError(t, err)
 	assert.Equal(t, strings.TrimSpace(temp_repo.RunGit(t, local, "rev-parse", "HEAD")), remoteHead)
 }
@@ -73,19 +81,11 @@ func TestApplySelection_LocalNoUpstreamBenign(t *testing.T) {
 
 	var buf strings.Builder
 	s := &SwitchCommand{cmdIO: cmdIO{Out: &buf, UI: &stubSelector{}, Repo: git.Repo{Dir: dir}}}
-	err := s.applySelection("local: feature")
+	err := s.applySelection(localPick("feature"))
 	require.NoError(t, err)
 	assert.Equal(t, currentBranchIn(t, dir), "feature")
 	assert.ContainsString(t, buf.String(), "Switched to 'local/feature'.")
 	assert.ContainsString(t, buf.String(), "nothing to pull")
-}
-
-func TestApplySelection_RemoteInvalidFormat(t *testing.T) {
-	t.Parallel()
-	s := &SwitchCommand{}
-	err := s.applySelection("remote: noslash")
-	assert.Error(t, err, assert.AnyError)
-	assert.ContainsString(t, err.Error(), "invalid remote branch format")
 }
 
 // "local/remote" entries appear when a local branch already has a tracking
@@ -97,7 +97,7 @@ func TestApplySelection_LocalRemote(t *testing.T) {
 
 	var buf strings.Builder
 	s := &SwitchCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}}
-	err := s.applySelection("local/remote: origin/feature")
+	err := s.applySelection(trackedPick("origin", "feature"))
 	require.NoError(t, err)
 	assert.Equal(t, currentBranchIn(t, dir), "feature")
 }
@@ -111,7 +111,7 @@ func TestApplySelection_LocalRemoteSlashBranch(t *testing.T) {
 
 	var buf strings.Builder
 	s := &SwitchCommand{cmdIO: cmdIO{Out: &buf, Repo: git.Repo{Dir: dir}}}
-	err := s.applySelection("local/remote: origin/feat/x")
+	err := s.applySelection(trackedPick("origin", "feat/x"))
 	require.NoError(t, err)
 	assert.Equal(t, currentBranchIn(t, dir), "feat/x")
 }
@@ -211,7 +211,8 @@ func TestSwitchCommand_Execute_DiscardWaitsForSelection(t *testing.T) {
 // cancels -- so it has to be asked before the dirty answer is spent, not after.
 func TestSwitchCommand_Execute_DiscardWaitsForTrackingOffer(t *testing.T) {
 	t.Parallel()
-	dir := temp_repo.NewRepo(t)
+	dir, _ := temp_repo.NewRepoWithRemote(t)
+	temp_repo.RunGit(t, dir, "update-ref", "refs/remotes/origin/feature", "HEAD")
 	temp_repo.WriteFile(t, dir, "README.md", "edited\n")
 
 	var out, errBuf strings.Builder
@@ -318,7 +319,7 @@ func TestStreamBranches_CheckedOutElsewhereIsMarkedUnselectable(t *testing.T) {
 
 	require.That(t, feature != "", "feature branch should appear")
 	assert.ContainsString(t, feature, "(checked out in")
-	assert.That(t, isUnselectable(feature), "marked entry should be unselectable")
+	assert.That(t, unselectable(t, src, feature), "marked entry should be unselectable")
 }
 
 // The branch checked out in the current worktree reads "(checked out here.
@@ -355,7 +356,71 @@ func TestStreamBranches_CurrentBranchReadsHere(t *testing.T) {
 	require.That(t, entry != "", "current branch should appear")
 	assert.ContainsString(t, entry, "(checked out here. HEAD)")
 	assert.That(t, !strings.Contains(entry, "worktree"), "current branch should not name a worktree")
-	assert.That(t, isUnselectable(entry), "current branch should be unselectable")
+	assert.That(t, unselectable(t, src, entry), "current branch should be unselectable")
+}
+
+// unselectable reports whether the row reading text carries the Unselectable
+// flag.
+func unselectable(t *testing.T, src *branchFeed, text string) bool {
+	t.Helper()
+	for id, it := range src.All() {
+		if it == text {
+			flags, _ := src.Flags(id)
+			return flags&ff.Unselectable != 0
+		}
+	}
+	t.Fatalf("no row %q in %q", text, src.Items())
+	return false
+}
+
+// rowsWhenDone waits for streamBranches to finish and returns its rows.
+func rowsWhenDone(t *testing.T, src *branchFeed) []string {
+	t.Helper()
+	select {
+	case <-src.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("branch feed never closed")
+	}
+	return src.Items()
+}
+
+// switch (pickCurrent) keeps the current branch selectable -- picking it pulls
+// -- while other worktrees' checkouts stay blocked; delete blocks it. Either
+// way the row's pick says it is the current branch.
+func TestStreamBranches_PickCurrent(t *testing.T) {
+	t.Parallel()
+
+	dir := temp_repo.NewRepo(t)
+	temp_repo.RunGit(t, dir, "branch", "feature")
+	temp_repo.RunGit(t, dir, "worktree", "add", t.TempDir(), "feature")
+	r := git.Repo{Dir: dir}
+	current := currentBranchIn(t, dir)
+
+	for _, pickCurrent := range []bool{true, false} {
+		var errBuf bytes.Buffer
+		src := streamBranches(t.Context(), r, &errBuf, current, "", nil,
+			branchStreamOpts{includeCurrent: true, markCheckedOut: true, pickCurrent: pickCurrent})
+		rows := rowsWhenDone(t, src)
+
+		head := "local: " + current + currentBranchMarker
+		assert.That(t, slices.Contains(rows, head), "current row missing from %q", rows)
+		assert.Equal(t, unselectable(t, src, head), !pickCurrent)
+		for id, it := range src.All() {
+			if it == head {
+				p, err := src.pick(id)
+				require.NoError(t, err)
+				assert.Equal(t, p, branchPick{kind: localBranch, branch: current, current: true})
+			}
+		}
+
+		elsewhere := "local: feature" + checkedOutSuffix("feature")
+		for _, row := range rows {
+			if strings.HasPrefix(row, "local: feature") {
+				elsewhere = row
+			}
+		}
+		assert.That(t, unselectable(t, src, elsewhere), "other worktree's checkout stays blocked")
+	}
 }
 
 // Regression: in detached HEAD, rev-parse --abbrev-ref returns "HEAD" and
@@ -401,9 +466,9 @@ func TestStreamBranches_DetachedHEAD(t *testing.T) {
 	}
 	assert.Equal(t, len(items), 2)
 	assert.Equal(t, items[0], "local: HEAD (detached at "+short+")")
-	assert.That(t, isUnselectable(items[0]), "detached HEAD should be unselectable")
+	assert.That(t, unselectable(t, src, items[0]), "detached HEAD should be unselectable")
 
 	// the pseudo-entry no longer masquerades as a branch
 	assert.Equal(t, items[1], "local: main")
-	assert.That(t, !isUnselectable(items[1]), "main is not checked out anywhere")
+	assert.That(t, !unselectable(t, src, items[1]), "main is not checked out anywhere")
 }
