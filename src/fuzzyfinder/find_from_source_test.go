@@ -16,7 +16,7 @@ func TestFind_BasicEnter(t *testing.T) {
 	f, term := ff.NewWithMockedTerminal()
 	term.SetEvents(key(input{tcell.KeyEnter, rune(tcell.KeyEnter), tcell.ModNone}))
 
-	src := ff.NewSliceSourceFrom([]string{"alpha", "beta", "gamma"})
+	src := ff.NewFeedFrom([]string{"alpha", "beta", "gamma"})
 	res, err := f.Find(context.Background(), src, ff.Opt{})
 	require.NoError(t, err)
 	assert.EqualArrays(t, res.Items, []string{"alpha"})
@@ -29,7 +29,7 @@ func TestFind_QuerySelectsMatch(t *testing.T) {
 	events := append(runes("gam"), key(input{tcell.KeyEnter, rune(tcell.KeyEnter), tcell.ModNone}))
 	term.SetEvents(events...)
 
-	src := ff.NewSliceSourceFrom([]string{"alpha", "beta", "gamma"})
+	src := ff.NewFeedFrom([]string{"alpha", "beta", "gamma"})
 	res, err := f.Find(context.Background(), src, ff.Opt{})
 	require.NoError(t, err)
 	assert.EqualArrays(t, res.Items, []string{"gamma"})
@@ -42,7 +42,7 @@ func TestFind_AbortReturnsErrAbort(t *testing.T) {
 	f, term := ff.NewWithMockedTerminal()
 	term.SetEvents(key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 
-	src := ff.NewSliceSourceFrom([]string{"a", "b"})
+	src := ff.NewFeedFrom([]string{"a", "b"})
 	res, err := f.Find(context.Background(), src, ff.Opt{})
 	assert.Error(t, err, ff.ErrAbort)
 	assert.Nil(t, res.Items, "items should be nil on abort")
@@ -60,7 +60,7 @@ func TestFind_SelectOneAfterPopulate(t *testing.T) {
 	t.Parallel()
 
 	f, _ := ff.NewWithMockedTerminal()
-	src := ff.NewSliceSourceFrom([]string{"only"})
+	src := ff.NewFeedFrom([]string{"only"})
 
 	res, err := f.Find(context.Background(), src, ff.Opt{SelectOne: true})
 	require.NoError(t, err)
@@ -76,7 +76,7 @@ func TestFind_InjectedScreen(t *testing.T) {
 	t.Parallel()
 
 	scr := &injectScreen{}
-	src := ff.NewSliceSourceFrom([]string{"alpha", "beta"})
+	src := ff.NewFeedFrom([]string{"alpha", "beta"})
 	res, err := ff.Find(context.Background(), src, ff.Opt{Screen: scr})
 	require.NoError(t, err)
 	assert.EqualArrays(t, res.Items, []string{"alpha"})
@@ -119,7 +119,7 @@ func TestFind_MultiSelect(t *testing.T) {
 		input{tcell.KeyEnter, rune(tcell.KeyEnter), tcell.ModNone},
 	)...)
 
-	src := ff.NewSliceSourceFrom([]string{"alpha", "beta", "gamma"})
+	src := ff.NewFeedFrom([]string{"alpha", "beta", "gamma"})
 	res, err := f.Find(context.Background(), src, ff.Opt{Multi: true})
 	require.NoError(t, err)
 	assert.EqualArraysUnordered(t, res.Items, []string{"alpha", "beta"})

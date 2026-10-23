@@ -38,7 +38,7 @@ func TestStreamBranches_ReadsRefsOnce(t *testing.T) {
 	var sawRemote bool
 	for range 50 {
 		time.Sleep(10 * time.Millisecond)
-		for _, item := range src.Snapshot() {
+		for _, item := range src.Items() {
 			if strings.HasPrefix(item, "remote: second/") {
 				sawRemote = true
 			}
@@ -47,7 +47,7 @@ func TestStreamBranches_ReadsRefsOnce(t *testing.T) {
 			break
 		}
 	}
-	assert.That(t, sawRemote, "picker should list the second remote's branches, got %v", src.Snapshot())
+	assert.That(t, sawRemote, "picker should list the second remote's branches, got %v", src.Items())
 	assert.Equal(t, errBuf.String(), "")
 
 	assert.Equal(t, countCalls(calls(), "branch"), 0)

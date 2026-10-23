@@ -138,7 +138,7 @@ func TestStreamBranches_LocalRemoteIncludesRemote(t *testing.T) {
 	var feature string
 	for range 50 {
 		time.Sleep(10 * time.Millisecond)
-		for _, item := range src.Snapshot() {
+		for _, item := range src.Items() {
 			if strings.HasPrefix(item, "local/remote: ") && strings.Contains(item, "feature") {
 				feature = item
 			}
@@ -264,7 +264,7 @@ func TestStreamBranches_SameNameOnOtherRemote(t *testing.T) {
 	var items []string
 	for range 50 {
 		time.Sleep(10 * time.Millisecond)
-		items = src.Snapshot()
+		items = src.Items()
 		if len(items) >= 1 {
 			break
 		}
@@ -306,7 +306,7 @@ func TestStreamBranches_CheckedOutElsewhereIsMarkedUnselectable(t *testing.T) {
 	var feature string
 	for range 50 {
 		time.Sleep(10 * time.Millisecond)
-		for _, item := range src.Snapshot() {
+		for _, item := range src.Items() {
 			if strings.Contains(item, "feature") {
 				feature = item
 			}
@@ -342,7 +342,7 @@ func TestStreamBranches_CurrentBranchReadsHere(t *testing.T) {
 	var entry string
 	for range 50 {
 		time.Sleep(10 * time.Millisecond)
-		for _, item := range src.Snapshot() {
+		for _, item := range src.Items() {
 			if strings.Contains(item, current) {
 				entry = item
 			}
@@ -395,7 +395,7 @@ func TestStreamBranches_DetachedHEAD(t *testing.T) {
 	var items []string
 	for range 50 {
 		time.Sleep(10 * time.Millisecond)
-		if items = src.Snapshot(); len(items) == 2 {
+		if items = src.Items(); len(items) == 2 {
 			break
 		}
 	}

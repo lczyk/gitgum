@@ -10,6 +10,8 @@ type Opt struct {
 	// Query pre-fills the picker's query.
 	Query string
 	// SelectOne auto-selects the only matching item without showing the UI.
+	// The decision waits for the feed to be closed (Feed.Close), so the
+	// stream is known to be complete.
 	SelectOne bool
 	// Reverse renders the prompt at the top with items growing downward.
 	// Default is bottom-up (prompt at bottom).
@@ -33,7 +35,7 @@ type Opt struct {
 	// their own slow cadence (repaintInterval), not on every frame: a few KB
 	// of ANSI at the redraw rate is enough output to make the cursor visibly
 	// blink. Tearing therefore survives up to one interval, and repaints keep
-	// running for as long as the picker is open -- a source that has stopped
+	// running for as long as the picker is open -- a feed that has stopped
 	// changing is no evidence the producer has stopped writing to the
 	// terminal. Safe to leave off otherwise.
 	RedrawAggressive bool

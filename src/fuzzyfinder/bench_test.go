@@ -14,129 +14,88 @@ func benchItems(n int) []string {
 	return out
 }
 
-func BenchmarkSliceSource_Add(b *testing.B) {
-	src := NewSliceSource()
+func BenchmarkFeed_Add(b *testing.B) {
+	f := NewFeed()
 	b.ReportAllocs()
-	for i := 0; b.Loop(); i++ {
-		src.Add("item")
-		_ = i
-	}
-}
-
-func BenchmarkSliceSource_Snapshot(b *testing.B) {
-	for _, n := range []int{10, 100, 1000, 10_000} {
-		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
-			src := NewSliceSourceFrom(benchItems(n))
-			b.ReportAllocs()
-			b.ResetTimer()
-			for b.Loop() {
-				_ = src.Snapshot()
-			}
-		})
-	}
-}
-
-func BenchmarkSliceSource_Version(b *testing.B) {
-	src := NewSliceSourceFrom(benchItems(1000))
-	b.ReportAllocs()
-	b.ResetTimer()
 	for b.Loop() {
-		_ = src.Version()
+		f.Add("item")
 	}
 }
 
-func BenchmarkSliceSource_RemoveFunc(b *testing.B) {
-	for _, n := range []int{100, 1000, 10_000} {
-		items := benchItems(n)
-		b.Run(fmt.Sprintf("n=%d_remove_half", n), func(b *testing.B) {
+// BenchmarkFeed_DrainOneAdd measures the per-wakeup cost of a streaming
+// producer: one new item on top of an n-item feed. It must not grow with n.
+func BenchmarkFeed_DrainOneAdd(b *testing.B) {
+	for _, n := range []int{100, 10_000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			f := NewFeed()
+			f.AddAll(benchItems(n)...)
+			f.attach()
 			b.ReportAllocs()
-			// NOTE: legacy b.N loop -- b.Loop() is incompatible with
-			// StopTimer/StartTimer (the adaptive scaler never converges).
-			for i := 0; i < b.N; i++ {
-				b.StopTimer()
-				src := NewSliceSourceFrom(items)
-				b.StartTimer()
-				src.RemoveFunc(func(s string) bool {
-					// Drop every other item.
-					return s[len(s)-1]&1 == 0
-				})
+			for b.Loop() {
+				f.Add("item")
+				_ = f.drain()
 			}
 		})
 	}
 }
 
-func BenchmarkKeyOf(b *testing.B) {
-	for _, n := range []int{100, 1000, 10_000} {
-		items := benchItems(n)
-		b.Run(fmt.Sprintf("n=%d_unique", n), func(b *testing.B) {
+// newBenchFinder builds a finder over items without a terminal.
+func newBenchFinder(b *testing.B, items []string, query string) *finder {
+	b.Helper()
+	f := newHeadlessFinder(false)
+	if err := f.initItems(items, Opt{Query: query}); err != nil {
+		b.Fatal(err)
+	}
+	return f
+}
+
+// BenchmarkApplyDelta_Append measures folding one appended item into an
+// n-item view, with and without a query. It must not grow with n.
+func BenchmarkApplyDelta_Append(b *testing.B) {
+	for _, query := range []string{"", "item 5"} {
+		for _, n := range []int{100, 10_000} {
+			b.Run(fmt.Sprintf("query=%q/n=%d", query, n), func(b *testing.B) {
+				f := newBenchFinder(b, benchItems(n), query)
+				next := ID(n)
+				b.ReportAllocs()
+				for b.Loop() {
+					f.applyDelta(delta{added: []entry{{id: next, text: "item-555555"}}})
+					next++
+				}
+			})
+		}
+	}
+}
+
+// BenchmarkApplyDelta_Update measures re-matching one edited item.
+func BenchmarkApplyDelta_Update(b *testing.B) {
+	for _, n := range []int{100, 10_000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			f := newBenchFinder(b, benchItems(n), "item 5")
+			texts := [2]string{"item-500000", "item-000000"}
 			b.ReportAllocs()
-			b.ResetTimer()
 			for i := 0; b.Loop(); i++ {
-				_ = keyOf(items, i%n)
+				f.applyDelta(delta{updated: []entry{{id: ID(n / 2), text: texts[i&1]}}})
 			}
 		})
 	}
 }
 
-func BenchmarkFindKey(b *testing.B) {
-	for _, n := range []int{100, 1000, 10_000} {
+// BenchmarkApplyDelta_Remove measures dropping one item, which compacts the
+// view and so is O(n).
+func BenchmarkApplyDelta_Remove(b *testing.B) {
+	for _, n := range []int{100, 10_000} {
 		items := benchItems(n)
-		b.Run(fmt.Sprintf("n=%d_hit_middle", n), func(b *testing.B) {
-			key := keyOf(items, n/2)
-			b.ReportAllocs()
-			b.ResetTimer()
-			for b.Loop() {
-				_, _ = findKey(items, key)
-			}
-		})
-	}
-}
-
-// BenchmarkUpdateItems_Steady measures resync cost when nothing actually
-// changed (the SliceSource semantically replays the same data) — exercises the
-// identity-capture + remap hot path with a steady cursor and selection.
-func BenchmarkUpdateItems_Steady(b *testing.B) {
-	for _, n := range []int{100, 1000, 10_000} {
-		items := benchItems(n)
-		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
-			f := newTestFinder(items, false)
-			f.state.y = n / 2
-			b.ReportAllocs()
-			b.ResetTimer()
-			for b.Loop() {
-				f.updateItems(items)
-				// drain redraw signal so the buffered eventCh doesn't fill
-				select {
-				case <-f.eventCh:
-				default:
-				}
-			}
-		})
-	}
-}
-
-// BenchmarkUpdateItems_Removal measures resync cost when a single item was
-// removed — exercises remap of cursor and selection across changed indices.
-func BenchmarkUpdateItems_Removal(b *testing.B) {
-	for _, n := range []int{100, 1000, 10_000} {
-		items := benchItems(n)
-		smaller := items[1:]
 		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
 			b.ReportAllocs()
 			// NOTE: legacy b.N loop -- b.Loop() is incompatible with
 			// StopTimer/StartTimer (the adaptive scaler never converges).
 			for i := 0; i < b.N; i++ {
 				b.StopTimer()
-				f := newTestFinder(items, true)
+				f := newBenchFinder(b, items, "")
 				f.state.y = n / 2
-				f.state.selection = map[int]int{0: 1, n / 2: 2, n - 1: 3}
-				f.state.selectionIdx = 4
 				b.StartTimer()
-				f.updateItems(smaller)
-				select {
-				case <-f.eventCh:
-				default:
-				}
+				f.applyDelta(delta{removed: []ID{ID(n / 4)}})
 			}
 		})
 	}

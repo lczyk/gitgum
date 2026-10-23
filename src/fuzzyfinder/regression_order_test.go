@@ -48,9 +48,9 @@ func TestFindMulti_SelectionOrder(t *testing.T) {
 		f, term := ff.NewWithMockedTerminal()
 		term.SetEvents(events...)
 
-		res, err := f.Find(context.Background(), ff.NewSliceSourceFrom(names), ff.Opt{Multi: true})
+		res, err := f.Find(context.Background(), ff.NewFeedFrom(names), ff.Opt{Multi: true})
 		require.NoError(t, err, "rep ", rep)
-		assert.EqualArrays(t, []int{3, 2, 1, 0}, res.Indices)
+		assert.EqualArrays(t, []ff.ID{3, 2, 1, 0}, res.IDs)
 		assert.EqualArrays(t, []string{names[3], names[2], names[1], names[0]}, res.Items)
 	}
 }
@@ -71,7 +71,7 @@ func TestReadKey_CtrlWKeepsTextAfterCursor(t *testing.T) {
 	f, term := ff.NewWithMockedTerminal()
 	term.SetEvents(events...)
 
-	res, err := f.Find(context.Background(), ff.NewSliceSourceFrom(trackNames()), ff.Opt{})
+	res, err := f.Find(context.Background(), ff.NewFeedFrom(trackNames()), ff.Opt{})
 	require.Error(t, err, ff.ErrAbort)
 	assert.Equal(t, " bar", res.Query)
 }
@@ -91,7 +91,7 @@ func TestReadKey_CtrlWAtStartOfLineIsNoop(t *testing.T) {
 	f, term := ff.NewWithMockedTerminal()
 	term.SetEvents(events...)
 
-	res, err := f.Find(context.Background(), ff.NewSliceSourceFrom(trackNames()), ff.Opt{})
+	res, err := f.Find(context.Background(), ff.NewFeedFrom(trackNames()), ff.Opt{})
 	require.Error(t, err, ff.ErrAbort)
 	assert.Equal(t, "foo", res.Query)
 }

@@ -45,7 +45,7 @@ func TestInitFinder_AnsiPopulatesStyledItems(t *testing.T) {
 	f, m := NewWithMockedTerminal()
 	defer m.Fini()
 	items := []string{"\x1b[31mhello\x1b[0m", "world"}
-	err := f.initFinder(items, Opt{Ansi: true})
+	err := f.initItems(items, Opt{Ansi: true})
 	require.NoError(t, err)
 
 	assert.EqualArrays(t, f.state.items, []string{"hello", "world"})
@@ -62,7 +62,7 @@ func TestDraw_AnsiItemKeepsItsColour(t *testing.T) {
 	f, m := NewWithMockedTerminal()
 	defer m.Fini()
 	items := []string{"plain", "\x1b[31mred\x1b[0m"}
-	require.NoError(t, f.initFinder(items, Opt{Ansi: true}))
+	require.NoError(t, f.initItems(items, Opt{Ansi: true}))
 	f._draw()
 
 	_, h := m.Size()
@@ -84,7 +84,7 @@ func TestInitFinder_NoAnsi(t *testing.T) {
 	f, m := NewWithMockedTerminal()
 	defer m.Fini()
 	items := []string{"plain"}
-	err := f.initFinder(items, Opt{})
+	err := f.initItems(items, Opt{})
 	require.NoError(t, err)
 
 	assert.Nil(t, f.state.itemsStyled, "itemsStyled should be nil without Opt.Ansi")

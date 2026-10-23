@@ -141,15 +141,12 @@ type branchStreamOpts struct {
 }
 
 // streamBranches collects local and remote branches concurrently, deduplicating
-// and writing into a SliceSource the picker consumes. Caller cancels ctx
-// when the consumer (fuzzyfinder) is done; cancellation also stops producers.
-// errOut receives non-fatal diagnostic messages from the producers.
-//
-// The returned SliceSource supports both Add (used by the producers below)
-// and RemoveFunc (left available for future hooks that drop branches as the
-// user deletes them).
-func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBranch, trackingRemote string, remotes []string, opts branchStreamOpts) *ff.SliceSource {
-	src := ff.NewSliceSource()
+// and writing into a Feed the picker consumes. The feed is closed once every
+// producer has finished. Caller cancels ctx when the consumer (fuzzyfinder) is
+// done; cancellation also stops producers. errOut receives non-fatal
+// diagnostic messages from the producers.
+func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBranch, trackingRemote string, remotes []string, opts branchStreamOpts) *ff.Feed {
+	src := ff.NewFeed()
 	seen := make(map[string]struct{})
 	var seenMu sync.Mutex
 
@@ -158,7 +155,11 @@ func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBr
 		drained := 0
 		for {
 			select {
-			case entry := <-queue:
+			case entry, ok := <-queue:
+				if !ok {
+					src.Close()
+					return
+				}
 				if drained < streamDelayEntries {
 					time.Sleep(streamDelay)
 					drained++
@@ -201,16 +202,23 @@ func streamBranches(ctx context.Context, r git.Repo, errOut io.Writer, currentBr
 			byRemote = nil
 		}
 	}
+	var producers sync.WaitGroup
 	for _, remote := range remotes {
-		go streamRemoteBranches(ctx, queue, remote, byRemote[remote], currentBranch, trackingRemote, checkedOut)
+		producers.Go(func() {
+			streamRemoteBranches(ctx, queue, remote, byRemote[remote], currentBranch, trackingRemote, checkedOut)
+		})
 	}
+	go func() {
+		producers.Wait()
+		close(queue)
+	}()
 
 	// Known limitation: branches deleted in another shell while the picker
 	// is open stay in the list until the user closes and reopens it. The
-	// underlying SliceSource supports RemoveFunc, but periodically polling
-	// git from inside the picker isn't worth the complexity for a stale
-	// entry that fails loudly on selection (`git checkout` errors). If this
-	// becomes a real annoyance, hook a rescan goroutine here.
+	// feed supports Remove, but periodically polling git from inside the
+	// picker isn't worth the complexity for a stale entry that fails loudly
+	// on selection (`git checkout` errors). If this becomes a real
+	// annoyance, hook a rescan goroutine here.
 	return src
 }
 

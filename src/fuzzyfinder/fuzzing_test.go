@@ -95,7 +95,8 @@ func TestFuzz(t *testing.T) {
 			if *hotReload {
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
-				src := ff.NewSliceSourceFrom(items)
+				src := ff.NewFeed()
+				src.AddAll(items...)
 				go func() {
 					for {
 						select {
@@ -111,7 +112,7 @@ func TestFuzz(t *testing.T) {
 				_, err := finder.Find(ctx, src, opt)
 				assert.Error(t, err, ff.ErrAbort)
 			} else {
-				_, err := finder.Find(context.Background(), ff.NewSliceSourceFrom(items), opt)
+				_, err := finder.Find(context.Background(), ff.NewFeedFrom(items), opt)
 				assert.Error(t, err, ff.ErrAbort)
 			}
 		})

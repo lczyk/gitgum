@@ -19,3 +19,20 @@ func NewWithMockedTerminal() (*finder, *TerminalMock) {
 	m.SetSize(60, 10)
 	return f, m
 }
+
+// initItems runs initFinder over items as a feed would hand them over: IDs
+// 0..n-1 in order.
+func (f *finder) initItems(items []string, opt Opt) error {
+	entries := make([]entry, len(items))
+	for i, s := range items {
+		entries[i] = entry{id: ID(i), text: s}
+	}
+	return f.initFinder(entries, opt)
+}
+
+// newHeadlessFinder returns a finder whose screen draws nowhere and whose
+// event channel is preset, so initFinder neither inits a screen nor starts
+// an event pump. For tests that drive state directly.
+func newHeadlessFinder(multi bool) *finder {
+	return &finder{term: initFailScreen{}, termEventsChan: make(chan tcell.Event), multi: multi}
+}

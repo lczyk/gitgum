@@ -14,43 +14,28 @@ import (
 	"github.com/lczyk/assert/require"
 )
 
-// _draw must tolerate state.matched holding indices past len(items). A
-// filter()/updateItems() interleave on a shrinking live source can leave
-// matched pointing at a former, larger item slice for one frame; the raw
-// items[m] read then indexed out of range and crashed the picker mid-render.
-func TestRegressionDrawStaleMatchedNoPanic(t *testing.T) {
+// A feed change that lands between Enter-confirmation and the caller reading
+// the Result must not change which items the Result reports. Regression:
+// confirmSelection captured the selection under lock but result() re-read
+// f.state.items afterwards, so a change in the gap returned whatever now sat
+// there instead of what was under the cursor at Enter.
+func TestRegressionConfirmSnapshotBeatsFeedChange(t *testing.T) {
 	f, m := NewWithMockedTerminal()
 	defer m.Fini()
-	require.NoError(t, f.initFinder([]string{"a", "b"}, Opt{}))
-
-	// matched valid for a 10-item slice; items has since shrunk to 2.
-	f.state.matched = []int{0, 5, 1, 9}
-	f.state.y = 0
-	f.state.cursorY = 0
-
-	// Must not panic.
-	f._draw()
-}
-
-// A resync that lands between Enter-confirmation and index-to-string
-// translation must not change which items the Result reports. Regression:
-// confirmSelection captured indices under lock but result() re-read
-// f.state.items afterwards, so a source swap in the gap returned whatever now
-// sat at those indices instead of what was under the cursor at Enter.
-func TestRegressionConfirmSnapshotBeatsResync(t *testing.T) {
-	f, m := NewWithMockedTerminal()
-	defer m.Fini()
-	require.NoError(t, f.initFinder([]string{"alpha", "bravo", "charlie"}, Opt{}))
+	require.NoError(t, f.initItems([]string{"alpha", "bravo", "charlie"}, Opt{}))
 	f.state.y = 1 // cursor on "bravo"
 
-	idxs, done := f.confirmSelection()
+	ids, done := f.confirmSelection()
 	require.That(t, done, "confirmSelection should confirm")
 
-	// Source wholesale-replaced before the caller translates indices.
-	f.updateItems([]string{"x", "y", "z"})
+	f.applyDelta(delta{
+		updated: []entry{{id: 1, text: "renamed"}},
+		removed: []ID{0},
+	})
 
-	res, err := f.result(idxs, nil)
+	res, err := f.result(ids, nil)
 	require.NoError(t, err)
+	assert.EqualArrays(t, []ID{1}, res.IDs)
 	assert.EqualArrays(t, []string{"bravo"}, res.Items)
 }
 
@@ -73,11 +58,11 @@ func (initFailScreen) Show()                                                    
 func (initFailScreen) Sync()                                                            {}
 func (initFailScreen) ChannelEvents(ch chan<- tcell.Event, quit <-chan struct{})        {}
 
-// When initialisation fails, find() must not leak the resync goroutine.
+// When initialisation fails, find() must not leak a background goroutine.
 // Regression: the goroutine was spawned before initFinder and blocked on a
 // channel that only closed on success, so an init error left it parked forever.
 func TestRegressionNoGoroutineLeakOnInitFailure(t *testing.T) {
-	src := NewSliceSourceFrom([]string{"a", "b"}) // Versioned: would spawn resync
+	src := NewFeedFrom([]string{"a", "b"})
 	before := runtime.NumGoroutine()
 
 	f := &finder{}
@@ -87,7 +72,7 @@ func TestRegressionNoGoroutineLeakOnInitFailure(t *testing.T) {
 	// No goroutine may outlive the failed init.
 	assert.Eventually(t, func() bool {
 		return runtime.NumGoroutine() <= before
-	}, time.Second, 10*time.Millisecond, "resync goroutine leaked after init failure")
+	}, time.Second, 10*time.Millisecond, "goroutine leaked after init failure")
 }
 
 // The resize handler must recompute cursorY with the same page size the rest of
@@ -101,7 +86,7 @@ func TestRegressionResizePageSizeOffByOne(t *testing.T) {
 	for i := range items {
 		items[i] = fmt.Sprintf("i%02d", i)
 	}
-	require.NoError(t, f.initFinder(items, Opt{}))
+	require.NoError(t, f.initItems(items, Opt{}))
 	f.state.y = 10
 	f.state.cursorY = 1
 
@@ -195,11 +180,11 @@ func TestRegressionRepaintOnlyWhenRequested(t *testing.T) {
 	assert.Equal(t, shows, 4)
 }
 
-// End-to-end companion to the above: with RedrawAggressive set and a source
-// that never changes, repaints must arrive on repaintInterval, not on the
-// resync tick. The bound is deliberately loose -- a loaded machine produces
-// fewer ticks, never more -- but still an order of magnitude under the
-// ~window/resyncInterval repaints the old code emitted.
+// End-to-end companion to the above: with RedrawAggressive set and a feed
+// that never changes, repaints must arrive on repaintInterval, not at frame
+// rate. The bound is deliberately loose -- a loaded machine produces fewer
+// ticks, never more -- but still an order of magnitude under the repaint per
+// 30ms tick the old code emitted.
 func TestRegressionAggressiveRepaintCadence(t *testing.T) {
 	t.Parallel()
 
@@ -212,7 +197,7 @@ func TestRegressionAggressiveRepaintCadence(t *testing.T) {
 	defer cancel()
 
 	f := &finder{}
-	_, err := f.find(ctx, NewSliceSourceFrom([]string{"alpha", "beta"}), Opt{
+	_, err := f.find(ctx, NewFeedFrom([]string{"alpha", "beta"}), Opt{
 		Screen:           scr,
 		RedrawAggressive: true,
 	})
@@ -224,12 +209,12 @@ func TestRegressionAggressiveRepaintCadence(t *testing.T) {
 	assert.That(t, syncs <= maxExpected, "expected at most %d repaints in %v, got %d", maxExpected, window, syncs)
 }
 
-// A quiet source is not evidence that the producer has exited: its stdout
+// A quiet feed is not evidence that the producer has exited: its stdout
 // (our items) and its stderr (the bytes that tear us) are independent, and
 // `find / -name '*.foo'` spends most of its life matching nothing while still
 // printing permission errors. So repaints must keep running on cadence even
 // though nothing new arrives -- exactly the case this exercises.
-func TestRepaintContinuesWhileSourceIsStill(t *testing.T) {
+func TestRepaintContinuesWhileFeedIsStill(t *testing.T) {
 	t.Parallel()
 
 	const window = 700 * time.Millisecond
@@ -240,17 +225,17 @@ func TestRepaintContinuesWhileSourceIsStill(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), window)
 	defer cancel()
 
-	// staleSource never bumps its version, so nothing but the repaint ticker
-	// can drive a full repaint.
+	// The feed never changes, so nothing but the repaint ticker can drive a
+	// full repaint.
 	f := &finder{}
-	_, err := f.find(ctx, NewSliceSourceFrom([]string{"alpha"}), Opt{
+	_, err := f.find(ctx, NewFeedFrom([]string{"alpha"}), Opt{
 		Screen:           scr,
 		RedrawAggressive: true,
 	})
 	require.That(t, errors.Is(err, context.DeadlineExceeded), "picker should end on ctx deadline, got %v", err)
 
 	_, syncs := scr.counts()
-	assert.That(t, syncs >= 2, "repaints must continue on a still source; got %d in %v", syncs, window)
+	assert.That(t, syncs >= 2, "repaints must continue on a still feed; got %d in %v", syncs, window)
 }
 
 // The draw timer can't be joined at shutdown -- Stop doesn't wait for an
@@ -274,7 +259,7 @@ func TestRegressionFiniTermDropsQueuedFrames(t *testing.T) {
 
 // lifecycleScreen flags any draw that reaches the screen after Fini, and
 // delivers a single Enter once the picker has been up long enough for the
-// resync goroutine to have queued redraws behind it.
+// feed to have queued redraws behind it.
 type lifecycleScreen struct {
 	mu        sync.Mutex
 	finished  bool
@@ -336,10 +321,11 @@ func TestRegressionNoDrawAfterFini(t *testing.T) {
 			openFor: 40 * time.Millisecond,
 			finiFor: 20 * time.Millisecond,
 		}
-		src := NewSliceSourceFrom([]string{"alpha"})
+		src := NewFeed()
+		src.Add("alpha")
 
-		// Keep the source moving so the resync goroutine is still poking the
-		// redraw channel as the picker tears down.
+		// Keep the feed moving so the event goroutine is still queueing
+		// redraws as the picker tears down.
 		stop := make(chan struct{})
 		done := make(chan struct{})
 		go func() {
@@ -373,7 +359,7 @@ func TestRegressionNoDrawAfterFini(t *testing.T) {
 func TestRegressionUnboundKeysDoNotType(t *testing.T) {
 	f, m := NewWithMockedTerminal()
 	defer m.Fini()
-	require.NoError(t, f.initFinder([]string{"a"}, Opt{}))
+	require.NoError(t, f.initItems([]string{"a"}, Opt{}))
 	ch := make(chan tcell.Event, 8)
 	f.termEventsChan = ch
 

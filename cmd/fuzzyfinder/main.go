@@ -117,7 +117,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		cfg.opt.RedrawAggressive = true
 	}
 
-	src := ff.NewSliceSourceFrom([]string{first})
+	src := ff.NewFeed()
+	src.Add(first)
 	readErrCh := make(chan error, 1)
 	delay := streamDelay
 	if cfg.fast {
@@ -128,12 +129,17 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	res, findErr := ff.Find(ctx, src, cfg.opt)
 	cancel()
 
-	if err := <-readErrCh; err != nil {
-		fmt.Fprintf(stderr, "fuzzyfinder: read stdin: %v\n", err)
-		return exitUsage
+	// Don't wait for the reader: it may be parked in a read until the
+	// producer next writes, which for `find /` can be a long time. Only a read
+	// that has already failed is worth reporting.
+	select {
+	case err := <-readErrCh:
+		if err != nil {
+			fmt.Fprintf(stderr, "fuzzyfinder: read stdin: %v\n", err)
+			return exitUsage
+		}
+	default:
 	}
-
-	items := src.Snapshot()
 
 	if findErr != nil && !errors.Is(findErr, ff.ErrAbort) {
 		fmt.Fprintf(stderr, "fuzzyfinder: %v\n", findErr)
@@ -149,14 +155,17 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return exitCancelled
 	}
 	// Enter with nothing selectable under the query. fzf calls that exit 1.
-	if len(res.Indices) == 0 {
+	if len(res.IDs) == 0 {
 		return exitNoMatch
 	}
-	for _, idx := range res.Indices {
-		if idx < 0 || idx >= len(items) {
+	// Print from the feed rather than res.Items: with --ansi the items are
+	// stripped for the picker, but the output keeps the input's escapes.
+	for _, id := range res.IDs {
+		item, ok := src.Get(id)
+		if !ok {
 			return exitNoMatch
 		}
-		fmt.Fprintln(stdout, items[idx])
+		fmt.Fprintln(stdout, item)
 	}
 	return exitOK
 }
@@ -184,9 +193,11 @@ func readFirstLine(r *bufio.Reader, stripAnsi bool) (string, error) {
 }
 
 // streamItems reads lines from r and adds them to src until EOF or ctx is
-// cancelled. ANSI escapes are stripped on ingest unless stripAnsi is false
-// (i.e. caller wants the picker to render colour via Opt.Ansi downstream).
-func streamItems(ctx context.Context, r io.Reader, src *ff.SliceSource, delay time.Duration, stripAnsi bool) error {
+// cancelled, then closes src. ANSI escapes are stripped on ingest unless
+// stripAnsi is false (i.e. caller wants the picker to render colour via
+// Opt.Ansi downstream).
+func streamItems(ctx context.Context, r io.Reader, src *ff.Feed, delay time.Duration, stripAnsi bool) error {
+	defer src.Close()
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	for scanner.Scan() {

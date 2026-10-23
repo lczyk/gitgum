@@ -103,7 +103,7 @@ func TestReal(t *testing.T) {
 		return
 	}
 	names := trackNames()
-	_, err := ff.Find(context.Background(), ff.NewSliceSourceFrom(names), ff.Opt{})
+	_, err := ff.Find(context.Background(), ff.NewFeedFrom(names), ff.Opt{})
 	require.NoError(t, err)
 }
 
@@ -270,7 +270,7 @@ func TestFind(t *testing.T) {
 
 			assertWithGolden(t, func() string {
 				names := trackNames()
-				_, err := f.Find(context.Background(), ff.NewSliceSourceFrom(names), c.opt)
+				_, err := f.Find(context.Background(), ff.NewFeedFrom(names), c.opt)
 				assert.Error(t, err, ff.ErrAbort)
 
 				res := term.GetResult()
@@ -344,7 +344,7 @@ func TestFind_pagination(t *testing.T) {
 
 			assertWithGolden(t, func() string {
 				items := makeNumberedItems(30)
-				_, err := f.Find(context.Background(), ff.NewSliceSourceFrom(items), c.opt)
+				_, err := f.Find(context.Background(), ff.NewFeedFrom(items), c.opt)
 				assert.Error(t, err, ff.ErrAbort)
 				return term.GetResult()
 			})
@@ -361,7 +361,7 @@ func TestFind_hotReload(t *testing.T) {
 
 	names := trackNames()
 	assertWithGolden(t, func() string {
-		_, err := f.Find(context.Background(), ff.NewSliceSourceFrom(names), ff.Opt{})
+		_, err := f.Find(context.Background(), ff.NewFeedFrom(names), ff.Opt{})
 		assert.Error(t, err, ff.ErrAbort)
 
 		res := term.GetResult()
@@ -374,7 +374,7 @@ func TestFind_enter(t *testing.T) {
 
 	cases := map[string]struct {
 		events   []tcell.Event
-		expected int
+		expected ff.ID
 	}{
 		"initial":                      {events: keys(input{tcell.KeyTab, rune(tcell.KeyTab), tcell.ModNone}), expected: 0},
 		"mode smart to case-sensitive": {events: runes("JI"), expected: 7},
@@ -391,9 +391,9 @@ func TestFind_enter(t *testing.T) {
 			term.SetEvents(events...)
 
 			names := trackNames()
-			res, err := f.Find(context.Background(), ff.NewSliceSourceFrom(names), ff.Opt{})
+			res, err := f.Find(context.Background(), ff.NewFeedFrom(names), ff.Opt{})
 			require.NoError(t, err)
-			assert.Equal(t, c.expected, res.Indices[0])
+			assert.Equal(t, c.expected, res.IDs[0])
 		})
 	}
 }
@@ -410,7 +410,7 @@ func TestFind_withContext(t *testing.T) {
 
 	assertWithGolden(t, func() string {
 		names := trackNames()
-		_, err := f.Find(cancelledCtx, ff.NewSliceSourceFrom(names), ff.Opt{})
+		_, err := f.Find(cancelledCtx, ff.NewFeedFrom(names), ff.Opt{})
 		assert.Error(t, err, context.Canceled)
 
 		res := term.GetResult()
@@ -430,9 +430,9 @@ func TestFind_WithQuery(t *testing.T) {
 		term.SetEvents(events...)
 
 		assertWithGolden(t, func() string {
-			res, err := f.Find(context.Background(), ff.NewSliceSourceFrom(things), ff.Opt{})
+			res, err := f.Find(context.Background(), ff.NewFeedFrom(things), ff.Opt{})
 			require.NoError(t, err)
-			assert.Equal(t, 0, res.Indices[0])
+			assert.Equal(t, ff.ID(0), res.IDs[0])
 			assert.Equal(t, "one", res.Query)
 			return term.GetResult()
 		})
@@ -443,9 +443,9 @@ func TestFind_WithQuery(t *testing.T) {
 		term.SetEvents(events...)
 
 		assertWithGolden(t, func() string {
-			res, err := f.Find(context.Background(), ff.NewSliceSourceFrom(things), ff.Opt{Query: "three2"})
+			res, err := f.Find(context.Background(), ff.NewFeedFrom(things), ff.Opt{Query: "three2"})
 			require.NoError(t, err)
-			assert.Equal(t, 1, res.Indices[0])
+			assert.Equal(t, ff.ID(1), res.IDs[0])
 			return term.GetResult()
 		})
 	})
@@ -457,7 +457,7 @@ func TestFind_WithSelectOne(t *testing.T) {
 	cases := map[string]struct {
 		things   []string
 		query    string
-		expected int
+		expected ff.ID
 		abort    bool
 	}{
 		"only one option": {
@@ -483,7 +483,7 @@ func TestFind_WithSelectOne(t *testing.T) {
 
 			assertWithGolden(t, func() string {
 				things := c.things
-				res, err := f.Find(context.Background(), ff.NewSliceSourceFrom(things), ff.Opt{
+				res, err := f.Find(context.Background(), ff.NewFeedFrom(things), ff.Opt{
 					Query:     c.query,
 					SelectOne: true,
 				})
@@ -491,7 +491,7 @@ func TestFind_WithSelectOne(t *testing.T) {
 					assert.Error(t, err, ff.ErrAbort)
 				} else {
 					require.NoError(t, err)
-					assert.Equal(t, c.expected, res.Indices[0])
+					assert.Equal(t, c.expected, res.IDs[0])
 				}
 				return term.GetResult()
 			})
@@ -504,33 +504,33 @@ func TestFindMulti(t *testing.T) {
 
 	cases := map[string]struct {
 		events   []tcell.Event
-		expected []int
+		expected []ff.ID
 		// query set => Enter matched nothing, so the run ends with an empty
 		// selection and this query rather than an error.
 		query string
 	}{
-		"input glow": {events: runes("glow"), expected: []int{5}},
+		"input glow": {events: runes("glow"), expected: []ff.ID{5}},
 		"select two items": {events: keys([]input{
 			{tcell.KeyTab, rune(tcell.KeyTab), tcell.ModNone},
 			{tcell.KeyTab, rune(tcell.KeyTab), tcell.ModNone},
-		}...), expected: []int{0, 1}},
+		}...), expected: []ff.ID{0, 1}},
 		"select two items with another order": {events: keys([]input{
 			{tcell.KeyUp, rune(tcell.KeyUp), tcell.ModNone},
 			{tcell.KeyTab, rune(tcell.KeyTab), tcell.ModNone},
 			{tcell.KeyDown, rune(tcell.KeyDown), tcell.ModNone},
 			{tcell.KeyDown, rune(tcell.KeyDown), tcell.ModNone},
 			{tcell.KeyTab, rune(tcell.KeyTab), tcell.ModNone},
-		}...), expected: []int{1, 0}},
+		}...), expected: []ff.ID{1, 0}},
 		"toggle": {events: keys([]input{
 			{tcell.KeyTab, rune(tcell.KeyTab), tcell.ModNone},
 			{tcell.KeyDown, rune(tcell.KeyDown), tcell.ModNone},
 			{tcell.KeyTab, rune(tcell.KeyTab), tcell.ModNone},
 			{tcell.KeyDown, rune(tcell.KeyDown), tcell.ModNone},
-		}...), expected: []int{0}},
+		}...), expected: []ff.ID{0}},
 		"empty result": {events: runes("fffffff"), query: "fffffff"},
 		"resize window": {events: []tcell.Event{
 			tcell.NewEventResize(10, 10),
-		}, expected: []int{0}},
+		}, expected: []ff.ID{0}},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -543,14 +543,14 @@ func TestFindMulti(t *testing.T) {
 			term.SetEvents(events...)
 
 			names := trackNames()
-			res, err := f.Find(context.Background(), ff.NewSliceSourceFrom(names), ff.Opt{Multi: true})
+			res, err := f.Find(context.Background(), ff.NewFeedFrom(names), ff.Opt{Multi: true})
 			require.NoError(t, err)
 			if c.query != "" {
-				assert.Equal(t, 0, len(res.Indices))
+				assert.Equal(t, 0, len(res.IDs))
 				assert.Equal(t, c.query, res.Query)
 				return
 			}
-			assert.EqualArrays(t, c.expected, res.Indices)
+			assert.EqualArrays(t, c.expected, res.IDs)
 		})
 	}
 }
@@ -574,7 +574,7 @@ func BenchmarkFind(b *testing.B) {
 			events := append(runes("adrele!!"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 			term.SetEvents(events...)
 			names := trackNames()
-			_, err := f.Find(context.Background(), ff.NewSliceSourceFrom(names), ff.Opt{})
+			_, err := f.Find(context.Background(), ff.NewFeedFrom(names), ff.Opt{})
 			assert.Error(b, err, ff.ErrAbort)
 		}
 	})
@@ -586,7 +586,7 @@ func BenchmarkFind(b *testing.B) {
 			events := append(runes("adrele!!"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 			term.SetEvents(events...)
 			names := trackNames()
-			_, err := f.Find(context.Background(), ff.NewSliceSourceFrom(names), ff.Opt{})
+			_, err := f.Find(context.Background(), ff.NewFeedFrom(names), ff.Opt{})
 			assert.Error(b, err, ff.ErrAbort)
 		}
 	})
@@ -598,7 +598,7 @@ func BenchmarkFind(b *testing.B) {
 			events := append(runes("adrele!!"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 			term.SetEvents(events...)
 			names := trackNames()
-			_, err := f.Find(context.Background(), ff.NewSliceSourceFrom(names), ff.Opt{})
+			_, err := f.Find(context.Background(), ff.NewFeedFrom(names), ff.Opt{})
 			assert.Error(b, err, ff.ErrAbort)
 		}
 	})
@@ -610,7 +610,7 @@ func BenchmarkFind(b *testing.B) {
 			events := append(runes("adrele!!"), key(input{tcell.KeyEsc, rune(tcell.KeyEsc), tcell.ModNone}))
 			term.SetEvents(events...)
 			names := trackNames()
-			_, err := f.Find(context.Background(), ff.NewSliceSourceFrom(names), ff.Opt{})
+			_, err := f.Find(context.Background(), ff.NewFeedFrom(names), ff.Opt{})
 			assert.Error(b, err, ff.ErrAbort)
 		}
 	})

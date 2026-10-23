@@ -1,6 +1,6 @@
 // Package fuzzyfinder provides terminal user interfaces for fuzzy-finding.
 //
-// Note that, all functions are not goroutine-safe.
+// Feed is goroutine-safe; a finder run is not.
 package fuzzyfinder
 
 import (
@@ -30,28 +30,33 @@ var (
 	errEntered = errors.New("entered")
 )
 
-// Result is what a Find* run produces. Indices and Items describe the same
-// selection: Indices into the picker's final item snapshot, Items the strings
-// themselves (ANSI-stripped when Opt.Ansi). Query is always the query as typed
-// when the picker exited, whether or not anything was selected.
+// Result is what a Find* run produces. IDs and Items describe the same
+// selection: IDs the Feed handles, Items the text each had at confirmation
+// (ANSI-stripped when Opt.Ansi). Query is always the query as typed when the
+// picker exited, whether or not anything was selected.
 //
-// A confirmed selection yields a non-empty Indices/Items. Pressing Enter when
+// A confirmed selection yields a non-empty IDs/Items. Pressing Enter when
 // no matched item is selectable -- no matches at all, or every match ruled out
 // by Opt.Unselectable -- ends the picker with both empty and a nil error: the
 // picker cannot produce a selection, so it doesn't pretend to, and the caller
 // decides what the bare Query means. Cancelling returns ErrAbort alongside a
 // Result whose Query is still populated (the selection is empty).
 type Result struct {
-	Indices []int
-	Items   []string
-	Query   string
+	IDs   []ID
+	Items []string
+	Query string
 }
 
+// state holds the picker's view of the feed. items, itemsLower, itemsStyled
+// and ids are parallel, in feed order; everything else addresses an item by
+// its position in them, except selection, which keys on ID.
 type state struct {
 	items       []string           // All item names (stripped of ansi when Opt.Ansi).
 	itemsLower  []string           // Lowercased view of items for matching's hot path.
 	itemsStyled [][]ansi.StyleSpan // Per-item style runs; non-nil only when Opt.Ansi.
-	matched     []int              // Matched items against the input.
+	ids         []ID               // Feed handle of each item.
+	pos         map[ID]int         // Inverse of ids.
+	matched     []int              // Positions matching the input, ascending.
 
 	// x is the current index of the prompt line.
 	x int
@@ -65,11 +70,13 @@ type state struct {
 	// cursorY is the position of item line.
 	// Note that the max size of cursorY depends on max height.
 	cursorY int
+	// pageSize is the item-row count of the last frame, 0 before the first.
+	pageSize int
 
 	input []rune
 
-	// selection holds the multi-select state. key = items index, value = selection order (1-based).
-	selection map[int]int
+	// selection holds the multi-select state. value = selection order (1-based).
+	selection map[ID]int
 	// selectionIdx holds the next index, which is used to a selection's value.
 	selectionIdx int
 }
@@ -131,7 +138,7 @@ type finder struct {
 
 	// repaintPending asks the next frame to be a full repaint rather than a
 	// diff. Set by the repaint ticker in aggressive mode, consumed (and
-	// cleared) by flush. Atomic because it is written from the resync
+	// cleared) by flush. Atomic because it is written from the repaint
 	// goroutine and read from the draw timer's.
 	repaintPending atomic.Bool
 
@@ -144,11 +151,9 @@ type finder struct {
 	termMu   sync.Mutex
 	termDone bool
 
-	// confirmedItems is the item-string snapshot captured atomically with the
-	// confirmed indices (under the same lock), so a resync landing between
-	// confirmation and result translation can't swap which items are reported.
-	// nil until Enter confirms; the SelectOne short-circuit leaves it nil and
-	// result falls back to translating live.
+	// confirmedItems is the item text captured atomically with the confirmed
+	// IDs (under the same lock), so a feed change landing between confirmation
+	// and the caller reading the Result can't alter what is reported.
 	confirmedItems []string
 }
 
@@ -163,7 +168,7 @@ func chromeRows(opt Opt) int {
 	return n
 }
 
-func (f *finder) initFinder(items []string, opt Opt) error {
+func (f *finder) initFinder(entries []entry, opt Opt) error {
 	if f.term == nil {
 		f.term = opt.Screen
 	}
@@ -196,10 +201,18 @@ func (f *finder) initFinder(items []string, opt Opt) error {
 	f.state = state{}
 
 	if f.multi {
-		f.state.selection = map[int]int{}
+		f.state.selection = map[ID]int{}
 		f.state.selectionIdx = 1
 	}
 
+	items := make([]string, len(entries))
+	f.state.ids = make([]ID, len(entries))
+	f.state.pos = make(map[ID]int, len(entries))
+	for i, e := range entries {
+		items[i] = e.text
+		f.state.ids[i] = e.id
+		f.state.pos[e.id] = i
+	}
 	if opt.Ansi {
 		stripped, styled := parseAnsiItems(items)
 		f.state.items = stripped
@@ -207,7 +220,10 @@ func (f *finder) initFinder(items []string, opt Opt) error {
 	} else {
 		f.state.items = items
 	}
-	f.state.itemsLower = lowerHaystack(nil, nil, f.state.items)
+	f.state.itemsLower = make([]string, len(f.state.items))
+	for i, s := range f.state.items {
+		f.state.itemsLower[i] = strings.ToLower(s)
+	}
 	f.state.matched = makeMatched(len(f.state.items))
 
 	if !isInTesting() {
@@ -231,143 +247,179 @@ func (f *finder) initFinder(items []string, opt Opt) error {
 	return nil
 }
 
-// updateItems atomically replaces the items slice and re-derives matched,
-// cursor, and selection so they keep pointing at the same logical items where
-// possible. Items that have been removed drop out of the selection; the
-// cursor follows its item if it still exists, otherwise it clamps.
-func (f *finder) updateItems(items []string) {
+// applyDelta folds a feed delta into the picker's view. Only the changed items
+// are parsed and matched, so a small change to a big list stays cheap. The
+// cursor stays on its item; if that item is gone or no longer matches, it
+// lands on the nearest surviving match.
+func (f *finder) applyDelta(d delta) {
+	if d.empty() {
+		return
+	}
 	f.stateMu.Lock()
+	defer f.stateMu.Unlock()
 
-	// Capture identity keys against the OLD items before replacing.
-	cursorKey, cursorValid := f.cursorIdentityLocked()
-	selKeys, selOrders := f.selectionIdentitiesLocked()
-
-	prevItems := f.state.items
-	if f.opt != nil && f.opt.Ansi {
-		stripped, styled := parseAnsiItems(items)
-		f.state.items = stripped
-		f.state.itemsStyled = styled
-	} else {
-		f.state.items = items
+	cur := -1
+	if f.state.y >= 0 && f.state.y < len(f.state.matched) {
+		cur = f.state.matched[f.state.y]
 	}
-	f.state.itemsLower = lowerHaystack(f.state.itemsLower, prevItems, f.state.items)
-
-	// Recompute matched against current input. Mirrors filter() but assumes
-	// the lock is held — callers from the resync goroutine want one atomic
-	// transition without dropping the lock mid-way.
-	if len(f.state.input) == 0 {
-		f.resetMatchedIdentity(len(f.state.items))
-	} else {
-		f.state.matched = matching.FindAllLower(strings.ToLower(string(f.state.input)), f.state.itemsLower, f.negate())
+	if len(d.removed) > 0 {
+		cur = f.removeLocked(d.removed, cur)
 	}
+	for _, e := range d.updated {
+		f.updateLocked(e)
+	}
+	f.appendLocked(d.added)
+	f.recursorLocked(cur)
+}
 
-	// Re-key selection: drop entries whose item is gone; keep selection order
-	// for survivors.
-	if len(selKeys) > 0 {
-		newSel := make(map[int]int, len(selKeys))
-		for i, k := range selKeys {
-			if newIdx, ok := findKey(f.state.items, k); ok {
-				newSel[newIdx] = selOrders[i]
-			}
+// removeLocked drops ids from the view and compacts it. It returns where
+// position cur ends up: unchanged for a survivor, the position of its
+// successor if it was itself removed.
+// Caller must hold f.stateMu.
+func (f *finder) removeLocked(ids []ID, cur int) int {
+	s := &f.state
+	gone := make(map[int]struct{}, len(ids))
+	for _, id := range ids {
+		if p, ok := s.pos[id]; ok {
+			gone[p] = struct{}{}
+			delete(s.pos, id)
+			delete(s.selection, id)
 		}
-		f.state.selection = newSel
 	}
-
-	// Re-key cursor: if the cursored item still exists *and* still matches
-	// the query, point at its new position in matched. Otherwise clamp.
-	f.remapCursorLocked(cursorKey, cursorValid)
-
-	f.stateMu.Unlock()
-
-	// Non-blocking signal: trigger redraw. The eventCh consumer also calls
-	// filter() but that's idempotent against the steady state we just wrote.
-	select {
-	case f.eventCh <- struct{}{}:
-	default:
+	if len(gone) == 0 {
+		return cur
 	}
-}
-
-// cursorIdentityLocked returns the identity key of the cursored item.
-// Caller must hold f.stateMu.
-func (f *finder) cursorIdentityLocked() (itemKey, bool) {
-	if len(f.state.matched) == 0 {
-		return itemKey{}, false
-	}
-	if f.state.y < 0 || f.state.y >= len(f.state.matched) {
-		return itemKey{}, false
-	}
-	idx := f.state.matched[f.state.y]
-	if idx < 0 || idx >= len(f.state.items) {
-		return itemKey{}, false
-	}
-	return keyOf(f.state.items, idx), true
-}
-
-// selectionIdentitiesLocked returns identity keys + selection orders for
-// every selected item. Order arrays line up by index.
-// Caller must hold f.stateMu.
-func (f *finder) selectionIdentitiesLocked() ([]itemKey, []int) {
-	if len(f.state.selection) == 0 {
-		return nil, nil
-	}
-	keys := make([]itemKey, 0, len(f.state.selection))
-	orders := make([]int, 0, len(f.state.selection))
-	for idx, ord := range f.state.selection {
-		if idx < 0 || idx >= len(f.state.items) {
+	newPos := make([]int, len(s.items))
+	newCur := cur
+	w := 0
+	for i := range s.items {
+		if i == cur {
+			newCur = w
+		}
+		if _, ok := gone[i]; ok {
+			newPos[i] = -1
 			continue
 		}
-		keys = append(keys, keyOf(f.state.items, idx))
-		orders = append(orders, ord)
-	}
-	return keys, orders
-}
-
-// remapCursorLocked points state.y at the new position of the cursored item
-// in the new matched list. If the item is gone or no longer matches the
-// query, clamps to a valid value.
-// Caller must hold f.stateMu.
-func (f *finder) remapCursorLocked(key itemKey, valid bool) {
-	if !valid {
-		f.clampCursorLocked()
-		return
-	}
-	newIdx, ok := findKey(f.state.items, key)
-	if !ok {
-		f.clampCursorLocked()
-		return
-	}
-	for y, m := range f.state.matched {
-		if m == newIdx {
-			f.state.y = y
-			if f.state.cursorY > y {
-				f.state.cursorY = y
+		newPos[i] = w
+		if w != i {
+			s.items[w] = s.items[i]
+			s.itemsLower[w] = s.itemsLower[i]
+			if s.itemsStyled != nil {
+				s.itemsStyled[w] = s.itemsStyled[i]
 			}
-			return
+			s.ids[w] = s.ids[i]
+			s.pos[s.ids[w]] = w
+		}
+		w++
+	}
+	clear(s.items[w:])
+	clear(s.itemsLower[w:])
+	s.items, s.itemsLower, s.ids = s.items[:w], s.itemsLower[:w], s.ids[:w]
+	if s.itemsStyled != nil {
+		clear(s.itemsStyled[w:])
+		s.itemsStyled = s.itemsStyled[:w]
+	}
+	matched := s.matched[:0]
+	for _, m := range s.matched {
+		if np := newPos[m]; np >= 0 {
+			matched = append(matched, np)
 		}
 	}
-	f.clampCursorLocked()
+	s.matched = matched
+	return newCur
 }
 
-// clampCursorLocked ensures state.y / state.cursorY are within matched bounds.
+// updateLocked replaces one item's text in place and moves it into or out of
+// matched as the query now dictates.
 // Caller must hold f.stateMu.
-func (f *finder) clampCursorLocked() {
-	n := len(f.state.matched)
-	if n == 0 {
-		f.state.y = 0
-		f.state.cursorY = 0
+func (f *finder) updateLocked(e entry) {
+	s := &f.state
+	p, ok := s.pos[e.id]
+	if !ok {
 		return
 	}
-	if f.state.y >= n {
-		f.state.y = n - 1
+	text, styled := f.parseItem(e.text)
+	s.items[p] = text
+	s.itemsLower[p] = strings.ToLower(text)
+	if s.itemsStyled != nil {
+		s.itemsStyled[p] = styled
 	}
-	if f.state.cursorY > f.state.y {
-		f.state.cursorY = f.state.y
+	match := len(f.matchLowerLocked(s.itemsLower[p:p+1])) == 1
+	i, in := slices.BinarySearch(s.matched, p)
+	switch {
+	case match && !in:
+		s.matched = slices.Insert(s.matched, i, p)
+	case !match && in:
+		s.matched = slices.Delete(s.matched, i, i+1)
 	}
-	if f.state.y < 0 {
-		f.state.y = 0
+}
+
+// appendLocked adds entries at the end of the view, matching only them.
+// Caller must hold f.stateMu.
+func (f *finder) appendLocked(entries []entry) {
+	if len(entries) == 0 {
+		return
 	}
-	if f.state.cursorY < 0 {
-		f.state.cursorY = 0
+	s := &f.state
+	start := len(s.items)
+	for i, e := range entries {
+		text, styled := f.parseItem(e.text)
+		s.items = append(s.items, text)
+		s.itemsLower = append(s.itemsLower, strings.ToLower(text))
+		if s.itemsStyled != nil {
+			s.itemsStyled = append(s.itemsStyled, styled)
+		}
+		s.ids = append(s.ids, e.id)
+		s.pos[e.id] = start + i
+	}
+	for _, k := range f.matchLowerLocked(s.itemsLower[start:]) {
+		s.matched = append(s.matched, start+k)
+	}
+}
+
+// matchLowerLocked returns the indices into lower that match the current
+// query. An empty query matches everything.
+// Caller must hold f.stateMu.
+func (f *finder) matchLowerLocked(lower []string) []int {
+	if len(f.state.input) == 0 {
+		return makeMatched(len(lower))
+	}
+	return matching.FindAllLower(strings.ToLower(string(f.state.input)), lower, f.negate())
+}
+
+// parseItem splits a raw feed item into its display text and, with Opt.Ansi,
+// its style runs.
+func (f *finder) parseItem(raw string) (string, []ansi.StyleSpan) {
+	if f.opt == nil || !f.opt.Ansi {
+		return raw, nil
+	}
+	return ansi.Strip(raw), ansi.ParseStyles(raw, tcell.StyleDefault)
+}
+
+// recursorLocked points the cursor at the first match at or after position
+// cur, falling back to the last match. A cursor that didn't move keeps its
+// screen row; one that did is re-aligned to the page.
+// Caller must hold f.stateMu.
+func (f *finder) recursorLocked(cur int) {
+	s := &f.state
+	n := len(s.matched)
+	if n == 0 {
+		s.y, s.cursorY = 0, 0
+		return
+	}
+	y := 0
+	if cur >= 0 {
+		y, _ = slices.BinarySearch(s.matched, cur)
+		y = min(y, n-1)
+	}
+	if y == s.y {
+		return
+	}
+	s.y = y
+	if s.pageSize > 0 {
+		s.cursorY = y % s.pageSize
+	} else {
+		s.cursorY = min(s.cursorY, y)
 	}
 }
 
@@ -429,6 +481,7 @@ func (f *finder) _draw() {
 	firstItemOffset := offset
 	itemAreaHeight := max(height-firstItemOffset-1, 0)
 	pageSize := itemAreaHeight + 1
+	f.state.pageSize = pageSize
 	topIdx := f.state.y - f.state.cursorY
 
 	// Number-line: counts + page indicator, drawn at the left of the prompt
@@ -508,13 +561,6 @@ func (f *finder) _draw() {
 		if i > itemAreaHeight {
 			break
 		}
-		// A shrinking live source can briefly leave matched with indices past
-		// the current items slice (filter installs matches computed against a
-		// now-stale, larger snapshot). Skip them rather than index out of range;
-		// the next resync tick rebuilds a consistent matched.
-		if m < 0 || m >= len(f.state.items) {
-			continue
-		}
 		row := rowAt(firstItemOffset + i)
 		if i == f.state.cursorY {
 			style := tcell.StyleDefault.Foreground(tcell.ColorRed).Background(tcell.ColorBlack)
@@ -523,7 +569,7 @@ func (f *finder) _draw() {
 		}
 
 		if f.multi {
-			if _, ok := f.state.selection[m]; ok {
+			if _, ok := f.state.selection[f.state.ids[m]]; ok {
 				style := tcell.StyleDefault.Foreground(tcell.ColorRed).Background(tcell.ColorBlack)
 				f.term.SetContent(1, row, '>', nil, style)
 			}
@@ -858,10 +904,11 @@ func (f *finder) readKey(ctx context.Context) error {
 			// Unselectable items can't be toggled, but Tab still advances the
 			// cursor like a normal item.
 			if !f.unselectableLocked(idx) {
-				if _, ok := f.state.selection[idx]; ok {
-					delete(f.state.selection, idx)
+				id := f.state.ids[idx]
+				if _, ok := f.state.selection[id]; ok {
+					delete(f.state.selection, id)
 				} else {
-					f.state.selection[idx] = f.state.selectionIdx
+					f.state.selection[id] = f.state.selectionIdx
 					f.state.selectionIdx++
 				}
 			}
@@ -1011,39 +1058,46 @@ func (f *finder) filter() {
 }
 
 const (
-	// resyncInterval is how often the picker polls the Source for changes.
-	// Fast enough that a streaming producer looks live.
-	resyncInterval = 30 * time.Millisecond
+	// frameInterval is the shortest gap between two feed-driven frames. A
+	// fast producer wakes the picker per item; changes arriving inside one
+	// interval are folded into a single frame.
+	frameInterval = 16 * time.Millisecond
 	// repaintInterval is how often Opt.RedrawAggressive forces a full repaint
 	// to paint over a sibling process's writes. Deliberately far slower than
-	// resyncInterval: a repaint is the whole grid re-emitted, and doing that
-	// at resync rate keeps the cursor hidden for a visible slice of every
-	// frame. This is the ceiling on how long tearing can stay on screen.
+	// frameInterval: a repaint is the whole grid re-emitted, and doing that at
+	// frame rate keeps the cursor hidden for a visible slice of every frame.
+	// This is the ceiling on how long tearing can stay on screen.
 	repaintInterval = 250 * time.Millisecond
 )
 
-// find runs the picker against a Source. The picker takes an initial snapshot,
-// then a background goroutine polls Version (if implemented) on the
-// resyncInterval cadence and re-snapshots when it changes. Sources without
-// Version always re-snapshot each tick.
-func (f *finder) find(ctx context.Context, src Source, opt Opt) ([]int, error) {
-	if src == nil {
-		return nil, errors.New("source must not be nil")
+// find runs the picker against a Feed. The picker takes the feed's current
+// contents, then folds in each change as the feed reports it.
+func (f *finder) find(ctx context.Context, feed *Feed, opt Opt) ([]ID, error) {
+	if feed == nil {
+		return nil, errors.New("feed must not be nil")
 	}
 
 	opt = opt.withDefaults()
 	f.multi = opt.Multi
 
-	versioned, _ := src.(Versioned)
-	var lastVersion uint64
-	if versioned != nil {
-		lastVersion = versioned.Version()
+	if opt.SelectOne {
+		// Only a finished stream can show there's exactly one match, so
+		// decide after Close -- and before taking over the terminal, so a
+		// sole match never flashes the UI.
+		select {
+		case <-feed.Done():
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		if e, ok := soleMatch(feed.entries(), opt); ok {
+			f.confirmedItems = []string{e.text}
+			return []ID{e.id}, nil
+		}
 	}
-	initial := src.Snapshot()
 
-	// Init before spawning the resync goroutine: on failure we return here and
-	// the goroutine is never started, so it can't outlive a failed init.
-	if err := f.initFinder(initial, opt); err != nil {
+	// Init before spawning any goroutine: on failure we return here and
+	// nothing is left running.
+	if err := f.initFinder(feed.attach(), opt); err != nil {
 		return nil, fmt.Errorf("failed to initialize the fuzzy finder: %w", err)
 	}
 
@@ -1058,46 +1112,49 @@ func (f *finder) find(ctx context.Context, src Source, opt Opt) ([]int, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	go func() {
-		ticker := time.NewTicker(resyncInterval)
-		defer ticker.Stop()
-		// Aggressive mode runs the anti-tearing repaint on its own, much
-		// slower ticker. Folding it into the resync tick would put a full
-		// repaint on the wire every 30ms for as long as the picker is open --
-		// long after the producer has exited -- and that much output per
-		// frame is what makes the cursor blink.
-		var repaintC <-chan time.Time
-		if opt.RedrawAggressive {
-			repaint := time.NewTicker(repaintInterval)
-			defer repaint.Stop()
-			repaintC = repaint.C
-		}
+	if opt.RedrawAggressive {
 		// The repaint runs for as long as the picker is open, not just while
 		// items are arriving: the producer's stdout (our items) and stderr
-		// (the bytes that tear us) are independent streams, so a source that
+		// (the bytes that tear us) are independent streams, so a feed that
 		// has gone quiet is no evidence the producer has stopped writing to
 		// the terminal. `find / -name '*.foo'` spends most of its life in
 		// exactly that state.
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-repaintC:
-				f.requestRepaint()
-			case <-ticker.C:
-				if versioned != nil {
-					v := versioned.Version()
-					if v == lastVersion {
-						continue
-					}
-					lastVersion = v
+		go func() {
+			ticker := time.NewTicker(repaintInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					f.requestRepaint()
 				}
-				f.updateItems(src.Snapshot())
 			}
-		}
-	}()
+		}()
+	}
 
-	return f.runLoop(ctx, &opt)
+	return f.runLoop(ctx, feed)
+}
+
+// soleMatch reports the one item matching opt.Query, if there is exactly one
+// and it is selectable. Its text comes back ANSI-stripped when Opt.Ansi.
+func soleMatch(entries []entry, opt Opt) (entry, bool) {
+	lower := make([]string, len(entries))
+	for i := range entries {
+		if opt.Ansi {
+			entries[i].text = ansi.Strip(entries[i].text)
+		}
+		lower[i] = strings.ToLower(entries[i].text)
+	}
+	hits := matching.FindAllLower(strings.ToLower(opt.Query), lower, opt.Negate)
+	if len(hits) != 1 {
+		return entry{}, false
+	}
+	e := entries[hits[0]]
+	if opt.Unselectable != nil && opt.Unselectable(e.text) {
+		return entry{}, false
+	}
+	return e, true
 }
 
 func makeMatched(n int) []int {
@@ -1108,7 +1165,6 @@ func makeMatched(n int) []int {
 	return matched
 }
 
-// lowerHaystack updates dst so dst[i] == strings.ToLower(items[i]) for all i.
 // parseAnsiItems converts raw ANSI-coloured input items into stripped
 // match-friendly strings + parallel style-run slices for drawing. Both
 // outputs are parallel-indexed with the input.
@@ -1122,79 +1178,44 @@ func parseAnsiItems(items []string) ([]string, [][]ansi.StyleSpan) {
 	return stripped, styled
 }
 
-// Reuses dst when its capacity allows and only re-lowers entries that differ
-// from prevItems (the previously-cached source). Pass prevItems=nil to force
-// a full rebuild. ASCII-lowercase items get aliased (Go's strings.ToLower
-// returns the input string when no rune needs lowering), so a fully-lowercase
-// haystack costs ~zero extra memory.
-func lowerHaystack(dst, prevItems, items []string) []string {
-	if cap(dst) >= len(items) {
-		dst = dst[:len(items)]
-	} else {
-		newDst := make([]string, len(items))
-		copy(newDst, dst)
-		dst = newDst
-	}
-	for i, s := range items {
-		if i < len(prevItems) && prevItems[i] == s {
-			continue // dst[i] already holds the right lowercase form
-		}
-		dst[i] = strings.ToLower(s)
-	}
-	return dst
-}
-
-// resetMatchedIdentity rewrites f.state.matched in place to [0..n), reusing
-// the existing backing array when its capacity allows. This is the hot path
-// when the picker has no query — every resync rebuilds an identity-mapping
-// matched list, and at n=10k the allocation alone was ~80 KB per call.
-func (f *finder) resetMatchedIdentity(n int) {
-	if cap(f.state.matched) >= n {
-		f.state.matched = f.state.matched[:n]
-	} else {
-		f.state.matched = make([]int, n)
-	}
-	for i := range f.state.matched {
-		f.state.matched[i] = i
-	}
-}
-
 // runLoop drives the picker until the user confirms, aborts, or ctx ends.
 // Teardown belongs to find, not here: a defer in this function runs while
 // find's own goroutines are still live, which is the ordering bug it used to
 // have.
-func (f *finder) runLoop(ctx context.Context, opt *Opt) ([]int, error) {
-	if opt.SelectOne {
-		// Read matched under the lock: the resync goroutine is already running
-		// and may write it concurrently if this loop is scheduled past a tick.
-		f.stateMu.RLock()
-		only := len(f.state.matched) == 1 && !f.unselectableLocked(f.state.matched[0])
-		var idx int
-		if only {
-			idx = f.state.matched[0]
-		}
-		f.stateMu.RUnlock()
-		if only {
-			return []int{idx}, nil
-		}
-	}
-
+func (f *finder) runLoop(ctx context.Context, feed *Feed) ([]ID, error) {
+	// This goroutine is the only writer of the item view: feed deltas and
+	// query re-filters are serialised here, so a filter can never install a
+	// match computed against items a delta has since replaced.
 	go func() {
+		wake := feed.notify
+		var throttle <-chan time.Time
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-f.eventCh:
 				f.filter()
-				f.draw(0)
-				// non-blocking signal so tests can sync on a fully
-				// processed event (filter + draw). buffered 1 +
-				// non-blocking send means production never stalls
-				// here when nothing is waiting.
-				select {
-				case f.filterDone <- struct{}{}:
-				default:
+			case <-wake:
+				d := feed.drain()
+				if d.empty() {
+					continue
 				}
+				f.applyDelta(d)
+				// Hold further wakeups for a frame; they coalesce in the
+				// feed and the next drain takes them all at once.
+				wake, throttle = nil, time.After(frameInterval)
+			case <-throttle:
+				wake, throttle = feed.notify, nil
+				continue
+			}
+			f.draw(0)
+			// non-blocking signal so tests can sync on a fully
+			// processed event (filter + draw). buffered 1 +
+			// non-blocking send means production never stalls
+			// here when nothing is waiting.
+			select {
+			case f.filterDone <- struct{}{}:
+			default:
 			}
 		}
 	}()
@@ -1246,58 +1267,44 @@ func (f *finder) runLoop(ctx context.Context, opt *Opt) ([]int, error) {
 	}
 }
 
-// Find displays a fuzzy-finder UI over a Source and returns the selection,
-// or ErrAbort if the user cancels. With Opt.Multi=false the result carries at
+// Find displays a fuzzy-finder UI over a Feed and returns the selection, or
+// ErrAbort if the user cancels. With Opt.Multi=false the result carries at
 // most one element. See Result for the empty-selection case.
 //
-// The source may change while the picker is open: callers mutate it via
-// SliceSource (or any custom Source) and the picker resyncs on the next 30ms
-// tick. Cursor and selection are preserved across resyncs by item identity,
-// not slice index. For a static list, wrap it with NewSliceSourceFrom.
-func Find(ctx context.Context, src Source, opt Opt) (Result, error) {
+// The feed may change while the picker is open: producers Add, Update and
+// Remove on it from any goroutine and the picker shows each change within a
+// frame. For a static list, use NewFeedFrom.
+func Find(ctx context.Context, feed *Feed, opt Opt) (Result, error) {
 	f := &finder{}
-	return f.Find(ctx, src, opt)
+	return f.Find(ctx, feed, opt)
 }
 
 // Find is the picker-method form, used by tests that need to inject
 // a mocked terminal.
-func (f *finder) Find(ctx context.Context, src Source, opt Opt) (Result, error) {
-	return f.result(f.find(ctx, src, opt))
+func (f *finder) Find(ctx context.Context, feed *Feed, opt Opt) (Result, error) {
+	return f.result(f.find(ctx, feed, opt))
 }
 
-// result packages a finished run's indices into a Result, attaching the items
-// they name and the query as typed on exit. Errors pass through, but the query
-// still rides along: a cancelled picker can tell the caller what was typed.
-func (f *finder) result(idxs []int, err error) (Result, error) {
+// result packages a finished run's IDs into a Result, attaching the item text
+// captured with them and the query as typed on exit. Errors pass through, but
+// the query still rides along: a cancelled picker can tell the caller what was
+// typed.
+func (f *finder) result(ids []ID, err error) (Result, error) {
 	res := Result{Query: f.query()}
 	if err != nil {
 		return res, err
 	}
-	res.Indices = idxs
-	if f.confirmedItems != nil {
-		// Snapshot taken atomically with the indices at confirmation time;
-		// prefer it over a live re-read that a resync could have shifted.
-		res.Items = f.confirmedItems
-	} else {
-		res.Items = f.itemsAtLocked(idxs)
-	}
+	res.IDs = ids
+	res.Items = f.confirmedItems
 	return res, nil
 }
 
 // query returns the picker's query as typed. Safe before initFinder has run
-// (returns ""), which is the case when find() bails on a nil source.
+// (returns ""), which is the case when find() bails on a nil feed.
 func (f *finder) query() string {
 	f.stateMu.RLock()
 	defer f.stateMu.RUnlock()
 	return string(f.state.input)
-}
-
-// itemsAtLocked translates indices into the picker's terminal items snapshot.
-// Out-of-range indices are dropped.
-func (f *finder) itemsAtLocked(idxs []int) []string {
-	f.stateMu.RLock()
-	defer f.stateMu.RUnlock()
-	return f.itemsForLocked(idxs)
 }
 
 // negate reports whether fzf-style '!' negative needles are enabled.
@@ -1380,7 +1387,7 @@ func (f *finder) anySelectableLocked() bool {
 // The distinction between the last two is the whole point: a dimmed row under
 // the cursor is a "not this one" nudge, whereas a wholly-unselectable match set
 // is a picker with nothing to pick.
-func (f *finder) confirmSelection() ([]int, bool) {
+func (f *finder) confirmSelection() ([]ID, bool) {
 	// Write lock, not read: the confirmedItems snapshot below is a write to
 	// f, taken here so it lands atomically with the indices it describes.
 	f.stateMu.Lock()
@@ -1391,46 +1398,46 @@ func (f *finder) confirmSelection() ([]int, bool) {
 	// filtered down to nothing, so it's checked before anySelectableLocked.
 	if f.multi && len(f.state.selection) > 0 {
 		picks := make([]selectedItem, 0, len(f.state.selection))
-		for idx, pos := range f.state.selection {
-			picks = append(picks, selectedItem{idx: idx, order: pos})
+		for id, pos := range f.state.selection {
+			picks = append(picks, selectedItem{id: id, order: pos})
 		}
 		slices.SortFunc(picks, func(a, b selectedItem) int { return a.order - b.order })
-		idxs := make([]int, len(picks))
+		ids := make([]ID, len(picks))
 		for i, p := range picks {
-			idxs[i] = p.idx
+			ids[i] = p.id
 		}
-		f.confirmedItems = f.itemsForLocked(idxs)
-		return idxs, true
+		f.confirmedItems = f.itemsForLocked(ids)
+		return ids, true
 	}
 	if !f.anySelectableLocked() {
 		f.confirmedItems = []string{}
-		return []int{}, true
+		return []ID{}, true
 	}
 	cur := f.state.matched[f.state.y]
 	if f.unselectableLocked(cur) {
 		return nil, false
 	}
-	f.confirmedItems = f.itemsForLocked([]int{cur})
-	return []int{cur}, true
+	id := f.state.ids[cur]
+	f.confirmedItems = f.itemsForLocked([]ID{id})
+	return []ID{id}, true
 }
 
-// selectedItem pairs an items index with its 1-based multi-select order so the
-// two survive a sort together. Sorting an index slice against a parallel order
-// slice does not work: the sort permutes only the first, so the comparator ends
-// up reading orders belonging to other indices.
+// selectedItem pairs an ID with its 1-based multi-select order so the two
+// survive a sort together. Sorting an ID slice against a parallel order slice
+// does not work: the sort permutes only the first, so the comparator ends up
+// reading orders belonging to other IDs.
 type selectedItem struct {
-	idx   int
+	id    ID
 	order int
 }
 
-// itemsForLocked translates indices into their item strings against the
-// current snapshot. Out-of-range indices are dropped. Caller must hold
-// f.stateMu (read or write).
-func (f *finder) itemsForLocked(idxs []int) []string {
-	out := make([]string, 0, len(idxs))
-	for _, i := range idxs {
-		if i >= 0 && i < len(f.state.items) {
-			out = append(out, f.state.items[i])
+// itemsForLocked translates IDs into their current item text. IDs no longer in
+// the view are dropped. Caller must hold f.stateMu (read or write).
+func (f *finder) itemsForLocked(ids []ID) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if p, ok := f.state.pos[id]; ok {
+			out = append(out, f.state.items[p])
 		}
 	}
 	return out

@@ -20,7 +20,7 @@ func selectShort(prompt string, options []string, initialQuery ...string) (strin
 	return selectWith(ff.Find, 2, prompt, options, initialQuery...)
 }
 
-func selectWith(finder func(context.Context, ff.Source, ff.Opt) (ff.Result, error), height int, prompt string, options []string, initialQuery ...string) (string, error) {
+func selectWith(finder func(context.Context, *ff.Feed, ff.Opt) (ff.Result, error), height int, prompt string, options []string, initialQuery ...string) (string, error) {
 	if len(options) == 0 {
 		return "", fmt.Errorf("no options provided")
 	}
@@ -30,7 +30,7 @@ func selectWith(finder func(context.Context, ff.Source, ff.Opt) (ff.Result, erro
 		opt.Query = initialQuery[0]
 	}
 
-	res, err := finder(context.Background(), ff.NewSliceSourceFrom(options), opt)
+	res, err := finder(context.Background(), ff.NewFeedFrom(options), opt)
 	if err != nil {
 		if errors.Is(err, ff.ErrAbort) {
 			return "", ErrCancelled
@@ -39,17 +39,17 @@ func selectWith(finder func(context.Context, ff.Source, ff.Opt) (ff.Result, erro
 	}
 	// Enter with nothing selectable under the query. These pickers offer no
 	// other way out, so treat it as the user backing out.
-	if len(res.Indices) == 0 {
+	if len(res.IDs) == 0 {
 		return "", ErrCancelled
 	}
-	return options[res.Indices[0]], nil
+	return options[res.IDs[0]], nil
 }
 
-// SelectStream is like Select but reads candidates from a Source that
+// SelectStream is like Select but reads candidates from a Feed that
 // may grow (or shrink) concurrently — used by callers that stream entries
 // from background goroutines (e.g. switch). ctx is cancelled when the
 // consumer is done; that also tells producers to stop.
-func SelectStream(ctx context.Context, prompt string, src ff.Source, unselectable func(string) bool) (string, error) {
+func SelectStream(ctx context.Context, prompt string, src *ff.Feed, unselectable func(string) bool) (string, error) {
 	opt := ff.Opt{Prompt: prompt + ": ", Height: 10, Reverse: true, Unselectable: unselectable}
 	res, err := ff.Find(ctx, src, opt)
 	if err != nil {
@@ -74,7 +74,7 @@ func SelectStream(ctx context.Context, prompt string, src ff.Source, unselectabl
 //
 // Returns ErrCancelled on Esc/Ctrl-C.
 func Prompt(question string) (string, error) {
-	src := ff.NewSliceSourceFrom(nil)
+	src := ff.NewFeedFrom(nil)
 	opt := ff.Opt{Prompt: question + ": ", Height: 1, Reverse: true}
 	res, err := ff.Find(context.Background(), src, opt)
 	if err != nil {
@@ -108,7 +108,7 @@ func Confirm(prompt string, defaultYes bool) (bool, error) {
 // RealSelector (the zero value), which delegates to the package-level functions.
 type Selector interface {
 	Select(prompt string, options []string, initialQuery ...string) (string, error)
-	SelectStream(ctx context.Context, prompt string, src ff.Source, unselectable func(string) bool) (string, error)
+	SelectStream(ctx context.Context, prompt string, src *ff.Feed, unselectable func(string) bool) (string, error)
 	MultiSelect(prompt string, options []string) ([]string, error)
 	Prompt(question string) (string, error)
 	Confirm(prompt string, defaultYes bool) (bool, error)
@@ -123,7 +123,7 @@ func MultiSelect(prompt string, options []string) ([]string, error) {
 	}
 	height := min(10, len(options))
 	opt := ff.Opt{Prompt: prompt + ": ", Height: height, Reverse: true, Multi: true}
-	res, err := ff.Find(context.Background(), ff.NewSliceSourceFrom(options), opt)
+	res, err := ff.Find(context.Background(), ff.NewFeedFrom(options), opt)
 	if err != nil {
 		if errors.Is(err, ff.ErrAbort) {
 			return nil, ErrCancelled
@@ -131,12 +131,12 @@ func MultiSelect(prompt string, options []string) ([]string, error) {
 		return nil, fmt.Errorf("running picker: %w", err)
 	}
 	// Enter with nothing matched marks nothing; same as backing out.
-	if len(res.Indices) == 0 {
+	if len(res.IDs) == 0 {
 		return nil, ErrCancelled
 	}
-	out := make([]string, len(res.Indices))
-	for i, idx := range res.Indices {
-		out[i] = options[idx]
+	out := make([]string, len(res.IDs))
+	for i, id := range res.IDs {
+		out[i] = options[id]
 	}
 	return out, nil
 }
@@ -149,7 +149,7 @@ func (RealSelector) Select(prompt string, options []string, initialQuery ...stri
 	return Select(prompt, options, initialQuery...)
 }
 
-func (RealSelector) SelectStream(ctx context.Context, prompt string, src ff.Source, unselectable func(string) bool) (string, error) {
+func (RealSelector) SelectStream(ctx context.Context, prompt string, src *ff.Feed, unselectable func(string) bool) (string, error) {
 	return SelectStream(ctx, prompt, src, unselectable)
 }
 
